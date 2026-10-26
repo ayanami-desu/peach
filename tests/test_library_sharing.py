@@ -526,28 +526,33 @@ class LibrarySharingTests(unittest.TestCase):
         self.assertEqual(self.attempt_state()['status'], 'blocked')
         self.assertFalse(self.attempt_state()['attempted'])
 
-    def test_preview_and_consent_api_are_local_authenticated_and_same_origin(self):
+    def test_preview_and_consent_api_require_credentials_and_same_origin(self):
         import asyncio
         import httpx
         from fastapi import FastAPI
-        from peach.routes_configuration import router, require_auth
+        from peach.routes_configuration import router
         app = FastAPI()
         app.include_router(router)
         app.state.library_sharing = self.service
-        app.dependency_overrides[require_auth] = lambda: {}
+        app.state.settings = SimpleNamespace(token="admin-token")
 
         async def request(method, path, peer='127.0.0.1', origin='http://test', body=None):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=(peer, 1234)),
                                          base_url='http://test') as client:
-                return await client.request(method, path, json=body, headers={'Origin': origin})
+                return await client.request(method, path, json=body,
+                                            headers={'Origin': origin, 'X-Token': 'admin-token'})
         endpoint = '/api/configuration/library-sharing'
         response = asyncio.run(request('GET', endpoint + '/preview'))
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.headers['cache-control'], 'no-store')
         token = response.json()['token']
         body = {'enabled': True, 'schema': sharing.SCHEMA, 'consent': True, 'preview_token': token}
-        for peer, origin in (('198.51.100.7', 'http://test'), ('127.0.0.1', 'https://external.invalid')):
-            self.assertEqual(asyncio.run(request('GET', endpoint + '/preview', peer, origin)).status_code, 403)
-            self.assertEqual(asyncio.run(request('POST', endpoint, peer, origin, body)).status_code, 403)
+        remote_preview = asyncio.run(request('GET', endpoint + '/preview', '198.51.100.7'))
+        self.assertEqual(remote_preview.status_code, 200)
+        body['preview_token'] = remote_preview.json()['token']
+        self.assertEqual(asyncio.run(request('GET', endpoint + '/preview',
+                                            origin='https://external.invalid')).status_code, 403)
+        self.assertEqual(asyncio.run(request('POST', endpoint,
+                                            origin='https://external.invalid', body=body)).status_code, 403)
         self.assertFalse(sharing.snapshot(self.config)['enabled'])
         self.assertEqual(asyncio.run(request('POST', endpoint, body=body)).status_code, 200)

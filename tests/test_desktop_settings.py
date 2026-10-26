@@ -107,16 +107,16 @@ class DesktopSettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             desktop_startup.save(self.config, enabled=False, silent=True, desktop=None)
 
-    def test_configuration_actions_require_local_origin_and_uninstall_confirmation(self):
+    def test_configuration_actions_require_same_origin_and_uninstall_confirmation(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         from peach import routes_configuration
-        from peach.routes_auth import require_auth
         app = FastAPI()
         app.include_router(routes_configuration.router)
-        app.dependency_overrides[require_auth] = lambda: None
+        app.state.settings = SimpleNamespace(token="admin-token")
         app.state.web_contract = SimpleNamespace()
-        with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1',123)) as client, \
+        with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1',123),
+                        headers={"X-Token": "admin-token"}) as client, \
                 patch.object(routes_configuration, 'managed_configuration', return_value=False), \
                 patch.object(settings_file, 'load_config', return_value=self.config), \
                 patch.object(desktop_uninstall, 'request', return_value={'accepted':True}) as remove:

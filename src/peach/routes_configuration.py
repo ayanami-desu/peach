@@ -1,8 +1,8 @@
-"""本机配置的 JSON 契约：读取、校验、原子保存与托盘重启请求。
+"""配置管理的 JSON 契约：读取、校验、原子保存与托盘重启请求。
 
 页面整个是 `frontend/src/react/settings/` 下的 React 子树（入口 `configuration-page.tsx`），
 挂在主站的 `/configuration` 路由里（ADR-0031）；这里只回数据。桌面由托盘管理，无桌面服务由专用入口管理；调用方范围与配置写入都在服务端校验。
-桌面部署只允许本机管理；Docker 部署还允许已登录的私有网络客户端管理。
+配置管理要求有效登录凭据与同源请求，不依赖来源 IP 或代理头。
 `/healthz` 的 `configurable` 只控制入口显隐；这里负责实际访问检查。
 """
 from __future__ import annotations
@@ -210,11 +210,8 @@ async def client_error(request: Request):
 
 
 def configurable(request: Request) -> bool:
-    """配置只向已配置的托盘服务的本机调用方开放；调试 serve 免掉托管那两条。"""
-    if dev_environment():
-        return local_client(request)
-    return (managed_configuration() and bool(request.app.state.settings.configured)
-            and local_client(request))
+    """入口显隐只反映部署的配置管理能力；API 独立校验登录凭据。"""
+    return dev_environment() or (managed_configuration() and bool(request.app.state.settings.configured))
 
 
 def _read_section(result: dict, key: str, title: str, reader) -> None:
@@ -346,8 +343,7 @@ def network_payload(request: Request, config) -> dict[str, Any]:
 
 
 @router.get("/api/configuration")
-def read_configuration(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def read_configuration(request: Request, _args=Depends(require_authenticated_client)):
     config = settings_file.load_config()
     if not config.present:
         raise HTTPException(409, "请先完成首次设置")
@@ -358,7 +354,7 @@ def read_configuration(request: Request, _args=Depends(require_auth)):
     _read_section(result, "tunnel", "公网入口", lambda: tunnel_payload(
         config, request.app.state.tunnel.snapshot(), config.tunnel.enabled))
     _read_section(result, "automatic_updates", "自动更新", lambda: request.app.state.automatic_updates.snapshot())
-    # 这一路已经过了 `local_only`，密钥可以给出来：用户要把它抄进 CloudDrive2。
+    # 已验证管理凭据，返回给用户抄进 CloudDrive2 的共享密钥。
     _read_section(result, "push_discovery", "推送发现", lambda: push_discovery_payload(request))
     _read_section(result, "downloads", "下载设置", lambda: web_downloads.settings_payload(*_downloads(request)))
     if result.get("automatic_updates", {}).get("result"):
@@ -367,15 +363,12 @@ def read_configuration(request: Request, _args=Depends(require_auth)):
 
 
 @router.get("/api/configuration/automatic-updates")
-def read_automatic_updates(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def read_automatic_updates(request: Request, _args=Depends(require_authenticated_client)):
     return request.app.state.automatic_updates.snapshot()
 
 
 @router.post("/api/configuration/remote-reporting")
-def save_remote_reporting(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_remote_reporting(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     from . import remote_reporting
     try:
         return remote_reporting.save(body)
@@ -384,9 +377,7 @@ def save_remote_reporting(request: Request, body: dict = Body(...), _args=Depend
 
 
 @router.get("/api/configuration/library-sharing/preview")
-def preview_library_sharing(request: Request, _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def preview_library_sharing(request: Request, _args=Depends(require_authenticated_client)):
     try:
         return JSONResponse(request.app.state.library_sharing.preview(), headers={"Cache-Control": "no-store"})
     except ValueError as error:
@@ -394,9 +385,7 @@ def preview_library_sharing(request: Request, _args=Depends(require_auth)):
 
 
 @router.post("/api/configuration/library-sharing")
-def save_library_sharing(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_library_sharing(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     try:
         return request.app.state.library_sharing.save(body)
     except ValueError as error:
@@ -404,9 +393,7 @@ def save_library_sharing(request: Request, body: dict = Body(...), _args=Depends
 
 
 @router.post("/api/configuration/automatic-updates")
-def save_automatic_updates(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_automatic_updates(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     try:
         return request.app.state.automatic_updates.save(body)
     except (ValueError, OSError, Timeout) as exc:
@@ -414,9 +401,7 @@ def save_automatic_updates(request: Request, body: dict = Body(...), _args=Depen
 
 
 @router.post("/api/configuration/peach-proxy")
-def save_peach_proxy(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_peach_proxy(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     try:
         saved = peach_proxy.save(settings_file.load_config().directory("secrets"), body)
     except ValueError as exc:
@@ -446,9 +431,7 @@ def network_status_check(request: Request, _args=Depends(require_auth)):
 
 
 @router.post("/api/configuration/entry-links")
-def save_entry_links(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_entry_links(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     try:
         return entry_links.save(settings_file.load_config().directory("state"), body)
     except (ValueError, OSError, Timeout) as exc:
@@ -456,9 +439,7 @@ def save_entry_links(request: Request, body: dict = Body(...), _args=Depends(req
 
 
 @router.post("/api/configuration/push-discovery")
-def save_push_discovery(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_push_discovery(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     try:
         return push_discovery_payload(request, request.app.state.push_discovery.save(body))
     except (ValueError, OSError) as exc:
@@ -466,10 +447,8 @@ def save_push_discovery(request: Request, body: dict = Body(...), _args=Depends(
 
 
 @router.post("/api/configuration/push-discovery/secret")
-def rotate_push_discovery_secret(request: Request, _args=Depends(require_auth)):
+def rotate_push_discovery_secret(request: Request, _args=Depends(require_authenticated_client)):
     """换一份共享密钥。换完之后 CloudDrive2 那一侧要跟着填新的，否则它推来的一律被拒。"""
-    local_only(request)
-    same_origin(request)
     try:
         return push_discovery_payload(request, request.app.state.push_discovery.rotate_secret())
     except (ValueError, OSError) as exc:
@@ -514,9 +493,8 @@ def save_cloud_proxies(request: Request, body: dict = Body(...), _args=Depends(r
 
 
 @router.get("/api/configuration/indexers")
-def get_indexers(request: Request, _args=Depends(require_auth)):
+def get_indexers(request: Request, _args=Depends(require_authenticated_client)):
     from .resource_search import Indexers
-    local_only(request)
     try:
         return Indexers(request.app.state.downloads.credentials).public()
     except (ValueError, OSError):
@@ -524,10 +502,8 @@ def get_indexers(request: Request, _args=Depends(require_auth)):
 
 
 @router.post("/api/configuration/indexers")
-def save_indexers(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
+def save_indexers(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     from .resource_search import Indexers
-    local_only(request)
-    same_origin(request)
     try:
         return Indexers(request.app.state.downloads.credentials).save(body)
     except ValueError as error:
@@ -537,12 +513,10 @@ def save_indexers(request: Request, body: dict = Body(...), _args=Depends(requir
 
 
 @router.post("/api/configuration/downloads")
-def save_downloads(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
+def save_downloads(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     """地址、目标目录、等待上限与 CloudDrive2 令牌。令牌只写本机凭据文件。
 
     有令牌时随响应回一份按已保存配置做的检查报告；115 目标目录留空时按推送发现填上。"""
-    local_only(request)
-    same_origin(request)
     service, roots = _downloads(request)
     try:
         return web_downloads.save_settings(service, body, roots)
@@ -551,9 +525,8 @@ def save_downloads(request: Request, body: dict = Body(...), _args=Depends(requi
 
 
 @router.get("/api/configuration/downloads/check")
-def check_saved_downloads(request: Request, _args=Depends(require_auth)):
+def check_saved_downloads(request: Request, _args=Depends(require_authenticated_client)):
     """按已保存的地址、令牌与目录检查，页面打开时用。令牌只从本机凭据文件取，不经页面。"""
-    local_only(request)
     service, _roots = _downloads(request)
     try:
         return web_downloads.check_clouddrive(service, {})
@@ -562,11 +535,9 @@ def check_saved_downloads(request: Request, _args=Depends(require_auth)):
 
 
 @router.post("/api/configuration/downloads/check")
-def check_downloads(request: Request, body: dict = Body(default={}), _args=Depends(require_auth)):
+def check_downloads(request: Request, body: dict = Body(default={}), _args=Depends(require_authenticated_client)):
     """调 CloudDrive2 的 `GetApiTokenInfo` 等只读接口：离线权限、目标目录、115 剩余配额，
     目标目录与 PikPak 根留空时按推送发现推建议值。"""
-    local_only(request)
-    same_origin(request)
     service, _roots = _downloads(request)
     try:
         return web_downloads.check_clouddrive(service, body)
@@ -575,10 +546,8 @@ def check_downloads(request: Request, body: dict = Body(default={}), _args=Depen
 
 
 @router.post("/api/configuration/downloads/folder")
-def create_download_folder(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
+def create_download_folder(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     """调 CloudDrive2 的 `CreateFolder` 建 115 目标目录。只在用户点「新建这个目录」时发。"""
-    local_only(request)
-    same_origin(request)
     service, _roots = _downloads(request)
     try:
         return web_downloads.create_clouddrive_folder(service, body)
@@ -587,9 +556,7 @@ def create_download_folder(request: Request, body: dict = Body(...), _args=Depen
 
 
 @router.post("/api/configuration/downloads/pikpak/login")
-def login_pikpak(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def login_pikpak(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     service, roots = _downloads(request)
     try:
         return web_downloads.pikpak_login(service, body, roots)
@@ -598,10 +565,8 @@ def login_pikpak(request: Request, body: dict = Body(...), _args=Depends(require
 
 
 @router.post("/api/configuration/downloads/pikpak/browser-login")
-def start_pikpak_browser_login(request: Request, _args=Depends(require_auth)):
+def start_pikpak_browser_login(request: Request, _args=Depends(require_authenticated_client)):
     """拉起 PikPak 登录窗口（ADR-0093），立刻回设置块；登录在后台等，页面轮询下面那条读接口。"""
-    local_only(request)
-    same_origin(request)
     service, roots = _downloads(request)
     try:
         return web_downloads.pikpak_browser_start(service, roots)
@@ -610,32 +575,25 @@ def start_pikpak_browser_login(request: Request, _args=Depends(require_auth)):
 
 
 @router.get("/api/configuration/downloads/pikpak/browser-login")
-def pikpak_browser_login_status(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def pikpak_browser_login_status(request: Request, _args=Depends(require_authenticated_client)):
     service, roots = _downloads(request)
     return web_downloads.settings_payload(service, roots)
 
 
 @router.post("/api/configuration/downloads/pikpak/browser-login/cancel")
-def cancel_pikpak_browser_login(request: Request, _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def cancel_pikpak_browser_login(request: Request, _args=Depends(require_authenticated_client)):
     service, roots = _downloads(request)
     return web_downloads.pikpak_browser_cancel(service, roots)
 
 
 @router.post("/api/configuration/downloads/pikpak/logout")
-def logout_pikpak(request: Request, _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def logout_pikpak(request: Request, _args=Depends(require_authenticated_client)):
     service, roots = _downloads(request)
     return web_downloads.pikpak_logout(service, roots)
 
 
 @router.post("/api/configuration/startup")
-def save_startup(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def save_startup(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     try:
         return desktop_startup.save(settings_file.load_config(), enabled=body.get("enabled"), silent=body.get("silent"),
                                     desktop=body.get("desktop"))
@@ -644,9 +602,7 @@ def save_startup(request: Request, body: dict = Body(...), _args=Depends(require
 
 
 @router.post("/api/configuration/uninstall")
-def uninstall(request: Request, body: dict = Body(...), _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+def uninstall(request: Request, body: dict = Body(...), _args=Depends(require_authenticated_client)):
     if body.get("confirmation") != "卸载 Peach":
         raise HTTPException(400, "请确认卸载 Peach")
     from .jobs import BackgroundJob
@@ -719,8 +675,7 @@ def relocate_storage(request: Request, body: dict[str, Any] = Body(default_facto
 
 
 @router.get("/api/configuration/updates")
-def check_updates(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def check_updates(request: Request, _args=Depends(require_authenticated_client)):
     result = release_updates.check()
     request.app.state.automatic_updates.remember(result)
     return result
@@ -767,14 +722,12 @@ def upgrade_repairs_review(request: Request, _args=Depends(require_auth)):
 
 
 @router.get("/api/configuration/update-status")
-def update_status(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def update_status(request: Request, _args=Depends(require_authenticated_client)):
     return standalone_update.public()
 
 
 @router.post("/api/configuration/update")
-def download_update(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def download_update(request: Request, _args=Depends(require_authenticated_client)):
     try:
         return standalone_update.start()
     except (ValueError, Timeout) as exc:
@@ -782,8 +735,7 @@ def download_update(request: Request, _args=Depends(require_auth)):
 
 
 @router.post("/api/configuration/update-restart")
-def restart_update(request: Request, _args=Depends(require_auth)):
-    local_only(request)
+def restart_update(request: Request, _args=Depends(require_authenticated_client)):
     try:
         return standalone_update.request_restart()
     except (ValueError, Timeout) as exc:
@@ -947,9 +899,7 @@ def _close_tunnel_without_password(request: Request) -> str:
 
 @router.post("/api/configuration/access")
 def save_access(request: Request, body: dict[str, Any] = Body(default_factory=dict),
-                _args=Depends(require_auth)):
-    local_only(request)
-    same_origin(request)
+                _args=Depends(require_authenticated_client)):
     path = request.app.state.settings.access_path
     if not request.app.state.settings.configured or path is None:
         raise HTTPException(409, "请先完成首次设置")
@@ -1024,10 +974,8 @@ def tunnel_changes(config, body: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/api/configuration/tunnel")
 def save_tunnel(request: Request, body: dict[str, Any] = Body(default_factory=dict),
-                _args=Depends(require_auth)):
-    """保存隧道形态并启动或停止它；入口只对本机配置页开放。"""
-    local_only(request)
-    same_origin(request)
+                _args=Depends(require_authenticated_client)):
+    """保存隧道形态并启动或停止它；由已认证的配置页管理。"""
     config = settings_file.load_config()
     if not config.present:
         raise HTTPException(409, "请先完成首次设置")
@@ -1103,11 +1051,9 @@ def pick_folder(request: Request, body: dict[str, Any] = Body(default_factory=di
 
 @router.post("/api/configuration")
 def save_configuration(request: Request, body: dict[str, Any] = Body(default_factory=dict),
-                       _args=Depends(require_auth)):
-    local_only(request)
+                       _args=Depends(require_authenticated_client)):
     if not managed_configuration():
         raise HTTPException(409, "此部署通过配置文件管理服务")
-    same_origin(request)
     with _SAVE_LOCK:
         config = settings_file.load_config()
         if not config.present:

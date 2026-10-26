@@ -737,7 +737,7 @@ def create_app(
     app.include_router(routes_auth.router)
     app.include_router(routes_pages.router)
     app.include_router(routes_configuration.router)
-    app.include_router(routes_jav_browser.create_router(routes_configuration.local_only))
+    app.include_router(routes_jav_browser.create_router())
     app.state.local_only = routes_configuration.local_only
     app.include_router(routes_media.router)
     app.include_router(routes_subtitles.router)

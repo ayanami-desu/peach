@@ -689,7 +689,7 @@ class WebhookRouteTests(_ServiceCase):
         from peach.api import create_app
         from peach.config import PeachSettings
         self.app = create_app(PeachSettings(
-            db_path=self.db, configured=True, token="",
+            db_path=self.db, configured=True, token="route-token",
             follow_state_root=self.root / "state", secrets_root=self.root / "secrets"))
         self.addCleanup(self.app.state.http_transport.close)
         self.service = self.service()
@@ -720,7 +720,8 @@ class WebhookRouteTests(_ServiceCase):
         origin = "http://127.0.0.1:38473"
         self.app.state.settings = replace(
             self.app.state.settings, mdns_address="127.0.0.1", mdns_port=38473, tls_enabled=False)
-        client = TestClient(self.app, base_url=origin, client=("127.0.0.1", 9000))
+        client = TestClient(self.app, base_url=origin, client=("127.0.0.1", 9000),
+                            headers={"X-Token": "route-token"})
         saved = client.post("/api/configuration/push-discovery", json={
             "enabled": True, "watch_local": False, "cloud": True,
             "prefixes": [{"prefix": "/115", "root": self.declared["115"][0]}]})

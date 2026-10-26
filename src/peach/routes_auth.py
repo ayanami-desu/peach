@@ -1,7 +1,7 @@
 """口令闸门与登录页。
 
 401 有三种形态，按路由类分组保留（不许统一成一种）：页面路由跳登录页，页面资产
-返回 PlainText 提示，API 与媒体路由返回 JSON。三个 `require_*` 是唯一的判定入口，
+返回 PlainText 提示，API 与媒体路由返回 JSON。`require_*` 是唯一的判定入口，
 路由里不要自己比对口令；对应的响应形态由 `api.py` 的异常处理器给出。
 
 口令从 `request.app.state.settings` 取，不是闭包捕获：路由挂在模块级的 `APIRouter`
@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import os
 from collections import OrderedDict
+from functools import lru_cache
 import threading
 import time
 from urllib.parse import urlsplit
@@ -28,23 +30,55 @@ _ATTEMPTS: OrderedDict[str, list[float]] = OrderedDict()
 _ATTEMPTS_LOCK = threading.Lock()
 
 
+@lru_cache(maxsize=8)
+def _trusted_proxies(value: str) -> tuple:
+    """代理只接受显式 IP 或 CIDR；无效项不授予信任。"""
+    networks = []
+    for entry in value.split(","):
+        try:
+            networks.append(ipaddress.ip_network(entry.strip(), strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+def trusted_proxy(request: Request) -> bool:
+    """连接源是不是显式受信的代理；无效值不授予信任。"""
+    if request.client is None:
+        return False
+    try:
+        peer = ipaddress.ip_address(request.client.host)
+    except ValueError:
+        return False
+    networks = _trusted_proxies(os.environ.get("PEACH_TRUSTED_PROXIES", "127.0.0.1,::1"))
+    return any(peer in network for network in networks)
+
+
+def _tunnel_service_peer(request: Request) -> bool:
+    """连接来自回环或服务自己绑定的地址：隧道与本机转发都是这样连进来的。"""
+    peer = request.client.host if request.client else "unknown"
+    server = request.scope.get("server")
+    return peer in ("127.0.0.1", "::1") or bool(
+        server and peer == server[0] and peer not in ("0.0.0.0", "::"))
+
+
 def _attempt_key(request: Request) -> str:
     """限速按真实来源分桶。
 
-    隧道运行且连接来自回环或服务自己的地址时才读取边缘客户端地址。源码隧道连接本机
-    HTTPS 地址；其他局域网客户端按连接源计数。转发地址必须有效并归一化。
+    受信代理（`PEACH_TRUSTED_PROXIES`，默认回环）转发的请求读它写的来源地址；隧道运行
+    且连接来自回环或服务自己的地址时读边缘给出的客户端地址。其余一律按连接源计数，
+    转发地址必须有效并归一化。
     """
     peer = request.client.host if request.client else "unknown"
-    server = request.scope.get('server')
-    local_peer = peer in ("127.0.0.1", "::1") or bool(
-        server and peer == server[0] and peer not in ('0.0.0.0', '::'))
-    if local_peer and tunnel.running(getattr(request.app.state, "tunnel", None)):
-        forwarded = (request.headers.get("cf-connecting-ip") or "").strip()
-        try:
-            return f"cf:{ipaddress.ip_address(forwarded)}"
-        except ValueError:
-            pass
-    return peer
+    if trusted_proxy(request):
+        forwarded = request.headers.get("x-forwarded-for") or request.headers.get("cf-connecting-ip", "")
+    elif _tunnel_service_peer(request) and tunnel.running(getattr(request.app.state, "tunnel", None)):
+        forwarded = request.headers.get("cf-connecting-ip", "")
+    else:
+        return peer
+    try:
+        return str(ipaddress.ip_address(forwarded.split(",", 1)[0].strip()))
+    except ValueError:
+        return peer
 
 
 def _login_attempt(request: Request) -> None:
@@ -153,9 +187,9 @@ def same_origin(request: Request) -> None:
 
     独立包的 origin 是回环 HTTP，cloudflared 转发时 Host 仍可能是本机地址，
     所以不能单纯把 ``Origin`` 和 ASGI 的 ``base_url`` 比较。临时链接的随机入口由当前
-    TunnelManager 产生并保存在进程内，命名隧道的公开主机名来自本次启动的运行设置；
-    外部 Origin 必须精确匹配这两者之一，不能由调用方通过 ``X-Forwarded-*`` 自己
-    声明一个可信地址。
+    TunnelManager 产生并保存在进程内，命名隧道的公开主机名来自本次启动的运行设置。
+    受信任代理可通过 ``X-Forwarded-Proto`` 声明外部协议，Host 应保留公开地址；
+    不可信连接的转发头不参与同源判定。
     """
     origin = request.headers.get("origin")
     if request.headers.get("sec-fetch-site") == "cross-site":
@@ -164,6 +198,10 @@ def same_origin(request: Request) -> None:
         supplied = _origin_key(origin)
         local = _origin_key(str(request.base_url))
         allowed = {local, _tunnel_origin(request), _named_origin(request)}
+        if trusted_proxy(request):
+            scheme = request.headers.get("x-forwarded-proto", "").strip().lower()
+            if scheme in {"http", "https"}:
+                allowed.add(_origin_key(f"{scheme}://{request.url.netloc}"))
         if supplied is None or supplied not in allowed:
             raise HTTPException(403, "请从 Peach 配置页提交")
 
@@ -185,14 +223,19 @@ def require_page_auth(request: Request) -> dict[str, str]:
 
 
 def require_authenticated_client(request: Request) -> None:
-    """错误上报须有有效登录凭据，开放访问模式不提供匿名上报。"""
+    """管理接口须有有效登录凭据；开放浏览不授予管理权限。"""
     same_origin(request)
+    token = request.app.state.settings.token
+    supplied = _first_query_values(request).get("t") or request.headers.get("X-Token")
+    if token and supplied is not None and hmac.compare_digest(str(supplied).encode(), token.encode()):
+        return
     policy = _policy(request)
     if policy['mode'] not in {'password', 'legacy'} or not policy.get('key'):
         raise HTTPException(401, 'unauthorized')
     authenticated = access.valid_session(policy, request.cookies.get(access.COOKIE, ''))
     if policy['mode'] == 'legacy':
-        authenticated = _authorized(request, policy['key'], _first_query_values(request))
+        authenticated = authenticated or hmac.compare_digest(
+            request.cookies.get("tok", "").encode(), policy['key'].encode())
     if not authenticated:
         raise HTTPException(401, 'unauthorized')
 
@@ -228,7 +271,8 @@ def set_auth_cookie(response: Response, request: Request, *, days: int = 30, log
     if token and policy["mode"] in {"password", "legacy"} and (login or _query_token_matches(request)):
         value, max_age = access.issue(policy, days)
         response.set_cookie(access.COOKIE, value, max_age=max_age, path="/", httponly=True,
-                            samesite="lax", secure=request.url.scheme == "https")
+                            samesite="lax", secure=request.url.scheme == "https" or (
+                                trusted_proxy(request) and request.headers.get("x-forwarded-proto", "").strip().lower() == "https"))
         response.delete_cookie("tok", path="/")
 
 

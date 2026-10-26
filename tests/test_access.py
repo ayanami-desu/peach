@@ -1,4 +1,5 @@
-"""可选密码、会话期限与本机管理边界。"""
+"""可选密码、会话期限与强凭据管理边界。"""
+from collections import OrderedDict
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, Request
 
 from peach import access, routes_auth, routes_configuration
 
@@ -136,12 +137,14 @@ class AccessTests(unittest.IsolatedAsyncioTestCase):
         self.client.cookies.clear()
         self.assertEqual((await self.client.get("/private")).status_code, 200)
 
-    async def test_management_rejects_foreign_origin_remote_peer_and_stale_revision(self):
-        policy = access.save(self.path, "")
-        body = {"revision": policy["revision"], "action": "set", "password": "correct-password", "confirmation": "correct-password"}
+    async def test_management_rejects_foreign_origin_anonymous_peer_and_stale_revision(self):
+        policy = access.save(self.path, "correct-password")
+        await self.login()
+        body = {"revision": policy["revision"], "action": "set", "password": "correct-password",
+                "confirmation": "correct-password", "current_password": "correct-password"}
         self.assertEqual((await self.client.post("/api/configuration/access", json=body, headers={"Origin": "https://evil.example"})).status_code, 403)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app, client=("192.0.2.2", 1)), base_url="http://localhost") as remote:
-            self.assertEqual((await remote.post("/api/configuration/access", json=body)).status_code, 403)
+            self.assertEqual((await remote.post("/api/configuration/access", json=body)).status_code, 401)
         body["revision"] = "stale"
         self.assertEqual((await self.client.post("/api/configuration/access", json=body)).status_code, 409)
 
@@ -153,6 +156,24 @@ class AccessTests(unittest.IsolatedAsyncioTestCase):
         self.client.cookies.clear()
         self.client.cookies.set("tok", "internal-test-token")
         self.assertEqual((await self.client.get("/private")).status_code, 401)
+
+    async def test_open_browsing_does_not_grant_configuration_access(self):
+        access.save(self.path, "")
+        self.app.state.automatic_updates = SimpleNamespace(snapshot=lambda: {"mode": "off"})
+        path = "/api/configuration/automatic-updates"
+        self.assertEqual((await self.client.get("/private")).status_code, 200)
+        self.assertEqual((await self.client.get(path)).status_code, 401)
+        self.assertEqual((await self.client.get(path, headers={"X-Token": "wrong"})).status_code, 401)
+        self.assertEqual((await self.client.get(path, headers={"X-Token": "internal-test-token"})).status_code, 200)
+
+    async def test_untrusted_proxy_cannot_assert_external_origin(self):
+        access.save(self.path, "correct-password")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app, client=("198.51.100.7", 1)),
+                                     base_url="http://peach.example") as remote:
+            response = await remote.post("/login", data={"token": "correct-password"}, headers={
+                "Origin": "https://peach.example", "X-Forwarded-Proto": "https",
+                "X-Forwarded-For": "127.0.0.1"})
+            self.assertEqual(response.status_code, 403)
 
     async def test_corrupt_policy_fails_closed_and_password_is_not_stored_or_returned(self):
         policy = access.save(self.path, "correct-password")
@@ -181,3 +202,63 @@ class AccessTests(unittest.IsolatedAsyncioTestCase):
             path.unlink()
             onboarding.apply(config, None, windows=True)
             self.assertEqual(access.load(path)["mode"], "open")
+
+
+class ProxyLoginLimitTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch.object(routes_auth, "_ATTEMPTS", OrderedDict()))
+        self.enterContext(patch.dict(routes_auth.os.environ, {"PEACH_TRUSTED_PROXIES": "127.0.0.1,::1"}))
+
+    def request(self, peer="127.0.0.1", **headers):
+        return Request({"type": "http", "client": (peer, 1234),
+                        "app": SimpleNamespace(state=SimpleNamespace(tunnel=None)),
+                        "headers": [(name.replace("_", "-").encode(), value.encode())
+                                    for name, value in headers.items()]})
+
+    def exhaust(self, request):
+        for _ in range(10):
+            routes_auth._login_attempt(request)
+        self.assert_limited(request)
+
+    def assert_limited(self, request):
+        with self.assertRaises(HTTPException) as caught:
+            routes_auth._login_attempt(request)
+        self.assertEqual(caught.exception.status_code, 429)
+        self.assertEqual(caught.exception.headers["Retry-After"], "60")
+
+    def test_trusted_proxy_clients_use_separate_leftmost_ip_buckets(self):
+        first = self.request(x_forwarded_for="198.51.100.7, 192.0.2.2")
+        self.assertEqual(routes_auth._attempt_key(first), "198.51.100.7")
+        self.exhaust(first)
+        self.assert_limited(self.request(x_forwarded_for="198.51.100.7, 192.0.2.3"))
+        routes_auth._login_attempt(self.request(x_forwarded_for="198.51.100.8"))
+        routes_auth._login_attempt(self.request())
+        self.assert_limited(self.request(cf_connecting_ip="198.51.100.7"))
+
+    def test_untrusted_peer_cannot_rotate_buckets_with_forged_headers(self):
+        self.exhaust(self.request(peer="198.51.100.7"))
+        for address in ("198.51.100.8", "127.0.0.1", "not-an-ip"):
+            request = self.request(peer="198.51.100.7", x_forwarded_for=address, cf_connecting_ip=address)
+            self.assertEqual(routes_auth._attempt_key(request), "198.51.100.7")
+            self.assert_limited(request)
+
+    def test_invalid_proxy_ip_falls_back_to_peer_and_ipv6_is_canonical(self):
+        for address in ("", "not-an-ip", "198.51.100.7:80", "unknown, 198.51.100.7"):
+            self.assertEqual(routes_auth._attempt_key(self.request(x_forwarded_for=address)), "127.0.0.1")
+        self.assertEqual(routes_auth._attempt_key(self.request(peer="::1",
+                         x_forwarded_for="2001:0db8:0:0:0:0:0:1")), "2001:db8::1")
+        self.assertEqual(routes_auth._attempt_key(self.request(
+            x_forwarded_for="198.51.100.7", cf_connecting_ip="198.51.100.8")), "198.51.100.7")
+
+    def test_trust_list_accepts_explicit_networks_and_can_disable_forwarding(self):
+        request = self.request(peer="192.0.2.2", x_forwarded_for="198.51.100.7")
+        self.assertEqual(routes_auth._attempt_key(request), "192.0.2.2")
+        with patch.dict(routes_auth.os.environ, {"PEACH_TRUSTED_PROXIES": "192.0.2.0/24,invalid,::1"}):
+            self.assertEqual(routes_auth._attempt_key(request), "198.51.100.7")
+            self.assertEqual(routes_auth._attempt_key(self.request(
+                peer="203.0.113.2", x_forwarded_for="198.51.100.7")), "203.0.113.2")
+        with patch.dict(routes_auth.os.environ, {"PEACH_TRUSTED_PROXIES": ""}):
+            self.assertEqual(routes_auth._attempt_key(self.request(x_forwarded_for="198.51.100.7")), "127.0.0.1")
+        with patch.dict(routes_auth.os.environ):
+            routes_auth.os.environ.pop("PEACH_TRUSTED_PROXIES", None)
+            self.assertEqual(routes_auth._attempt_key(self.request(x_forwarded_for="198.51.100.7")), "198.51.100.7")

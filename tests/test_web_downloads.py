@@ -78,7 +78,7 @@ class _App(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.app = create_app(PeachSettings(
-            db_path=fresh_ledger(self.root), configured=True, token="",
+            db_path=fresh_ledger(self.root), configured=True, token="admin-token",
             follow_state_root=self.root / "state", secrets_root=self.root / "secrets"))
         self.addCleanup(self.app.state.http_transport.close)
         self.service = self.app.state.downloads
@@ -87,7 +87,7 @@ class _App(unittest.TestCase):
         self.service.channel_catalog = lambda: {"providers": [
             {"key": key, "label": label, "configured": True, "target": self.service.config.targets.get(key, "")}
             for key, label in dl.PROVIDER_LABELS.items()], "problems": []}
-        self.client = TestClient(self.app)
+        self.client = TestClient(self.app, headers={"X-Token": "admin-token"})
 
     def secrets(self) -> dict:
         folder = self.root / "secrets" / "follow"
@@ -238,7 +238,8 @@ class SettingsBlockTests(_App):
         self.service.save_settings({"clouddrive_address": "localhost:19798", "wait_hours": 48}, self.roots())
         before = self.service.settings.path.read_bytes()
         stored_secrets = self.secrets()
-        client = TestClient(self.app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1")
+        client = TestClient(self.app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1",
+                            headers={"X-Token": "admin-token"})
         response = client.post("/api/configuration/downloads", json={
             "clouddrive_address": "http://localhost:bad-port", "token": "test-only-new-token"})
         self.assertEqual(response.status_code, 400, response.text)
@@ -260,7 +261,8 @@ class SettingsBlockTests(_App):
         self.service.landing.declared_roots = {"115": ("R:\\Media",)}
         self.service.channel_catalog = LibraryChannels(self.service, lambda: {})
         config = settings_file.PeachConfig(self.root, self.root / "config.toml", present=True)
-        client = TestClient(self.app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1")
+        client = TestClient(self.app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1",
+                            headers={"X-Token": "admin-token"})
         with mock.patch.object(settings_file, "load_config", return_value=config), \
                 mock.patch.object(routes_configuration, "snapshot", return_value={"port": 8900, "media_dirs": []}):
             response = client.get("/api/configuration")
@@ -353,7 +355,8 @@ class SettingsBlockTests(_App):
             "clouddrive_address": "127.0.0.1:19798", "token": "cd2-secret",
             "targets": {"115": "/115open/已保存"}}, self.roots())
         self.checked.clear()
-        client = TestClient(self.app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1")
+        client = TestClient(self.app, client=("127.0.0.1", 50000), base_url="http://127.0.0.1",
+                            headers={"X-Token": "admin-token"})
         response = client.get("/api/configuration/downloads/check")
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(set(response.json()), set(downloads_clouddrive.empty_report("")))
@@ -455,7 +458,8 @@ class BrowserLoginRouteTests(_App):
         super().setUp()
         self.login = FakeBrowserLogin()
         self.service.pikpak_browser = self.login
-        self.local = TestClient(self.app, base_url="http://127.0.0.1", client=("127.0.0.1", 123))
+        self.local = TestClient(self.app, base_url="http://127.0.0.1", client=("127.0.0.1", 123),
+                                headers={"X-Token": "admin-token"})
 
     def test_starting_polling_and_cancelling_go_through_the_settings_block(self):
         idle = self.local.get(self.URL)
@@ -497,19 +501,20 @@ class ResourceIndexerRoutes(_App):
 
     def setUp(self):
         super().setUp()
-        self.local = TestClient(self.app, base_url="http://127.0.0.1", client=("127.0.0.1", 123))
+        self.local = TestClient(self.app, base_url="http://127.0.0.1", client=("127.0.0.1", 123),
+                                headers={"X-Token": "admin-token"})
 
-    def test_credentials_are_local_and_origin_guarded(self):
+    def test_credentials_require_authentication_and_same_origin(self):
         body = {"indexers": [{"key": "one", "name": "测试源", "url": "http://indexer.test/api",
                               "api_key": "private-test-key", "enabled": True}]}
-        self.assertEqual(self.client.post(self.URL, json=body).status_code, 403)
+        self.assertEqual(TestClient(self.app).post(self.URL, json=body).status_code, 401)
         self.assertEqual(self.local.post(self.URL, json=body,
                                         headers={"origin": "https://other.invalid"}).status_code, 403)
         response = self.local.post(self.URL, json=body)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertNotIn("private-test-key", response.text)
         self.assertTrue(self.local.get(self.URL).json()["indexers"][0]["api_key_set"])
-        self.assertEqual(self.client.get(self.URL).status_code, 403)
+        self.assertEqual(self.client.get(self.URL).status_code, 200)
 
     def test_search_endpoint_passes_saved_config_and_returns_candidates(self):
         from peach.resource_search import Indexers

@@ -4101,12 +4101,12 @@ def _api_routes(routes):
 class RouteAuthContractTests(unittest.TestCase):
     """每条路由都要挂上鉴权依赖，例外只能出自上面那张逐条核实过的白名单。
 
-    Peach 的闸门是依赖注入（`routes_auth` 的三个 `require_*`），不是中间件：新加
+    Peach 的闸门是依赖注入（`routes_auth` 的 `require_*`），不是中间件：新加
     一条路由时忘记写 `Depends(require_auth)`，服务照常起、测试照常绿，那条路径就
     此对局域网敞开。这是「只改了自己测试的那条路径」在鉴权面上的形态。
     """
 
-    GUARD_NAMES = ("require_auth", "require_page_auth", "require_asset_auth")
+    GUARD_NAMES = ("require_auth", "require_page_auth", "require_asset_auth", "require_authenticated_client")
 
     @classmethod
     def setUpClass(cls):

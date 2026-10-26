@@ -1003,19 +1003,20 @@ class StandaloneConfigurationTests(_Case):
             self.assertEqual(client.get("/api/configuration", headers=headers).json()["automatic_updates"]["interval_hours"], 6)
             self.assertEqual(client.post(path, headers=headers, json={"mode": "off", "interval_hours": 24}).status_code, 200)
         with self.client(address="192.0.2.9") as client:
-            self.assertEqual(client.get(path, headers=headers).status_code, 403)
-            self.assertEqual(client.post(path, headers=headers, json={}).status_code, 403)
+            self.assertEqual(client.get(path, headers=headers).status_code, 200)
+            self.assertEqual(client.post(path, headers=headers, json={"mode": "off", "interval_hours": 24}).status_code, 200)
 
-    def test_release_update_endpoints_require_local_authenticated_access(self):
+    def test_release_update_endpoints_require_authenticated_same_origin_access(self):
         with self.client() as client, mock.patch("peach.release_updates.check", return_value={"state": "current"}) as check:
             self.assertEqual(client.get("/api/configuration/updates").status_code, 401)
             response = client.get("/api/configuration/updates", headers={"X-Token": "test-token"})
             self.assertEqual(response.json(), {"state": "current"})
             check.assert_called_once()
             self.assertEqual(client.post("/api/configuration/update", headers={"X-Token":"test-token", "Origin":"https://evil.example"}).status_code,403)
-        with self.client(address="192.0.2.9") as client:
+        with self.client(address="192.0.2.9") as client, mock.patch(
+                "peach.release_updates.check", return_value={"state": "current"}):
             for path in ("updates", "update-status"):
-                self.assertEqual(client.get(f"/api/configuration/{path}",headers={"X-Token":"test-token"}).status_code,403)
+                self.assertEqual(client.get(f"/api/configuration/{path}", headers={"X-Token": "test-token"}).status_code, 200)
 
     def test_missing_media_tools_have_download_links_in_the_runtime_facts(self):
         from peach.web_entry import runtime_fact_entries
@@ -1065,17 +1066,21 @@ class StandaloneConfigurationTests(_Case):
             settings_file._read_document(self.config.path), {})).start()
 
     @contextmanager
-    def client(self, *, token="test-token", address="127.0.0.1", base_url="http://localhost", server=None):
+    def client(self, *, token="test-token", address="127.0.0.1", base_url="http://localhost", server=None, scheme=None):
         from fastapi.testclient import TestClient
         from peach.api import create_app
         from peach.config import PeachSettings
         app = create_app(PeachSettings(configured=True, token=token, mdns_name="peach-writer",
+                         access_path=self.config.directory("secrets") / "access.json",
                          follow_state_root=self.root / "state",
                          db_path=self.config.data_root / "database" / "ledger.db"))
-        if server:
+        if server or scheme:
             @app.middleware("http")
             async def connection_address(request, call_next):
-                request.scope["server"] = (server, 443)
+                if server:
+                    request.scope["server"] = (server, 443)
+                if scheme:
+                    request.scope["scheme"] = scheme
                 return await call_next(request)
         with self.assertNoLogs("peach", level="ERROR"), \
                 TestClient(app, client=(address, 12345), base_url=base_url) as client:
@@ -1096,7 +1101,7 @@ class StandaloneConfigurationTests(_Case):
                 "revision": response.json()["revision"], "media_dirs": [str(self.media)], "port": "9123"})
             self.assertEqual(saved.status_code, 200, saved.text)
 
-    def test_configuration_connection_gate_rejects_remote_and_untrusted_hosts(self):
+    def test_configuration_credentials_are_independent_of_picker_locality(self):
         cases = [
             ("192.0.2.11", "192.0.2.10", "peach-writer.local", False),
             ("192.0.2.10", "192.0.2.10", "example.org", False),
@@ -1109,12 +1114,12 @@ class StandaloneConfigurationTests(_Case):
             with self.subTest(peer=peer, host=host), self.client(
                     address=peer, server=server, base_url=f"https://{host}") as client:
                 headers = {"X-Token": "test-token", "X-Forwarded-For": server}
-                self.assertEqual(client.get("/healthz", headers=headers).json()["configurable"], allowed)
-                self.assertEqual(client.get("/api/configuration", headers=headers).status_code,
-                                 200 if allowed else 403)
+                self.assertTrue(client.get("/healthz", headers=headers).json()["configurable"])
+                response = client.get("/api/configuration", headers=headers)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(client.get("/api/configuration").status_code, 401)
                 if not allowed:
-                    for path in ("/api/configuration", "/api/pick-folder"):
-                        self.assertEqual(client.post(path, headers=headers, json={}).status_code, 403)
+                    self.assertEqual(client.post("/api/pick-folder", headers=headers, json={}).status_code, 403)
 
     def test_tray_managed_source_configuration_keeps_the_https_origin_and_managed_port(self):
         from peach.routes_configuration import RELOAD_NAME
@@ -1249,7 +1254,7 @@ class StandaloneConfigurationTests(_Case):
                 self.assertEqual(snapshot['media_sources'][0]['cost'], cost)
                 self.assertFalse((saved.directory('database') / 'ledger.db').exists())
 
-    def test_settings_reject_unauthenticated_remote_cross_origin_and_stale_forms(self):
+    def test_settings_reject_unauthenticated_cross_origin_and_stale_forms(self):
         from peach.routes_configuration import revision
         data = {"revision": revision(self.config), "media_dirs": [str(self.media)], "port": "9124"}
         before = self.config.path.read_bytes()
@@ -1261,16 +1266,40 @@ class StandaloneConfigurationTests(_Case):
             response = client.post("/api/configuration", headers={"X-Token": "test-token"}, json={**data, "revision": "stale"})
             self.assertEqual(response.status_code, 409)
         with self.client(address="192.0.2.1") as client:
-            headers = {"X-Token": "test-token"}
-            # 外壳照常打开，拒绝的原因由页面里的 Note 说；菜单里根本不会列出这一项。
-            self.assertEqual(client.get("/configuration", headers=headers).status_code, 200)
-            self.assertFalse(client.get("/healthz").json()["configurable"])
-            response = client.get("/api/configuration", headers=headers)
-            self.assertEqual(response.status_code, 403)
-            self.assertEqual(response.json(), {"error": "请在运行 Peach 的电脑上打开配置"})
-            response = client.post("/api/configuration", headers=headers, json=data)
-            self.assertEqual(response.status_code, 403)
+            self.assertEqual(client.get("/api/configuration").status_code, 401)
+            self.assertEqual(client.post("/api/configuration", json=data).status_code, 401)
+            self.assertTrue(client.get("/healthz").json()["configurable"])
         self.assertEqual(before, self.config.path.read_bytes())
+
+    def test_authenticated_proxy_cookie_can_read_and_save_configuration(self):
+        from peach import access
+        from peach.routes_auth import _ATTEMPTS
+        policy_path = self.config.directory("secrets") / "access.json"
+        access.save(policy_path, "correct-password")
+        proxy_headers = {"X-Forwarded-For": "198.51.100.7", "X-Forwarded-Proto": "https",
+                         "Origin": "https://peach.example", "Forwarded": "for=198.51.100.7",
+                         "CF-Connecting-IP": "198.51.100.7"}
+        with mock.patch.dict(os.environ, {"PEACH_HEADLESS_MANAGED": "1",
+                                          "PEACH_TRUSTED_PROXIES": "127.0.0.1,::1"}), \
+                self.client(base_url="https://peach.example", scheme="http") as client:
+            _ATTEMPTS.clear()
+            self.addCleanup(_ATTEMPTS.clear)
+            self.assertEqual(client.get("/api/configuration", headers=proxy_headers).status_code, 401)
+            self.assertEqual(client.post("/api/configuration", headers=proxy_headers, json={}).status_code, 401)
+            login = client.post("/login", headers=proxy_headers, data={"token": "correct-password"},
+                                follow_redirects=False)
+            self.assertEqual(login.status_code, 303, login.text)
+            self.assertIn("Secure", login.headers["set-cookie"])
+            self.assertTrue(client.cookies.get(access.COOKIE))
+            response = client.get("/api/configuration", headers=proxy_headers)
+            self.assertEqual(response.status_code, 200, response.text)
+            body = {"revision": response.json()["revision"], "media_dirs": [str(self.media)], "port": "9123"}
+            saved = client.post("/api/configuration", headers=proxy_headers, json=body)
+            self.assertEqual(saved.status_code, 200, saved.text)
+            self.assertTrue(saved.json()["saved"])
+            rejected = client.post("/api/configuration", json=body, headers={
+                **proxy_headers, "Origin": "https://evil.example", "X-Forwarded-Host": "evil.example"})
+            self.assertEqual(rejected.status_code, 403)
 
     def test_browser_navigations_get_an_error_page_instead_of_raw_json(self):
         """地址栏里直接打开一个出错的路径，看到的是 Peach 的页面，不是一行 JSON。

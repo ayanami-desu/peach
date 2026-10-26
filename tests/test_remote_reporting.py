@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from peach import remote_reporting as reporting
@@ -649,18 +650,19 @@ class RemoteReportingApiTests(unittest.TestCase):
         import asyncio
         import httpx
         from fastapi import FastAPI
-        from peach.routes_configuration import router, require_auth
+        from peach.routes_configuration import router
         app = FastAPI()
         app.include_router(router)
-        app.dependency_overrides[require_auth] = lambda: {}
+        app.state.settings = SimpleNamespace(token="admin-token")
 
         async def run():
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=(peer, 1234)),
                                          base_url='http://test') as client:
-                return await client.request(method, path, json=body, headers={'Origin': origin})
+                return await client.request(method, path, json=body,
+                                            headers={'Origin': origin, 'X-Token': 'admin-token'})
         return asyncio.run(run())
 
-    def test_local_save_and_remote_and_cross_origin_denial(self):
+    def test_authenticated_remote_save_and_cross_origin_denial(self):
         endpoint = '/api/configuration/remote-reporting'
         body = {'usage': True, 'errors': True}
         response = self.request('POST', endpoint, body=body)
@@ -669,7 +671,9 @@ class RemoteReportingApiTests(unittest.TestCase):
         self.assertTrue(response.json()['errors'])
         response = self.request('POST', endpoint, body={'usage': False, 'errors': True})
         self.assertEqual(response.status_code, 400, response.text)
-        for peer, origin in (('198.51.100.7', 'http://test'), ('127.0.0.1', 'https://external.invalid')):
-            response = self.request('POST', endpoint, body={'usage': False, 'errors': False}, peer=peer, origin=origin)
-            self.assertEqual(response.status_code, 403, response.text)
+        response = self.request('POST', endpoint, body=body, peer='198.51.100.7')
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.request('POST', endpoint, body={'usage': False, 'errors': False},
+                                origin='https://external.invalid')
+        self.assertEqual(response.status_code, 403, response.text)
         self.assertTrue(reporting.consent()['errors'])

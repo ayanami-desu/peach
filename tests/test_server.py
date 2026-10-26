@@ -28,21 +28,23 @@ class ServerTests(unittest.TestCase):
             launch.assert_not_called()
             self.assertEqual(database.read_bytes(), b'unchanged reader ledger')
 
-    def test_headless_configuration_accepts_private_peers_and_rejects_forwarding(self):
-        from peach.routes_configuration import local_client, managed_configuration
+    def test_headless_native_dialogs_require_physical_locality(self):
+        from peach.web_local_access import local_client, managed_configuration
         with patch.dict("os.environ", {"PEACH_HEADLESS_MANAGED": "1"}):
             self.assertTrue(managed_configuration())
             for peer, headers, allowed in (
-                ("192.0.2.1", [], True), ("198.51.100.10", [], True),
+                ("192.0.2.1", [], False), ("198.51.100.10", [], False),
                 ("8.8.8.8", [], False), ("169.254.1.1", [], False),
                 ("0.0.0.0", [], False), ("240.0.0.1", [], False),
-                ("127.0.0.1", [], True), ("fd00::1", [], True),
+                ("127.0.0.1", [], True), ("fd00::1", [], False),
                 ("192.0.2.1", [(b"x-forwarded-for", b"8.8.8.8")], False),
                 ("192.0.2.1", [(b"x-forwarded-host", b"example.com")], False),
             ):
-                request = Request({"type": "http", "client": (peer, 1234),
-                                   "server": ("0.0.0.0", 8900), "headers": headers,
-                                   "app": SimpleNamespace(state=SimpleNamespace(tunnel=None))})
+                request = Request({"type": "http", "scheme": "http", "path": "/api/pick-folder",
+                                   "client": (peer, 1234), "server": ("0.0.0.0", 8900),
+                                   "headers": [(b"host", b"localhost"), *headers],
+                                   "app": SimpleNamespace(state=SimpleNamespace(
+                                       tunnel=None, settings=SimpleNamespace(mdns_name="peach")))})
                 with self.subTest(peer=peer, headers=headers):
                     self.assertEqual(local_client(request), allowed)
 
@@ -53,9 +55,10 @@ class ServerTests(unittest.TestCase):
                 patch.object(cli, "_build_sync", return_value=None), \
                 patch.object(cli, "create_app"), patch.object(cli, "TUNNEL_ENABLED", False), \
                 patch("peach.mdns.lan_ipv4", side_effect=OSError("no route")) as route, \
-                patch("uvicorn.run"):
+                patch("uvicorn.run") as run:
             self.assertEqual(cli.main(["serve", "--host", "0.0.0.0", "--no-mdns"]), 0)
         route.assert_not_called()
+        self.assertFalse(run.call_args.kwargs["proxy_headers"])
 
     def test_initialization_preserves_existing_configuration(self):
         with tempfile.TemporaryDirectory() as directory:

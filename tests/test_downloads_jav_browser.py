@@ -504,9 +504,9 @@ class BrowserTests(unittest.TestCase):
                                     json={"code": "ABC-123", "source_url": PAGE})
         self.assertEqual(response.status_code, 401)
 
-    def test_settings_require_local_and_same_origin_calls(self):
+    def test_settings_accept_authenticated_remote_and_reject_cross_origin_calls(self):
         remote = TestClient(self.app, client=("192.0.2.10", 12345))
-        self.assertEqual(remote.get("/api/configuration/jav-browser", headers=self.headers).status_code, 403)
+        self.assertEqual(remote.get("/api/configuration/jav-browser", headers=self.headers).status_code, 200)
         headers = {**self.headers, "Origin": "https://missav.ws"}
         response = self.client.post("/api/configuration/jav-browser", headers=headers,
                                     json={"action": "enable", "provider": "115"})

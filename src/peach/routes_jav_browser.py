@@ -1,4 +1,4 @@
-"""JAV 用户脚本的专用权限端点与本机配对设置。"""
+"""JAV 用户脚本的专用权限端点与管理员配对设置。"""
 import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .config import PROJECT_ROOT
 from .jav_browser import identify_source
-from .routes_auth import require_auth
+from .routes_auth import require_auth, require_authenticated_client
 
 
 def browser_client(request: Request):
@@ -92,7 +92,7 @@ def configure(request: Request, body: dict = Body(...)):
         raise HTTPException(400, str(error)) from None
 
 
-def create_router(local_only) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter()
     router.add_api_route("/integrations/peach-jav.user.js", userscript, methods=["GET"])
     router.add_api_route("/integrations/peach-userscript-bridge", userscript_bridge, methods=["GET"],
@@ -103,7 +103,7 @@ def create_router(local_only) -> APIRouter:
     router.add_api_route("/api/jav-browser/people", people, methods=["GET"])
     router.add_api_route("/api/jav-browser", add, methods=["POST"])
     router.add_api_route("/api/jav-browser/errors", errors, methods=["POST"])
-    permissions = [Depends(require_auth), Depends(local_only)]
+    permissions = [Depends(require_authenticated_client)]
     router.add_api_route("/api/configuration/jav-browser", settings, methods=["GET"], dependencies=permissions)
     router.add_api_route("/api/configuration/jav-browser", configure, methods=["POST"], dependencies=permissions)
     return router
