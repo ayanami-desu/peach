@@ -509,6 +509,7 @@ class TunnelOriginGuardTests(unittest.TestCase):
         app = SimpleNamespace(state=SimpleNamespace(tunnel=manager))
         return SimpleNamespace(
             app=app,
+            client=None,
             headers={"origin": origin},
             base_url="http://127.0.0.1:8900/",
         )
@@ -530,6 +531,7 @@ class TunnelOriginGuardTests(unittest.TestCase):
         settings = SimpleNamespace(tunnel_mode="named", tunnel_hostname=hostname)
         return SimpleNamespace(
             app=SimpleNamespace(state=SimpleNamespace(tunnel=manager, settings=settings)),
+            client=None,
             headers={"origin": origin},
             base_url="http://127.0.0.1:8900/",
         )
@@ -547,6 +549,7 @@ class TunnelOriginGuardTests(unittest.TestCase):
         settings = SimpleNamespace(tunnel_mode="quick", tunnel_hostname="peach.example.com")
         request = SimpleNamespace(
             app=SimpleNamespace(state=SimpleNamespace(tunnel=manager, settings=settings)),
+            client=None,
             headers={"origin": "https://peach.example.com"},
             base_url="http://127.0.0.1:8900/",
         )
@@ -965,7 +968,7 @@ class TunnelStartupTests(unittest.TestCase):
 
 
 class LocalClientTests(unittest.TestCase):
-    """隧道转发进来的请求不算本机，配置页对它一律关门。"""
+    """系统对话框按本机连接判断；配置管理与登录限速各用独立规则。"""
 
     def request(self, state: str, headers: dict[str, str]):
         manager = SimpleNamespace(snapshot=lambda: tunnel.TunnelSnapshot(
@@ -996,24 +999,24 @@ class LocalClientTests(unittest.TestCase):
         request = self.request("stopped", {"cf-connecting-ip": "198.51.100.7"})
         self.assertTrue(routes_configuration.local_client(request))
 
-    def test_the_debug_serve_branch_also_refuses_forwarded_requests(self):
+    def test_the_debug_serve_configuration_entry_is_independent_of_proxy_headers(self):
         request = self.request("running", {"cf-ray": "7a0-LAX"})
         with mock.patch.dict("os.environ", {"PEACH_DEV": "1"}):
-            self.assertFalse(routes_configuration.configurable(request))
+            self.assertTrue(routes_configuration.configurable(request))
 
     def test_the_login_rate_limit_separates_edge_clients(self):
         request = self.request("running", {"cf-connecting-ip": "198.51.100.7"})
-        self.assertEqual(routes_auth._attempt_key(request), "cf:198.51.100.7")
+        self.assertEqual(routes_auth._attempt_key(request), "198.51.100.7")
 
-    def test_the_login_rate_limit_uses_the_peer_without_a_tunnel(self):
+    def test_the_login_rate_limit_trusts_loopback_proxy_without_a_tunnel(self):
         request = self.request("stopped", {"cf-connecting-ip": "198.51.100.7"})
-        self.assertEqual(routes_auth._attempt_key(request), "127.0.0.1")
+        self.assertEqual(routes_auth._attempt_key(request), "198.51.100.7")
 
     def test_the_login_rate_limit_separates_edge_clients_on_the_service_address(self):
         request = self.request("running", {"cf-connecting-ip": "198.51.100.7"})
         request.client.host = "192.0.2.5"
         request.scope["server"] = ("192.0.2.5", 443)
-        self.assertEqual(routes_auth._attempt_key(request), "cf:198.51.100.7")
+        self.assertEqual(routes_auth._attempt_key(request), "198.51.100.7")
 
     def test_a_lan_client_cannot_reset_the_login_rate_limit_with_forwarded_headers(self):
         request = self.request("running", {})
@@ -1030,7 +1033,7 @@ class LocalClientTests(unittest.TestCase):
 
     def test_a_tunnel_peer_uses_only_a_valid_normalized_forwarded_address(self):
         for value, expected in (("not-an-ip", "127.0.0.1"),
-                                ("2001:0db8:0:0:0:0:0:1", "cf:2001:db8::1")):
+                                ("2001:0db8:0:0:0:0:0:1", "2001:db8::1")):
             with self.subTest(value=value):
                 request = self.request("running", {"cf-connecting-ip": value})
                 self.assertEqual(routes_auth._attempt_key(request), expected)

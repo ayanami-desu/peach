@@ -21,7 +21,7 @@ def tunnel_forwarded(request: Request) -> bool:
 
 
 def local_client(request: Request) -> bool:
-    """桌面限本机，Docker 允许本机与私有网络，拒绝代理转发。"""
+    """系统对话框与诊断的物理本机检查；不用于配置管理授权。"""
     if not request.client or tunnel_forwarded(request):
         return False
     server = request.scope.get("server")
@@ -34,13 +34,6 @@ def local_client(request: Request) -> bool:
             peer = ipaddress.ip_address(request.client.host)
         except ValueError:
             return False
-    if os.environ.get("PEACH_HEADLESS_MANAGED") == "1":
-        if any(header.startswith("x-forwarded-") or header in {"forwarded", "cf-connecting-ip"}
-               for header in request.headers):
-            return False
-        return peer.is_loopback or (peer.is_private and not any((
-            peer.is_link_local, peer.is_reserved, peer.is_unspecified, peer.is_multicast,
-        )))
     if not peer.is_loopback and (peer != bound or peer.is_unspecified):
         return False
     if managed_configuration():
