@@ -155,7 +155,7 @@ def _serve(args: argparse.Namespace) -> int:
     )
     sync = _build_sync(args, settings)
     _run_uvicorn(
-        create_app(settings, sync), host=args.host, port=args.port,
+        create_app(settings, sync), host=args.host, port=args.port, proxy_headers=False,
         ssl_certfile=str(args.ssl_certfile) if args.ssl_certfile else None,
         ssl_keyfile=str(args.ssl_keyfile) if args.ssl_keyfile else None,
     )

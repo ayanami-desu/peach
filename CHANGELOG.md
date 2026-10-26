@@ -102,6 +102,7 @@ Removed / Fixed / Security。
 
 ### 新增
 
+- **配置**：配置页经反向代理访问时按登录凭据与同源检查放行，可用 `PEACH_TRUSTED_PROXIES` 指定受信代理以取得真实客户端地址。
 - **更新**：Docker 镜像同时发布到 `ghcr.io/peach-mitao/peach`，Docker Hub 拉取受限时可以改用。
 - **配置**：全新 Docker 首次打开走与桌面相同的首次设置，可设密码或免登录，不再要口令。
 
