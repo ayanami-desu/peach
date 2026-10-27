@@ -298,6 +298,8 @@ export interface ItemDetailActions {
   reveal(id: number): Promise<string>;
   /** 核对这一条所在的目录；回状态一行，外加被移入回收站的那几条。 */
   sync(id: number): Promise<{ text: string; removed: number[] }>;
+  /** 按番号重新向来源匹配元信息；只产新候选，完成的资料仍去复核页确认。 */
+  rematch(id: number): Promise<void>;
   /** 目录的「垃圾文件」那一档按回收站状态列：移入回收站之后（`undo` 为假）、撤销任何一次反馈之后
    *  （`undo` 为真）由壳判要不要重读列表。 */
   trashChanged(disposal: string | null, undo: boolean): Promise<void>;

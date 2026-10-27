@@ -400,6 +400,23 @@ function Side({ item, queue, write, helpers, actions }: {
           ? <ExternalPlayback key={item.id} id={item.id} onOpened={() => actions.toast('已请求打开本地播放器')} /> : null}
         <Identity item={item} helpers={helpers} actions={actions} />
         <Tags item={item} write={write} helpers={helpers} actions={actions} />
+        {item.medium === 'video' && item.is_jav && item.code && item.location !== 'online' ? (
+          <div className="flex">
+            <Button variant="secondary" size="small" data-rematch={item.id}
+              title="按番号重新向来源取一遍资料；完成后到复核页确认"
+              onClick={() => {
+                void confirmModal({
+                  title: '重新匹配资料？',
+                  body: '会重新向来源取这个番号的元信息，并把该番号已审完的元数据决定放回复核队列；现有字段不会自动改写。',
+                  confirmLabel: '重新匹配资料',
+                  onConfirm: async () => {
+                    await actions.rematch(item.id);
+                    actions.toast('已开始重新匹配资料，完成后到复核页确认');
+                  },
+                });
+              }}>重新匹配资料</Button>
+          </div>
+        ) : null}
         <LibraryCompletionPrompt assetIds={missingPreviewIds([item], helpers.javImage())}
           onComplete={() => { void queryClient.invalidateQueries({ queryKey: itemKey(item.id) }) }} />
         <Trace item={item} />

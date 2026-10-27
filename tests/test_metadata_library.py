@@ -3173,6 +3173,62 @@ class LibraryWatchdogTests(unittest.TestCase):
         rows = read_rows(self.root / 'generated' / 'library-metadata-field-candidates.csv')
         self.assertEqual(len({row['asset_id'] for row in rows}), 3)
 
+    def test_metadata_refresh_rechecks_existing_fields_without_fetching_a_cover(self):
+        media = self.root / 'media'
+        media.mkdir()
+        video = media / 'ABW-358.mp4'
+        video.write_bytes(b'video')
+        db = fresh_ledger(self.root)
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.execute(
+                "INSERT INTO asset(id,path,name,location,medium,code,catalog_title) "
+                "VALUES(1,?,?,'local','video','ABW-358','旧标题')",
+                (r'R:\Media\ABW-358.mp4', video.name))
+        provider = self._provider()
+        provider.query.return_value = {'id': 'ABW-358', 'title': '新标题'}
+        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
+                             locations={'local': (r'R:\Media',)},
+                             mounts={'local': (str(media),)})
+        with patch('peach.platform.settings_file.active', return_value=config):
+            result = process_library(config, db, self.root / 'generated', self.root / 'covers',
+                                     stage='metadata', asset_ids=[1], refresh_metadata=True,
+                                     provider_factory=lambda: provider)
+        self.assertFalse(provider.cover.called)
+        self.assertTrue((self.root / 'generated/library-metadata-field-candidates.csv').is_file(),
+                        result.get('issue_preview'))
+        title = next(row for row in read_rows(
+            self.root / 'generated/library-metadata-field-candidates.csv') if row['field'] == 'title')
+        fresh = next(choice for choice in json.loads(title['candidates_json'])
+                     if choice['display_value'] == '新标题')
+        self.assertTrue(fresh['requires_review'])
+
+    def test_rematch_reopens_only_the_asset_key_decision(self):
+        from peach.repository import LedgerDatabase
+        from peach.web_contract import WebContract
+        from peach.web_library_processing import _reopen_metadata_reviews
+        db = fresh_ledger(self.root)
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.execute(
+                "INSERT INTO asset(id,path,name,location,medium,code) "
+                "VALUES(1,'/media/ABW-358.mp4','ABW-358.mp4','local','video','ABW-358')")
+            connection.executemany(
+                "INSERT INTO review_decision(category,item_key,status,note,updated_at) "
+                "VALUES('metadata_fields',?,?,?, '2026-10-25T00:00:00Z')",
+                [('asset:1:title', 'approved', '{"candidate_key":"one"}'),
+                 ('ABW-358:title', 'approved', '{"candidate_key":"two"}'),
+                 ('ABW-358:tags', 'rejected', 'keep'),
+                 ('other:title', 'approved', 'keep')])
+        contract = WebContract(db, candidate_root=self.root / 'generated',
+                               database=LedgerDatabase(db))
+        _reopen_metadata_reviews(contract, 1)
+        with closing(sqlite3.connect(db)) as connection:
+            rows = dict(connection.execute(
+                "SELECT item_key,status FROM review_decision WHERE category='metadata_fields'"))
+        self.assertEqual(rows['asset:1:title'], 'skipped')
+        self.assertEqual(rows['ABW-358:title'], 'approved')
+        self.assertEqual(rows['ABW-358:tags'], 'rejected')
+        self.assertEqual(rows['other:title'], 'approved')
+
     def test_the_stage_asked_for_is_the_stage_that_runs(self):
         """页面点哪一段就跑哪一段，不认识的段数拒绝掉。
 
@@ -3210,6 +3266,41 @@ class LibraryWatchdogTests(unittest.TestCase):
                 w_library_processing(contract, {'stage':'metadata','incremental':True})
             with self.assertRaises(ValueError):
                 w_library_processing(contract, {'stage': 'thumbnails'})
+
+    def test_rematch_request_passes_refresh_to_one_asset(self):
+        from peach.web_library_processing import w_library_processing
+        media = self.root / 'media'
+        media.mkdir()
+        video = media / 'ABW-358.mp4'
+        video.write_bytes(b'video')
+        database = self.root / 'database'
+        database.mkdir()
+        db = fresh_ledger(database)
+        with closing(sqlite3.connect(db)) as connection, connection:
+            connection.execute(
+                "INSERT INTO asset(id,path,name,location,medium,code) "
+                "VALUES(1,?,?,'local','video','ABW-358')", (str(video), video.name))
+        contract = SimpleNamespace(
+            db_path=db, database=Mock(), candidate_root=self.root / 'generated',
+            cover_root=self.root / 'covers', cache_bust=lambda: None,
+            library_processing_job=SimpleNamespace(
+                snapshot=lambda: None, update=lambda *_args, **_kwargs: None,
+                start=lambda work, restart, initial, recovery: (work('job'), initial)[1]))
+        config = self._config(media)
+        with patch('peach.web_library_processing.settings_file.active', return_value=config), \
+                patch('peach.web_library_processing.process_library',
+                      return_value={'status': 'complete'}) as run, \
+                patch('peach.web_library_processing._reopen_metadata_reviews') as reopen:
+            result = w_library_processing(contract, {
+                'stage': 'metadata', 'asset_ids': [1], 'refresh': True})
+            self.assertTrue(run.call_args.kwargs['refresh_metadata'])
+            self.assertIsNone(run.call_args.kwargs['database'])
+            reopen.assert_called_once_with(contract, 1)
+            self.assertTrue(result['refresh_metadata'])
+            with self.assertRaises(ValueError):
+                w_library_processing(contract, {'stage': 'metadata', 'refresh': True})
+            with self.assertRaises(ValueError):
+                w_library_processing(contract, {'stage': 'collect', 'asset_ids': [1], 'refresh': True})
 
     def test_retry_request_accepts_only_the_previous_failure_set(self):
         from peach.web_library_processing import _retry_ids

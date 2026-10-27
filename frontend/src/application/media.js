@@ -9,7 +9,7 @@ import { scheduleStickySurfaces } from './layout.js';
 import { clearOverlayBackground, holdOverlayBackground, overlayState, takeOverlayReturn } from './../history/overlay';
 import { peachHistory, shellNavigate } from './../history/index';
 import { $, DURATION_TAGS } from '../core';
-import { apiGet } from '../api';
+import { apiGet, apiSend } from '../api';
 import { javDisplayName, javTitleHtml } from '../core/jav-title';
 import { tagLabel } from '../core/tags';
 import { pageSkeletonHtml } from './../management-placeholder';
@@ -252,6 +252,7 @@ mediaState.itemDetailActions = {
   openPlaylists:()=>openRoutedPage('/playlists'),
   reveal:id=>revealForIsland(id),
   sync:id=>syncForIsland(id),
+  rematch:async id=>{await apiSend('/api/library-processing',{stage:'metadata',asset_ids:[id],refresh:true})},
   /* 「垃圾文件」那一档（`state=ads`）按回收站状态列：移进回收站的这一条要从列表里消失，撤销
      任何一次反馈之后列表也重读一遍。别的列表不受影响。 */
   trashChanged:async(disposal,undo)=>{

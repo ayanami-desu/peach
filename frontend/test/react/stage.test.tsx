@@ -86,7 +86,7 @@ function actions(): { [K in keyof RequestActions]: Mock<RequestActions[K]> } {
     checkSource: vi.fn(async () => false), openSavedFollow: vi.fn(), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
     openTag: vi.fn(), addToPlaylist: vi.fn(), saveMix: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
     reveal: vi.fn(async () => ''), sync: vi.fn(async () => ({ text: '', removed: [] })), trashChanged: vi.fn(async () => {}),
-    toast: vi.fn(), failure: vi.fn(),
+    toast: vi.fn(), failure: vi.fn(), rematch: vi.fn(async () => {}),
   };
 }
 

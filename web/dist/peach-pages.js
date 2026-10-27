@@ -2,7 +2,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "e0055ad0-274c-46a6-a955-4d9fcf067df8", e._sentryDebugIdIdentifier = "sentry-dbid-e0055ad0-274c-46a6-a955-4d9fcf067df8");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "86667931-354b-494b-a8ee-2babd076e95a", e._sentryDebugIdIdentifier = "sentry-dbid-86667931-354b-494b-a8ee-2babd076e95a");
 	} catch {}
 })();
 var e = Object.create, t = Object.defineProperty, n = Object.getOwnPropertyDescriptor, r = Object.getOwnPropertyNames, i = Object.getPrototypeOf, a = Object.prototype.hasOwnProperty, o = (e, t) => () => (t || (e((t = { exports: {} }).exports, t, t.exports), e = null), t.exports), s = (e, i, o, s) => {
@@ -19400,6 +19400,14 @@ var Mm = [
 		icon: "database"
 	},
 	{
+		id: "gdrive",
+		name: "Google Drive",
+		label: "Google Drive",
+		default_cost: "metered",
+		cloud: !0,
+		icon: "database"
+	},
+	{
 		id: "onedrive",
 		name: "OneDrive",
 		label: "OneDrive",
@@ -22655,4 +22663,4 @@ E();
 var cv = document.getElementById("peach-page"), lv = cv ? sv[cv.dataset.page ?? ""] : void 0;
 cv && lv && (0, M.createRoot)(cv).render(/* @__PURE__ */ (0, z.jsx)(lv, { data: { ...cv.dataset } }));
 
-//# debugId=e0055ad0-274c-46a6-a955-4d9fcf067df8
+//# debugId=86667931-354b-494b-a8ee-2babd076e95a

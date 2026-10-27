@@ -1518,7 +1518,8 @@ class _RemoteSession:
 
         文件名被读成番号的创作者作品一家都不问，判据见 `catalog_rules.scrapes_as_jav`；
         本地海报在调用方那一步已经登记过，这里跳过的只是外部来源。`answered` 是在这一行
-        已经给过候选的来源（`_answered_sources`），资料那一步不再问它们。
+        已经给过候选的来源（`_answered_sources`），资料那一步不再问它们；`fetch_cover`
+        为假时只取资料，重新匹配元信息不改封面。
         """
         entries, covers = [], 0
         if not _scrapes_as_jav(row, code):
@@ -2085,7 +2086,7 @@ def _people_allowed(config):
 
 
 def _collect_allowed(remote, traffic, row, code, missing, allowed, cover_root, covered, *,
-                     update, issue, answered, received, succeeded):
+                     update, issue, answered, received, succeeded, fetch_cover=True):
     """按这一行所属媒体库的处理方式问外部来源（ADR-0116），返回 (证据条目, 新落盘的封面数)。
 
     关掉的联网步骤不问：不补资料时不带缺失字段，不补封面时不找封面，两样都关就整行不联网。
@@ -2097,7 +2098,7 @@ def _collect_allowed(remote, traffic, row, code, missing, allowed, cover_root, c
             with processing_item(row['id']):
                 found, covers = remote.collect(row, code, missing if 'metadata' in allowed else [], cover_root,
                                                update=update, issue=issue, answered=answered, received=received,
-                                               fetch_cover='cover' in allowed)
+                                               fetch_cover=fetch_cover and 'cover' in allowed)
         except ItemSkipped:
             remote.reset()
             issue(row, '已跳过这部影片，可在任务结束后重试', action='skipped', retryable=True)
@@ -2677,7 +2678,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                     retry_ids=None, active=lambda: True, stage=ALL_STAGES,
                     database=None, route_overrides=None, state_file=None, asset_ids=None,
                     resume_state=None, speed_mode=None, protected_ids=(), recheck_existing=False,
-                    incremental=False):
+                    incremental=False, refresh_metadata=False):
     """登记文件与确定的番号，外部资料保留为可复核候选。
 
     `retry_ids` 为 `None` 时处理整个馆藏；给定时只处理这些项目（上一任务记录的
@@ -2694,7 +2695,14 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
     `route_overrides` 覆盖某几种内容类型的来源链，形状与判据见
     `metadata_routes.parse_route_overrides`；不给就用内建那张表。
     `state_file` 给后台定向任务保存独立进度，共享候选写入仍使用全库处理锁。
+
+    `refresh_metadata` 只用于单个已选视频：忽略来源缓存，把现有字段一并重新问一遍，
+    以 `requires_review` 候选覆盖旧候选；不抓外部封面。调用方负责让已审完的复核决定
+    重新回到队列。
     """
+    refresh_ids = asset_ids if asset_ids is not None else retry_ids
+    if refresh_metadata and (stage != METADATA_STAGE or refresh_ids is None or len(refresh_ids) != 1):
+        raise ValueError('重新匹配只支持单个视频的资料阶段')
     selected_ids = _validate_processing_request(config, db_path, stage, asset_ids, retry_ids, database)
     from .repository import LedgerDatabase
     judgement_database = database if database is not None else LedgerDatabase(db_path)
@@ -2784,7 +2792,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
 
         update()
         remote = _RemoteSession(config, provider_factory, _MissCache(misses_path(config)),
-                                retrying=retrying, recheck_existing=recheck_existing, routes=routes)
+                                retrying=retrying or refresh_metadata, recheck_existing=recheck_existing, routes=routes)
         flush_candidates = lambda force=False: None
 
         try:
@@ -2885,7 +2893,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                 if local is None:
                     continue
                 code, verify_existing, payload, entries = local
-                verify_existing = bool(verify_existing or recheck_existing)
+                verify_existing = bool(verify_existing or recheck_existing or refresh_metadata)
                 local_fields = _fields(payload, genre_decisions) if payload else {}
                 publish(row, code, local_fields, verify_existing, entries)
                 if code or payload:
@@ -2945,6 +2953,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                     remote, traffic, row, code, missing, stages_of(row['path']), cover_root, covered,
                     update=update, issue=issue,
                     answered=() if verify_existing else _answered_sources(groups, target_key, missing),
+                    fetch_cover=not refresh_metadata,
                     received=lambda entries, row=row, code=code, fields=local_fields, verify=verify_existing:
                         publish(row, code, fields, verify, entries),
                     succeeded=lambda before=issues_before: state['issue_count'] == before)

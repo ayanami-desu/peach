@@ -371,7 +371,7 @@ class ProcessingControlTests(unittest.TestCase):
                     (key,f'R:\\Media\\{key}.mp4',f'{key}.mp4'))
         contract=SimpleNamespace(db_path=db,database=database)
         remember(db,[1,2])
-        _,ids,stage=_processing_request(contract,self.config,{}, {'stage':'collect','scope':'new'})
+        _,ids,stage,_refresh=_processing_request(contract,self.config,{}, {'stage':'collect','scope':'new'})
         self.assertEqual(ids,[1,2])
         remember(db,[3])
         self.assertEqual(_processing_request(contract,self.config,{}, {'stage':stage,'asset_ids':ids})[1],[1,2])

@@ -3684,6 +3684,11 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         download.assert_not_called()
         movie.assert_not_called()
 
+    async def test_item_detail_carries_the_media_kind(self):
+        self._seed_samples()
+        payload = (await self.client.get("/api/item?id=11", headers={"X-Token": "secret"})).json()
+        self.assertEqual(payload["medium"], "video")
+
     async def test_item_without_sample_table_has_an_empty_sample_list(self):
         payload = (await self.client.get("/api/item?id=1", headers={"X-Token": "secret"})).json()
         self.assertEqual(payload["sample_images"], [])
