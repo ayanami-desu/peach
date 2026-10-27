@@ -16,6 +16,7 @@ import {
 import { confirmModal, spinnerHtml } from '@peach/legacy/ui';
 
 import { apiGet, apiSend } from '../../api';
+import { t } from '../../i18n';
 import { Button } from '@/components/base/buttons/button';
 import { RiArrowDownSLine } from '@remixicon/react';
 import { CatalogGridPage } from '../catalog-grid/catalog-grid-page';
@@ -404,6 +405,23 @@ function Side({ item, queue, write, helpers, actions }: {
           ? <ExternalPlayback key={item.id} id={item.id} onOpened={() => actions.toast('已请求打开本地播放器')} /> : null}
         <Identity item={item} helpers={helpers} actions={actions} />
         <Tags item={item} write={write} helpers={helpers} actions={actions} />
+        {item.medium === 'video' && item.is_jav && item.code && item.location !== 'online' ? (
+          <div className="flex">
+            <Button variant="secondary" size="small" data-rematch={item.id}
+              title={t('catalog:rematch.hint')}
+              onClick={() => {
+                void confirmModal({
+                  title: t('catalog:rematch.confirmTitle'),
+                  body: t('catalog:rematch.confirmBody'),
+                  confirmLabel: t('catalog:rematch.action'),
+                  onConfirm: async () => {
+                    await actions.rematch(item.id);
+                    actions.toast(t('catalog:rematch.started'));
+                  },
+                });
+              }}>{t('catalog:rematch.action')}</Button>
+          </div>
+        ) : null}
         <LibraryCompletionPrompt assetIds={missingPreviewIds([item], helpers.javImage())}
           onComplete={() => { void queryClient.invalidateQueries({ queryKey: itemKey(item.id) }) }} />
         <Trace item={item} />

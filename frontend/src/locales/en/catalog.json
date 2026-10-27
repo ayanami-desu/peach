@@ -1,0 +1,9 @@
+{
+  "rematch": {
+    "action": "Match metadata again",
+    "hint": "Fetch this code's metadata from the sources again; confirm the results on the Review page.",
+    "confirmTitle": "Match metadata again?",
+    "confirmBody": "Peach will fetch this code's metadata from the sources again and put the reviewed metadata decisions for this code back in the review queue. Existing fields won't change automatically.",
+    "started": "Matching metadata again. Confirm the results on the Review page."
+  }
+}
