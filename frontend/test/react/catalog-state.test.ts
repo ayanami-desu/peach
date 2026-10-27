@@ -27,6 +27,13 @@ describe('目录地址与默认范围', () => {
     expect(initial('/', '?owner=someone&tag_match=bad')).toMatchObject({ owner: '', tag_match: 'all' });
   });
 
+  it('没有显式来源时不设默认范围，按实际配置的来源展示', () => {
+    expect(initial('/')).toMatchObject({ loc: '' });
+    expect(initial('/follow')).toMatchObject({ loc: '' });
+    expect(initial('/', '?q=test')).toMatchObject({ loc: '', q: 'test' });
+    expect(defaultCatalogLoc('', '?q=test', { local: true, '115': false })).toBe('');
+  });
+
   it('目录地址覆盖排序偏好，旧排序键与随机方向使用现有解析', () => {
     expect(resolveSort(null, null, preferences)).toEqual({ sort: 'new', dir: 'asc' });
     expect(resolveSort('short', null, preferences)).toEqual({ sort: 'dur', dir: 'asc' });
