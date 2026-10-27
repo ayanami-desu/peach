@@ -25,7 +25,7 @@
 
 ## 按任务读取
 
-部署读 `docs/OPERATIONS.md`，复用读 `docs/REUSE.md`，采集读 `docs/SOURCING.md`，架构取舍读相关 ADR。只展开本任务需要的章节。
+部署读 `docs/OPERATIONS.md`；日常更新与回滚见 `docs/DEPLOYMENT.md`。复用读 `docs/REUSE.md`，采集读 `docs/SOURCING.md`，架构取舍读相关 ADR。只展开本任务需要的章节。
 
 | 触发条件 | 技能 |
 | --- | --- |
