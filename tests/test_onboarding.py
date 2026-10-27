@@ -727,7 +727,7 @@ class SetupJsonContractTests(_SetupHttpCase):
         self.assertEqual(data["windows"], NATIVE_WINDOWS)
         self.assertFalse(data["standalone"])
         self.assertEqual([row["value"] for row in data["media_sources"]],
-                         ["local", "115", "pikpak", "guangya", "onedrive", "mounted"])
+                         ["local", "115", "pikpak", "guangya", "gdrive", "onedrive", "mounted"])
         self.assertEqual(data["media_source_default"], "local")
         if NATIVE_WINDOWS:
             self.assertIsNone(data["media_root"])

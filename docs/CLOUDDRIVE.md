@@ -1,6 +1,6 @@
 # CloudDrive 配置与调优
 
-Peach 支持已挂载的 115、PikPak、光鸭、OneDrive，以及「其他已挂载网盘」的文件读写。先用 CloudDrive2、OpenList 对应的挂载工具或系统文件系统把网盘接成本机目录，再由 Peach 扫描。平台账号、写入权限和实际网络连接由挂载工具负责；文件操作失败时，Peach 显示实际错误。
+Peach 支持已挂载的 115、PikPak、光鸭、Google Drive、OneDrive，以及「其他已挂载网盘」的文件读写。先用 CloudDrive2、rclone、OpenList 对应的挂载工具或系统文件系统把网盘接成本机目录，再由 Peach 扫描。平台账号、写入权限和实际网络连接由挂载工具负责；文件操作失败时，Peach 显示实际错误。
 
 光鸭云盘的上传、建文件夹、改名和移动需要 CloudDrive2 v1.1.0 或更高版本、应用写入权限和有效会员；删除、复制接口暂不可用，见 [CloudDrive 官方更新记录](https://www.clouddrive2.com/download.html)。OneDrive 与其他挂载来源也需要相应的写入权限。Peach 的文件整理支持预览、执行与回滚，云下载支持范围见下文。
 

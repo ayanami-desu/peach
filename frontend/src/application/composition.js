@@ -4,7 +4,7 @@ import { clearHomeFeed, installEntityShapeBootstrap, isFeedNewPath, loadEntitySh
 import { buildManageBar, closeStats, enterManagementSurface, loadSyncedSettings, mountManageHeader, mountSidebar, openManage, openSettings, paintListTitle, scheduleStickySurfaces, showHomeSurfaces, showManagementBody, syncHeaderActions } from './layout.js';
 import { disposeStage, mediaState, openItem, openJavMovie, openPlaylist, openQueue, openTok } from './media.js';
 import { currentBarsContext, entityState, openEntity, revealForIsland, routeEntityPage, showEntityMissing } from './entity.js';
-import { applyFilterStateInPlace, buildBars, catalogState, clearCatalogGrid, gridTaken, loadCatalog, onlineDefaultLoc, paintCatalogGrid, refreshFacetCounts, syncCatalogFilterScreen, toggleTag } from './catalog.js';
+import { applyFilterStateInPlace, buildBars, catalogState, clearCatalogGrid, gridTaken, loadCatalog, paintCatalogGrid, refreshFacetCounts, syncCatalogFilterScreen, toggleTag } from './catalog.js';
 import { openTasteSignal, routeReview } from './playlists.js';
 import { navigationState, requestOverlay, syncNavigation, syncRouteChrome } from './navigation.js';
 import { enterFollow, followState, openFollowDetail } from './follow.js';
@@ -156,8 +156,8 @@ compositionState.shellActions = {
 
   // 目录用。
   catalog:{
-    /* 地址上没写来源时的缺省：本地加 115，离线的那一处摘掉。 */
-    defaultLoc:()=>onlineDefaultLoc('local,115'),
+    /* 地址上没写来源时不设默认范围，按实际配置的来源展示。 */
+    defaultLoc:()=>'',
     /* 整页打开：筛选已由目录元素照地址写进 `state`。`retitle` 是首页 `?state=ads` 改写成垃圾文件地址的那一下：
        改写认领了，标题、侧栏与教程状态在这里补；`entering` 是从别处回到首页，顶部三层的缓存作废。
        回收站清掉搜索框，别的页把地址上的搜索词摆回框里。 */

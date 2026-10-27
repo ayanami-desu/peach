@@ -38,7 +38,7 @@ export function initialCatalogFilters(address: CatalogAddress, preferences: Cata
   const catalog = isCatalogPath(pathname) || pathname === '/trash';
   const read = (key: string) => catalog ? params.get(key) : null;
   return {
-    loc: params.get('loc') ?? 'local,115', creator: read('creator') || '', studio: read('studio') || '',
+    loc: params.get('loc') ?? '', creator: read('creator') || '', studio: read('studio') || '',
     owner: read('owner') === 'none' ? 'none' : '', tag: cleanTagFilter(read('tag')),
     tag_match: read('tag_match') === 'any' ? 'any' : 'all', len: read('len') || '',
     dur_min: read('dur_min') || '', dur_max: read('dur_max') || '', orient: read('orient') || '',
