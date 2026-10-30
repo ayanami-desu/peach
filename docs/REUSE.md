@@ -653,7 +653,7 @@ MGS 专属发行先查自营商品目录，Prestige 番号复用 `metadata_route
 - 外部项目不适合作为运行时依赖，但其公开数据模型或算法明显更成熟时，固定 revision 后作为参考
   实现；许可证不允许派生或来源不稳定时只作行为证据，不复制代码。
 
-- Python 安装与构建用 [uv](https://github.com/astral-sh/uv)（MIT/Apache-2.0，`pyproject.toml` 只设下限 `>=0.12.13`，不进依赖图）与官方 setup-uv（MIT，版本见 [测试工作流](../.github/workflows/test.yml)）：uv 项目接口、`uv.lock`、`uv sync --locked`，Dependabot 走官方 `uv` 生态。开发与构建在隔离工作树建环境，生产 venv 不参与精确同步；直接依赖精确固定，传递依赖由锁文件复现。
+- Python 安装与构建用 [uv](https://github.com/astral-sh/uv)（MIT/Apache-2.0，`pyproject.toml` 只设下限 `>=0.12.13`，不进依赖图）与官方 setup-uv（MIT）：uv 项目接口、`uv.lock`、`uv sync --locked`，Dependabot 走官方 `uv` 生态。开发与构建在隔离工作树建环境，生产 venv 不参与精确同步；直接依赖精确固定，传递依赖由锁文件复现。
   测试库复用 `tests/support/ledger.py`：迁移生成模板后复制独立临时库（[耗时](SOURCING.md#依赖与工具实测)），真实迁移测试仍执行迁移；重试测试用已有 sleeper 注入点。CI 用 GitHub Actions 独立 runner 分片与现有 unittest 入口，Peach 只维护影响域策略，不引并发测试框架（见 `TESTING.md`）。
 - 访问密码复用 Python 3.14 的 [hashlib.scrypt](https://docs.python.org/3.14/library/hashlib.html) 与 OpenSSL，浏览器会话复用 [ItsDangerous](https://itsdangerous.palletsprojects.com/en/stable/)（Pallets、BSD-3-Clause、纯 Python、wheel 16 KB、无传递依赖），本机原子配置写入用 tempfile/os.replace 与 filelock；配置管理复用强凭据认证与同源检查。Starlette SessionMiddleware 统一时长、随响应续期，满足不了每台设备自选截止时间，所以直接用同源签名库，Peach 管可选密码、截止时间与撤销，不带账户体系与迁移。
 - Cloudflare Quick Tunnel 用官方 `cloudflared`（Apache-2.0），不自写隧道协议。源码环境只管 PATH／环境变量里的进程；Windows 独立包旁路固定 `2026.9.0`，资产、地址与 SHA-256 在 `scripts/cloudflared-windows.json`，`fetch_cloudflared.ps1` 与构建脚本双重校验。就绪判据是官方 `--pidfile`（首次连上边缘才写），未连上不宣称可用。源码 HTTPS origin 用项目 CA，独立包用回环 HTTP，写请求来源校验带当前进程持有的随机 URL。

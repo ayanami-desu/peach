@@ -54,13 +54,12 @@ volumes:
 
 ## 二、镜像发布体系
 
-Peach 采用基于 GitHub Actions 的持续集成与镜像发布机制：
+本 fork 只保留两条自动流程；继承自上游的 Test、Release、项目看板同步、Star History、Windows 覆盖升级验收已从分支移除：
 
-1. **构建与临时验收**：代码推送到 GitHub 分支（如 `master` 或 `dev`）后，自动触发 `Docker` 工作流，在干净环境内完成依赖安装、 amd64 镜像构建以及 `smoke_docker.py` 临时容器冒烟验收。
-2. **镜像标签规则**：
-   * 提交 SHA 标签：`dev` 分支每次构建生成 `ghcr.io/<owner>/peach:sha-<7 位短 SHA>`，精准锁定特定代码提交。
-   * 分支标签：同一份产物同时推 `ghcr.io/<owner>/peach:dev`；`master` 与 `v*` 标签的版本发布由 `release.yml` 负责（`edge` 与版本号），`Docker` 工作流只验收不发布。
-3. **版本锁定原则**：生产部署环境的 `compose.yaml` 使用带有精准 commit 标识的 `sha-<7 位短 SHA>` 标签，不使用浮动的 `latest`，以保障服务更新的确定性与可追溯性。
+1. **dev → 镜像**：推送到 `dev` 且改动落在镜像输入（`src/**`、`web/**`、依赖清单等）时，`Docker` 工作流构建 linux/amd64 镜像，用 `smoke_docker.py` 跑临时容器冒烟，然后推送 `ghcr.io/<owner>/peach:sha-<7 位短 SHA>` 与 `:dev`。
+2. **master → 上游快照**：`同步上游` 工作流每天定时（也可手动触发）把 `peach-mitao/peach` 的 `master` 抄到本 fork 的 `master`，并在同一个提交里移除继承的工作流。手动提交到 `master` 会被下一次同步覆盖，代码改动一律落在 `dev`。
+3. **版本号与 `edge` 标签**：`release.yml` 只在上游仓库运行，本 fork 不产生版本号标签；部署用提交 SHA 标签锁定。
+4. **版本锁定原则**：生产部署环境的 `compose.yaml` 使用带有精准 commit 标识的 `sha-<7 位短 SHA>` 标签，不使用浮动的 `latest`，以保障服务更新的确定性与可追溯性。
 
 ---
 
