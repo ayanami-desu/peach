@@ -322,7 +322,10 @@ class FrontendManifestTests(unittest.TestCase):
         那正是这条断言要拦的。`git add --intent-to-add` 不能省：光 `git diff` 只看
         已跟踪的文件，构建新出的产物是未跟踪的，会被直接放过。
         """
-        workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "test.yml")
+        if not workflow.exists():
+            self.skipTest("dev 分叉只保留 docker 工作流，没有继承的 test.yml")
+        workflow = workflow.read_text(encoding="utf-8")
         for step in ("actions/setup-node", "npm --prefix frontend ci",
                      "npm --prefix frontend run typecheck", "npm --prefix frontend run lint",
                      "npm --prefix frontend test",
@@ -409,7 +412,10 @@ class BrowserSuiteWorkflowTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+        workflow = ROOT / ".github" / "workflows" / "test.yml"
+        if not workflow.exists():
+            raise unittest.SkipTest("dev 分叉只保留 docker 工作流，没有继承的 test.yml")
+        cls.workflow = workflow.read_text(encoding="utf-8")
 
     def job(self, name: str) -> str:
         found = re.search(rf"(?ms)^  {re.escape(name)}:\n(.*?)(?=^  \S|\Z)", self.workflow)
