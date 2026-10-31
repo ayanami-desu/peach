@@ -29,6 +29,7 @@ function mount(html: string): HTMLElement {
 afterEach(() => {
   document.body.replaceChildren();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('avatarFrame：圆框按人脸放大', () => {
@@ -223,6 +224,18 @@ describe('upgradeCover：派生档不够清楚就换回原件', () => {
     boxOf(fits, 333, 224);
     upgradeCover(fits);
     expect(fits.getAttribute('src')).toBe('/cover?code=B&thumb=2');
+  });
+
+  it('触屏不把 1600 档换回原件，800 档仍升到 1600', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('pointer: coarse') }));
+    const img = sized(mount('<img class="poster cover" src="/cover?code=A&thumb=1&v=3">').querySelector('img')!, 300, 200);
+    boxOf(img, 900, 600);
+    upgradeCover(img);
+    expect(new URL(img.src).search).toBe('?code=A&thumb=1&v=3');
+    const small = sized(mount('<img class="poster cover" src="/cover?code=B&thumb=2&v=4">').querySelector('img')!, 800, 538);
+    boxOf(small, 1100, 740);
+    upgradeCover(small);
+    expect(new URL(small.src).search).toBe('?code=B&thumb=1&v=4');
   });
 });
 

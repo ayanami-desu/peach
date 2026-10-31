@@ -165,6 +165,9 @@ function wideSleeve(img: HTMLImageElement): boolean {
 export function upgradeCover(img: HTMLImageElement): void {
   const tier = /[?&]thumb=([12])(?=&|$)/.exec(img.src)?.[1];
   if (!tier || !img.naturalWidth) return;
+  /* 触屏上 1600 档已经覆盖三倍屏的卡片尺寸，换回原件只多解一张 8–10 MB 的大图；
+     800→1600 仍然换，真正缺像素的窄屏单列照样能用上更清楚的一档。 */
+  if (tier === '1' && typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) return;
   const { width, height } = img.getBoundingClientRect();
   const pick = getComputedStyle(img).objectFit === 'contain' ? Math.min : Math.max;
   const scale = pick(width / img.naturalWidth, height / img.naturalHeight) * devicePixels();
