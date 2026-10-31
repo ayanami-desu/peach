@@ -184,6 +184,9 @@ const autoScrollSightings=new Map<Element,(visible:boolean)=>void>();
 export function wireAutoScroll(el:any):void{
   if(!el||autoScrollers.has(el))return;
   if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  /* 触屏上手指就在这一排里滑动，自己走会持续抢滚动位置；一轮轮询又把卡片换回原位。
+     指针是粗的就不启动，桌面鼠标照旧。 */
+  if(matchMedia('(pointer:coarse)').matches)return;
   const abort=new AbortController();
   let pos=el.scrollLeft,dir=1,last=0,frame=0,hovered=false,focused=false,onscreen=true,holdUntil=0,max=-1,resync=false;
   const listen=(target:EventTarget,type:string,fn:()=>void)=>target.addEventListener(type,fn,{passive:true,signal:abort.signal});
