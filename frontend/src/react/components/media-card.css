@@ -216,6 +216,11 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-follo
   background: var(--cover-blur, none) center / cover no-repeat;
   filter: blur(26px) brightness(.5);
 }
+/* 触屏上 iOS Safari 会在滚动时逐帧重栅格化这块 26px 模糊；背景又是 1600 档的封面，
+   重栅格一帧就闪一次。只给真的有补底的格子提升成稳定合成层，没有补底的卡不白建层。 */
+@media (pointer: coarse) {
+  .peach-react [data-media-pic][data-cover-blur]::before { transform: translateZ(0); }
+}
 .peach-react [data-media-card][data-selected] [data-media-pic]::after {
   content: "";
   position: absolute;

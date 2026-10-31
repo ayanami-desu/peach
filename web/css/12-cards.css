@@ -115,6 +115,10 @@ h2[data-page-title]{margin:0;font:var(--board-title);letter-spacing:0}
 /* 传统正封的比例留白使用同图补底，圆角由最外层统一裁切。 */
 .pic::before{content:"";position:absolute;inset:-8%;pointer-events:none;
   background:var(--cover-blur,none) center/cover no-repeat;filter:blur(26px) brightness(.5)}
+/* 触屏上给有补底的格子一个稳定合成层，理由同 React 卡：避免滚动时逐帧重栅格化 26px 模糊。 */
+@media (pointer: coarse){
+  .pic[data-cover-blur]::before{transform:translateZ(0)}
+}
 /* 预览图：单格，contain 放进固定 16:9 框 —— 不拉伸、不裁切、不改框体大小 */
 .poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
   display:block;background:#000}
