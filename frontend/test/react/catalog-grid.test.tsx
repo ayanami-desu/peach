@@ -344,6 +344,13 @@ describe('作品卡', () => {
     return { host, actions, onOpen, card: host.querySelector<HTMLElement>('[data-media-card]')! };
   };
 
+  it('角标挂在封面裁切层外，触屏不跟着封面一起被裁', async () => {
+    const { card } = await render(item(12));
+    const badge = card.querySelector<HTMLElement>('[data-media-badge]')!;
+    expect(card.querySelector('[data-media-pic]')!.contains(badge)).toBe(false);
+    expect(badge.closest('[data-media-visual]')).not.toBeNull();
+  });
+
   it('点标题打开，点署名进资料页，点「未归属」进那一批，点标签在这一屏筛它', async () => {
     const credited = await render(item(7, { creator: '某某', tags: ['苗条'] }));
     await click(credited.host.querySelector('[data-media-title]'));

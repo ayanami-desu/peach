@@ -153,7 +153,9 @@ body[data-surface="/trash"] .peach-react button[data-media-title] {
   cursor: pointer;
 }
 .peach-react [data-media-open]:focus-visible { outline: 2px solid var(--tungsten); outline-offset: 2px; }
-.peach-react [data-media-card] > :is([data-media-pic], [data-media-stack], [data-media-meta]) { position: relative; z-index: 2; }
+/* 角标挂在这一层：封面格自己收圆角，角标不跟着进裁切。 */
+.peach-react [data-media-visual] { position: relative; display: block; min-width: 0; }
+.peach-react [data-media-card] > :is([data-media-pic], [data-media-stack], [data-media-visual], [data-media-meta]) { position: relative; z-index: 2; }
 
 /* ── 视口外跳过渲染 ──
  * 跳过的是卡里的两块，封面与元信息区；卡片盒照常排版。封面高度由 `aspect-ratio` 从列宽推出，
@@ -334,7 +336,26 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-follo
   }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  .peach-react [data-media-badge] { background: var(--ground); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .peach-react [data-media-badge] { background: var(--ground); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* 触屏没有悬停来替角标让位，整页几十枚角标各自采样身后的封面，代价一直付。这里换成
+   实底或更实的深色填充，只停采样，不改变尺寸与位置。 */
+@media (pointer: coarse) {
+  .peach-react [data-media-badge] {
+    background: var(--ground);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .peach-react [data-media-status] > span {
+    background: rgb(0 0 0 / .7);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .peach-react [data-media-group] {
+    background: rgb(12 8 8 / .92);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 .peach-react [data-media-group] {
   position: absolute;

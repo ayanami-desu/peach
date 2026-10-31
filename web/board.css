@@ -980,6 +980,7 @@ body[data-surface="/trash"] .catalog-skeleton .skeletoncard>*{background:color-m
   [data-glass-pane],
   .board-library-menu.board-library-menu,
   .board-glow-menu.board-glow-menu,
+  .card .badge,
   body .peach-react :is([data-review-filter],[data-filter-glass]),
   body .peach-react [data-selection-dock],
   body [data-settings-nav],
