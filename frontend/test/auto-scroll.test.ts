@@ -4,6 +4,15 @@ import { stopAutoScroll, wireAutoScroll } from '../src/ui-kit/scroll';
 let row:HTMLElement;
 afterEach(()=>{stopAutoScroll(row);document.body.removeAttribute('data-detail-open');document.body.innerHTML='';vi.unstubAllGlobals()});
 
+it('触屏不启动自动滚动',()=>{
+  vi.stubGlobal('matchMedia',(query:string)=>({matches:query.includes('pointer:coarse')}));
+  const raf=vi.fn();
+  vi.stubGlobal('requestAnimationFrame',raf);
+  row=document.createElement('div');document.body.append(row);
+  wireAutoScroll(row);
+  expect(raf).not.toHaveBeenCalled();
+});
+
 it('详情打开时背景自动滚动停止，关闭后从当前位置继续',async()=>{
   const frames=new Map<number,FrameRequestCallback>();let id=0;
   vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.set(++id,callback);return id});
