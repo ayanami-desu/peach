@@ -9,6 +9,86 @@ import { SourceAvatar } from '../components/source-avatar';
 
 import type { FeedNew } from './feed-new';
 
+/* 轮询回来的 HTML 整段换掉会重建每一张 `<img>`，横滚位置和正在解码的封面一起打回
+   起点。这里按 `data-feed-id` 对卡片做 keyed 合并：没变的卡原样留着，变了的只换那
+   一张，顺序按新 HTML 排。Note 这类卡外节点没有图片，变了才整段换。 */
+const feedSource = new WeakMap<Element, string>();
+
+/* 写入失败时本地仍会先把按钮和卡片改成操作后的样子；保留旧节点时用服务端原文把业务状态拉回来，
+   取景、微光这些运行期修改仍留在旧节点上。 */
+function syncFeedState(old: Element, next: Element): void {
+  old.classList.toggle('isread', next.classList.contains('isread'));
+  const buttons = old.querySelectorAll<HTMLElement>('[data-feed-action]');
+  const fresh = next.querySelectorAll<HTMLElement>('[data-feed-action]');
+  buttons.forEach((button, index) => {
+    const source = fresh[index];
+    if (!source) return;
+    if (source.dataset.feedAction === undefined) delete button.dataset.feedAction;
+    else button.dataset.feedAction = source.dataset.feedAction;
+    for (const name of ['aria-pressed', 'title']) {
+      const value = source.getAttribute(name);
+      if (value === null) button.removeAttribute(name);
+      else button.setAttribute(name, value);
+    }
+  });
+}
+
+export function mergeFeedHtml(box: HTMLElement, html: string): void {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const nextNodes = [...template.content.children];
+  const currentRow = box.querySelector<HTMLElement>(':scope > .feednewrow');
+  const nextRow = nextNodes.find(node => node.classList.contains('feednewrow')) as HTMLElement | undefined;
+  if (!currentRow || !nextRow) {
+    const fresh = [...nextNodes];
+    box.replaceChildren(...fresh);
+    for (const node of fresh) {
+      feedSource.set(node, node.outerHTML);
+      node.querySelectorAll<HTMLElement>('[data-feed-id]').forEach(card => feedSource.set(card, card.outerHTML));
+    }
+    return;
+  }
+  const currentBefore = [...box.children].filter(node => node !== currentRow);
+  const nextBefore = nextNodes.filter(node => node !== nextRow);
+  if (currentBefore.map(node => node.outerHTML).join('') !== nextBefore.map(node => node.outerHTML).join('')) {
+    currentBefore.forEach(node => node.remove());
+    nextBefore.forEach(node => box.insertBefore(node, currentRow));
+  }
+  const existing = new Map<string, Element>();
+  for (const child of [...currentRow.children]) {
+    const key = (child as HTMLElement).dataset.feedId;
+    if (key) existing.set(key, child);
+    else child.remove();
+  }
+  const ordered: Element[] = [];
+  for (const next of [...nextRow.children]) {
+    const key = (next as HTMLElement).dataset.feedId;
+    const old = key ? existing.get(key) : undefined;
+    if (!old) {
+      ordered.push(next);
+      feedSource.set(next, next.outerHTML);
+      continue;
+    }
+    existing.delete(key!);
+    /* 旧节点已经被取景/微光改过类和内联样式，不能拿它的 outerHTML 当服务端原文比。 */
+    if (feedSource.get(old) !== next.outerHTML) {
+      old.replaceWith(next);
+      feedSource.set(next, next.outerHTML);
+      ordered.push(next);
+    } else {
+      syncFeedState(old, next);
+      ordered.push(old);
+    }
+  }
+  existing.forEach(node => node.remove());
+  let cursor = currentRow.firstElementChild;
+  for (const node of ordered) {
+    if (node === cursor) cursor = cursor.nextElementSibling;
+    else currentRow.insertBefore(node, cursor);
+  }
+  if (currentRow.className !== nextRow.className) currentRow.className = nextRow.className;
+}
+
 export function FeedNewRow({ feedNew, host, wire, act, settled }: {
   feedNew: FeedNew | null;
   host: HTMLElement;
@@ -28,6 +108,11 @@ export function FeedNewRow({ feedNew, host, wire, act, settled }: {
     host.hidden = !html;
     if (feedNew) settled?.(!!html);
   }, [host, html, feedNew, settled]);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || !html) return;
+    mergeFeedHtml(el, html);
+  }, [html]);
   useEffect(() => {
     if (html) wire(box.current?.querySelector('.feednewrow') ?? null);
     setSourceFaces([...box.current?.querySelectorAll<HTMLElement>('[data-feed-source-avatar]') ?? []]);
@@ -57,8 +142,7 @@ export function FeedNewRow({ feedNew, host, wire, act, settled }: {
       settled?.(false);
     }
   };
-  return html ? <><div ref={box} className="contents" onClick={(event) => { void click(event) }}
-    dangerouslySetInnerHTML={{ __html: html }} />{sourceFaces.map((face, index) => createPortal(
+  return html ? <><div ref={box} className="contents" onClick={(event) => { void click(event) }} />{sourceFaces.map((face, index) => createPortal(
       <SourceAvatar code={face.dataset.code!} person={{ name: face.dataset.name!, source_actor_id: face.dataset.actor! }} />,
-      face, `${html.length}:${index}`))}</> : null;
+      face, `${index}:${face.dataset.actor || face.dataset.code || ''}`))}</> : null;
 }
