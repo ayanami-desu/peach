@@ -106,7 +106,9 @@ export function syncJavImages(root: ParentNode, preference: unknown): void {
        模糊背景挂在卡片上而不是图片上，`removeAttribute('style')` 够不着它。 */
     img.classList.remove('panel');
     img.removeAttribute('style');
-    (img.closest('.pic,[data-media-pic]') as HTMLElement | null)?.style.removeProperty('--cover-blur');
+    const box = img.closest<HTMLElement>('.pic,[data-media-pic]');
+    box?.style.removeProperty('--cover-blur');
+    box?.removeAttribute('data-cover-blur');
     if (src && img.getAttribute('src') !== src) img.src = src;
   });
 }
@@ -124,7 +126,9 @@ export function relayoutJavImages(root: ParentNode, layout: JavLayout): HTMLImag
     img.classList.toggle('front', layout === 'big');
     img.classList.remove('panel');
     img.removeAttribute('style');
-    (img.closest('.pic,[data-media-pic]') as HTMLElement | null)?.style.removeProperty('--cover-blur');
+    const box = img.closest<HTMLElement>('.pic,[data-media-pic]');
+    box?.style.removeProperty('--cover-blur');
+    box?.removeAttribute('data-cover-blur');
     if (img.complete && img.naturalWidth) ready.push(img);
   });
   return ready;

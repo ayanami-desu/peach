@@ -36,7 +36,7 @@ describe('JAV 默认封面', () => {
     // 取景是按上一张图的折痕和尺寸算的，留着会把正封摆在一块错位的区域上。
     // 模糊背景挂在卡片上，`removeAttribute('style')` 够不着它，必须单独清。
     const root = document.createElement('div');
-    root.innerHTML = '<div class="pic" style="--cover-blur:url(&quot;/cover?code=TEST-001&quot;)">'
+    root.innerHTML = '<div class="pic" data-cover-blur="" style="--cover-blur:url(&quot;/cover?code=TEST-001&quot;)">'
       + '<img data-jav-image="1" data-jav-cover="/cover?code=TEST-001" data-jav-thumb="/poster?id=1&c=4"'
       + ' data-jav-image-layout="big" class="poster cover front panel"'
       + ' style="--panel-left:-101.3%;--panel-clip:52.63%" src="/cover?code=TEST-001"></div>';
@@ -46,10 +46,11 @@ describe('JAV 默认封面', () => {
     expect(img.classList.contains('panel')).toBe(false);
     expect(img.getAttribute('style')).toBeNull();
     expect(pic.style.getPropertyValue('--cover-blur')).toBe('');
+    expect(pic.hasAttribute('data-cover-blur')).toBe(false);
   });
   it('换版式在同一张图上换取景类名，来源不动，只交回已加载完、要立刻重算的那几张', () => {
     const root = document.createElement('div');
-    root.innerHTML = '<div data-media-pic="" style="--cover-blur:url(&quot;/cover?code=TEST-001&quot;)">'
+    root.innerHTML = '<div data-media-pic="" data-cover-blur="" style="--cover-blur:url(&quot;/cover?code=TEST-001&quot;)">'
       + '<img data-jav-image="1" data-jav-image-layout="big" class="poster cover front panel"'
       + ' style="--panel-left:-101.3%" src="/cover?code=TEST-001"></div>'
       + '<img data-jav-image="2" data-jav-image-layout="big" class="poster cover front" src="/cover?code=TEST-002">'
@@ -63,6 +64,7 @@ describe('JAV 默认封面', () => {
       .toEqual(['poster cover whole', 'poster cover whole', 'poster']);
     expect(loaded.getAttribute('style')).toBeNull();
     expect((root.firstElementChild as HTMLElement).style.getPropertyValue('--cover-blur')).toBe('');
+    expect((root.firstElementChild as HTMLElement).hasAttribute('data-cover-blur')).toBe(false);
     expect([loaded, pending, thumb].map(img => img.dataset.javImageLayout)).toEqual(['small', 'small', 'small']);
     expect(loaded.getAttribute('src')).toBe('/cover?code=TEST-001');
     // 同一版式再来一次什么都不做：卡片每次重画都会问一遍。
