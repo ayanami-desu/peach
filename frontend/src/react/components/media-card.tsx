@@ -270,7 +270,6 @@ function VideoCard({ item, variant, layout, selected, selectMode, seekSeconds, h
         ? <ArtworkGapView gap={gap} item={item} onRetry={retry} />
         : <ArtSlot artwork={artwork} identity={`${identity}#${attempt}`} relayout={(root) => relayoutCovers(root, size)}
           onFailed={onFailed} />}
-      <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '', item.cost || '') }} />
       <span data-media-check=""><Icon name="check" /></span>
       <span data-media-trash-mark=""><Icon name="trash" /><b>回收站</b></span>
       {parts && !editions ? <span data-media-group="">{`${Number(parts.count).toLocaleString()} 卷`}</span> : null}
@@ -315,6 +314,15 @@ function VideoCard({ item, variant, layout, selected, selectMode, seekSeconds, h
     </div>
   );
 
+  /* 角标不放进 `[data-media-pic]`：那一格用 `clip-path` 与蒙版收圆角，WebKit 在裁切里
+     合成 `backdrop-filter` 会闪；放到同一层的视觉框上，封面照旧裁，角标只按卡片定位。 */
+  const visual = (
+    <div data-media-visual="">
+      {pic}
+      <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '', item.cost || '') }} />
+    </div>
+  );
+
   return (
     <article ref={attach} data-media-card="" data-id={item.id} data-variant={variant}
       data-guide-video={item.location !== 'online' && !String(item.name || '').toLowerCase().endsWith('.iso') ? '' : undefined}
@@ -325,7 +333,7 @@ function VideoCard({ item, variant, layout, selected, selectMode, seekSeconds, h
       onClick={click} onMouseDown={suppressShiftTextSelection}>
       <button type="button" data-media-open="" data-open=""
         aria-label={`打开 ${shownName}${editions ? '版本' : parts ? '分卷' : '详情'}`} />
-      {stacked ? <div data-media-stack="">{pic}</div> : pic}
+      {stacked ? <div data-media-stack="">{visual}</div> : visual}
       <div data-media-meta="">
         {avatar}
         <div data-media-text="">
