@@ -77,7 +77,9 @@ export function coverAnchor(img: HTMLImageElement, ratio?: number): void {
   /* 容器比例在写任何样式之前读：先写再读，`getComputedStyle` 就得把刚弄脏的样式当场重算。
      调用方手里已经有这个数（播放墙每格自己写 `--card-ratio`）就直接传进来，一次也不读。 */
   const car = r ? ratio ?? coverRatio(img) : 0;
-  img.closest<HTMLElement>('.pic,[data-media-pic]')?.style.removeProperty('--cover-blur');
+  const box = img.closest<HTMLElement>('.pic,[data-media-pic]');
+  box?.style.removeProperty('--cover-blur');
+  box?.removeAttribute('data-cover-blur');
   if (!r) return;
   img.classList.remove('panel');
   ['--panel-aspect', '--panel-clip', '--panel-left', '--panel-top', '--panel-height', '--cover-x', '--cover-y']
@@ -140,7 +142,10 @@ export function posterPanel(img: HTMLImageElement, ratio: number): void {
 /** 传统正封的留白使用同图模糊补底，优先复用已加载的派生档。 */
 function coverBackdrop(img: HTMLImageElement): void {
   const src = (img.dataset.thumbSrc || img.currentSrc || img.src).replace(/"/g, '%22');
-  img.closest<HTMLElement>('.pic,[data-media-pic]')?.style.setProperty('--cover-blur', `url("${src}")`);
+  const box = img.closest<HTMLElement>('.pic,[data-media-pic]');
+  box?.style.setProperty('--cover-blur', `url("${src}")`);
+  /* 有补底才标属性：触屏只给这些格子提升合成层，没补底的卡不白建层。 */
+  box?.setAttribute('data-cover-blur', '');
 }
 
 function wideSleeve(img: HTMLImageElement): boolean {
