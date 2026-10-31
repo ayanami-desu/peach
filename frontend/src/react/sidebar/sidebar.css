@@ -118,6 +118,11 @@ html[data-theme-snapshot] :is([data-sidebar-drawer],[data-sidebar-glide]){backdr
 @media (prefers-reduced-motion:reduce){
   [data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{animation:none}
 }
+/* 抽屉关着也留在 DOM 里，触屏上没必要为一块看不见的玻璃继续漂；实底与去模糊在
+   `web/board.css` 的粗指针块统一收口。 */
+@media (pointer:coarse){
+  [data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{animation:none}
+}
 html[class~=board-high-contrast] [data-sidebar-drawer][data-sidebar-drawer]{background:var(--ground);backdrop-filter:none;animation:none}
 [data-sidebar-drawer]{box-shadow:0 12px 40px var(--sidebar-drop)}
 body[class~=drawer-open]{--railW:296px}

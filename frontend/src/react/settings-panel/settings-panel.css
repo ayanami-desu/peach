@@ -281,6 +281,8 @@ html[data-theme-snapshot] [data-settings-panel] :is([data-settings-glide],[data-
 [data-settings-panel] [data-settings-nav]>[data-settings-glide][hidden]{display:none}
 @supports not (backdrop-filter:blur(1px)){[data-settings-panel] [data-settings-card][data-settings-card][data-settings-card]>[data-settings-nav]{background:var(--ground);animation:none}}
 @media (prefers-reduced-transparency:reduce),(prefers-contrast:more){[data-settings-panel] [data-settings-card][data-settings-card][data-settings-card]>[data-settings-nav]{background:var(--ground);animation:none}}
+/* 实底与去模糊在 `web/board.css` 的粗指针块统一收口。 */
+@media (pointer:coarse){[data-settings-panel] [data-settings-card][data-settings-card][data-settings-card]>[data-settings-nav]{animation:none}}
 /* 落影随主题换浓淡。不写 `light-dark()`：构建会把它改写成依赖 `color-scheme` 声明的变量，这份样式表里
    没有那一条，落影就整条失效。主题标记是 `<html>` 上的 `.dark`。 */
 :is([data-settings-panel],[data-modal-kind="collections"]){--settings-card-drop:#0000000d;--settings-error-drop:#0002}
