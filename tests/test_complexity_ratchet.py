@@ -81,6 +81,10 @@ ACCEPTED: dict[str, tuple[int, str]] = {
     "scripts/sheets.py:run": (
         43, "媒体批处理：按来源选择资产并检查垃圾、并行抽帧、串行登记共用日志、计数和停止标志；"
             "已有产物复用与磁盘闸门属于同一工作循环，拆开会把退出与失败统计分散到多处"),
+    "src/peach/web_library_processing.py:_control_action": (
+        30, "按动作分派：archive、pause、resume、set_speed、skip_current、cancel 各走一条路径，"
+            "共用同一份作业身份与状态校验；任务中心的 run_id 同步也在这一层，拆开会把校验顺序"
+            "与两条控制通道分散到几处"),
 }
 
 #: 一句理由至少要说清「是哪种形状、拆开差在哪」，短于这个长度的多半只是占位。
