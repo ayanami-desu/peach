@@ -54,22 +54,21 @@ volumes:
 
 ## 二、镜像发布体系
 
-本 fork 的 GitHub Actions 只有 `dev` 的镜像构建一条自动流程；继承自上游的 Test、Release、项目看板同步、Star History、Windows 覆盖升级验收随同步从 `master` 移除，任何分支都不保留。仓库级 Actions 保持开启——关闭它会连 `dev` 的镜像产线一起停掉。
+本 fork 只有 `master` 一条分支，既是上游同步目标，也是部署分支。GitHub Actions 只保留它的 `Docker` 自动流程；继承自上游的 Test、Release、项目看板同步、Star History、Windows 覆盖升级验收在同步冲突里删除，任何分支都不保留。仓库级 Actions 保持开启——关闭它会连 `master` 的镜像产线一起停掉。
 
-1. **dev → 镜像**：推送到 `dev` 且改动落在镜像输入（`src/**`、`web/**`、依赖清单等）时，`Docker` 工作流构建 linux/amd64 镜像，用 `smoke_docker.py` 跑临时容器冒烟，然后推送 `ghcr.io/<owner>/peach:sha-<7 位短 SHA>` 与 `:dev`。
-2. **master → 上游快照（手动同步）**：把 `peach-mitao/peach` 的 `master` 同步到本 fork 的 `master`，删除 `.github/workflows/` 后作为**一个**提交推送。GitHub 只运行被推送提交里现存的工作流文件，同一次提交里删掉就不会触发；拆成两次推送或漏删，继承的流水线会随这次推送重新跑起来。提交信息末尾带 `[skip ci]` 是兜底，不是替代。手动提交到 `master` 会被下一次同步覆盖，代码改动一律落在 `dev`。
+1. **master → 镜像**：推送到 `master` 且改动落在镜像输入（`src/**`、`web/**`、依赖清单等）时，`Docker` 工作流构建 linux/amd64 镜像，用 `smoke_docker.py` 跑临时容器冒烟，然后推送 `ghcr.io/<owner>/peach:sha-<7 位短 SHA>` 与 `:master`。
+2. **上游同步**：在 `master` 上 `git rebase upstream/master`，继承的流水线在冲突里按 `git rm` 删除；不产生 merge 提交，也不维护只做快照的分支。同步后照常校验、变基推送，镜像随新提交重建。
 3. **版本号与 `edge` 标签**：`release.yml` 只在 `peach-mitao/peach` 运行，本 fork 不产生版本号与 `edge` 标签；部署用提交 SHA 标签锁定。
 4. **版本锁定原则**：生产部署环境的 `compose.yaml` 使用带有精准 commit 标识的 `sha-<7 位短 SHA>` 标签，不使用浮动的 `latest`，以保障服务更新的确定性与可追溯性。
 
-同步上游时在 `master` 上执行，只推送一次：
+同步上游时在 `master` 上执行：
 
 ```bash
 git fetch upstream
 git checkout master
-git merge --no-commit upstream/master || true   # 上游改过的工作流在这里报 modify/delete
-git rm -r -f .github/workflows                  # 这些冲突统一按删除解决
-git commit -m "chore(fork): 同步上游 master 并移除继承工作流"
-git push origin master
+git rebase upstream/master
+# 冲突：继承工作流一律 git rm；web/dist 每个提交重建后逐文件 git add
+git push --force-with-lease=refs/heads/master:<远端实测 SHA> origin master:refs/heads/master
 ```
 
 ---
