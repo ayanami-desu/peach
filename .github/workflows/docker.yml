@@ -1,11 +1,11 @@
 name: Docker
 
-# fork 上只做一件事：dev 推送时构建镜像并推到 GHCR，服务器按 sha 标签拉取。
+# fork 上只做一件事：master 推送时构建镜像并推到 GHCR，服务器按 sha 标签拉取。
 # 其余继承自上游的流水线（Test、Release、看板同步、Star History、覆盖升级验收）
 # 已从分支移除，见 docs/DEPLOYMENT.md「镜像发布体系」。
 on:
   push:
-    branches: [dev]
+    branches: [master]
     paths:
       [
         Dockerfile,
@@ -60,11 +60,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: 推送 dev 镜像
+      - name: 推送 master 镜像
         env:
           IMAGE: ghcr.io/${{ github.repository }}
         run: |
-          docker tag longmeidao/peach:test "$IMAGE:dev"
+          docker tag longmeidao/peach:test "$IMAGE:master"
           docker tag longmeidao/peach:test "$IMAGE:sha-${GITHUB_SHA::7}"
-          docker push "$IMAGE:dev"
+          docker push "$IMAGE:master"
           docker push "$IMAGE:sha-${GITHUB_SHA::7}"
