@@ -8,8 +8,10 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -111,6 +113,104 @@ class IndexTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(gfriends.load_index(Path(folder)), {})
             self.assertIsNone(gfriends.index_age(Path(folder)))
+
+    def test_same_file_signature_reuses_one_parsed_index(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache_dir = Path(folder)
+            path = cache_dir / gfriends.INDEX_NAME
+            path.write_bytes(json.dumps(FILETREE).encode("utf-8"))
+            original = gfriends.parse_filetree
+            with mock.patch.object(gfriends, "parse_filetree",
+                                   wraps=original) as parse:
+                first = gfriends.load_index(cache_dir)
+                second = gfriends.load_index(cache_dir)
+            self.assertIs(first, second)
+            self.assertEqual(parse.call_count, 1)
+
+    def test_concurrent_loads_parse_one_file_once_and_share_the_result(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache_dir = Path(folder)
+            (cache_dir / gfriends.INDEX_NAME).write_bytes(
+                json.dumps(FILETREE).encode("utf-8"))
+            started = threading.Event()
+            allow_parse = threading.Event()
+            original = gfriends.parse_filetree
+
+            def parse(body):
+                started.set()
+                self.assertTrue(allow_parse.wait(5))
+                return original(body)
+
+            with mock.patch.object(gfriends, "parse_filetree", side_effect=parse) as parsed:
+                try:
+                    with ThreadPoolExecutor(max_workers=8) as pool:
+                        futures = [pool.submit(gfriends.load_index, cache_dir)
+                                   for _ in range(8)]
+                        self.assertTrue(started.wait(5))
+                        allow_parse.set()
+                        results = [future.result(timeout=5) for future in futures]
+                finally:
+                    allow_parse.set()
+            self.assertEqual(parsed.call_count, 1)
+            self.assertTrue(all(result is results[0] for result in results))
+            self.assertIn("葵つかさ", results[0])
+
+    def test_replacing_the_file_rebuilds_the_index(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache_dir = Path(folder)
+            path = cache_dir / gfriends.INDEX_NAME
+            path.write_bytes(json.dumps(OLD_FILETREE).encode("utf-8"))
+            original = gfriends.parse_filetree
+            with mock.patch.object(gfriends, "parse_filetree",
+                                   wraps=original) as parse:
+                old = gfriends.load_index(cache_dir)
+                replacement = cache_dir / "replacement.json"
+                replacement.write_bytes(json.dumps(FILETREE).encode("utf-8"))
+                os.replace(replacement, path)
+                new = gfriends.load_index(cache_dir)
+            self.assertIn("旧人", old)
+            self.assertIn("葵つかさ", new)
+            self.assertEqual(parse.call_count, 2)
+
+    def test_missing_file_is_cached_until_it_appears(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache_dir = Path(folder)
+            self.assertEqual(gfriends.load_index(cache_dir), {})
+            (cache_dir / gfriends.INDEX_NAME).write_bytes(
+                json.dumps(FILETREE).encode("utf-8"))
+            self.assertIn("葵つかさ", gfriends.load_index(cache_dir))
+
+    def test_corrupt_file_is_cached_until_it_is_replaced(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache_dir = Path(folder)
+            path = cache_dir / gfriends.INDEX_NAME
+            path.write_bytes(b"{")
+            original = gfriends.parse_filetree
+            with mock.patch.object(gfriends, "parse_filetree",
+                                   wraps=original) as parse:
+                self.assertEqual(gfriends.load_index(cache_dir), {})
+                self.assertEqual(gfriends.load_index(cache_dir), {})
+                replacement = cache_dir / "replacement.json"
+                replacement.write_bytes(json.dumps(FILETREE).encode("utf-8"))
+                os.replace(replacement, path)
+                self.assertIn("葵つかさ", gfriends.load_index(cache_dir))
+            self.assertEqual(parse.call_count, 2)
+
+    def test_fetch_index_warms_the_load_cache_without_parsing_again(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache_dir = Path(folder)
+            body = json.dumps(FILETREE).encode("utf-8")
+
+            def transport(request, timeout=None, max_bytes=None):
+                return HttpResponse(200, {}, body, request.url)
+
+            original = gfriends.parse_filetree
+            with mock.patch.object(gfriends, "parse_filetree",
+                                   wraps=original) as parse:
+                fetched = gfriends.fetch_index(transport, cache_dir)
+                loaded = gfriends.load_index(cache_dir)
+            self.assertIs(fetched, loaded)
+            self.assertEqual(parse.call_count, 1)
 
     def test_every_name_on_the_chain_brings_its_own_pictures(self):
         """并起来，不是停在第一个命中的名字上。

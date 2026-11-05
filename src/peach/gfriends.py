@@ -16,14 +16,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import threading
 import time
 import urllib.parse
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .fsutil import atomic_write_bytes
 from .http import HttpRequest, HttpTransport
+
+
+IndexSignature = tuple[int, int, int, int] | None
+Index = dict[str, list[tuple[str, str]]]
+_INDEX_CACHE_LIMIT = 8
+_INDEX_CACHE_LOCK = threading.Lock()
+_INDEX_CACHE: OrderedDict[Path, tuple[IndexSignature, Index]] = OrderedDict()
+_UNSET = object()
 
 #: 图库的 raw 根。索引和图片都挂在它下面。
 GFRIENDS_RAW = "https://raw.githubusercontent.com/gfriends/gfriends/master/"
@@ -107,16 +118,60 @@ def index_revision(cache_dir: Path | None) -> str:
         return "missing"
 
 
+def _index_signature(stat_result: os.stat_result) -> tuple[int, int, int, int]:
+    """把已打开文件的 fstat 结果变成可比较的版本签名。"""
+    return (stat_result.st_dev, stat_result.st_ino,
+            stat_result.st_mtime_ns, stat_result.st_size)
+
+
+def _cache_index(path: Path, signature: IndexSignature, index: Index) -> None:
+    """在锁内记录一份共享索引，并按插入顺序限制路径数。"""
+    _INDEX_CACHE.pop(path, None)
+    _INDEX_CACHE[path] = (signature, index)
+    while len(_INDEX_CACHE) > _INDEX_CACHE_LIMIT:
+        _INDEX_CACHE.popitem(last=False)
+
+
+def _read_and_cache_index(path: Path, parsed: Index | object = _UNSET) -> Index:
+    """在锁内以 fstat 签名读取或记录索引；`parsed` 用于复用已解析响应。"""
+    try:
+        with path.open("rb") as handle:
+            signature = _index_signature(os.fstat(handle.fileno()))
+            cached = _INDEX_CACHE.get(path)
+            if parsed is _UNSET and cached is not None and cached[0] == signature:
+                return cached[1]
+            body = handle.read()
+    except OSError:
+        if parsed is _UNSET:
+            cached = _INDEX_CACHE.get(path)
+            if cached is not None and cached[0] is None:
+                return cached[1]
+            index: Index = {}
+            _cache_index(path, None, index)
+            return index
+        return parsed
+
+    if parsed is _UNSET:
+        try:
+            index = parse_filetree(body)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            index = {}
+    else:
+        index = parsed
+    _cache_index(path, signature, index)
+    return index
+
+
 def load_index(cache_dir: Path) -> dict[str, list[tuple[str, str]]]:
-    """只读本地缓存的索引。取不到或坏了都返回空。
+    """读取本地索引并缓存解析结果，返回共享只读视图，调用方不得修改。
 
     这里从不联网：页面这一侧宁可少列几个候选，也不该在一次点击里同步拉 6 MB。
-    缓存由 `fetch_index` 补，服务在后台调它（`avatar_picker.IndexRefresher`）。
+    缓存由 `fetch_index` 补，服务在后台调它（`avatar_picker.IndexRefresher`）。同一路径
+    的文件签名不变时返回同一份字典；文件缺失或 JSON 损坏也会按当前签名记住空字典。
     """
-    try:
-        return parse_filetree((cache_dir / INDEX_NAME).read_bytes())
-    except (OSError, KeyError, TypeError, ValueError):
-        return {}
+    path = (cache_dir / INDEX_NAME).resolve()
+    with _INDEX_CACHE_LOCK:
+        return _read_and_cache_index(path)
 
 
 def fetch_index(transport: HttpTransport, cache_dir: Path) -> dict[str, list[tuple[str, str]]]:
@@ -124,6 +179,7 @@ def fetch_index(transport: HttpTransport, cache_dir: Path) -> dict[str, list[tup
 
     任何一步失败都抛出，旧缓存原样留着：过期的索引照样能查，只是新收的人查不到，
     比换成半个 JSON 强。写缓存用临时文件加 `os.replace`，读的一方只会看到完整的一份。
+    响应体已经解析过，写盘后直接把这份结果预热进 `load_index` 的进程内缓存。
     """
     response = transport(HttpRequest("GET", INDEX_URL, {"Accept": "application/json"}),
                          INDEX_TIMEOUT, INDEX_MAX_BYTES)
@@ -132,7 +188,10 @@ def fetch_index(transport: HttpTransport, cache_dir: Path) -> dict[str, list[tup
     if len(response.body) > INDEX_MAX_BYTES:
         raise ValueError("Gfriends 索引超过大小上限")
     index = parse_filetree(response.body)
-    atomic_write_bytes(cache_dir / INDEX_NAME, response.body)
+    path = (cache_dir / INDEX_NAME).resolve()
+    with _INDEX_CACHE_LOCK:
+        atomic_write_bytes(path, response.body)
+        _read_and_cache_index(path, index)
     return index
 
 
