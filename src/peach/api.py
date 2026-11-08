@@ -73,7 +73,7 @@ from .previews import (
 from .follow_secrets import credential_store_for
 from .push_discovery import PushDiscoveryService
 from .web_downloads import build_download_service
-from .web_local_access import local_client
+from .web_local_access import first_access_client
 from .sample_images import SampleCache
 from .sample_images import cache_root as sample_cache_root
 from .providers import OpenCodeGoClient, default_registry
@@ -146,7 +146,7 @@ class ResponseHeadersMiddleware:
 class FirstSetupSourceMiddleware:
     """Docker 首次设置完成前，服务没有口令也没有访问策略，谁连得上谁就能调接口（ADR-0149）。
 
-    这段时间 `/api/` 与写请求只收 `local_client` 认的来源：本机或私有网络、不带代理转发头。
+    这段时间 `/api/` 与写请求只收 `first_access_client` 认的来源：本机或私有网络、不带代理转发头。
     页面壳与静态资源照常给，来源不满足的浏览器也能看到首次设置页上那句说明。配置完成后
     服务换成正常模式，由口令与访问策略把关，这一层不再起作用。
     """
@@ -160,7 +160,7 @@ class FirstSetupSourceMiddleware:
             settings = request.app.state.settings
             if (not settings.configured
                     and (scope["path"].startswith("/api/") or scope["method"] not in {"GET", "HEAD"})
-                    and not local_client(request)):
+                    and not first_access_client(request)):
                 response = JSONResponse({"error": FIRST_ACCESS_DENIED, "docker": True}, status_code=403)
                 await response(scope, receive, send)
                 return

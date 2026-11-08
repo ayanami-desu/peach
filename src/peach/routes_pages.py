@@ -46,7 +46,7 @@ from .entities import resolve_entity, resolve_entity_id
 from .media_libraries import LIBRARY_ICONS
 from .routes_auth import (FIRST_ACCESS_DENIED, origin_allowed, query_auth_redirect, require_asset_auth,
                           require_page_auth, set_auth_cookie)
-from .web_local_access import local_client
+from .web_local_access import first_access_client
 from .web_entry import page_shell, runtime_fact_entries
 from .web_state import FAVICON
 
@@ -425,7 +425,7 @@ def _setup_guard(request: Request, *, submit: bool) -> None:
     形态各不相同因为原因各不相同：已经配置过的机器上这些端点根本不存在（404，不是
     「禁止」——把它做成一条可探测的 403 等于对外宣告这里有个初始化入口）；非回环调用方是
     403（引导服务只绑 127.0.0.1，能走到这里说明有人转发了它）；独立包认地址栏里的主机名，
-    不是回环写法也是 403。Docker 的请求都从网桥进来，不能只认回环，改按 `local_client`
+    不是回环写法也是 403。Docker 的请求都从网桥进来，不能只认回环，改按 `first_access_client`
     收本机与私有网络、不带代理转发头的来源（ADR-0149），403 正文带 `docker` 让页面说清楚去哪里打开。
     提交再按 `origin_allowed` 看来源：从别的页面发来的表单不收，隧道地址在首启时不算本机。
     """
@@ -433,7 +433,7 @@ def _setup_guard(request: Request, *, submit: bool) -> None:
     if settings.configured:
         raise HTTPException(status_code=404, detail="not found")
     if distribution.docker():
-        if not local_client(request):
+        if not first_access_client(request):
             raise HTTPException(status_code=403, detail={"message": FIRST_ACCESS_DENIED, "docker": True})
         if submit and not origin_allowed(request, guard="setup", tunnels=False):
             raise HTTPException(status_code=403, detail="请从 Peach 设置页提交")

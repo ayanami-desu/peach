@@ -19,7 +19,7 @@ import time
 from urllib.parse import urlsplit
 from . import access, distribution, tunnel
 from .web_entry import page_shell
-from .web_local_access import local_client
+from .web_local_access import first_access_client
 from starlette.concurrency import run_in_threadpool
 from urllib.parse import parse_qs
 
@@ -378,14 +378,14 @@ def login_mode(request: Request) -> str:
 
     有访问策略时是 `password`，框里填访问密码。没有策略（`legacy`）时，非 Docker 部署
     填自动生成的访问口令；Docker 已经配置过（全新部署走首次设置页）时改在这里设访问密码或选免登录
-    （`setup`），来源须过 `local_client`：本机或私有网络、不带代理转发头。来源不满足的是
+    （`setup`），来源须过 `first_access_client`：本机或私有网络、不带代理转发头。来源不满足的是
     `denied`，只能用口令登录（ADR-0149）。
     """
     if access.load(request.app.state.settings.access_path)["mode"] != "legacy":
         return "password"
     if not distribution.docker():
         return "legacy"
-    return "setup" if local_client(request) else "denied"
+    return "setup" if first_access_client(request) else "denied"
 
 
 def login_html(next_path: str, *, mode: str = "password", invalid: bool = False, error: str = "") -> str:

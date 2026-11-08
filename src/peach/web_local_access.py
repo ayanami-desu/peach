@@ -44,3 +44,19 @@ def local_client(request: Request) -> bool:
         if (request.url.hostname or "").lower().rstrip(".") not in hosts:
             return False
     return True
+
+
+def first_access_client(request: Request) -> bool:
+    """Docker 首次设置与访问设置的来源：本机或私有网络，且不携带代理转发头。"""
+    if not request.client or tunnel_forwarded(request):
+        return False
+    try:
+        peer = ipaddress.ip_address(request.client.host)
+    except ValueError:
+        return False
+    if any(header.startswith("x-forwarded-") or header in {"forwarded", "cf-connecting-ip"}
+           for header in request.headers):
+        return False
+    return peer.is_loopback or (peer.is_private and not any((
+        peer.is_link_local, peer.is_reserved, peer.is_unspecified, peer.is_multicast,
+    )))
