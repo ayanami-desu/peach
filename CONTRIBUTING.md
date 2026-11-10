@@ -1,10 +1,10 @@
 # 参与 Peach
 
-Issues and pull requests are welcome. Maintainer-authored changes follow the same PR workflow. Small fixes (bugs, copy, documentation, tests) can go straight to a PR; complex bugs and large changes — new features, default behavior, connectors, contract or data-layer changes, anything an ADR covers — should have an issue first. Read [`AGENTS.md`](AGENTS.md) before opening a PR: it is the single entry point for development rules, and reviews follow it. Issues follow the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/); the terms and delivery format in `AGENTS.md` are for code changes only. Each platform has exactly one test entry point: `& .\scripts\test.ps1` on Windows and `./scripts/test.sh` on macOS/Linux. By submitting a contribution you agree to license it under AGPL-3.0-or-later. The rest of this document is in Chinese.
+Issues and pull requests are welcome. Maintainer-authored changes are committed directly from isolated worktrees to master; community contributions use pull requests. Small fixes (bugs, copy, documentation, tests) can go straight to a PR; complex bugs and large changes — new features, default behavior, connectors, contract or data-layer changes, anything an ADR covers — should have an issue first. Read [`AGENTS.md`](AGENTS.md) before opening a PR: it is the single entry point for development rules, and reviews follow it. Issues follow the templates in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/); the terms and delivery format in `AGENTS.md` are for code changes only. Each platform has exactly one test entry point: `& .\scripts\test.ps1` on Windows and `./scripts/test.sh` on macOS/Linux. By submitting a contribution you agree to license it under AGPL-3.0-or-later. The rest of this document is in Chinese.
 
-Peach 是单人自托管应用，由一个人维护。欢迎提 Issue 和 PR。维护者自己的改动也遵循同一套流程，通过 PR 保留审阅与验证记录。
+Peach 是单人自托管应用，由一个人维护。欢迎提 Issue 和 PR。维护者自己的改动从隔离工作树直接合入主分支；社区贡献通过 PR 保留审阅与验证记录。
 
-- 小修（修缺陷、改文案、补文档、补测试）可以直接提 PR。
+- 小修（修缺陷、改文案、补文档、补测试）可以直接提交或提 PR。
 - 复杂缺陷和大改动（新功能、新页面、新连接器、默认行为、接口约定或数据层、涉及 ADR 的方向）先有 issue，复用已有问题记录。
 
 提交贡献即表示同意以 AGPL-3.0-or-later 授权。
