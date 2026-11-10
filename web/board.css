@@ -101,13 +101,10 @@
 }
 /* 搜索框使用浏览器原生模糊，尺寸变化不依赖异步 SVG 位移贴图。 */
 .top .search.search.search{--glass-optic:blur(22px)}
-/* 漂移的两团由宿主里那一层 `[data-glass-drift]` 画：同样两倍大的画布、同一条李萨如轨迹，只是画布
-   本身靠 `transform` 推着走，整段动画在合成线程上跑。`background-position` 每一帧都要主线程把整块
-   玻璃重画一遍，首页静置三秒里这一项就占掉三百多毫秒。
-   换算：画布两倍大时，`background-position` 的 P% 等于画布左上角挪到 -P×元素宽，也就是挪自身宽度
-   的 -P/2，关键帧逐个对应（-10%→5%、7.6%→-3.8%、50%→-25%、92.4%→-46.2%、110%→-55%），都是线性插值，
-   轨迹一点不差。横竖两根轴的时长不同，分在嵌套的两层上各走各的。
-   宿主自己那两层光斑尺寸压成 0、漂移撤掉，斜光和底色原样留着；没挂上这一层的宿主仍走上面那条。
+/* 两团静止的反光由宿主里那一层 `[data-glass-drift]` 画：两倍大的画布保留原来的起始位置，不再
+   用 `transform` 走李萨如轨迹。顶栏常驻可见，持续漂移会让合成器全天候重采样，实测 GPU 进程
+   从约 4% 涨到约 74%；这两团光本来也看不出在动，停住后玻璃的厚度和高光不变。
+   宿主自己那两层光斑尺寸压成 0、动画撤掉，斜光和底色原样留着；没挂上这一层的宿主仍走上面那条。
    负层号把它压在宿主的面之上、内容之下，和原来那两层背景的位置一样；快照那一下宿主的
    `backdrop-filter` 被撤掉，`isolation` 保证它仍是层叠上下文，光斑不会掉到宿主底色后面。
    侧栏抽屉和它里面的光晕层不挂这一层：抽屉的 `backdrop-filter` 带着 SVG 位移滤镜（`url(#peach-optic-…)`），
@@ -120,24 +117,18 @@
 [data-glass-drift]{display:none}
 :is(.board-filter-frame,.entitycollectionhead,.top .search,.top>.ib,[data-glass-pane])>[data-glass-drift]{
   display:block;position:absolute;inset:0;z-index:-3;overflow:hidden;border-radius:inherit;pointer-events:none}
-[data-glass-drift]>span{position:absolute;left:0;top:0;width:200%;height:200%;
-  animation:calc(41s * var(--glow-drift-scale)) linear infinite;animation-play-state:var(--glow-drift-play)}
-[data-glass-drift]>span>span{position:absolute;inset:0;
-  animation:calc(67s * var(--glow-drift-scale)) linear infinite;animation-play-state:var(--glow-drift-play)}
-/* 静止位置就是原来的 `background-position:50% 20%,80% 70%`：减少动效时动画撤掉，停在这里。 */
-[data-glass-drift]>[data-drift="a"]{transform:translateX(-25%);animation-name:drift-k1-x}
-[data-glass-drift]>[data-drift="a"]>span{transform:translateY(-10%);animation-name:drift-k3-y;background:var(--glass-drift-a)}
-[data-glass-drift]>[data-drift="b"]{transform:translateX(-40%);animation-name:drift-k2-x}
-[data-glass-drift]>[data-drift="b"]>span{transform:translateY(-35%);animation-name:drift-k1-y;background:var(--glass-drift-b)}
+[data-glass-drift]>span{position:absolute;left:0;top:0;width:200%;height:200%}
+[data-glass-drift]>span>span{position:absolute;inset:0}
+
+/* 静止位置就是原来的 `background-position:50% 20%,80% 70%`：动画撤掉，停在这里。 */
+[data-glass-drift]>[data-drift="a"]{transform:translateX(-25%)}
+[data-glass-drift]>[data-drift="a"]>span{transform:translateY(-10%);background:var(--glass-drift-a)}
+[data-glass-drift]>[data-drift="b"]{transform:translateX(-40%)}
+[data-glass-drift]>[data-drift="b"]>span{transform:translateY(-35%);background:var(--glass-drift-b)}
 /* 高对比、减少透明度与不支持背景模糊时宿主换成实底，原来那两层光斑跟着没了，这一层同样不出。 */
 html.board-high-contrast [data-glass-drift]{display:none!important}
 @media(prefers-reduced-transparency:reduce),(prefers-contrast:more){[data-glass-drift]{display:none!important}}
 @supports not (backdrop-filter:blur(1px)){[data-glass-drift]{display:none!important}}
-/* 四组关键帧就是 glassdriftx／glassdrifty 那几列百分比各自除以 -2。 */
-@keyframes drift-k1-x{0%{transform:translateX(-25%)}12.5%{transform:translateX(-3.8%)}25%{transform:translateX(5%)}37.5%{transform:translateX(-3.8%)}50%{transform:translateX(-25%)}62.5%{transform:translateX(-46.2%)}75%{transform:translateX(-55%)}87.5%{transform:translateX(-46.2%)}100%{transform:translateX(-25%)}}
-@keyframes drift-k2-x{0%{transform:translateX(-25%)}12.5%{transform:translateX(-46.2%)}25%{transform:translateX(-55%)}37.5%{transform:translateX(-46.2%)}50%{transform:translateX(-25%)}62.5%{transform:translateX(-3.8%)}75%{transform:translateX(5%)}87.5%{transform:translateX(-3.8%)}100%{transform:translateX(-25%)}}
-@keyframes drift-k1-y{0%{transform:translateY(-25%)}12.5%{transform:translateY(-3.8%)}25%{transform:translateY(5%)}37.5%{transform:translateY(-3.8%)}50%{transform:translateY(-25%)}62.5%{transform:translateY(-46.2%)}75%{transform:translateY(-55%)}87.5%{transform:translateY(-46.2%)}100%{transform:translateY(-25%)}}
-@keyframes drift-k3-y{0%{transform:translateY(5%)}12.5%{transform:translateY(-3.8%)}25%{transform:translateY(-25%)}37.5%{transform:translateY(-46.2%)}50%{transform:translateY(-55%)}62.5%{transform:translateY(-46.2%)}75%{transform:translateY(-25%)}87.5%{transform:translateY(-3.8%)}100%{transform:translateY(5%)}}
 /* 快照里的玻璃使用实底承接光晕；实时页面恢复后再采样背景。 */
 html[data-theme-snapshot] :is(.board-filter-frame,.entitycollectionhead,.search,.top>.ib,.board-library-menu,.board-glow-menu,.viewglide,[data-view-glide],[data-glass-pane]){backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background-color:var(--ground)!important;transition:none!important}
 /* 快照撤掉那一下，材质要淡回来：揭示动画刚停，浮层从实底「啪」地跳成毛玻璃，读起来

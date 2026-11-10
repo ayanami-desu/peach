@@ -115,6 +115,13 @@
   transition:opacity var(--motion-reveal),filter var(--motion-reveal),visibility 0s var(--motion-reveal)}
 .imgwait::after{opacity:1;filter:none;visibility:visible;transition-delay:180ms;
   animation:skeleton-sweep 1.5s ease-in-out infinite reverse}
+/* 旧层的微光写在伪元素上，减少动效要单独关掉这些伪元素的动画。 */
+@media (prefers-reduced-motion:reduce){
+  .skeleton::after,.skeletoncard i::after,.skeletoncard b::after,.skeletoncard em::after,
+  .skeletoncard s::after,.skeletoncard u::after,
+  .countskeleton::after,.avskeleton .ring::after,.avskeleton .nm::after,
+  .brandskeleton::after,.tagskeleton::after,.imgwait::after{animation:none}
+}
 @starting-style{.imgwait::after{opacity:0;filter:blur(2px)}}
 /* 微光只在看得见时扫（`frontend/src/ui-kit/sweep-gate.ts` 标 `data-sweep`）：框在视口外是
    `idle`，动画停在原处；露面后等了十秒图还没来是 `stalled`，换成不动的占位面。 */

@@ -83,10 +83,10 @@ html>body{padding-left:var(--railW)}
 /* ── Board UI：玻璃与面板 ── */
 /* 换主题时整页先截一张快照，玻璃在快照里画成实底，免得模糊层闪一下。 */
 html[data-theme-snapshot] :is([data-sidebar-drawer],[data-sidebar-glide]){backdrop-filter:none!important;background-color:var(--ground)!important;transition:none!important}
-[data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{background:var(--glass-drift-a),var(--glass-drift-b),linear-gradient(125deg,var(--glass-sheen),transparent 42%,var(--glass-low)),var(--glass-fill);background-size:200% 200%,200% 200%,auto;background-repeat:no-repeat,no-repeat,repeat;background-position:50% 20%,80% 70%,0 0;animation:glassdriftx calc(41s * var(--glow-drift-scale)) linear infinite,glassdrifty calc(67s * var(--glow-drift-scale)) linear infinite;animation-play-state:var(--glow-drift-play);backdrop-filter:var(--glass-optic,blur(22px)) saturate(160%) var(--glass-lume);border:0;box-shadow:inset 0 1px 0 var(--glass-rim),inset 1px 0 0 var(--glass-low),inset -1px 0 0 var(--glass-low),inset 0 -1px 0 var(--glass-low),var(--glass-shadow)}
-/* 抽屉这块玻璃上的反光归 `.glowlayer`：用户配得了色的三枚光晕按同一套 drift 在这里漂，自带那两团留着
-   就是两套光斑叠着走，亮的那一档会把配好的颜色冲淡成灰。「玻璃原色」那一档（根上挂 `data-glow-native`）
-   光晕整层算作 0，抽屉把自己那两团拿回来，否则它会是全场唯一一块不反光的玻璃。 */
+[data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{background:var(--glass-drift-a),var(--glass-drift-b),linear-gradient(125deg,var(--glass-sheen),transparent 42%,var(--glass-low)),var(--glass-fill);background-size:200% 200%,200% 200%,auto;background-repeat:no-repeat,no-repeat,repeat;background-position:50% 20%,80% 70%,0 0;backdrop-filter:var(--glass-optic,blur(22px)) saturate(160%) var(--glass-lume);border:0;box-shadow:inset 0 1px 0 var(--glass-rim),inset 1px 0 0 var(--glass-low),inset -1px 0 0 var(--glass-low),inset 0 -1px 0 var(--glass-low),var(--glass-shadow)}
+/* 抽屉这块大面积玻璃的两团反光停在静态位置；连续 background-position 会让 backdrop-filter 每帧重采样，
+   代价太高，所以保留光斑与玻璃材质但不再让它们漂移。用户配得了色的三枚光晕同样静止，
+   「玻璃原色」那一档（根上挂 `data-glow-native`）仍由变量控制是否保留这两团。 */
 :root:not([data-glow-native]) [data-sidebar-drawer][data-sidebar-drawer]{--glass-drift-a:none;--glass-drift-b:none}
 /* 当前项底下那块玻璃：岛把它挂在抽屉上，由 `use-view-glide.ts` 在各项之间滑。当前项跟筛选条上滑动的
    那一块是同一种东西，一块提亮的玻璃压在侧栏这块玻璃上；导航的当前项不靠颜色说话，靠它比邻居高出一层。
@@ -109,14 +109,6 @@ html[data-theme-snapshot] :is([data-sidebar-drawer],[data-sidebar-glide]){backdr
 }
 @media (prefers-reduced-transparency:reduce),(prefers-contrast:more){
   [data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{background:var(--ground);backdrop-filter:none;animation:none}
-}
-@media (prefers-reduced-motion:reduce){
-  [data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{animation:none}
-}
-/* 抽屉关着也留在 DOM 里，触屏上没必要为一块看不见的玻璃继续漂；实底与去模糊在
-   `web/board.css` 的粗指针块统一收口。 */
-@media (pointer:coarse){
-  [data-sidebar-drawer][data-sidebar-drawer],[data-sidebar-drawer][data-sidebar-drawer][class~=open]{animation:none}
 }
 html[class~=board-high-contrast] [data-sidebar-drawer][data-sidebar-drawer]{background:var(--ground);backdrop-filter:none;animation:none}
 [data-sidebar-drawer]{box-shadow:0 12px 40px var(--sidebar-drop)}

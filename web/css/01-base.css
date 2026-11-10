@@ -47,15 +47,14 @@
      颜色与 frontend/src/appearance/home-glow.ts 里那一档一字不差，页面第一帧和 applyHomeGlow() 写完之后画面相同。
      只有颜色那三个由设置面板写到 `.glowlayer` 自己的行内样式上，写在这一层而不是 <html>
      上的理由记在下面那条规则里；半轴和收边只有这一份，用户不调、也不进 localStorage。
-     圆心根本不在参数里：三枚光晕是侧栏玻璃面上那两团反光换成的，位置由 glowdrift 那两条
-     动画一直推着走，写死一个圆心等于把会动的光钉成一张贴图。存几何还有第二重代价——
-     旧版本那套横躺在页面顶部的坐标会原样跟着老用户留下来。
-     半轴的参照是一张两倍于侧栏的画布（和 board.css 里 --glass-drift-a/b 同一套算法），
+     三枚光晕的圆心与大小仍由这些变量描述，但位置固定在侧栏玻璃的静态背景上。
+     连续 background-position 与 backdrop-filter 叠加会让大面积抽屉每帧重采样，成本过高，
+     因此不再让这层光晕漂移；保留固定位置仍能让玻璃看见反光。
+     半轴的参照仍是一张两倍于侧栏的画布（和 board.css 里 --glass-drift-a/b 同一套尺寸），
      20% 落到侧栏上就是 40%，跟着侧栏自己的长宽各向异性地拉成椭圆。
      「大小」和「柔化」两条拉条各自乘在半轴与收边上，倍率由页面写进 --glow-size 与
      --glow-soften；基准值留在这里，用户存的是那两条拉条的档位，不是算完的百分比。
-     「漂移速度」同理写进 --glow-drift-scale（时长倍率）与 --glow-drift-play：拉到 0 时
-     暂停漂移那两条动画，不去算一个除以零的时长。
+     其它玻璃面的漂移仍读取 --glow-drift-scale 与 --glow-drift-play；侧栏这层不再引用它们。
      --glow-lerp 是插值空间：默认空串等于按 sRGB 插，认得 `in oklab` 的引擎在下面那条
      @supports 里把它换成 `in oklab`。写成变量而不是把整段 background 抄第二遍，是因为
      两份三层渐变里任何一层改歪一个百分点都看不出来，而它们本该永远相同。 */
@@ -197,21 +196,18 @@ body{background:var(--page);color:var(--ink);
    三层都只引用 --glow-* 变量，这里一个颜色都不写死：用户在设置面板里换配色时，改的就是
    那组变量，规则本身不动。插值空间走 --glow-lerp。
 
-   这一层画的就是侧栏玻璃面自带的那两团慢漂反光，换成用户配得了色的三枚。board.css 那条
-   玻璃规则把 --glass-drift-a/b 铺在每一块玻璃上，抽屉这一块交给这里来铺（侧栏岛的
-   `sidebar.css` 因此把抽屉上的两个变量置为 none，两套光斑叠着漂会糊成一团）；搜索框、筛选浮层、图标钮
-   那些玻璃面保持自己原来的漂移不动——它们身上那一点正是从侧栏折射过去的光。
+   这一层画的就是侧栏玻璃面上的三枚用户配色光晕。board.css 那条玻璃规则把 --glass-drift-a/b
+   铺在每一块玻璃上，抽屉这一块交给这里来铺（侧栏岛的 `sidebar.css` 因此把抽屉上的两个变量置为
+   none）；搜索框、筛选浮层、图标钮那些玻璃面保持自己原来的漂移不动。
    正文身后什么都不铺：整条页面宽的光带是背景不是光晕，字压在上面读不出来。
 
-   位置不是参数，由 glowdriftx/glowdrifty 一直推着走，算法照搬 board.css 那两条：画布是
-   元素的两倍大，background-position 从 0% 到 100% 正好把光斑中心从右下角推到左上角，
-   -10% 与 110% 那两档让它探出框外一点。三枚各走一条相位不同的李萨如轨迹，横竖两条动画
-   41s 与 67s 互质，合起来四十多分钟不重样。
+   位置固定在抽屉玻璃给定的 background-position，避免连续 background-position 与 backdrop-filter
+   叠加后让大面积玻璃每帧重采样；两团静态光斑仍保留厚度与层次。
    z-index 取 -2：抽屉 #drawer 自己带 backdrop-filter，是一个层叠上下文，负层只压在它那块玻璃
    填充之上、被导航内容全部盖住；-1 已经归了选中项那块玻璃 [data-sidebar-glide]，光晕要在它下面。
    溢出由抽屉的 overflow:hidden 连圆角一起裁掉，这一层不必自己再写一遍圆角。
-   首屏 ambient-in 那一下淡入留着：这一层一直在动，开页时从 0 亮起来读成「灯亮了」，
-   直接带着满强度出现反而像一张贴图突然贴上去。 */
+   首屏 ambient-in 这一下淡入保留：静态光斑从 0 亮起来读成「灯亮了」，直接带着满强度出现
+   反而像一张贴图突然贴上去。 */
 .glowlayer{--ambient-opacity:calc(var(--glow-strength) * var(--glow-theme-scale));
   position:absolute;inset:0;z-index:-2;pointer-events:none}
 .glowlayer::before{content:"";position:absolute;z-index:0;pointer-events:none;inset:0;
@@ -221,32 +217,8 @@ body{background:var(--page);color:var(--ink);
     radial-gradient(var(--glow-lerp) var(--glow-spot-3-w) var(--glow-spot-3-h) at 50% 50%,var(--glow-spot-3-color),transparent var(--glow-spot-3-fade));
   background-size:200% 200%;background-repeat:no-repeat;
   background-position:50% 20%,80% 70%,20% 80%;
-  animation:glowdriftx calc(41s * var(--glow-drift-scale)) linear infinite,glowdrifty calc(67s * var(--glow-drift-scale)) linear infinite,ambient-in .8s ease .5s both;
-  animation-play-state:var(--glow-drift-play),var(--glow-drift-play),running}
-/* 三条轨迹是同一条李萨如曲线的三个相位：第一枚与 board.css 的 --glass-drift-a 同相，
-   第二枚是它的镜像，第三枚横向错四分之一周期、纵向错八分之一，三枚因此从不在同一处会合。 */
-@keyframes glowdriftx{
-  0%{background-position-x:50%,50%,110%}
-  12.5%{background-position-x:7.6%,92.4%,92.4%}
-  25%{background-position-x:-10%,110%,50%}
-  37.5%{background-position-x:7.6%,92.4%,7.6%}
-  50%{background-position-x:50%,50%,-10%}
-  62.5%{background-position-x:92.4%,7.6%,7.6%}
-  75%{background-position-x:110%,-10%,50%}
-  87.5%{background-position-x:92.4%,7.6%,92.4%}
-  100%{background-position-x:50%,50%,110%}
-}
-@keyframes glowdrifty{
-  0%{background-position-y:-10%,50%,7.6%}
-  12.5%{background-position-y:7.6%,7.6%,50%}
-  25%{background-position-y:50%,-10%,92.4%}
-  37.5%{background-position-y:92.4%,7.6%,110%}
-  50%{background-position-y:110%,50%,92.4%}
-  62.5%{background-position-y:92.4%,92.4%,50%}
-  75%{background-position-y:50%,110%,7.6%}
-  87.5%{background-position-y:7.6%,92.4%,-10%}
-  100%{background-position-y:-10%,50%,7.6%}
-}
+  animation:ambient-in .8s ease .5s both}
+/* 三枚光晕共用固定位置，只保留 ambient-in 的首屏淡入；不再用 background-position 漂移。 */
 /* 认得 oklab 插值的引擎在这里才拿到它。反过来写——默认 `in oklab`、老引擎再关掉——
    的后果是老引擎把整条 background 判成无效，首页顶上一片光都没有，而不是退回 sRGB。 */
 @supports (background:linear-gradient(in oklab,red,blue)){:root{--glow-lerp:in oklab}}

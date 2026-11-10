@@ -16,7 +16,7 @@ type GlowField = 'strength' | 'noise' | 'speed' | 'soften' | 'size';
 
 /* 一档配色就是三枚光晕的颜色与不透明度；开关、强度和颗粒不属于配色，换档时不动。
    椭圆半轴和收边位置不在这里，只有 web/css/01-base.css 一份，用户不调、也不存；圆心
-   根本不存在——三枚光晕由 glowdrift 那两条动画一直推着走，那是侧栏玻璃自带的漂移。
+   三枚光晕固定在侧栏玻璃的静态 background-position；--glow-drift-scale 与 --glow-drift-play 仍供其它玻璃面使用。
    这个形状借自 feralui.dev/gradients 的 JSON 导出（登记在 docs/HANDOFF.md），只借参数
    模型，渲染仍是那三层纯 CSS 径向渐变，不引入 Canvas。
    三枚光晕各自向 transparent 收边，落在侧栏那块玻璃上，所以每一枚都得自己亮得起来：
