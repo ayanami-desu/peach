@@ -229,6 +229,18 @@ it('没有回调基址也能填客户端凭据接上网盘，填的目录一起�
   expect(buttonNamed('接上这个网盘', section(host, 'OneDrive'))).toBeNull();
 });
 
+it('回调基址在这一页就能填，保存后写进设置文件', async () => {
+  const { host, fetcher } = await open(data(), snapshot({ public_url: '' }), {
+    [`POST ${DRIVE_URL}/public-url`]: { public_url: 'https://peach.test' },
+  });
+  await type(host.querySelector('#drive-public-url'), 'https://peach.test');
+  await click(buttonNamed('保存', section(host, '浏览器授权回调基址')));
+  await settle();
+  const posted = fetcher.mock.calls.find(([url]) => url === `${DRIVE_URL}/public-url`);
+  expect(JSON.parse(String(posted?.[1]?.body))).toEqual({ public_url: 'https://peach.test' });
+  expect(receipt).toHaveBeenCalledWith('回调基址已改为 https://peach.test');
+});
+
 it('断开只忘掉账号与扫描起点', async () => {
   const confirm = vi.spyOn(legacyUi, 'confirmModal').mockImplementation((async (options: { onConfirm?(): Promise<unknown> }) => {
     await options.onConfirm?.();

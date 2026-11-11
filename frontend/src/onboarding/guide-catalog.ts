@@ -105,7 +105,7 @@ export const SETTING_CHAPTERS: GuideChapter[] = [
     ['account', '接入网盘', '选一个网盘点「开始授权」，在网盘自己的页面同意后回到这一页；账号与上次同步时间显示在上方。', '[data-guide-target="drives"]'],
     ['roots', '选择扫描起点', '点「选择扫描起点」逐层打开网盘目录，把要收录的那一层设为起点。起点以下的子目录都会同步。', '[data-guide-target="account"]'],
     ['refresh', '同步与刷新', '每 15 分钟取一次变化，每天一次全量；刚传完文件可以点「立即刷新」先同步这个网盘。', '[data-guide-target="account"]'],
-    ['authorize-config', '授权前要填什么', '设置文件的 [drive.accounts.<网盘>] 填 client_id 与 client_secret，[drive] 的 public_url 填这台 Peach 的 https 地址；网盘后台登记的回调地址是 public_url 加 /oauth/<网盘>/callback。', '[data-guide-target="drives"]'],
+    ['authorize-config', '接上网盘前要填什么', '两条路：设置文件的 [drive.accounts.<网盘>] 填 client_id 与 client_secret，再用「手动填认证信息」贴 refresh token，不用公网地址；或者 [drive] 的 public_url 填这台 Peach 的 https 地址，网盘后台登记 public_url 加 /oauth/<网盘>/callback，然后点「开始授权」。', '[data-guide-target="drives"]'],
   ], saved) },
   { id: 'access', kind: 'settings', title: CONFIGURATION_SECTIONS.access, summary: '访问密码与登录方式。', steps: fields('access', [
     ['password', '访问密码', '设置或修改进入 Peach 的密码；关闭后，能连接到 Peach 的设备可直接进入。', '[data-guide-target="access"]'],

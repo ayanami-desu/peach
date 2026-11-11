@@ -44,7 +44,7 @@ Peach 的全部状态在一个数据根里：
 # 省略就是数据根下的同名目录，可写绝对路径
 
 [drive]
-# 网盘授权的回调基址，必须 https
+# 网盘授权的回调基址，必须 https；只在走浏览器授权时要填，用「手动填认证信息」接盘可以留空
 public_url = "https://peach.example.com"
 
 [drive.accounts.gdrive]
@@ -81,6 +81,8 @@ port = 8900
 ```
 
 `public_url` 必须是 https 地址，且与浏览器实际访问的域名一致。网盘后台登记的回调地址要和上面逐字符相同，否则授权会在网盘一侧直接报 `redirect_uri_mismatch`。
+
+只有「点开始授权、跳去网盘同意、再回到这里」这条路需要 `public_url`。不想对外暴露回调，就在设置页的网盘卡里点「手动填认证信息」，贴上客户端 ID、客户端密钥与 refresh token——这条路由 Peach 自己去换票，`public_url` 可以留空，播放、扫描、预览也都不需要它。
 
 ### Google Drive
 

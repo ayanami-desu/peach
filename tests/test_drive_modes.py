@@ -87,5 +87,53 @@ class SetModeTests(unittest.TestCase):
         self.assertEqual({}, self.drive.settings.drive_modes)
 
 
+class SetPublicUrlTests(unittest.TestCase):
+    """回调基址只服务「开始授权」，改完立刻重建驱动，不用重启服务。"""
+
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name).resolve()
+        (self.root / 'config.toml').write_text(CONFIG, encoding='utf-8')
+        previous = os.environ.get('PEACH_DATA_ROOT')
+        os.environ['PEACH_DATA_ROOT'] = str(self.root)
+        self.addCleanup(self._restore, previous)
+        settings_file.reset_cache()
+        self.build = mock.patch.object(
+            drive_connections, 'build_onedrive', return_value=mock.Mock(location=ONEDRIVE)).start()
+        self.addCleanup(self.build.stop)
+        self.drive = drive_connections.DriveConnections(
+            PeachSettings(drive_public_url='', secrets_root=self.root / 'secrets',
+                          drive_clients={ONEDRIVE: ('id-2', 'secret-2')}),
+            lambda: mock.Mock())
+
+    def _restore(self, previous):
+        if previous is None:
+            os.environ.pop('PEACH_DATA_ROOT', None)
+        else:
+            os.environ['PEACH_DATA_ROOT'] = previous
+        settings_file.reset_cache()
+
+    def written(self) -> str:
+        return (self.root / 'config.toml').read_text(encoding='utf-8')
+
+    def test_a_new_base_is_persisted_and_moves_the_callback(self):
+        self.assertEqual('https://peach.test', self.drive.set_public_url('https://peach.test/'))
+        self.assertEqual('https://peach.test', self.drive.settings.drive_public_url)
+        self.assertIn("public_url = 'https://peach.test'", self.written())
+        self.assertEqual('https://peach.test/oauth/onedrive/callback',
+                         self.build.call_args.kwargs['redirect_uri'])
+
+    def test_clearing_the_base_leaves_authorization_without_a_callback(self):
+        self.drive.set_public_url('https://peach.test')
+        self.assertEqual('', self.drive.set_public_url('  '))
+        self.assertEqual('', self.build.call_args.kwargs['redirect_uri'])
+
+    def test_a_base_that_is_not_https_is_rejected(self):
+        with self.assertRaises(DriveUnavailable):
+            self.drive.set_public_url('http://127.0.0.1:8900')
+        self.assertEqual('', self.drive.settings.drive_public_url)
+
+
 if __name__ == '__main__':
     unittest.main()

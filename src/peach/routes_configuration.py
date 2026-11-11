@@ -616,6 +616,21 @@ def save_drive_roots(request: Request, location: str, body: dict[str, Any] = Bod
     return {"location": location, "roots": list(ids)}
 
 
+@router.post("/api/drive/public-url")
+def save_drive_public_url(request: Request, body: dict[str, Any] = Body(default_factory=dict),
+                          _args=Depends(require_auth)):
+    """记下浏览器授权的回调基址（`[drive] public_url`）；空串表示不走浏览器授权。"""
+    same_origin(request)
+    value = body.get("public_url", "")
+    if not isinstance(value, str):
+        raise HTTPException(400, "public_url 要是字符串")
+    try:
+        saved = _drive(request).set_public_url(value)
+    except DriveError as error:
+        raise _drive_failure(error) from error
+    return {"public_url": saved}
+
+
 @router.post("/api/drive/{location}/mode")
 def save_drive_mode(request: Request, location: str, body: dict[str, Any] = Body(default_factory=dict),
                     _args=Depends(require_auth)):

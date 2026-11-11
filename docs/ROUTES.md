@@ -137,6 +137,7 @@
 | `GET /api/drive/{location}/folders` | 列远端文件夹，只出目录，`parent_id` 缺省取第一个扫描根 |
 | `POST /api/drive/{location}/refresh` | 把这一来源排进下一轮同步（后台每 60 秒一轮），返回该来源当前状态 |
 | `POST /api/drive/{location}/mode` | 改这一来源怎么把字节交给浏览器，写进 `config.toml` 的 `[drive.modes]`；只认 `redirect` 与 `proxy`，能直连的来源才给 `redirect` |
+| `POST /api/drive/public-url` | 写 `[drive] public_url`：收 `public_url`（https 地址或空串），改完立刻重建驱动，返回写下的值 |
 | `POST /api/drive/{location}/credentials` | 不走回调授权：收 `client_id`、`client_secret`、`refresh_token` 与可选的 `root`，先换一次票确认配得上，再落设置与账号文件，返回该来源当前状态 |
 | `DELETE /api/drive/{location}` | 忘掉这个网盘：删账号与扫描根，账本里已登记的资产不动 |
 

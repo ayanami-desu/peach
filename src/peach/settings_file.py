@@ -482,7 +482,7 @@ def render(config: PeachConfig) -> str:
         "",
         "[drive]",
         "# 网盘授权的回调基址，必须是 https 地址，例如 https://peach.example.com。",
-        "# 网盘后台登记的回调地址是 <public_url>/oauth/<网盘>/callback；留空时无法发起授权。",
+        "# 网盘后台登记的回调地址是 <public_url>/oauth/<网盘>/callback；留空就只能是手动填认证信息，不能发起授权。",
     ]
     lines += _render_pairs({"public_url": config.drive_public_url})
     for key, (client_id, client_secret) in config.drive_clients.items():

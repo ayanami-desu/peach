@@ -299,6 +299,22 @@ class DriveConnections:
             current = found.remote_id
         return current
 
+    def set_public_url(self, public_url: str) -> str:
+        """记下浏览器授权的回调基址，即 `[drive] public_url`；空串表示不走浏览器授权。
+
+        它只用来拼 `redirect_uri` 与发起授权，读、扫描、取流都不看它，所以改完只重建驱动实例。
+        """
+        text = public_url.strip().rstrip("/")
+        if text and not (text.startswith("https://") and len(text) > len("https://")):
+            raise DriveUnavailable("回调基址要写成 https 地址，例如 https://peach.example.com")
+        if text == self.settings.drive_public_url:
+            return text
+        self.settings = dataclasses.replace(self.settings, drive_public_url=text)
+        settings_file.write(dataclasses.replace(settings_file.active(), drive_public_url=text),
+                            force=True)
+        self._build()
+        return text
+
     def _persist_clients(self, clients: Mapping[str, tuple[str, str]]) -> None:
         config = settings_file.active()
         settings_file.write(dataclasses.replace(config, drive_clients=dict(clients)), force=True)

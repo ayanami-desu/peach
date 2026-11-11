@@ -21,6 +21,15 @@
       "saved": "已接上 {{label}}",
       "show": "手动填认证信息",
       "submit": "接上这个网盘"
+    },
+    "callback": {
+      "cleared": "已清空回调基址",
+      "help": "「开始授权」靠这个地址把浏览器带回 Peach：网盘后台登记的回调地址就是它加上 /oauth/网盘/callback。只走「手动填认证信息」时可以留空。",
+      "label": "回调基址",
+      "placeholder": "https://peach.example.com",
+      "save": "保存",
+      "saved": "回调基址已改为 {{url}}",
+      "title": "浏览器授权回调基址"
     }
   },
   "interfaceLanguage": {

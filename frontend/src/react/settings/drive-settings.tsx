@@ -59,10 +59,44 @@ export function DriveSettings({ receipt }: { receipt(message: string): void }) {
     return <Section guide="drives" title="网盘"><Stack><Help role="status">正在读取网盘状态…</Help></Stack></Section>;
   }
   const reloaded = () => { void queries.invalidateQueries({ queryKey: DRIVE_KEY }); };
-  return <>{data.locations.map(connection => (
-    <DriveCard key={connection.location} connection={connection} publicUrl={data.public_url}
-      receipt={receipt} reloaded={reloaded} />
-  ))}</>;
+  return <>
+    <CallbackSection publicUrl={data.public_url} receipt={receipt} reloaded={reloaded} />
+    {data.locations.map(connection => (
+      <DriveCard key={connection.location} connection={connection} publicUrl={data.public_url}
+        receipt={receipt} reloaded={reloaded} />
+    ))}
+  </>;
+}
+
+/** 「开始授权」要用的回调基址：写进 `[drive] public_url`，只走手动填认证信息时可以留空。 */
+function CallbackSection({ publicUrl, receipt, reloaded }: {
+  publicUrl: string; receipt(message: string): void; reloaded(): void;
+}) {
+  const action = useAction();
+  const [value, setValue] = useState(publicUrl);
+  useEffect(() => setValue(publicUrl), [publicUrl]);
+  const save = () => {
+    void action.run('callback', signal => apiSend<{ public_url: string }>(
+      `${DRIVE_URL}/public-url`, { public_url: value }, 'POST', signal),
+    ({ public_url: saved }) => {
+      setValue(saved);
+      receipt(saved ? t('settings:drive.callback.saved', { url: saved }) : t('settings:drive.callback.cleared'));
+      reloaded();
+    });
+  };
+  return <Section title={t('settings:drive.callback.title')}>
+    <Stack>
+      <Help>{t('settings:drive.callback.help')}</Help>
+      <Input id="drive-public-url" label={t('settings:drive.callback.label')} value={value}
+        placeholder={t('settings:drive.callback.placeholder')}
+        onChange={next => setValue(next)} />
+    </Stack>
+    <Footer>
+      <Button onClick={save} {...busyProps(action.busy === 'callback')}>
+        {t('settings:drive.callback.save')}
+      </Button>
+    </Footer>
+  </Section>;
 }
 
 function DriveCard({ connection, publicUrl, receipt, reloaded }: {
@@ -127,14 +161,14 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
       <Stack>
         {state.configured ? null : (
           <Note tone="warning" title={`${state.label} 还没有接入`}>
-            {`在设置文件的 [drive.accounts.${state.location}] 段填好 client_id 与 client_secret，`
-              + '并在 [drive] 段的 public_url 填上这台 Peach 的 https 地址，保存后回到这一页授权。'}
+            {`两条路任选：在设置文件的 [drive.accounts.${state.location}] 段填好 client_id 与 client_secret，`
+              + '再用下面「手动填认证信息」贴一次客户端凭据；要走浏览器授权，还要在 [drive] 段填上这台 Peach 的 https 地址 public_url。'}
           </Note>
         )}
         {state.configured && !state.connected && !callback ? (
           <Note tone="warning" title="没有配置回调基址">
-            {`网盘授权要回到这台 Peach：先在设置文件的 [drive] 段填好 public_url（https 地址），`
-              + `网盘后台登记的回调地址是 public_url 加上 /oauth/${state.location}/callback。`}
+            {`浏览器授权要回到这台 Peach：先在设置文件的 [drive] 段填好 public_url（https 地址），`
+              + `网盘后台登记的回调地址是 public_url 加上 /oauth/${state.location}/callback。不想开公网回调就改用「手动填认证信息」，那条路不用 public_url。`}
           </Note>
         ) : null}
         <FactList>

@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "4cbf3148-79ae-49fa-a8cd-e70698a83631", e._sentryDebugIdIdentifier = "sentry-dbid-4cbf3148-79ae-49fa-a8cd-e70698a83631");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "f9675988-f470-4e3a-ad6d-7cfccb4ca961", e._sentryDebugIdIdentifier = "sentry-dbid-f9675988-f470-4e3a-ad6d-7cfccb4ca961");
 	} catch {}
 })();
 import { ApiError as e, Button as t, CONFIGURATION_KEY as n, Checkbox as r, Chip as i, DRIVE_KEY as a, DRIVE_URL as o, E3 as s, ErrorText as c, Eu as l, Fact as u, FactList as d, Footer as f, Help as p, Input as m, L1 as h, Note as g, ProcessingMode as _, Rows as v, SETTINGS_KEY as y, Section as b, SectionSkeleton as x, SettingsRow as S, SortableBoardTabs as C, Stack as w, Uz as T, __toESM as E, _p as D, apiGet as O, apiSend as k, busyProps as A, confirmModal as j, d6 as M, devicesSkeleton as N, errorMessage as P, fetchConfiguration as F, fetchDrives as I, fetchSettings as L, l1 as ee, rememberShape as te, require_jsx_runtime as ne, require_react as re, t as R, useAction as z, useQuery as B, useQueryClient as V, useSaveSettings as ie, z3 as H } from "./peach-app.js";
@@ -1247,14 +1247,39 @@ function De({ receipt: e }) {
 	let o = () => {
 		n.invalidateQueries({ queryKey: a });
 	};
-	return /* @__PURE__ */ (0, W.jsx)(W.Fragment, { children: i.locations.map((t) => /* @__PURE__ */ (0, W.jsx)(Oe, {
+	return /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [/* @__PURE__ */ (0, W.jsx)(Oe, {
+		publicUrl: i.public_url,
+		receipt: e,
+		reloaded: o
+	}), i.locations.map((t) => /* @__PURE__ */ (0, W.jsx)(ke, {
 		connection: t,
 		publicUrl: i.public_url,
 		receipt: e,
 		reloaded: o
-	}, t.location)) });
+	}, t.location))] });
 }
-function Oe({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
+function Oe({ publicUrl: e, receipt: n, reloaded: r }) {
+	let i = z(), [a, s] = (0, U.useState)(e);
+	return (0, U.useEffect)(() => s(e), [e]), /* @__PURE__ */ (0, W.jsxs)(b, {
+		title: R("settings:drive.callback.title"),
+		children: [/* @__PURE__ */ (0, W.jsxs)(w, { children: [/* @__PURE__ */ (0, W.jsx)(p, { children: R("settings:drive.callback.help") }), /* @__PURE__ */ (0, W.jsx)(m, {
+			id: "drive-public-url",
+			label: R("settings:drive.callback.label"),
+			value: a,
+			placeholder: R("settings:drive.callback.placeholder"),
+			onChange: (e) => s(e)
+		})] }), /* @__PURE__ */ (0, W.jsx)(f, { children: /* @__PURE__ */ (0, W.jsx)(t, {
+			onClick: () => {
+				i.run("callback", (e) => k(`${o}/public-url`, { public_url: a }, "POST", e), ({ public_url: e }) => {
+					s(e), n(e ? R("settings:drive.callback.saved", { url: e }) : R("settings:drive.callback.cleared")), r();
+				});
+			},
+			...A(i.busy === "callback"),
+			children: R("settings:drive.callback.save")
+		}) })]
+	});
+}
+function ke({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
 	let [a, s] = (0, U.useState)(e);
 	(0, U.useEffect)(() => s(e), [e]);
 	let l = z(), [h, _] = (0, U.useState)(!1), [y, x] = (0, U.useState)(!1), [C, T] = (0, U.useState)({
@@ -1309,12 +1334,12 @@ function Oe({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
 				a.configured ? null : /* @__PURE__ */ (0, W.jsx)(g, {
 					tone: "warning",
 					title: `${a.label} 还没有接入`,
-					children: `在设置文件的 [drive.accounts.${a.location}] 段填好 client_id 与 client_secret，并在 [drive] 段的 public_url 填上这台 Peach 的 https 地址，保存后回到这一页授权。`
+					children: `两条路任选：在设置文件的 [drive.accounts.${a.location}] 段填好 client_id 与 client_secret，再用下面「手动填认证信息」贴一次客户端凭据；要走浏览器授权，还要在 [drive] 段填上这台 Peach 的 https 地址 public_url。`
 				}),
 				a.configured && !a.connected && !D ? /* @__PURE__ */ (0, W.jsx)(g, {
 					tone: "warning",
 					title: "没有配置回调基址",
-					children: `网盘授权要回到这台 Peach：先在设置文件的 [drive] 段填好 public_url（https 地址），网盘后台登记的回调地址是 public_url 加上 /oauth/${a.location}/callback。`
+					children: `浏览器授权要回到这台 Peach：先在设置文件的 [drive] 段填好 public_url（https 地址），网盘后台登记的回调地址是 public_url 加上 /oauth/${a.location}/callback。不想开公网回调就改用「手动填认证信息」，那条路不用 public_url。`
 				}) : null,
 				/* @__PURE__ */ (0, W.jsxs)(d, { children: [
 					/* @__PURE__ */ (0, W.jsx)(u, {
@@ -1394,7 +1419,7 @@ function Oe({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
 					children: R("settings:drive.manual.submit")
 				})
 			] }) : null,
-			h && a.connected ? /* @__PURE__ */ (0, W.jsx)(ke, {
+			h && a.connected ? /* @__PURE__ */ (0, W.jsx)(Ae, {
 				connection: a,
 				receipt: r,
 				onClose: () => _(!1),
@@ -1437,7 +1462,7 @@ function Oe({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
 		]
 	});
 }
-function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
+function Ae({ connection: e, receipt: n, onSaved: r, onClose: i }) {
 	let [a, s] = (0, U.useState)([]), l = a[a.length - 1], u = B({
 		queryKey: [
 			"drive-folders",
@@ -1510,7 +1535,7 @@ function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
 	] });
 }
 // src/react/settings/service-preferences.tsx
-function Ae({ receipt: e }) {
+function je({ receipt: e }) {
 	let t = B({
 		queryKey: y,
 		queryFn: ({ signal: e }) => L(e)
@@ -1533,7 +1558,7 @@ function Ae({ receipt: e }) {
 	});
 }
 // src/react/settings/configuration-page.tsx
-var je = [
+var Me = [
 	{
 		id: "drives",
 		title: "网盘"
@@ -1558,13 +1583,13 @@ var je = [
 		id: "diagnostics",
 		title: "系统诊断"
 	}
-], $ = new Map(je.map(({ id: e, title: t }) => [`#${e}`, t]));
-function Me({ receipt: e, section: t = "", diagnostics: r }) {
+], $ = new Map(Me.map(({ id: e, title: t }) => [`#${e}`, t]));
+function Ne({ receipt: e, section: t = "", diagnostics: r }) {
 	let i = B({
 		queryKey: n,
 		queryFn: ({ signal: e }) => F(e)
 	}), a = i.data;
-	return a ? /* @__PURE__ */ (0, W.jsx)(Fe, {
+	return a ? /* @__PURE__ */ (0, W.jsx)(Ie, {
 		data: a,
 		receipt: e,
 		section: t,
@@ -1582,7 +1607,7 @@ function Me({ receipt: e, section: t = "", diagnostics: r }) {
 		})
 	});
 }
-function Ne({ data: e, sections: n, reload: r, refreshing: i }) {
+function Pe({ data: e, sections: n, reload: r, refreshing: i }) {
 	return /* @__PURE__ */ (0, W.jsx)(W.Fragment, { children: n.map((n) => {
 		let a = e.section_errors?.[n];
 		return a ? /* @__PURE__ */ (0, W.jsx)(g, {
@@ -1599,9 +1624,9 @@ function Ne({ data: e, sections: n, reload: r, refreshing: i }) {
 		}, n) : null;
 	}) });
 }
-var Pe = 0;
-function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refreshing: a }) {
-	let [o] = (0, U.useState)(() => `board-tabs-${++Pe}`), [s, c] = (0, U.useState)(() => $.get(window.location.hash) ?? n), l = (0, U.useRef)(null), u = (0, U.useRef)(s);
+var Fe = 0;
+function Ie({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refreshing: a }) {
+	let [o] = (0, U.useState)(() => `board-tabs-${++Fe}`), [s, c] = (0, U.useState)(() => $.get(window.location.hash) ?? n), l = (0, U.useRef)(null), u = (0, U.useRef)(s);
 	(0, U.useEffect)(() => {
 		c(n);
 	}, [n]), (0, U.useEffect)(() => {
@@ -1619,14 +1644,14 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 	}, [s]);
 	let d = (e) => {
 		c(e);
-		let t = je.find((t) => t.title === e)?.id;
+		let t = Me.find((t) => t.title === e)?.id;
 		t && window.location.hash !== `#${t}` && window.history.replaceState(window.history.state, "", `#${t}`);
 	}, [f, p] = (0, U.useState)(() => matchMedia("(max-width:900px)").matches);
 	(0, U.useEffect)(() => {
 		let e = matchMedia("(max-width:900px)"), t = () => p(e.matches);
 		return e.addEventListener("change", t), () => e.removeEventListener("change", t);
 	}, []);
-	let m = (t) => /* @__PURE__ */ (0, W.jsx)(Ne, {
+	let m = (t) => /* @__PURE__ */ (0, W.jsx)(Pe, {
 		data: e,
 		sections: t,
 		reload: i,
@@ -1688,7 +1713,7 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 			body: (e) => /* @__PURE__ */ (0, W.jsx)("div", {
 				...K(e),
 				"data-guide-target": "speed",
-				children: /* @__PURE__ */ (0, W.jsx)(Ae, { receipt: t })
+				children: /* @__PURE__ */ (0, W.jsx)(je, { receipt: t })
 			})
 		},
 		{
@@ -1732,6 +1757,6 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		})] }, t))]
 	});
 }
-export { Me as ConfigurationPage };
+export { Ne as ConfigurationPage };
 
-//# debugId=4cbf3148-79ae-49fa-a8cd-e70698a83631
+//# debugId=f9675988-f470-4e3a-ad6d-7cfccb4ca961

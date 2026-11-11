@@ -21,6 +21,15 @@
       "saved": "{{label}} is connected",
       "show": "Enter credentials",
       "submit": "Connect this drive"
+    },
+    "callback": {
+      "cleared": "Callback base cleared",
+      "help": "Start authorization uses this address to send the browser back to Peach: the redirect URI registered with the drive is this address plus /oauth/drive/callback. Leave it empty if you only use \"Enter credentials\".",
+      "label": "Callback base",
+      "placeholder": "https://peach.example.com",
+      "save": "Save",
+      "saved": "Callback base is now {{url}}",
+      "title": "Authorization callback base"
     }
   },
   "interfaceLanguage": {
