@@ -1913,10 +1913,13 @@ def _generate_preview_sheets(config, database, rows, *, stage, update, active):
         ids = preview_sheets.pending(connection, len(rows), asset_ids=list(names))
     root = config.directory('generated') / 'snapshots'
     made = 0
-    total = len(rows) + len(ids)
+    # 进度按「影片」算，不按「动作」算：一部片已经有预览图，扫描完就已经完成；
+    # 缺图的那几部要等这一格补上才算完成。把 `ids` 再加进分母会让同一部片算两次。
+    total = len(rows)
+    settled = total - len(ids)
     for index, asset_id in enumerate(ids):
         # `update` 见到停止就抛，停机在这一格就散场，不会接着读下一部片。
-        update(stage=PREVIEWS_STAGE, checked=len(rows) + index, total=total, previews=made,
+        update(stage=PREVIEWS_STAGE, checked=settled + index, total=total, previews=made,
                current_asset_id=asset_id, current_asset_name=names.get(asset_id, ''),
                current_action='generating_preview',
                current_started_at=time.time(), current_deadline_at=None)

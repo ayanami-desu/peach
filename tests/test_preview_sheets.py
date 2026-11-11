@@ -345,11 +345,11 @@ class LibraryStepTest(unittest.TestCase):
         self.assertEqual({call[1] for call in self.calls}, {'/opt/ffmpeg/bin/ffmpeg'})
         self.assertEqual({call[3] for call in self.calls}, {self.generated / 'snapshots'})
         self.assertEqual(self.updates[0]['stage'], library_processing.PREVIEWS_STAGE)
-        self.assertEqual((self.updates[0]['checked'], self.updates[0]['total']), (2, 4))
+        self.assertEqual((self.updates[0]['checked'], self.updates[0]['total']), (0, 2))
         self.assertEqual(self.updates[0]['current_asset_name'], 'a.mp4')
         # 每部片先报「正在做这一部」，做成了再报一张数：第二条只有 `previews`。
         self.assertEqual(self.updates[1]['previews'], 1)
-        self.assertEqual((self.updates[2]['checked'], self.updates[2]['total']), (3, 4))
+        self.assertEqual((self.updates[2]['checked'], self.updates[2]['total']), (1, 2))
         self.assertEqual(self.updates[-1]['previews'], 2)
         self.assertIsNone(self.updates[-1]['current_asset_id'])
 
