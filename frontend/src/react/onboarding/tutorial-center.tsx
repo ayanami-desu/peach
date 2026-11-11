@@ -114,7 +114,7 @@ export function TutorialCenter({ actions }: { actions: ShellActions }) {
         if (mounted.current && ticket === revision.current) applyProgress(saved);
       } catch {
         if (mounted.current) {
-          setSyncError('教程进度未保存到本机账本，其他设备尚未同步。请重新读取后继续。');
+          setSyncError('教程进度没有写进账本，其他设备还没同步。请重新读取后继续。');
           if (ticket === revision.current) await refresh(false);
         }
       } finally { pendingWrites.current -= 1 }

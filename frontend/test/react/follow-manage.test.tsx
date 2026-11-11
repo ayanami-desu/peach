@@ -1146,9 +1146,9 @@ it('查找被服务端挡回时原因摆在卡里，没有候选时直说', asyn
 
 it('只读的这台说清楚、指向写入端，写操作一律停用', async () => {
   const writer = 'https://writer.example/follow-manage';
-  const list = await open({}, { readOnly: true, readOnlyMessage: '本机是只读副本', writerUrl: writer });
-  expect(list.host.textContent).toContain('本机只能浏览');
-  expect(list.host.textContent).toContain('本机是只读副本');
+  const list = await open({}, { readOnly: true, readOnlyMessage: '这个实例是只读副本', writerUrl: writer });
+  expect(list.host.textContent).toContain('只能浏览');
+  expect(list.host.textContent).toContain('这个实例是只读副本');
   expect([...list.host.querySelectorAll('a')].find((a) => a.textContent?.includes('前往写入端管理关注'))
     ?.getAttribute('href')).toBe(writer);
   expect(buttonLabelled(list.host, '检查全部')?.disabled).toBe(true);

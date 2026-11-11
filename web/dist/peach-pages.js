@@ -2,7 +2,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "8ca7c0cc-a7d8-44b3-91e8-af0dd31fd13d", e._sentryDebugIdIdentifier = "sentry-dbid-8ca7c0cc-a7d8-44b3-91e8-af0dd31fd13d");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "d1d6e565-0534-4808-846c-cadc1f655cca", e._sentryDebugIdIdentifier = "sentry-dbid-d1d6e565-0534-4808-846c-cadc1f655cca");
 	} catch {}
 })();
 var e = Object.create, t = Object.defineProperty, n = Object.getOwnPropertyDescriptor, r = Object.getOwnPropertyNames, i = Object.getPrototypeOf, a = Object.prototype.hasOwnProperty, o = (e, t) => () => (t || (e((t = { exports: {} }).exports, t, t.exports), e = null), t.exports), s = (e, i, o, s) => {
@@ -15923,7 +15923,7 @@ function Vl({ setup: e, onDone: t, onRestore: n }) {
 												isSelected: x,
 												onChange: S
 											})]
-										}), /* @__PURE__ */ (0, F.jsx)(bs, { children: ve || e.docker ? "局域网访问推荐设置密码。未设置时，同一网络中能连接 Peach 的设备可直接进入。" : "只有这台电脑可以访问；设置密码后，打开 Peach 仍需登录。" })] }),
+										}), /* @__PURE__ */ (0, F.jsx)(bs, { children: ve || e.docker ? "局域网访问推荐设置密码。未设置时，同一网络中能连接 Peach 的设备可直接进入。" : "只监听回环地址；设置密码后，打开 Peach 仍需登录。" })] }),
 										x ? /* @__PURE__ */ (0, F.jsx)(ss, {
 											label: "访问密码",
 											password: C,
@@ -15964,7 +15964,7 @@ function Vl({ setup: e, onDone: t, onRestore: n }) {
 									}), /* @__PURE__ */ (0, F.jsxs)(ws, {
 										term: "访问范围",
 										children: [
-											e.docker ? "按 Compose 端口映射" : ve ? "同一局域网的设备" : "只有这台电脑",
+											e.docker ? "按 Compose 端口映射" : ve ? "同一局域网的设备" : "只监听回环地址",
 											" · ",
 											b ? "已按 PEACH_ACCESS_PASSWORD 设置访问密码" : x ? "使用访问密码" : "未设置访问密码"
 										]
@@ -16154,7 +16154,7 @@ function Ul() {
 						}) : null,
 						e.kind === "denied" ? /* @__PURE__ */ (0, F.jsx)(ns, {
 							tone: "error",
-							children: e.docker ? rs : "请在运行 Peach 的这台电脑上打开设置。"
+							children: e.docker ? rs : "请在运行 Peach 的服务器上打开设置。"
 						}) : null,
 						e.kind === "failed" ? /* @__PURE__ */ (0, F.jsx)(ns, {
 							tone: "error",
@@ -16183,4 +16183,4 @@ ee();
 var Gl = document.getElementById("peach-page"), Kl = Gl ? Wl[Gl.dataset.page ?? ""] : void 0;
 Gl && Kl && (0, D.createRoot)(Gl).render(/* @__PURE__ */ (0, F.jsx)(Kl, { data: { ...Gl.dataset } }));
 
-//# debugId=8ca7c0cc-a7d8-44b3-91e8-af0dd31fd13d
+//# debugId=d1d6e565-0534-4808-846c-cadc1f655cca

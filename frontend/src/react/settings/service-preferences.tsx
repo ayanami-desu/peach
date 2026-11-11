@@ -52,7 +52,7 @@ export function VideoThumbnailControls({ epoch = 0, disabled = false }: { epoch?
   return (
     <>
       <Rows>
-        <SettingsRow label="时间轴预览" description="按所选间隔抽帧，仅处理本机磁盘上的视频。">
+        <SettingsRow label="时间轴预览" description="按所选间隔从网盘视频抽帧。">
           <div id="videoThumbnailSetting">
             <Select aria-label="缩略图采集间隔" selectedKey={data?.mode || 'off'}
               isDisabled={disabled || !data || status.isFetching || save.isPending}

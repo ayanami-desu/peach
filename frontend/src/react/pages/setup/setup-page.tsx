@@ -60,7 +60,7 @@ export function SetupPage() {
       </header>
       {view.kind === 'loading' ? <div data-setup-loading="" data-skeleton="" role="status" aria-label="正在读取设置"><span /><span /><span /></div> : null}
       {view.kind === 'denied'
-        ? <Note tone="error">{view.docker ? FIRST_ACCESS_DENIED : '请在运行 Peach 的这台电脑上打开设置。'}</Note> : null}
+        ? <Note tone="error">{view.docker ? FIRST_ACCESS_DENIED : '请在运行 Peach 的服务器上打开设置。'}</Note> : null}
       {view.kind === 'failed'
         ? <Note tone="error" action={<Button variant="secondary" onClick={retry}>立即重试</Button>}>{view.message}</Note>
         : null}

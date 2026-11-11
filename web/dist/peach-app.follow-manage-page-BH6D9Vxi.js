@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "c06b153b-a656-48e3-9ab6-9a7be212c3e0", e._sentryDebugIdIdentifier = "sentry-dbid-c06b153b-a656-48e3-9ab6-9a7be212c3e0");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "4679754e-faa5-463f-940f-a4b683c15565", e._sentryDebugIdIdentifier = "sentry-dbid-4679754e-faa5-463f-940f-a4b683c15565");
 	} catch {}
 })();
 import { $2ec61d1d4f780267$export$a8a3e93435678ff9 as e, $542a13ca2fa5b484$export$5b6b19405a83ff9d as t, $76d00c5a4edb230a$export$76ccd210b9029917 as n, $76d00c5a4edb230a$export$816b5d811295e6bc as r, $76d00c5a4edb230a$export$b59bdbef9ce70de2 as i, $76d00c5a4edb230a$export$f6f0c3fe4ec306ea as a, $76d00c5a4edb230a$export$f850895b287ef28e as o, $ea3928288112382f$export$439d29a4e110a164 as s, $l as c, Button as l, ButtonLink as u, Bx as d, COLUMN_SORT as f, Checkbox as p, ChevronSortDown as m, Chip as h, CollapseChevron as g, CollapseRegion as _, DataTableFooter as v, DataTableFrame as y, DataTableSort as b, EmptyFocusButton as x, EmptyState as S, ErrorText as C, ExternalLink as w, FEEDS_KEY as ee, FOLLOW_CHECK_KEY as T, FOLLOW_CREDENTIALS_KEY as te, FOLLOW_MANAGE_KEY as E, FOLLOW_MANAGE_NAV as D, FOLLOW_RESOLVE_KEY as O, FieldLabel as k, Help as A, Input as j, LAYOUTS as M, LoadingDots as N, M6 as P, MENU_ITEM as F, MENU_ITEM_INTERACTIVE as I, MENU_POPOVER_SURFACE as L, ModalFrame as R, Note as z, P7 as ne, SORT_DEFAULT_DIR as B, SORT_OPTIONS as re, STAT_STRIP_SIX as ie, Select as ae, SelectItem as V, SelectionDock as oe, SelectionPopover as H, SiteLabel as U, SortDirectionIcon as se, SortableBoardTabs as ce, Switch as le, Table as ue, TableColumnControls as de, TableColumnResizer as fe, TableSelectionHeader as pe, TagManager as W, TaskProgress as me, Un as he, Wt as G, Xf as ge, __toESM as _e, addAlias as ve, addSource as ye, authorGroups as be, authorName as xe, avatarInner as Se, busyProps as K, cardClass as Ce, checkEvidenceGap as we, checkFailures as Te, checkFeeds as Ee, checkReceipt as De, checkSummary as Oe, checkedText as ke, clickedBlank as Ae, columnVisibilityFeature as je, composingKey as Me, confirmModal as Ne, createColumnHelper as Pe, credentialDone as Fe, cx as Ie, dZ as Le, dropSources as Re, du as ze, errorHeadline as Be, errorMessage as q, feedIntervalText as Ve, fetchCheckJob as He, fetchCredentials as J, fetchFeeds as Ue, fetchFollow as We, fetchResolveJob as Ge, fetchSuggestions as Y, flexRender as Ke, followFeedByName as qe, followFeedEntity as Je, followSuggestKey as Ye, groupByAuthor as Xe, isBroken as Ze, isLayout as Qe, keepSelected as $e, l7 as et, localTime as tt, lookupFeedActor as nt, mapLimit as rt, markAllPending as it, pageSizeOf as at, pageWindow as ot, patchSource as st, pv as ct, queryClient as lt, reloadFollowManage as ut, removeAlias as dt, removeFeed as ft, removeSource as pt, renameAliasGroup as mt, require_jsx_runtime as ht, require_react as gt, resolveFollowSort as _t, rowPaginationFeature as vt, rowSelectionFeature as yt, rowSortingFeature as bt, selectionState as xt, setFeedEnabled as St, setSourceEnabled as Ct, sortLabel as wt, startCheck as Tt, startResolve as Et, tableFeatures as Dt, tableRows as Ot, toggleGroup as kt, useAction as At, useBackgroundJob as jt, useMutation as Mt, useQuery as Nt, useTable as Pt, useTablePreferences as Ft } from "./peach-app.js";
@@ -4088,7 +4088,7 @@ function Rs(e) {
 	return /* @__PURE__ */ (0, Z.jsxs)(It, { children: [
 		a ? /* @__PURE__ */ (0, Z.jsx)(z, {
 			tone: "warning",
-			title: "本机只能浏览",
+			title: "只能浏览",
 			extra: s ? /* @__PURE__ */ (0, Z.jsx)("p", {
 				className: "text-body-2-regular",
 				children: /* @__PURE__ */ (0, Z.jsx)(w, {
@@ -4270,4 +4270,4 @@ function Rs(e) {
 }
 export { Rs as FollowManagePage };
 
-//# debugId=c06b153b-a656-48e3-9ab6-9a7be212c3e0
+//# debugId=4679754e-faa5-463f-940f-a4b683c15565

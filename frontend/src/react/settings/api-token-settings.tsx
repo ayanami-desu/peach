@@ -72,7 +72,7 @@ export function ApiTokenSettings({ initial, mode, receipt }: {
   return (
     <Section guide="token" title="访问口令">
       <Stack>
-        <Help>脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在这台电脑上，页面不显示。</Help>
+        <Help>脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在服务端，页面不显示。</Help>
         {rotated ? (
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-end gap-2">

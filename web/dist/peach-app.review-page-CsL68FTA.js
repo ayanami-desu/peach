@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "094cdb74-4042-4e19-a8b9-7e5b6b47aeb8", e._sentryDebugIdIdentifier = "sentry-dbid-094cdb74-4042-4e19-a8b9-7e5b6b47aeb8");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "87295a17-837e-4101-8c8a-78eb6a3a255a", e._sentryDebugIdIdentifier = "sentry-dbid-87295a17-837e-4101-8c8a-78eb6a3a255a");
 	} catch {}
 })();
 import { $ea3928288112382f$export$439d29a4e110a164 as e, $fe21c36db05242bb$export$a98f0dcb43a68a25 as t, $fe21c36db05242bb$export$d7b12c4107be0d61 as n, Button as r, ButtonLink as i, Checkbox as a, CheckboxGlyph as o, Chip as s, CollapseChevron as c, CollapseRegion as l, DEFAULT_CATEGORY as u, DataTableFooter as d, ENTITY_REVIEW_KINDS as f, Ea as p, EmptyState as m, ExternalLink as h, FIELDSET_FOOT as ee, FilterGlassRows as g, Gg as _, InputBase as v, LinkButton as te, Note as y, REVIEW_CATEGORIES as b, REVIEW_DECISION_LABELS as ne, REVIEW_KEY as re, REVIEW_LABELS as ie, REVIEW_QUEUES as ae, REVIEW_QUEUE_LABELS as x, Select as S, SelectItem as C, SelectionActions as w, SelectionDock as oe, SortableBoardTabs as T, TextField as E, Wt as D, __toESM as O, avatarInner as k, busyProps as A, canApprove as se, cardClass as j, commonReviewSources as M, composingKey as N, currentReviewRow as ce, cx as P, decisionPayload as le, decisionReceipt as ue, defaultChoice as de, errorMessage as fe, fetchReview as pe, filterReviewRows as me, groupReviewRows as he, isReviewCategory as ge, l7 as _e, m7 as ve, mirrorText as ye, pendingGenres as F, recordGenre as be, reloadReview as I, require_jsx_runtime as xe, require_react as Se, reviewGroupingOptions as Ce, reviewQueueData as we, reviewQueueOf as Te, reviewWindow as Ee, rowEvidence as De, rowFieldName as Oe, rowSubject as ke, rowTags as Ae, rowTitle as L, selectReviewRange as je, settleReviewRows as Me, spinnerHtml as Ne, submitDecision as Pe, useMutation as Fe, useNavigationOrder as Ie, useOverlayScrollbar as Le, useQuery as Re, useViewGlide as ze } from "./peach-app.js";
@@ -1471,7 +1471,7 @@ function wt(e) {
 		children: [
 			He ? /* @__PURE__ */ (0, B.jsx)(y, {
 				tone: "warning",
-				title: "本机只能浏览",
+				title: "只能浏览",
 				extra: ee ? /* @__PURE__ */ (0, B.jsx)("p", {
 					className: "text-body-2-regular",
 					children: /* @__PURE__ */ (0, B.jsx)(h, {
@@ -1637,4 +1637,4 @@ function wt(e) {
 }
 export { wt as ReviewPage };
 
-//# debugId=094cdb74-4042-4e19-a8b9-7e5b6b47aeb8
+//# debugId=87295a17-837e-4101-8c8a-78eb6a3a255a

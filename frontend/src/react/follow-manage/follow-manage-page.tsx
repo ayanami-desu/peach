@@ -101,7 +101,7 @@ export function FollowManagePage(props: FollowManageProps) {
   return (
     <Page>
       {readOnly ? (
-        <Note tone="warning" title="本机只能浏览"
+        <Note tone="warning" title="只能浏览"
           extra={writerUrl
             ? <p className="text-body-2-regular">
                 <ExternalLink href={writerUrl}>前往写入端管理关注</ExternalLink>

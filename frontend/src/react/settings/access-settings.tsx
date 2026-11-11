@@ -19,7 +19,7 @@ type FieldErrors = Partial<Record<'current_password' | 'password' | 'confirmatio
 
 const HELP: Partial<Record<AccessState['mode'], string>> = {
   legacy: '当前使用系统生成的访问口令。改设自己的密码，或关闭登录要求。',
-  locked: '访问设置无法读取，请在本机检查配置文件。',
+  locked: '访问设置无法读取，请到服务器上检查配置文件。',
   password: '已设置密码。新设备需要登录，登录时勾选「保持登录」可保持 30 天。',
 };
 

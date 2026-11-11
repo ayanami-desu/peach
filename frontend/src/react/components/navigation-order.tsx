@@ -44,7 +44,7 @@ export function useNavigationOrder(group: NavigationGroup): NavigationOrder {
       store.save();
       save.mutate({ navigationOrders: { [group]: ordered } }, {
         onError: cause => showToast(`navigation-save-${group}`, {
-          html: esc(`顺序已保存到本机，同步失败。${errorMessage(cause)}`), alert: true, timeout: 6000, action: null,
+          html: esc(`已保存在这个浏览器，同步到服务端失败。${errorMessage(cause)}`), alert: true, timeout: 6000, action: null,
         }),
       });
     },

@@ -243,7 +243,7 @@ export function ReviewPage(props: ReviewProps) {
     <Page>
       <div className="flex flex-col gap-5 pb-10">
       {locked ? (
-        <Note tone="warning" title="本机只能浏览"
+        <Note tone="warning" title="只能浏览"
           extra={writerUrl
             ? <p className="text-body-2-regular">
                 <ExternalLink href={writerUrl}>前往写入端复核</ExternalLink>

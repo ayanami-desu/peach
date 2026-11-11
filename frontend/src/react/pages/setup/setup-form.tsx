@@ -210,7 +210,7 @@ export function SetupForm({ setup, onDone, onRestore }: { setup: SetupQuestions;
             isSelected={accessOn} onChange={setAccessOn} />
         </div>
         <Help>{lan || setup.docker ? '局域网访问推荐设置密码。未设置时，同一网络中能连接 Peach 的设备可直接进入。'
-          : '只有这台电脑可以访问；设置密码后，打开 Peach 仍需登录。'}</Help>
+          : '只监听回环地址；设置密码后，打开 Peach 仍需登录。'}</Help>
         </>}
         {accessOn
           ? <PasswordPair label="访问密码" password={password} confirmation={confirmation}
@@ -235,7 +235,7 @@ export function SetupForm({ setup, onDone, onRestore }: { setup: SetupQuestions;
         <GroupTitle id="setup-summary-title">确认设置</GroupTitle>
         <FactList>
           <Fact term="数据目录"><span className="break-all">{dataRoot ? values[dataRoot.key] || '尚未填写' : setup.data_root || '未取得'}</span></Fact>
-          <Fact term="访问范围">{setup.docker ? '按 Compose 端口映射' : lan ? '同一局域网的设备' : '只有这台电脑'} · {
+          <Fact term="访问范围">{setup.docker ? '按 Compose 端口映射' : lan ? '同一局域网的设备' : '只监听回环地址'} · {
             preset ? '已按 PEACH_ACCESS_PASSWORD 设置访问密码' : accessOn ? '使用访问密码' : '未设置访问密码'}</Fact>
         </FactList>
       </CardGroup>

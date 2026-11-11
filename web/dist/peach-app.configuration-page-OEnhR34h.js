@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "bacd7e1b-6df7-44af-906b-44115d86e055", e._sentryDebugIdIdentifier = "sentry-dbid-bacd7e1b-6df7-44af-906b-44115d86e055");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "f3363abc-9987-4df9-b4a9-077a6c7610a3", e._sentryDebugIdIdentifier = "sentry-dbid-f3363abc-9987-4df9-b4a9-077a6c7610a3");
 	} catch {}
 })();
 import { ApiError as e, Button as t, CONFIGURATION_KEY as n, Checkbox as r, Chip as i, DRIVE_KEY as a, DRIVE_URL as o, E3 as s, ErrorText as c, Eu as l, Fact as u, FactList as d, Footer as f, Help as p, Input as m, L1 as h, Note as g, ProcessingMode as _, Rows as v, SETTINGS_KEY as y, Section as b, SectionSkeleton as x, SettingsRow as S, SortableBoardTabs as C, Stack as w, Uz as T, __toESM as E, _p as D, apiGet as O, apiSend as k, busyProps as A, confirmModal as j, d6 as M, devicesSkeleton as ee, errorMessage as N, fetchConfiguration as te, fetchDrives as ne, fetchSettings as re, l1 as ie, rememberShape as ae, require_jsx_runtime as oe, require_react as se, t as P, useAction as F, useQuery as I, useQueryClient as L, useSaveSettings as ce, z3 as R } from "./peach-app.js";
@@ -39,7 +39,7 @@ function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmat
 // src/react/settings/access-settings.tsx
 var ue = {
 	legacy: "当前使用系统生成的访问口令。改设自己的密码，或关闭登录要求。",
-	locked: "访问设置无法读取，请在本机检查配置文件。",
+	locked: "访问设置无法读取，请到服务器上检查配置文件。",
 	password: "已设置密码。新设备需要登录，登录时勾选「保持登录」可保持 30 天。"
 };
 function de({ initial: n, receipt: i, devices: a, after: o }) {
@@ -131,7 +131,7 @@ function me({ initial: e, mode: n, receipt: r }) {
 		guide: "token",
 		title: "访问口令",
 		children: [/* @__PURE__ */ (0, B.jsxs)(w, { children: [
-			/* @__PURE__ */ (0, B.jsx)(p, { children: "脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在这台电脑上，页面不显示。" }),
+			/* @__PURE__ */ (0, B.jsx)(p, { children: "脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在服务端，页面不显示。" }),
 			o ? /* @__PURE__ */ (0, B.jsxs)("div", {
 				className: "flex min-w-0 flex-col gap-2",
 				children: [
@@ -1800,4 +1800,4 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 }
 export { Fe as ConfigurationPage };
 
-//# debugId=bacd7e1b-6df7-44af-906b-44115d86e055
+//# debugId=f3363abc-9987-4df9-b4a9-077a6c7610a3
