@@ -16,8 +16,7 @@ describe('启动归一化', () => {
     expect(migrated).toBe(false);
     expect(settings).toMatchObject({
       ...DEFAULT_SETTINGS, sidebarOrder: [...DEFAULT_SIDEBAR_ORDER], homeGlow: DEFAULT_HOME_GLOW, accent: DEFAULT_ACCENT,
-      followInitialDays: 30, detailAutoplay: true, uiSounds: true, feedAutoScroll: true,
-      feedHideGroupCompilations: true, feedHideSoloCompilations: false, feedHideExcerpts: true,
+      detailAutoplay: true, uiSounds: true,
       /* JAV 版式与艺人索引默认大图；照片墙一套几十张，先看全貌所以是小图。 */
       homeLayout: 'small', javLayout: 'big', peopleLayout: 'big', photoSize: 'small',
       ambientMode: true, miniplayer: true, theaterMode: false, theme: 'system', groupCollapse: true,
@@ -27,13 +26,13 @@ describe('启动归一化', () => {
   it('认不出的一项退回出厂那一档，其余照留', () => {
     const { settings } = normalizeAppSettings({
       batchSize: 0, defaultSort: 'nope', hoverDelaySeconds: 61, seekSeconds: 2.5, searchHistoryLimit: 51, relatedLimit: -1,
-      feedLimit: 101, theme: 'sepia', followInitialDays: 14, metadataRefreshDays: '7', accent: 'teal', homeLayout: 'big', ambientMode: 0,
-      theaterMode: 'yes', miniplayer: false, feedHideSoloCompilations: 'true',
+      theme: 'sepia', metadataRefreshDays: '7', accent: 'teal', homeLayout: 'big', ambientMode: 0,
+      theaterMode: 'yes', miniplayer: false,
     });
     expect(settings).toMatchObject({
       batchSize: 60, defaultSort: 'seed', hoverDelaySeconds: 5, seekSeconds: 10, searchHistoryLimit: 10, relatedLimit: 20,
-      feedLimit: 12, theme: 'system', followInitialDays: 30, accent: 'teal', homeLayout: 'big', ambientMode: true,
-      theaterMode: false, miniplayer: false, feedHideSoloCompilations: false,
+      theme: 'system', accent: 'teal', homeLayout: 'big', ambientMode: true,
+      theaterMode: false, miniplayer: false,
     });
   });
 
@@ -87,18 +86,12 @@ describe('数据库那一份落进本地缓存', () => {
 
   it('合法的值落盘，认不出的不碰；搜索记录条数变了才叫壳推给搜索岛', () => {
     const { store, changed } = stage();
-    applySyncedSettings({
-      followInitialDays: 7, feedHideSoloCompilations: true, feedHideExcerpts: 'no',
-      searchHistoryLimit: 25, sidebarOrder: ['jav', ''],
-    }, changed, store);
-    expect(store.value).toMatchObject({
-      followInitialDays: 7, feedHideSoloCompilations: true, feedHideExcerpts: true,
-      searchHistoryLimit: 25, sidebarOrder: ['jav', ''],
-    });
+    applySyncedSettings({ searchHistoryLimit: 25, sidebarOrder: ['jav', ''] }, changed, store);
+    expect(store.value).toMatchObject({ searchHistoryLimit: 25, sidebarOrder: ['jav', ''] });
     expect(changed.mock.calls).toEqual([['searchHistoryLimit']]);
     changed.mockClear();
-    applySyncedSettings({ searchHistoryLimit: 25, followInitialDays: 3 }, changed, store);
-    expect([changed.mock.calls.length, store.value.followInitialDays]).toEqual([0, 7]);
+    applySyncedSettings({ searchHistoryLimit: 25 }, changed, store);
+    expect([changed.mock.calls.length, store.value.searchHistoryLimit]).toEqual([0, 25]);
   });
 
   it('数据库里还没定条数时，这台设备改过的那个数送上去一次；没改过不送', async () => {
@@ -158,14 +151,14 @@ describe('数据库那一份落进本地缓存', () => {
 
   it('新客户端与已有缓存都采用实例保存的导航和媒体库顺序', () => {
     const fresh = stage();
-    const cached = stage({ navigationOrders: { tags: ['local', 'online'] }, libraryOrder: ['a', 'b'] });
-    const instance = { navigationOrders: { tags: ['online', 'local'] }, libraryOrder: ['b', 'a'] };
+    const cached = stage({ navigationOrders: { jav: ['library', 'explore'] }, libraryOrder: ['a', 'b'] });
+    const instance = { navigationOrders: { jav: ['explore', 'library'] }, libraryOrder: ['b', 'a'] };
     for (const client of [fresh, cached]) {
       applySyncedSettings(instance, client.changed, client.store);
-      expect(client.store.value.navigationOrders.tags).toEqual(['online', 'local']);
+      expect(client.store.value.navigationOrders.jav).toEqual(['explore', 'library']);
       expect(client.store.value.libraryOrder).toEqual(['b', 'a']);
-      applySyncedSettings({ navigationOrders: { tags: ['local', 'online'] }, libraryOrder: [] }, client.changed, client.store);
-      expect(client.store.value.navigationOrders.tags).toEqual(['local', 'online']);
+      applySyncedSettings({ navigationOrders: { jav: ['library', 'explore'] }, libraryOrder: [] }, client.changed, client.store);
+      expect(client.store.value.navigationOrders.jav).toEqual(['library', 'explore']);
       expect(client.store.value.libraryOrder).toEqual([]);
     }
   });

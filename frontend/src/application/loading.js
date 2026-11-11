@@ -1,7 +1,5 @@
 /* loading 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
-import { followState } from './follow.js';
-import { managementSkeletonHtml, pageSkeletonHtml, skeletonKeyOf } from './../management-placeholder';
-import { photoSize } from './../appearance/layout';
+import { managementSkeletonHtml, skeletonKeyOf } from './../management-placeholder';
 import { $, ROUTE_ENTITIES } from '../core';
 import { fitSkeleton, LOAD_MORE_STATUS, loadingDotsHtml, revealSkeleton } from '../ui-kit';
 import { junkCountSkeletonHtml, junkRoute } from './../junk-queue';
@@ -9,16 +7,16 @@ import { state, presentedItem } from './../shell/index';
 import { homeRouteLabel, mediaRouteLabel, postRouteLabel } from '../history/page-title';
 import { subscribeNames } from '../core/entity-names';
 import { catalogCardRatio, catalogHeadProps, catalogSkeletonHtml, clearCatalogGrid, gridTaken, paintCatalogFilter, syncCatalogFilterScreen } from './catalog.js';
-import { followListLayout, followManageParams, indexState, showIndexContainer } from './index.js';
+import { indexState, showIndexContainer } from './index.js';
 import { applicationEffects } from './effects';
-import { feedState, loadEntityShapes } from './feed.js';
+import { entityShapesState, loadEntityShapes } from './entity-shapes.js';
 import { navigationState, paintNav } from './navigation.js';
 import { indexParams, paintIndexSkeleton } from './../index-skeleton';
 import { showEntityLoading } from './entity.js';
 import { routeMetaOf } from './../history/route-meta';
 import { javTab } from '../react/jav/jav-navigation';
 import { paintWallBootSkeleton } from '../react/video-wall/wall-boot';
-export const loadingState = { setGridCards: undefined, gridCards: undefined, managementPlaceholder: undefined, wantsDiscoveryBars: undefined, entityShapesReady: undefined, ENTITY_SHAPES_WAIT: undefined, syncPageTitle: undefined };
+export const loadingState = { setGridCards: undefined, gridCards: undefined, managementPlaceholder: undefined, discoveryBarsVisible: undefined, entityShapesReady: undefined, ENTITY_SHAPES_WAIT: undefined, syncPageTitle: undefined };
 
 export function renderCatalogLoading(label='正在读取作品'){
   if(location.pathname==='/wall'){$('#loadSentinel').hidden=true;return}
@@ -82,7 +80,7 @@ export function renderInitialSurfaceLoading(){
     hideDiscoveryBars();return;
   }
   if(path==='/settings'||/^\/settings\/(appearance|playback|jav|search|content)$/.test(path)||path.startsWith('/posts/')||path.startsWith('/works/')){
-    /* 关注详情同样只等舞台浮窗里那份骨架，页面里不先铺一份；列表等关掉详情才画，不补发。 */
+    /* 详情只等舞台浮窗里那份骨架，页面里不先铺一份；列表等关掉详情才画，不补发。 */
     hideDiscoveryBars();return;
   }
   if(path==='/junk-files'){
@@ -94,13 +92,11 @@ export function renderInitialSurfaceLoading(){
   if(path==='/jav'&&javTab(new URLSearchParams(location.search).get('tab'))==='library'){
     renderCatalogLoading('正在读取馆藏');return;
   }
-  /* 管理区、播放列表页与关注页的占位由各页面接手。 */
+  /* 管理区与播放列表页的占位由各页面接手。 */
   if(navigationState.managedPagePath(path)){
     hideDiscoveryBars();
     const stats=$('#stats');stats.hidden=false;clearCatalogGrid();
-    stats.innerHTML=path.startsWith('/follow')&&path!=='/subscriptions'
-      ?followState.followSkeletonHtml('正在读取关注内容')
-      :loadingState.managementPlaceholder(path);
+    stats.innerHTML=loadingState.managementPlaceholder(path);
     fitSkeleton(stats);
     return;
   }
@@ -113,7 +109,7 @@ export function renderInitialSurfaceLoading(){
     hideDiscoveryBars();
     $('#index').hidden=false;clearCatalogGrid();
     const kind=ROUTE_ENTITIES[path.split('/')[1]],name=path.split('/').slice(2).join('/');
-    const ready=feedState.hasEntityShape(kind,name)?Promise.resolve():waitEntityShapes();
+    const ready=entityShapesState.hasEntityShape(kind,name)?Promise.resolve():waitEntityShapes();
     void ready.then(()=>{
       if($('#index').firstElementChild||decodeURIComponent(location.pathname)!==path)return;
       showEntityLoading(kind,name);
@@ -131,24 +127,12 @@ export function renderInitialSurfaceLoading(){
 }
 
 export function installLoading3() {
-followState.followContentSkeletonHtml = (media=new URLSearchParams(location.search).get('media')==='images'?'images':'videos',
-  label='正在读取关注内容')=>pageSkeletonHtml(label,{cards:true,className:'follow-content-skeleton postercard-skeleton',
-  gridClass:media==='images'?'followlist followphotowall':'',gridSize:photoSize()});
-followState.followSkeletonHtml = (label='正在读取关注内容')=>`<div class="peach-react"><div class="follow" data-follow-feed>
-  <div data-follow-head><h2 data-follow-title>关注</h2></div>
-  <div class="tier followauthors" data-skeleton-tier="av"></div>
-  <div class="tier followworks" data-skeleton-tier="brandpill"></div>
-  <div class="board-filter-frame" data-filter-frame>
-    <div class="tagbar followfilters" data-filter-row="top" data-skeleton-tier="pill"></div>
-    <div class="count followcount" data-filter-row="bottom"><span class="mono"><span class="countskeleton"></span></span></div></div>
-  ${followState.followContentSkeletonHtml(undefined,label)}</div></div>`;
 $('#loadSentinel').innerHTML=loadingDotsHtml(LOAD_MORE_STATUS);
 loadingState.setGridCards = html=>revealSkeleton($('#grid'),()=>{$('#grid').innerHTML=`<div class="grid">${html}</div>`});
 loadingState.gridCards = ()=>document.querySelectorAll(
     ':is(#grid,#index [data-entity-grid]) :is([data-media-grid] > [data-media-card][data-id],[data-catalog-row][data-id])');
-loadingState.managementPlaceholder = path=>managementSkeletonHtml(path,{followLayout:followListLayout(),
-  ...(({sort,dir,tab})=>({followSort:sort,followDir:dir,followTab:tab}))(followManageParams())});
-loadingState.wantsDiscoveryBars = ()=>$('#catalogFilter').style.display!=='none';
+loadingState.managementPlaceholder = path=>managementSkeletonHtml(path);
+loadingState.discoveryBarsVisible = ()=>$('#catalogFilter').style.display!=='none';
 loadingState.entityShapesReady = null;
 loadingState.ENTITY_SHAPES_WAIT = 400;
 loadingState.syncPageTitle = path=>{

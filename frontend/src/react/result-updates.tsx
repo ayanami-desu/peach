@@ -12,17 +12,13 @@ import { showToast } from './toaster';
 const CATALOG = ['catalog-grid', 'catalog-folders', 'item', 'item-related', 'item-queue',
   'entity', 'entity-items', 'entity-photos', 'entity-route', 'index', 'stats',
   'quality-goals', 'duplicates', 'orphan-records', 'trash-summary', 'junk-summary', 'immerse-list'];
-const FOLLOW = ['follow-feed', 'follow-item', 'follow-manage', 'follow', 'entity', 'index'];
-const DISCOVERIES = ['feed-new', 'jav-discoveries', 'jav-detail', 'wants', 'index'];
-/* 每个版本键刷新的页面，要覆盖服务端按表缓存的那几页实际读到的表：统计页读关注条目与来源
-   算在线播放，口味页读关注来源推账号，所以它们也跟着 `follow` 刷新。对照见
-   `tests/test_ledger_revision.py` 的 `ResultVersionTablesTests`。 */
+const DISCOVERIES = ['jav-discoveries', 'jav-detail', 'index'];
+/* 每个版本键刷新的页面，要覆盖服务端按表缓存的那几页实际读到的表。
+   对照见 `tests/test_ledger_revision.py` 的 `ResultVersionTablesTests`。 */
 const READINGS: Record<string, string[]> = {
-  catalog: [...CATALOG, ...FOLLOW, 'review', 'taste'],
-  follow: [...FOLLOW, 'stats', 'taste'],
-  discoveries: DISCOVERIES,
+  catalog: [...CATALOG, 'review'],
   review: ['review'],
-  artwork: [...CATALOG, ...FOLLOW, ...DISCOVERIES, 'avatar-choices'],
+  artwork: [...CATALOG, ...DISCOVERIES, 'avatar-choices'],
 };
 
 export function createResultRefresher() {
@@ -37,8 +33,7 @@ export function createResultRefresher() {
         while (pending.size) {
           const heads = new Set(pending);
           pending.clear();
-          const filters = { predicate: (query: { queryKey: readonly unknown[] }) => heads.has(String(query.queryKey[0]))
-            && (query.queryKey[0] !== 'follow-manage' || query.queryKey.length === 1 || query.queryKey[1] === 'feeds') };
+          const filters = { predicate: (query: { queryKey: readonly unknown[] }) => heads.has(String(query.queryKey[0])) };
           const inFlight = queryClient.getQueryCache().findAll(filters)
             .some(query => query.isActive() && query.state.fetchStatus === 'fetching');
           await queryClient.invalidateQueries(filters, { cancelRefetch: false });

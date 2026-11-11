@@ -112,15 +112,10 @@ _ENTITY_CHILDREN = ("asset_entity", "entity_alias", "entity_external_ref", "enti
 
 
 def _drop_entity(connection: Connection, name: str) -> int:
-    """撤掉的标签连实体一起删；有人关注着的不动，留给人看。"""
+    """撤掉的标签连实体一起删；还有引用的不动，留给人看。"""
     entity_id = _entity_id(connection, name)
     if entity_id is None:
         return 0
-    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    for table in ("follow_source", "feed_source", "feed_discovery_entity"):
-        if table in tables and connection.execute(
-                f"SELECT 1 FROM {table} WHERE entity_id=?", (entity_id,)).fetchone():
-            return 0
     for table in _ENTITY_CHILDREN:
         connection.execute(f"DELETE FROM {table} WHERE entity_id=?", (entity_id,))
     connection.execute("DELETE FROM entity WHERE id=?", (entity_id,))

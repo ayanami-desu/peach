@@ -15,7 +15,7 @@ Movie demo data; see [asset credits and licenses](https://peach.video/en/credits
 - **Metadata scraping**: recognize video codes, read NFO files and fill titles, performers, studios and covers from multiple sources while keeping your edits.
 - **Local and cloud libraries**: browse mounted folders, SMB shares and CloudDrive2 cloud mounts in one library. Scanning is read-only and media stays where it is.
 - **Playback and history**: stream in the browser with subtitles, playback speed, resume and timeline previews.
-- **Follows and discovery**: track performer and creator updates, discover titles and manage a want list.
+- **JAV library and discovery**: read a title's public javdb record — fetched once and kept permanently — and explore your own collection by unwatched state, source rating, duration or code.
 - **Library management**: manage tags, duplicates, versions and parts; metadata and watch history stay in your data volume.
 - **Any device**: manage and watch from a desktop, tablet or phone browser.
 

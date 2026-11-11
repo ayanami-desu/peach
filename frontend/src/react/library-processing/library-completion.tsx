@@ -21,7 +21,7 @@ import { busyProps } from '../settings/use-action';
 
 /** 缺图判据与卡面一致；没开流量保护的影片可抽帧，有番号的影片可补发行封面。 */
 type PreviewItem = Pick<MediaItem, 'id' | 'name' | 'medium' | 'disposal' | 'location' | 'cost' | 'code' | 'is_jav'
-  | 'has_cover' | 'cover_key' | 'has_thumb' | 'has_local_poster' | 'follow_thumb_url'>;
+  | 'has_cover' | 'cover_key' | 'has_thumb' | 'has_local_poster'>;
 
 /** 卡面画不画得出来。`frames` 是竖屏格（竖屏带与筛竖屏的网格）：那里番号作品也只用视频帧，
  *  不借官方封面，判据同 `media-card.tsx` 的 `frameOnly`。 */

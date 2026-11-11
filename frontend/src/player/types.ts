@@ -52,7 +52,7 @@ export interface VjsPlayer {
 
 export type VideojsFactory = (video: HTMLVideoElement, options: Record<string, unknown>) => VjsPlayer;
 
-/** 作品与关注条目共有的那几样。作品来自 `/api/item`，关注来自 `/api/follow/item`。 */
+/** 一条可播放的作品（`/api/item`）。 */
 export interface PlayerItem {
   id: number;
   root_id?: string;
@@ -65,7 +65,6 @@ export interface PlayerItem {
   width?: number | null;
   height?: number | null;
   size?: number | null;
-  follow_item_id?: number | null;
   media_type?: string;
   thumb_url?: string;
   [field: string]: unknown;

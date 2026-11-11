@@ -107,7 +107,7 @@ CONFIRMED_SITES: dict[str, tuple[str, str]] = {
 
 #: 发行平台不是厂牌，「厂牌官网」这条路对它们本来就不成立。
 #:
-#: 用户判据（见 `docs/SOURCING.md`）：FC2-PPV、myfans 这类是把别人的作品卖出去的平台；
+#: 用户判据（见 `docs/METADATA.md`）：FC2-PPV、myfans 这类是把别人的作品卖出去的平台；
 #: 页面上有实际卖主（seller／出品者）的那个账号才是 creator，账本里已标注或评论里提到的
 #: 女优属于 performer。所以拿 `fc2ppv.com` 这类推导域名去试，试出什么都不能写成 official：
 #: 要么是抢注页，要么是平台入口，两者都不是「这个厂牌的官网」。
@@ -458,7 +458,7 @@ def discover(record: dict, other_names: Sequence[str], seeds: Sequence[str], *,
         # 一个请求都不发：这不是「查不到」，是这条路对发行平台本来就不成立。
         row["verdict"], row["note"] = PLATFORM_VERDICT, (
             "发行平台不是厂牌，没有「厂牌官网」可查；链接按平台登记，"
-            "有实际卖主的账号才是 creator（docs/SOURCING.md）")
+            "有实际卖主的账号才是 creator（docs/METADATA.md）")
         return row, last
     confirmed = CONFIRMED_SITES.get(name)
     # 人工喂的种子和规则推出来的候选走同一条验证，但要分得清哪个是哪个：

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { RemixiconComponentType } from '@remixicon/react';
-import { RiArrowRightSLine, RiBookmarkLine, RiCompass3Line, RiFolderLine, RiSearchLine, RiPlayCircleLine, RiSettings3Line, RiPaletteLine, RiRssLine, RiDatabase2Line, RiUser3Line, RiFilmLine, RiBarChartLine, RiDownloadCloudLine, RiSmartphoneLine, RiToolsLine, RiEyeLine, RiPulseLine } from '@remixicon/react';
+import { RiArrowRightSLine, RiBookmarkLine, RiCompass3Line, RiFolderLine, RiSearchLine, RiPlayCircleLine, RiSettings3Line, RiPaletteLine, RiDatabase2Line, RiUser3Line, RiFilmLine, RiBarChartLine, RiDownloadCloudLine, RiSmartphoneLine, RiToolsLine, RiEyeLine, RiPulseLine } from '@remixicon/react';
 import { Button } from '@/components/base/buttons/button';
 import { InputBase, TextField } from '@/components/base/input/input';
 import { cx } from '@/utils/cx';
@@ -14,14 +14,14 @@ import { cardClass } from '../components/card';
 type Glyph = RemixiconComponentType;
 const ICONS: Record<string, Glyph> = {
   browse: RiSearchLine, collect: RiBookmarkLine, watch: RiPlayCircleLine, manage: RiFolderLine,
-  experience: RiPaletteLine, discovery: RiRssLine, storage: RiDatabase2Line, system: RiSettings3Line,
+  experience: RiPaletteLine, discovery: RiSearchLine, storage: RiDatabase2Line, system: RiSettings3Line,
 };
 const CHAPTER_ICONS: Record<string, Glyph> = {
   basics: RiCompass3Line, 'find-play': RiSearchLine, entities: RiUser3Line, jav: RiFilmLine,
-  save: RiBookmarkLine, follow: RiRssLine, insights: RiBarChartLine, viewing: RiPlayCircleLine,
+  save: RiBookmarkLine, insights: RiBarChartLine, viewing: RiPlayCircleLine,
   devices: RiSmartphoneLine, external: RiDownloadCloudLine, maintenance: RiToolsLine,
   appearance: RiPaletteLine, playback: RiPlayCircleLine, content: RiEyeLine,
-  'search-settings': RiSearchLine, 'jav-settings': RiFilmLine, subscriptions: RiRssLine,
+  'search-settings': RiSearchLine, 'jav-settings': RiFilmLine,
   library: RiDatabase2Line, downloads: RiDownloadCloudLine, network: RiSmartphoneLine,
   'app-maintenance': RiToolsLine, diagnostics: RiPulseLine,
 };

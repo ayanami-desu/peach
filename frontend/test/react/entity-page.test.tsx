@@ -20,7 +20,7 @@ notifyManager.setScheduler((notify) => notify());
 const NAME = '篠田ゆう';
 const entity = (patch: Record<string, unknown> = {}) => ({
   id: 7001, kind: 'performer', canonical_name: NAME, aliases: [], user_aliases: [], asset_count: 3,
-  tags: [{ k: '巨乳', n: 12 }, { k: '美乳', n: 4 }], related_performers: [], feed: { following: false },
+  tags: [{ k: '巨乳', n: 12 }, { k: '美乳', n: 4 }], related_performers: [],
   ...patch,
 });
 const items = (ids: number[], jav = false) => ({
@@ -31,34 +31,15 @@ const photos = (count: number, patch: Record<string, unknown> = {}) => ({
   items: Array.from({ length: count }, (_, at) => ({ id: 500 + at, name: `${String(at + 1).padStart(3, '0')}.jpg` })),
   ...patch,
 });
-const followGroup = (id: number, kind: 'video' | 'image') => ({
-  primary: { id, title: `更新 ${id}`, status: 'new', provider: 'rule34video', source_id: 1, media_kind: kind,
-    thumb_url: `/thumb/${id}`, tags: [] },
-  variants: [], duplicates: [], stack: null,
-});
-const followPage = (groups: unknown[]) => ({
-  groups, counts: { new: groups.length }, offset: 0, has_more: false, facets: {},
-  sources: [{ id: 1, provider: 'rule34video', provider_label: 'Rule34Video', author_key: 'name:jul3d' }],
-  author_facets: { providers: ['rule34video'], tags: [['cum', groups.length]] },
-});
-const heroFollow = (n: number) => ({ key: 'name:jul3d', n, providers: ['rule34video'], avatar: '', avatar_fallback: '', held: [] });
-const creator = (patch: Record<string, unknown> = {}) =>
-  entity({ kind: 'creator', canonical_name: 'Jul3D', follow: heroFollow(3), ...patch });
-
 interface Plan {
   entity?: Record<string, unknown>;
   items?: (query: URLSearchParams) => unknown;
   photos?: (query: URLSearchParams) => unknown;
   set?: (query: URLSearchParams) => unknown;
-  feed?: unknown;
-  /** `/api/follow` 的回话：资料页在线视图那一页。 */
-  follow?: (query: URLSearchParams) => unknown;
   /** 每一次取资料现算一份，盖过 `entity`：写回前后服务端给的不一样时用。 */
   entityFor?: () => Record<string, unknown>;
   /** 换头像写回落地时调一下。 */
   picked?: () => void;
-  /** `/api/feeds/check` 的回话，按次序一问一个；问完了就一直是最后那个。 */
-  checks?: string[];
 }
 
 /** 按端点分流的假 fetch，记下每一次请求的地址与写入的内容。 */
@@ -94,13 +75,6 @@ function serve(plan: Plan = {}) {
     if (url.pathname === '/api/items') return reply(plan.items ? plan.items(query) : items([1, 2, 3]));
     if (url.pathname === '/api/photos') return reply(plan.photos ? plan.photos(query) : photos(0));
     if (url.pathname === '/api/photo-set') return reply(plan.set ? plan.set(query) : photos(2, { id: 9, title: '图集' }));
-    if (url.pathname === '/api/follow/credentials') return reply({ providers: [] });
-    if (url.pathname === '/api/follow') return reply(plan.follow ? plan.follow(query) : followPage([]));
-    if (url.pathname === '/api/feeds/discoveries') return reply(plan.feed ?? { items: [] });
-    if (url.pathname === '/api/feeds/check') {
-      const checks = plan.checks ?? ['idle'];
-      return reply({ status: checks.length > 1 ? checks.shift() : checks[0] });
-    }
     throw new Error(`没有安排这个端点：${url.pathname}`);
   });
   vi.stubGlobal('fetch', fetcher);
@@ -112,16 +86,13 @@ function serve(plan: Plan = {}) {
 
 function shellProps(patch: Partial<EntityPageProps> = {}): EntityPageProps {
   const host = () => { const el = document.createElement('div'); el.className = 'peach-react'; document.body.append(el); return el };
-  const feed = document.createElement('section');
-  feed.hidden = true;
-  document.body.append(feed);
   return {
     kind: 'performer', name: NAME, filters: {}, media: { media: 'videos', set: 0 }, jav: false, seed: '42',
-    revision: 0, feedRevision: 0, photoSize: 'small', photoLayout: 'masonry', followImagesOnly: false,
+    revision: 0, photoSize: 'small', photoLayout: 'masonry',
     javLayout: 'small', javLayouts: [['big', '大图', 'maximize'], ['small', '小图', 'layout-grid']],
     photoLayouts: [['fixed', '固定比例', 'layout-grid'], ['masonry', '瀑布流', 'columns-2']],
     states: [{ k: '', label: '全部' }, { k: 'fresh', label: '没看过' }], peopleLayout: 'big',
-    hosts: { filter: host(), feed, body: host() },
+    hosts: { filter: host(), body: host() },
     layout: { active: false, size: 'small', portrait: false, javImage: 'cover' },
     selectMode: false, selected: new Set(), seekSeconds: 10, wireDrag: vi.fn(),
     skeletonHtml: () => '<div data-test-skeleton></div>', groupCollapse: true, canLoadMore: () => true,
@@ -138,16 +109,8 @@ function shellProps(patch: Partial<EntityPageProps> = {}): EntityPageProps {
         canFlip: () => true, revealSource: vi.fn(async () => ''),
       },
     },
-    follow: {
-      helpers: { workMark: () => '', tagLabel: (tag) => tag, wireDrag: vi.fn(), wireScroller: vi.fn(),
-        listSkeletonHtml: () => '<div data-test-follow-skeleton></div>', jobProgress: vi.fn() },
-      actions: { route: vi.fn(), shuffle: vi.fn(), loaded: vi.fn(), openDetail: vi.fn(), openAuthor: vi.fn(),
-        toggleSelection: vi.fn(), setImagesOnly: vi.fn(), setPhotoLayout: vi.fn(), canFlip: () => false, toast: vi.fn(),
-        failure: vi.fn(), checkReport: vi.fn() },
-    },
     helpers: {
-      portraitImg: () => '', wireDrag: vi.fn(), wireScroller: vi.fn(), wireFeedRow: vi.fn(),
-      feedRowHtml: (data) => `<div class="feednewrow">${(data?.items || []).map((one) => `<div data-feed-id="${one.id}"></div>`).join('')}</div>`,
+      portraitImg: () => '', wireDrag: vi.fn(), wireScroller: vi.fn(),
       receipt: vi.fn(), failure: vi.fn(), aliasForm: vi.fn(async () => {}),
       sourceToolsHtml: () => '', wireSourceTools: vi.fn(), comboItems: () => [],
       sortKeys: vi.fn((sort: string) => [{ key: 'new', label: '入库时间', pressed: sort === 'new', dir: '' as const, ariaLabel: '' }]),
@@ -155,7 +118,7 @@ function shellProps(patch: Partial<EntityPageProps> = {}): EntityPageProps {
     actions: {
       route: vi.fn(), toggleTag: vi.fn(), clearFilter: vi.fn(), clearAll: vi.fn(), setSort: vi.fn(),
       reshuffleVideos: vi.fn(() => '77'), setJavLayout: vi.fn(), setPhotoLayout: vi.fn(), openEntity: vi.fn(),
-      javContext: vi.fn(), painted: vi.fn(), missing: vi.fn(), avatarChanged: vi.fn(), openFollowAuthor: vi.fn(),
+      javContext: vi.fn(), painted: vi.fn(), missing: vi.fn(), avatarChanged: vi.fn(),
     },
     ...patch,
   };
@@ -234,16 +197,14 @@ describe('首屏', () => {
     expect(readout(page.props)).toBe('视频 · 3');
   });
 
-  it('资料、作品第一页、整组照片与新作在挂载前取齐，挂上之后不再补请求', async () => {
-    const page = await open({ feed: { items: [{ id: 31, has_cover: true }] } });
+  it('资料、作品第一页与整组照片在挂载前取齐，挂上之后不再补请求', async () => {
+    const page = await open();
     expect(page.calls('/api/entity')).toHaveLength(1);
     expect(page.calls('/api/items')).toHaveLength(1);
     expect(page.calls('/api/photos')).toHaveLength(1);
-    expect(page.calls('/api/feeds/discoveries')[0]?.searchParams.get('entity')).toBe('7001');
     expect(page.fetcher.mock.calls).toHaveLength(page.requestsBeforeMount);
     expect(cards(page.props)).toEqual(['1', '2', '3']);
     expect(readout(page.props)).toBe('视频 · 3');
-    expect(page.props.hosts.feed.querySelector('[data-feed-id="31"]')).not.toBeNull();
   });
 
   it('路由已经取得的实体资料直接用于首屏，作品和照片仍并行取齐', async () => {
@@ -443,49 +404,6 @@ describe('照片墙', () => {
   });
 });
 
-describe('创作者的在线视图', () => {
-  const followCards = (props: EntityPageProps) =>
-    [...props.hosts.body.querySelectorAll<HTMLElement>('[data-follow-item]')].map((card) => card.dataset.followItem);
-
-  it('本地一件都没有：不出视频键，进页就落在在线；图片组多，默认是照片墙', async () => {
-    const page = await open({
-      entity: creator({ asset_count: 0 }),
-      follow: () => followPage([followGroup(1, 'image'), followGroup(2, 'image'), followGroup(3, 'video')]),
-    }, { kind: 'creator', name: 'Jul3D' });
-    await settle();
-    expect(page.calls('/api/follow')[0]?.searchParams.get('author')).toBe('name:jul3d');
-    expect(page.props.hosts.filter.querySelector('[data-entity-media]:not([data-online-media])')).toBeNull();
-    expect(page.props.hosts.filter.querySelector('[data-online-media] [aria-pressed="true"]')
-      ?.getAttribute('data-media-view')).toBe('images');
-    expect(page.props.hosts.body.querySelector('[data-follow-wall]')).not.toBeNull();
-    expect(followCards(page.props)).toEqual(['1', '2']);
-    expect(readout(page.props)).toBe('在线 · 3 项更新');
-    expect(page.props.actions.painted).toHaveBeenLastCalledWith('online', true);
-  });
-
-  it('本地与在线都有：两个键并排，在线不先取；进在线交壳写地址，筛选只在页内重取', async () => {
-    const page = await open({
-      entity: creator({ asset_count: 3, follow: heroFollow(2) }),
-      follow: (query) => followPage(query.get('provider') ? [followGroup(3, 'video')] : [followGroup(1, 'video'), followGroup(2, 'video')]),
-    }, { kind: 'creator', name: 'Jul3D' });
-    expect([...page.props.hosts.filter.querySelectorAll<HTMLElement>('[data-media-view]')]
-      .map((key) => key.dataset.mediaView)).toEqual(['videos', 'online']);
-    expect(page.calls('/api/follow')).toHaveLength(0);
-    await click(page.props.hosts.filter.querySelector('[data-media-view="online"]'));
-    expect(page.props.actions.route).toHaveBeenLastCalledWith({}, { media: 'online', set: 0 });
-    await push({ media: { media: 'online', set: 0 } });
-    await settle();
-    expect(followCards(page.props)).toEqual(['1', '2']);
-    expect(page.props.hosts.body.querySelector('[data-follow-wall]')).toBeNull();
-    const routed = vi.mocked(page.props.actions.route).mock.calls.length;
-    await click(page.props.hosts.filter.querySelector('[data-follow-provider="rule34video"]'));
-    await settle();
-    expect(page.calls('/api/follow').at(-1)?.searchParams.get('provider')).toBe('rule34video');
-    expect(followCards(page.props)).toEqual(['3']);
-    expect(page.props.actions.route).toHaveBeenCalledTimes(routed);
-  });
-});
-
 describe('写操作', () => {
   it('添加别名：表单在壳，写回在岛；写完资料卡与作品列表一起重取', async () => {
     const page = await open();
@@ -520,7 +438,6 @@ describe('写操作', () => {
     const portrait = () => page.props.hosts.filter.ownerDocument.querySelector('[data-test-portrait]')?.getAttribute('src');
     expect(portrait()).toBe('/entity-image?v=old');
     expect(cards(page.props)).toEqual(['1', '2', '3']);
-    const feedBefore = page.calls('/api/feeds/discoveries').length;
     await click(document.querySelector(`button[aria-label="更换${NAME}的头像"]`));
     await settle();
     await click(document.querySelector('[data-avatar-choice]'));
@@ -534,7 +451,6 @@ describe('写操作', () => {
     const avatars = [...page.props.hosts.body.querySelectorAll<HTMLImageElement>('[data-media-avatar] img')];
     expect(avatars).toHaveLength(3);
     expect(avatars.every(image => new URL(image.src).searchParams.get('v') === 'new')).toBe(true);
-    expect(page.calls('/api/feeds/discoveries').length).toBeGreaterThan(feedBefore);
     // 首页顶栏那排头像是壳缓存着的，也得告诉它作废。
     expect(page.props.actions.avatarChanged).toHaveBeenCalledOnce();
   });
@@ -560,39 +476,4 @@ describe('写操作', () => {
     expect(page.props.actions.openEntity).toHaveBeenLastCalledWith('performer', NAME);
   });
 
-  it('订阅开关写回成功后记进这一页的资料，失败交壳出失败回执', async () => {
-    const page = await open();
-    const toggle = () => page.host.querySelector<HTMLInputElement>('input[data-entity-feed]')!;
-    await click(toggle());
-    await settle();
-    expect(page.writes[0]).toEqual({ url: '/api/feeds/source', body: { action: 'follow', entity_id: 7001, enabled: true } });
-    expect(toggle().checked).toBe(true);
-    expect(queryClient.getQueryData<{ feed: { following: boolean } }>(['entity', 'performer', NAME])?.feed.following).toBe(true);
-    page.fetcher.mockImplementationOnce(async () => ({ ok: false, status: 502, json: async () => ({}) }));
-    await click(toggle());
-    await settle();
-    expect(page.props.helpers.failure).toHaveBeenCalledWith('取消订阅新作', expect.any(Error));
-    expect(toggle().checked).toBe(true);
-  });
-
-  it('刚订上：等服务端这一轮拉取跑完，再把新作那一行重取一遍；跑着的时候不重取', async () => {
-    const page = await open({ checks: ['running', 'idle'] });
-    vi.useFakeTimers({ toFake: ['setTimeout'] });
-    await click(page.host.querySelector<HTMLInputElement>('input[data-entity-feed]'));
-    await settle();
-    const step = async () => { await act(async () => { vi.advanceTimersByTime(3000) }); await settle() };
-    await step();
-    expect(page.calls('/api/feeds/check')).toHaveLength(1);
-    expect(page.calls('/api/feeds/discoveries')).toHaveLength(1);
-    await step();
-    expect(page.calls('/api/feeds/check')).toHaveLength(2);
-    expect(page.calls('/api/feeds/discoveries')).toHaveLength(2);
-  });
-
-  it('合集开关改了换一个代次，新作那一行重取', async () => {
-    const page = await open();
-    await push({ feedRevision: 1 });
-    await settle();
-    expect(page.calls('/api/feeds/discoveries')).toHaveLength(2);
-  });
 });

@@ -19,7 +19,7 @@ const esc = (value: string): string => value.replace(/[&<>"]/g, (ch) =>
 
 const slots = (html: string): string => html.repeat(EMPTY_SLOTS);
 
-/** 女优或厂牌那一排的占位格；JAV 新作分区的两排等数据时也用这一份。 */
+/** 女优或厂牌那一排的占位格。 */
 export const tierPlaceholdersHtml = (kind: 'performer' | 'studio'): string =>
   slots(`<span data-catalog-placeholder="${kind}" aria-hidden="true"><span></span><span>&nbsp;</span></span>`);
 

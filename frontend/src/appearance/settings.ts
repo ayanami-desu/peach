@@ -21,11 +21,6 @@ export { SETTINGS_KEY };
    已经按 `prefers-color-scheme` 和 `[data-theme]` 两条路径写好，这里只负责选哪一条。
    跟随系统是默认档，选它等于不写属性。 */
 export const THEME_CHOICES: readonly string[] = ['system', 'light', 'dark'];
-/** 关注首次采集往回取多少天；与数据库那一份同一张表。 */
-export const FOLLOW_INITIAL_DAYS: readonly number[] = [0, 7, 30, 90];
-/* 新作那一行收不收合集由服务端按数据库里的设置筛（列表、未读数、补封面同一份），这里只是
-   镜像：开关的真相在 `/api/settings`。默认收起大合集与切片、单人合集照列。 */
-export const FEED_COMPILATION_KEYS = ['feedHideGroupCompilations', 'feedHideSoloCompilations', 'feedHideExcerpts'] as const;
 
 /** 归一化之后一定在的那几项。对象上还有别的字段（壳与各岛按需写入），这里不一一列出。 */
 export interface AppSettings {
@@ -38,7 +33,6 @@ export interface AppSettings {
   seekSeconds: number;
   searchHistoryLimit: number;
   relatedLimit: number;
-  feedLimit: number;
   javLayout: string;
   homeLayout: string;
   javImage: string;
@@ -46,11 +40,9 @@ export interface AppSettings {
   interfaceLanguage: InterfaceLanguageChoice;
   /** 运行 Peach 的电脑的系统语言（服务端报来，缓存在本地）；「自动」时浏览器语言都对不上才看它。 */
   systemLanguage: InterfaceLanguage | null;
-  followLayout: string;
   peopleLayout: string;
   photoSize: string;
   photoLayout?: string;
-  followImagesOnly?: boolean;
   ambientMode: boolean;
   miniplayer: boolean;
   theaterMode: boolean;
@@ -58,11 +50,6 @@ export interface AppSettings {
   groupCollapse: boolean;
   detailAutoplay: boolean;
   uiSounds: boolean;
-  feedAutoScroll: boolean;
-  feedHideGroupCompilations: boolean;
-  feedHideSoloCompilations: boolean;
-  feedHideExcerpts: boolean;
-  followInitialDays: number;
   sidebarOrder: string[];
   manageOrder: string[];
   navigationOrders: NavigationOrders;
@@ -73,8 +60,8 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS = {
   batchSize: 60, defaultSort: 'seed', sortDefaultsVersion: 3, hoverDelaySeconds: 5, seekSeconds: 10,
-  searchHistoryLimit: 10, relatedLimit: 20, feedLimit: 12, javLayout: 'big', homeLayout: 'small', javImage: 'cover',
-  followLayout: 'default', peopleLayout: 'big', photoSize: 'small', ambientMode: true, miniplayer: true,
+  searchHistoryLimit: 10, relatedLimit: 20, javLayout: 'big', homeLayout: 'small', javImage: 'cover',
+  peopleLayout: 'big', photoSize: 'small', ambientMode: true, miniplayer: true,
   theaterMode: false, theme: 'system', groupCollapse: true, sidebarOrder: [...DEFAULT_SIDEBAR_ORDER], manageOrder: [...MANAGE_MENU_SECTIONS],
   homeGlow: DEFAULT_HOME_GLOW, accent: DEFAULT_ACCENT, performerNameLanguage: 'zh-CN', interfaceLanguage: 'auto', systemLanguage: null,
   navigationOrders: {},
@@ -89,8 +76,6 @@ export const allowedSetting = <T>(value: unknown, allowed: readonly T[], fallbac
 export function normalizeAppSettings(raw: unknown): { settings: AppSettings; migrated: boolean } {
   const saved = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const settings = { ...DEFAULT_SETTINGS, ...saved } as Record<string, unknown>;
-  settings.followInitialDays = FOLLOW_INITIAL_DAYS.includes(+(settings.followInitialDays as number))
-    ? +(settings.followInitialDays as number) : 30;
   delete settings.rotateMinutes;
   /* 迁移只碰默认值本身：把界面上已经不存在的键换成当前键，用户主动选过的排序不动。
      不迁移的话白名单会把它静默打回随机。 */
@@ -112,13 +97,8 @@ export function normalizeAppSettings(raw: unknown): { settings: AppSettings; mig
   settings.detailAutoplay = settings.detailAutoplay !== false;
   settings.miniplayer = settings.miniplayer !== false;
   settings.uiSounds = settings.uiSounds !== false;
-  settings.feedAutoScroll = settings.feedAutoScroll !== false;
-  settings.feedHideGroupCompilations = settings.feedHideGroupCompilations !== false;
-  settings.feedHideSoloCompilations = settings.feedHideSoloCompilations === true;
-  settings.feedHideExcerpts = settings.feedHideExcerpts !== false;
   settings.searchHistoryLimit = boundedPreference(+(settings.searchHistoryLimit as number), 0, 50, 10);
   settings.relatedLimit = boundedPreference(+(settings.relatedLimit as number), 0, 60, 20);
-  settings.feedLimit = boundedPreference(+(settings.feedLimit as number), 1, 100, 12);
   Object.assign(settings, normalizeJavPreferences(settings));
   settings.theme = allowedSetting(settings.theme, THEME_CHOICES, 'system');
   settings.performerNameLanguage = allowedSetting(settings.performerNameLanguage, ['zh-CN', 'ja'], 'zh-CN');
@@ -159,10 +139,6 @@ export interface SyncedSettings {
   performerNameLanguage?: unknown;
   interfaceLanguage?: unknown;
   systemLanguage?: unknown;
-  followInitialDays?: unknown;
-  feedHideGroupCompilations?: unknown;
-  feedHideSoloCompilations?: unknown;
-  feedHideExcerpts?: unknown;
   searchHistoryLimit?: unknown;
   sidebarOrder?: unknown;
   manageOrder?: unknown;
@@ -193,12 +169,6 @@ export function applySyncedSettings(
     settings.systemLanguage = system;
     target.save();
     changed('interfaceLanguage');
-  }
-  const initial = remote && remote.followInitialDays;
-  if (FOLLOW_INITIAL_DAYS.includes(initial as number)) { settings.followInitialDays = initial as number; target.save() }
-  for (const key of FEED_COMPILATION_KEYS) {
-    if (typeof remote?.[key] !== 'boolean' || remote[key] === settings[key]) continue;
-    settings[key] = remote[key] as boolean; target.save();
   }
   /* 数据库里还没有条数时，这台设备本地改过的那个数替所有访问端先定下来，只送这一次。 */
   const limit = remote && remote.searchHistoryLimit;

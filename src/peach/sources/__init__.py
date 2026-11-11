@@ -1,4 +1,4 @@
-"""站点解析器：契约在 `base`，一个站一个模块，全部登记在 `SITE_SOURCES`，各站说明见 `docs/SOURCING.md`。"""
+"""站点解析器：契约在 `base`，一个站一个模块，全部登记在 `SITE_SOURCES`，各站说明见 `docs/METADATA.md`。"""
 from __future__ import annotations
 
 from .avbase import AVBASE, AVBaseSource

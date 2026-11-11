@@ -93,9 +93,9 @@ function ConfigurationGroups({ data, receipt, section, diagnostics, reload, refr
   const previous = useRef(chosen);
   useEffect(() => { setChosen(section) }, [section]);
   useEffect(() => {
-    const follow = () => setChosen(ANCHORED.get(window.location.hash) ?? '');
-    window.addEventListener('hashchange', follow);
-    return () => window.removeEventListener('hashchange', follow);
+    const sync = () => setChosen(ANCHORED.get(window.location.hash) ?? '');
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
   }, []);
   useLayoutEffect(() => {
     if (previous.current === chosen) return;

@@ -1,8 +1,7 @@
 /* 索引页的数据契约：艺人、创作者、厂牌、事务所、系列名册与标签词表。
  *
- * 本地那一档读 `/api/index?kind=`（`src/peach/web_entity.py` 的 `q_index`），在线那一档读
- * 关注来源上的两份词表（`../follow/online-vocab.ts`）。四种形状一样：`items` 加 `has_more`，
- * `limit`／`offset` 翻页；标签按页替换，人物名册按「载入更多」追加。
+ * 读 `/api/index?kind=`（`src/peach/web_entity.py` 的 `q_index`）。两种形状一样：`items` 加
+ * `has_more`，`limit`／`offset` 翻页；标签按页替换，人物名册按「载入更多」追加。
  *
  * 索引页自己不调 `/api/items`：点一个标签或按所选标签显示结果，是回目录按它筛选，那一次
  * 取数归遗留壳的目录网格。 */
@@ -13,14 +12,9 @@ import { firstGrapheme } from '@peach/legacy/core';
 import { apiGet } from '../../api';
 import { TAG_PAGE_SIZE } from '../../tag-skeleton';
 import { IDENTITY_CATEGORIES } from '../../identity-filter';
-import {
-  fetchOnlineAuthors, fetchOnlineTags, onlineAuthorsKey, onlineTagsKey,
-  type OnlineAuthor, type OnlineTag,
-} from '../follow/online-vocab';
 import { queryClient } from '../query';
 
 export type IndexKind = 'performers' | 'creators' | 'studios' | 'agencies' | 'series' | 'tags';
-export type IndexScope = 'local' | 'online';
 export type TagView = 'alphabet' | 'cloud';
 export type PeopleLayout = 'big' | 'compact';
 
@@ -43,11 +37,6 @@ export const TAG_CATEGORIES: readonly (readonly [string, string])[] = [
   ['general', '其他内容'],
 ];
 
-/** 在线标签的分类来自上游 booru 的 tag_type。 */
-export const ONLINE_TAG_CATEGORIES: readonly (readonly [string, string])[] = [
-  ['all', '全部'], ['general', '通用'], ['artist', '创作者'], ['character', '角色'],
-  ['copyright', '作品'], ['metadata', '元数据'],
-];
 /** 本地艺人名册的身份分类；卖家名册不分类。词表与壳的骨架共用一份。 */
 export { IDENTITY_CATEGORIES };
 
@@ -61,7 +50,6 @@ export const isCompany = (kind: IndexKind) => kind === 'studios' || kind === 'ag
 export interface IndexPerson {
   entity_kind?: string;
   identity_labels?: string[];
-  following?: boolean;
   entity_id?: number;
   id?: number;
   k: string;
@@ -100,7 +88,6 @@ export interface IndexPage<T> {
 export interface IndexRoute {
   kind: IndexKind;
   q: string;
-  scope: IndexScope;
   view: TagView;
   category: string;
 }
@@ -112,59 +99,49 @@ export interface PersonAvatar {
   face: string;
 }
 
-/** 索引页。地址栏是唯一真相：`kind`、`q`、`scope`、`view`、`category` 由壳从地址读出，
- *  `layout` 从这台浏览器的偏好读出，都只作初值；页面换档时经 `route` 与 `savePreference`
- *  写回去。取图、回落链与去处仍是遗留层唯一那一份，经 props 递进来。 */
+/** 索引页。地址栏是唯一真相：`kind`、`q`、`view`、`category` 由壳从地址读出，`layout` 从这台
+ *  浏览器的偏好读出，都只作初值；页面换档时经 `route` 与 `savePreference` 写回去。取图、回落链
+ *  与去处仍是遗留层唯一那一份，经 props 递进来。 */
 export interface IndexProps extends IndexRoute {
   layout: PeopleLayout;
   /** 写回地址栏。`replace` 用在打字过滤那种一路改写的场合，不往历史里塞一串。 */
   route(params: IndexRoute, options?: { replace?: boolean }): void;
   /** 版式偏好改了：存储归壳（`appSettings.peopleLayout`），资料页的名册读的也是它。 */
   savePreference(patch: { layout: PeopleLayout }): void;
-  /** 顶栏那枚选择键的状态。只在本地标签页有意义：所选标签拼成目录筛选。键归壳，关掉时
+  /** 顶栏那枚选择键的状态。只在标签页有意义：所选标签拼成目录筛选。键归壳，关掉时
    *  壳经 `updateManagedRoute` 把 `false` 推进来，页面随之清空所选。 */
   selectMode: boolean;
-  /** 页面自己要退出选择模式的两处：按所选标签显示结果，和艺人页切到在线名册。 */
+  /** 页面自己要退出选择模式的两处：按所选标签显示结果，和换到别的名册。 */
   exitSelectMode(): void;
-  /** 本地名册一格的头像（`card-art` 的 `avatarInner` 那条回落链）。 */
+  /** 名册一格的头像（`card-art` 的 `avatarInner` 那条回落链）。 */
   personAvatar(item: IndexPerson, entityKind: string, big: boolean): PersonAvatar;
-  /** 在线创作者一格的头像：主页头像优先、归档兜底，都取不到落回首字母。 */
-  authorAvatar(author: OnlineAuthor): string;
   tagLabel(tag: string): string;
   /** 打开资料页。 */
   openEntity(entityKind: string, name: string): void;
-  /** 回目录，按这一枚或这几枚本地标签筛选。 */
+  /** 回目录，按这一枚或这几枚标签筛选。 */
   showTags(tags: string[], match: 'any' | 'all'): void;
-  /** 去关注页，只看这一位创作者或这一枚在线标签的更新。 */
-  openFollowAuthor(key: string): void;
-  openFollowTag(tag: string): void;
 }
 
 /** 地址栏上的类型可能是手敲或拼错的：认不出的回到「全部」，不拿它去问后端。
- *  只有艺人和标签两页分本地与在线。动画作者归艺人名册的一个分类，
- *  卖家名册上的 `category=animation` 链接转到那里。 */
+ *  动画作者归艺人名册的一个分类，卖家名册上的 `category=animation` 链接转到那里。 */
 export function indexRoute(route: IndexRoute): IndexRoute {
   if (route.kind === 'creators' && route.category === 'animation') {
-    return indexRoute({ ...route, kind: 'performers', scope: 'local' });
+    return indexRoute({ ...route, kind: 'performers' });
   }
-  const scope = route.kind === 'tags' || route.kind === 'performers' ? route.scope : 'local';
-  const categories = route.kind === 'tags' ? (scope === 'online' ? ONLINE_TAG_CATEGORIES : TAG_CATEGORIES)
-    : route.kind === 'performers' && scope === 'local' ? IDENTITY_CATEGORIES : [];
+  const categories = route.kind === 'tags' ? TAG_CATEGORIES
+    : route.kind === 'performers' ? IDENTITY_CATEGORIES : [];
   const known = categories.some(([key]) => key === route.category);
-  return { ...route, scope, category: known ? route.category : 'all' };
+  return { ...route, category: known ? route.category : 'all' };
 }
 
-/** 一种状态下该读哪一份：本地名册、本地词表、在线创作者或在线标签。 */
+/** 一种状态下该读哪一份：名册或词表。 */
 export type IndexSource =
   | { what: 'people'; kind: Exclude<IndexKind, 'tags'>; q: string; category?: string }
-  | { what: 'tags'; q: string; category: string }
-  | { what: 'online-authors'; q: string }
-  | { what: 'online-tags'; q: string; category: string };
+  | { what: 'tags'; q: string; category: string };
 
-export function indexSource(route: Pick<IndexRoute, 'kind' | 'q' | 'scope' | 'category'>): IndexSource {
-  const { kind, q, scope, category } = route;
-  if (kind === 'tags') return scope === 'online' ? { what: 'online-tags', q, category } : { what: 'tags', q, category };
-  if (kind === 'performers' && scope === 'online') return { what: 'online-authors', q };
+export function indexSource(route: Pick<IndexRoute, 'kind' | 'q' | 'category'>): IndexSource {
+  const { kind, q, category } = route;
+  if (kind === 'tags') return { what: 'tags', q, category };
   return { what: 'people', kind, q, ...(category && category !== 'all' ? { category } : {}) };
 }
 
@@ -178,7 +155,7 @@ export function indexUrl(kind: IndexKind, q: string, category: string, limit: nu
   return `${INDEX_URL}?${params}`;
 }
 
-type AnyItem = IndexPerson | IndexTag | OnlineAuthor | OnlineTag;
+type AnyItem = IndexPerson | IndexTag;
 
 export interface IndexQuery {
   queryKey: QueryKey;
@@ -187,9 +164,9 @@ export interface IndexQuery {
   getNextPageParam(last: IndexPage<AnyItem>, pages: IndexPage<AnyItem>[]): number | undefined;
 }
 
-/** 四份数据共用一副分页：下一页的 offset 就是已经取到的条数。 */
+/** 两份数据共用一副分页：下一页的 offset 就是已经取到的条数。 */
 export function indexQuery(source: IndexSource, pageSize: number = PAGE_SIZE.tags): IndexQuery {
-  const limit = source.what === 'people' || source.what === 'online-authors' ? PAGE_SIZE.people : pageSize;
+  const limit = source.what === 'people' ? PAGE_SIZE.people : pageSize;
   const next = (last: IndexPage<AnyItem>, pages: IndexPage<AnyItem>[]) =>
     last.has_more ? pages.reduce((sum, page) => sum + page.items.length, 0) : undefined;
   const base = { initialPageParam: 0, getNextPageParam: next };
@@ -200,12 +177,6 @@ export function indexQuery(source: IndexSource, pageSize: number = PAGE_SIZE.tag
     case 'tags':
       return { ...base, queryKey: indexKey('tags', source.q, source.category),
         queryFn: ({ pageParam, signal }) => apiGet(indexUrl('tags', source.q, source.category, limit, pageParam), signal) };
-    case 'online-authors':
-      return { ...base, queryKey: onlineAuthorsKey(source.q),
-        queryFn: ({ pageParam, signal }) => fetchOnlineAuthors(source.q, limit, pageParam, signal) };
-    case 'online-tags':
-      return { ...base, queryKey: onlineTagsKey(source.q, source.category),
-        queryFn: ({ pageParam, signal }) => fetchOnlineTags(source.q, source.category, limit, pageParam, signal) };
   }
 }
 
@@ -227,10 +198,8 @@ export const flatItems = <T>(data: InfiniteData<IndexPage<T>> | undefined): T[] 
 /** 读数：取到几条，后面还有就带一个加号。 */
 export const countText = (count: number, more: boolean) => `${count.toLocaleString()}${more ? '+' : ''} 项`;
 
-/** 一枚标签的类型色键（`../styles.css` 的 `[data-tag-cat]`）。在线那一套取上游 tag_type，
- *  加 `r34-` 前缀与本地同名的类分开：本地的 `artist` 是橙色，在线的是红色。 */
-export const tagColorKey = (online: boolean, cat: string | undefined) =>
-  online ? `r34-${cat || 'unknown'}` : cat || 'general';
+/** 一枚标签的类型色键（`../styles.css` 的 `[data-tag-cat]`）。 */
+export const tagColorKey = (cat: string | undefined) => cat || 'general';
 
 /** 格子底下那个读数。事务所数的是人：它名下的视频是成员拍的，只报视频数会让它唯一独有的
  *  读数消失。数字一律带单位，同一排格子才读得出数的是人还是片，单独一个「0」也不像漏了字。 */

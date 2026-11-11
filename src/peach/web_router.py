@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 from . import media_libraries, settings_file
-from .follow_discovery import MAX_SUGGESTIONS, MAX_TERM_LENGTH
 from .review_csv import candidate_root_version
 from .web_activity import (
     w_activity,
@@ -37,10 +36,8 @@ from .web_catalog import (
     w_item_tag,
 )
 from .web_entity import (
-    FEED_SHAPE_TABLES,
     SUGGEST_GROUP_LIMIT,
     SUGGEST_KIND_LIMIT,
-    entity_shape_feed,
     entity_shape_rest,
     entity_shapes,
     q_entity,
@@ -54,44 +51,8 @@ from .web_entity import (
     w_entity_name,
 )
 from .web_search import q_search_recommendations
-from .web_jav_detail import q_jav_detail, q_jav_resources, q_jav_reviews, w_jav_cover, w_jav_samples
-from .web_jav_discovery import (q_jav_discoveries, q_jav_discovery_metadata, q_jav_releases,
-                                w_jav_discovery_metadata, w_jav_release_metadata)
-from .web_feeds import (
-    q_feed_check,
-    q_feed_discoveries,
-    q_feed_lookup,
-    q_feed_schedule,
-    q_feeds,
-    w_feed_check,
-    w_feed_discovery,
-    w_feed_schedule_run,
-    w_feed_source,
-)
-from .web_follow import (
-    q_follow,
-    q_follow_authors,
-    q_follow_check,
-    q_follow_credentials,
-    q_follow_schedule,
-    q_follow_suggest,
-    q_follow_tags,
-    w_follow_activity,
-    w_follow_author_alias,
-    w_follow_check,
-    w_follow_creator,
-    w_follow_credential,
-    w_follow_image_dims,
-    w_follow_media_hide,
-    w_follow_play,
-    w_follow_resolve,
-    w_follow_save,
-    w_follow_schedule,
-    w_follow_schedule_run,
-    w_follow_source,
-    w_follow_status,
-    w_follow_tag,
-)
+from .web_jav_detail import q_jav_detail, w_jav_cover, w_jav_samples
+from .web_jav_discovery import q_jav_discoveries
 from .web_links import w_links, w_links_check, w_links_prune
 from .web_library_processing import q_library_processing, q_library_processing_issues, w_library_processing
 from .web_organize import (
@@ -114,7 +75,6 @@ from .web_tasks import q_result_updates, q_tasks
 from .web_timeline_thumbnails import (
     q_media_processing, q_thumbnail_jobs, q_timeline, w_media_processing, w_thumbnail_jobs,
 )
-from .web_wants import q_wants, w_wants
 from .web_stats import (
     q_quality_goals,
     q_search_history,
@@ -171,12 +131,11 @@ def _get_ads(contract, args):
     )
 
 
-#: `/api/related` 确定不读的账本表：订阅新作、复核结论，以及在线播放心跳、播放记录与搜索历史
-#: 这几张高频写的表。其余表一律算进版本：推荐卡要的出镜者、关注卡、下载来源散在好几处，
-#: 漏一张，那张表变了之后就一直回旧结果。
-RELATED_UNREAD_TABLES = ("feed_source", "feed_item", "feed_discovery", "feed_discovery_entity",
-                         "review_decision", "review_decision_history", "genre_decision",
-                         "follow_playback", "activity_event", "search_history")
+#: `/api/related` 确定不读的账本表：复核结论，以及播放心跳、播放记录与搜索历史这几张
+#: 高频写的表。其余表一律算进版本：推荐卡要的出镜者、下载来源散在好几处，漏一张，
+#: 那张表变了之后就一直回旧结果。
+RELATED_UNREAD_TABLES = ("review_decision", "review_decision_history", "genre_decision",
+                         "activity_event", "search_history")
 
 
 def _get_related(contract, args):
@@ -248,25 +207,6 @@ def _get_suggest(contract, args):
         lambda: q_suggest(contract, query, limit, kinds))
 
 
-def _get_follow_suggest(contract, args):
-    """关注添加框的建议，同样每敲一下来一次，同样走 LRU。
-
-    这一路会打一次 rule34.xxx 的公开补全，缓存住的正是它：退格再敲回同一段前缀
-    不该让站点多挨一枪。
-    """
-    query = str(args.get("q") or "").strip()[:MAX_TERM_LENGTH]
-    try:
-        limit = min(max(int(args.get("limit", str(MAX_SUGGESTIONS))), 1),
-                    MAX_SUGGESTIONS * 2)
-    except (TypeError, ValueError):
-        limit = MAX_SUGGESTIONS
-    if not query:
-        return {"q": "", "groups": []}
-    return contract.cached_lru(
-        f"follow-suggest:{limit}:{query}",
-        lambda: q_follow_suggest(contract, query, limit))
-
-
 def _get_search_history(contract, args):
     return q_search_history(contract, int(args.get("limit", "10")))
 
@@ -285,43 +225,32 @@ def _get_review(contract, args):
 
 
 def _get_entity_shapes(contract, args):
-    # 每一页开头都要这一份（骨架照它留位），全部来自账本，账本不变就一直用同一份。后台采集每几秒
-    # 写一次订阅表，只让新作那一小份跟着重算；其余部分按订阅表以外的表失效。
-    rest = contract.cached_until_changed(
-        "entity-shapes", lambda: entity_shape_rest(contract),
-        tables=contract.ledger_tables_except(FEED_SHAPE_TABLES))
-    feed = contract.cached_until_changed("entity-shapes-feed", lambda: entity_shape_feed(contract))
-    return entity_shapes(rest, feed)
+    # 每一页开头都要这一份（骨架照它留位），全部来自账本，账本不变就一直用同一份。
+    rest = contract.cached_until_changed("entity-shapes", lambda: entity_shape_rest(contract))
+    return entity_shapes(rest)
 
 
 #: 安装教程每一项只读这几个字段。载荷形状由 `test_post_setup_tutorial_only_carries_progress_counts`
 #: 钉住：多带一个字段就是又把明细搬回来了。
 POST_SETUP_SCRAPING_FIELDS = ("source", "accepts_cookie", "cookie_saved")
-POST_SETUP_CREDENTIAL_FIELDS = ("provider", "requirement", "present", "missing")
 
 
 def _post_setup_tutorial_progress(contract):
-    """六项进度各自只算一个读数，不带明细。
+    """各项进度各自只算一个读数，不带明细。
 
-    首页右下角那张卡要的是「导入了几项、哪几个来源存了凭证、有没有历史、关注开了几个、
-    凭证齐不齐、还剩几条复核」。整份口味分析、完整关注列表和每条候选的全文都与它无关，
-    实测那一套在真实馆藏上要二十多秒、三百多 KB，而这里几条 COUNT 与几列投影不到半秒。
+    首页右下角那张卡要的是「导入了几项、哪几个来源存了凭证、有没有历史、还剩几条复核」。
+    整份口味分析与完整列表都与它无关，实测那一套在真实馆藏上要二十多秒、三百多 KB，
+    而这里几条 COUNT 与几列投影不到半秒。
     复核条数仍取自复核页的同一份缓存：那一栏的数字必须和 `/review` 页上的一致，口径只能有一份。
     """
     where, params = catalog_filter(contract, {})
     with contract.read_connection() as connection:
         total = connection.execute(
             "SELECT count(*) FROM asset a WHERE " + " AND ".join(where), params).fetchone()[0]
-        follow_sources = [
-            {"provider": row[0], "enabled": bool(row[1])}
-            for row in connection.execute("SELECT provider,enabled FROM follow_source")]
     return {
         "library": {"total": int(total)},
         "scraping": {"sources": [{key: source[key] for key in POST_SETUP_SCRAPING_FIELDS}
                                  for source in q_scraping(contract, {})["sources"]]},
-        "follow": {"sources": follow_sources},
-        "credentials": {"providers": [{key: row[key] for key in POST_SETUP_CREDENTIAL_FIELDS}
-                                      for row in q_follow_credentials(contract, {})["providers"]]},
         "review": {"counts": _get_review(contract, {"counts": "1"})["counts"]},
     }
 
@@ -352,11 +281,7 @@ GET_HANDLERS = {
     "/api/tasks": q_tasks,
     "/api/result-updates": q_result_updates,
     "/api/jav/detail": q_jav_detail,
-    "/api/jav/reviews": q_jav_reviews,
-    "/api/jav/resources": q_jav_resources,
     "/api/jav/discoveries": q_jav_discoveries,
-    "/api/jav/discoveries/metadata": q_jav_discovery_metadata,
-    "/api/jav/releases": q_jav_releases,
     "/api/library-processing": q_library_processing,
     "/api/library-processing/issues": q_library_processing_issues,
     "/api/thumbnail-jobs": q_thumbnail_jobs,
@@ -368,19 +293,6 @@ GET_HANDLERS = {
     "/api/settings": q_settings,
     "/api/library-shortcuts": q_library_shortcuts,
     "/api/tutorial-progress": q_tutorial_progress,
-    "/api/feeds": q_feeds,
-    "/api/feeds/check": q_feed_check,
-    "/api/feeds/discoveries": q_feed_discoveries,
-    "/api/feeds/lookup": q_feed_lookup,
-    "/api/feeds/schedule": q_feed_schedule,
-    "/api/follow": q_follow,
-    "/api/follow/credentials": q_follow_credentials,
-    "/api/follow/tags": q_follow_tags,
-    "/api/follow/authors": q_follow_authors,
-    "/api/follow/schedule": q_follow_schedule,
-    "/api/follow/check": q_follow_check,
-    "/api/follow/suggest": _get_follow_suggest,
-    "/api/follow/resolve": lambda contract, args: contract.follow_resolve_job.snapshot() or {"status": "idle"},
     "/api/links/prune": lambda contract, args: contract.link_prune_job.snapshot() or {"status": "idle"},
     "/api/orphan-records": q_orphan_records,
     "/api/organize": q_organize,
@@ -400,7 +312,6 @@ GET_HANDLERS = {
     "/api/index": _get_index,
     "/api/duplicates": q_duplicates,
     "/api/quality-goals": q_quality_goals,
-    "/api/wants": q_wants,
     "/api/stats": _get_stats,
     "/api/tops": _get_tops,
     "/api/ads": _get_ads,
@@ -428,31 +339,10 @@ POST_HANDLERS = {
     "/api/scraping/cover": w_scraping_cover,
     "/api/jav/cover": w_jav_cover,
     "/api/jav/samples": w_jav_samples,
-    "/api/jav/discoveries/metadata": w_jav_discovery_metadata,
-    "/api/jav/releases/metadata": w_jav_release_metadata,
     "/api/scraping/check": w_scraping_check,
     "/api/scraping/check-all": w_scraping_check_all,
     "/api/scraping/amane-bridge/check": w_scraping_amane_check,
     "/api/scraping/amane-bridge/rebuild": w_scraping_amane_rebuild,
-    "/api/feeds/check": w_feed_check,
-    "/api/feeds/source": w_feed_source,
-    "/api/feeds/discovery": w_feed_discovery,
-    "/api/feeds/schedule/run": w_feed_schedule_run,
-    "/api/follow/check": w_follow_check,
-    "/api/follow/schedule": w_follow_schedule,
-    "/api/follow/schedule/run": w_follow_schedule_run,
-    "/api/follow/source": w_follow_source,
-    "/api/follow/author-alias": w_follow_author_alias,
-    "/api/follow/creator": w_follow_creator,
-    "/api/follow/resolve": w_follow_resolve,
-    "/api/follow/credential": w_follow_credential,
-    "/api/follow/status": w_follow_status,
-    "/api/follow/tag": w_follow_tag,
-    "/api/follow/media/hide": w_follow_media_hide,
-    "/api/follow/image-dims": w_follow_image_dims,
-    "/api/follow/save": w_follow_save,
-    "/api/follow/play": w_follow_play,
-    "/api/follow/activity": w_follow_activity,
     "/api/activity": w_activity,
     "/api/play": w_play,
     "/api/feedback": w_feedback,
@@ -461,7 +351,6 @@ POST_HANDLERS = {
     "/api/playlist": w_playlist,
     "/api/preference": w_preference,
     "/api/quality-goal": w_quality_goal,
-    "/api/wants": w_wants,
     "/api/item-tag": w_item_tag,
     "/api/batch": w_batch,
     "/api/search-history": w_search_history,
@@ -492,7 +381,6 @@ READ_ONLY_POST_ROUTES = frozenset({
     "/api/folders/preview",
     "/api/custom-metadata",
     "/api/scraping/settings", "/api/scraping/check",
-    "/api/follow/resolve", "/api/follow/credential",
     "/api/links/check",
     # 整理的预览只出一份计划 CSV，不动文件也不改账本；执行与回滚不在这里。
     "/api/organize/preview",

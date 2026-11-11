@@ -24,7 +24,7 @@ class MediaFolderTests(unittest.TestCase):
         self.path = self.root / 'ledger.db'
         upgrade(self.path, ROOT / 'migrations')
         self.contract = WebContract(self.path, candidate_root=self.root / 'generated',
-                                    follow_state_root=self.root / 'state', snapshot_root=self.root / 'snapshots')
+                                    state_root=self.root / 'state', snapshot_root=self.root / 'snapshots')
         self.config = SimpleNamespace(drive_roots={'gdrive': ('root-1',), 'onedrive': ('root-2',)},
                                       library_catalog={}, library_names={}, library_icons={})
         self.addCleanup(patch.stopall)

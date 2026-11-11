@@ -16,8 +16,7 @@ from peach.http import HttpResponse
 from peach.javdb_public import PublicAPI, PublicSourceUnavailable, decode_image, preview_video_url, public_signature_parts
 from peach.javdb_public import PublicBudgetExceeded, PublicNotFound, PublicRequestBudget, PublicSourcePaused, actor_gender
 from peach.javdb_public import API_HOSTS, APP_HEADERS, APP_QUERY, APP_SIGNATURE, WEB
-from peach.web_jav_detail import (JAV_ACTOR_IMAGE_MAX_AGE, JAV_IMAGE_MAX_AGE, jav_image, q_jav_detail,
-                                  q_jav_reviews, q_jav_resources)
+from peach.web_jav_detail import JAV_ACTOR_IMAGE_MAX_AGE, JAV_IMAGE_MAX_AGE, jav_image, q_jav_detail
 from peach.web_state import WebContract
 from peach.web_router import dispatch_api_get
 from support.ledger import fresh_ledger
@@ -119,16 +118,12 @@ class PublicProtocolTests(unittest.TestCase):
         with patch.object(api, '_rows', side_effect=PublicSourceUnavailable('临时网络失败')):
             self.assertEqual(api.movie('EXM-001', refresh=True)['id'], first['id'])
 
-    def test_bound_resources_do_not_resolve_the_number_to_another_work(self):
+    def test_bound_movie_does_not_resolve_the_number_to_another_work(self):
         api = PublicAPI(sleeper=lambda _: None)
         first = {'id': 'XeYkdb', 'number': 'MIKR-023'}
-        with patch.object(api, 'movie', return_value={'id': 'MO50k', 'number': 'MIKR-023'}) as lookup, \
-                patch.object(api, '_rows', return_value=[]) as rows:
-            self.assertEqual(api.magnets('MIKR-023', movie=first), [])
-            self.assertEqual(api.reviews('MIKR-023', 1, movie=first), [])
+        with patch.object(api, 'movie', return_value={'id': 'MO50k', 'number': 'MIKR-023'}) as lookup:
+            self.assertIs(api.media_movie('MIKR-023', movie=first), first)
         lookup.assert_not_called()
-        self.assertEqual([call.args[0] for call in rows.call_args_list],
-                         ['/v1/movies/XeYkdb/magnets', '/v1/movies/XeYkdb/reviews'])
 
     def test_javdb_preview_cache_is_bound_to_source_id_and_ignores_old_number_only_result(self):
         api = PublicAPI()
@@ -400,7 +395,8 @@ class PublicProtocolTests(unittest.TestCase):
         self.assertEqual(api.paused_until, 0.0)
         self.assertGreater(api.host_paused[API_HOSTS[0]], api.clock() + 800)
         before = len(self.requests)
-        api.reviews('EXM-001', 1)
+        rows = api._rows('/v2/search', 'movies', {'q': 'EXM-001', 'type': 'movie', 'page': 1})
+        self.assertEqual([row['id'] for row in rows], ['Exact', 'Other'])
         later = [request.url for request in self.requests[before:]]
         self.assertTrue(later)
         self.assertFalse(any(url.startswith(API_HOSTS[0]) for url in later))
@@ -452,12 +448,6 @@ class PublicProtocolTests(unittest.TestCase):
         self.assertEqual(api.movie('EXM-001')['id'], 'Exact')
         self.assertTrue(api.signature_app)
         self.assertEqual(api.paused_until, 0.0)
-
-    def test_reviews_request_page_and_enforce_budget(self):
-        api = self.api()
-        self.assertEqual(api.reviews('EXM-001', 2)[0]['id'], 'second')
-        with self.assertRaises(ValueError):
-            api.reviews('EXM-001', 9)
 
     def test_image_wrappers_decode_to_real_pixels(self):
         original = io.BytesIO()
@@ -541,17 +531,6 @@ class DetailProjectionTests(unittest.TestCase):
         self.assertFalse(result['has_cover'])
         self.assertEqual((result['cover_url'], result['source_url']), ('', ''))
 
-    def test_review_refresh_uses_the_identity_returned_by_that_refresh(self):
-        api = PublicAPI()
-        first = {'id': 'XeYkdb', 'number': 'MIKR-023'}
-        with patch.object(api, 'movie', side_effect=[first, {'id': 'MO50k', 'number': 'MIKR-023'}]) as movie, \
-                patch.object(api, '_rows', return_value=[]) as rows, \
-                patch('peach.web_jav_detail.PUBLIC_API', api):
-            result = q_jav_reviews(self.contract, {'code': 'MIKR-023', 'refresh': '1'})
-        self.assertTrue(result['ok'])
-        movie.assert_called_once_with('MIKR-023', refresh=True)
-        rows.assert_called_once_with('/v1/movies/XeYkdb/reviews', 'reviews', {'page': 1})
-
     def test_detail_preserves_original_title_and_does_not_edit_display_title(self):
         movie = {'id': 'XeYkdb', 'number': 'MIKR-023', 'title': '自动翻译标题',
                  'origin_title': 'Original *A* **j*yqy*pq* 日本語'}
@@ -616,19 +595,19 @@ class DetailProjectionTests(unittest.TestCase):
         self.assertEqual(discovery_cover_url({**item, 'link': 'https://private.invalid/'}, {}), '')
 
     def test_saved_identity_fetches_actor_portrait_without_code_search(self):
-        from peach.jav_discovery_metadata import discovery_metadata
-        metadata = discovery_metadata(self.contract)
-        metadata.remember('EXM-001', {'id': 'Exact', 'number': 'EXM-001', 'javdb_rule': 2, 'actors': [
-            {'id': 'Person', 'name': '甲', 'gender': 0,
-             'avatar_url': 'https://tp.spfcas.com/actor.jpg?signature=expired'}]})
         original = io.BytesIO()
         Image.new('RGB', (40, 60)).save(original, 'PNG')
         requests = []
+        state = {'primed': False}
+
         def transport(request, *_):
             requests.append(request.url)
             if '/search' in request.url:
-                raise AssertionError('已有作品身份，无需番号搜索')
-            if request.url.startswith('https://tp.spfcas.com/'):
+                if state['primed']:
+                    raise AssertionError('已有作品身份，无需番号搜索')
+                body = json.dumps({'success': 1, 'data': {'movies': [
+                    {'id': 'Exact', 'number': 'EXM-001'}]}}).encode()
+            elif request.url.startswith('https://tp.spfcas.com/'):
                 body = original.getvalue()
             elif request.url.endswith('/'):
                 body = b'<script src="/assets/index-test.js"></script>'
@@ -640,27 +619,19 @@ class DetailProjectionTests(unittest.TestCase):
                     'actors': [{'id': 'Person', 'name': '甲', 'gender': 0,
                                 'avatar_url': 'https://tp.spfcas.com/actor.jpg'}]}}}).encode()
             return HttpResponse(200, {}, body)
+
         api = PublicAPI(transport, sleeper=lambda _: None)
         with patch('peach.web_jav_detail.PUBLIC_API', api):
+            api.movie('EXM-001')
+            state['primed'] = True
+            del requests[:]
             first = jav_image(self.contract, {'code': 'EXM-001', 'image': 'actor:Person'})
             second = jav_image(self.contract, {'code': 'EXM-001', 'image': 'actor:Person'})
         self.assertTrue(first[0].startswith(b'\xff\xd8\xff'))
         self.assertEqual(first[1], JAV_ACTOR_IMAGE_MAX_AGE)
         self.assertEqual(second, first)
-        self.assertEqual(sum('/movies/Exact' in url for url in requests), 1)
+        self.assertEqual([url for url in requests if '/search' in url], [])
         self.assertEqual(sum(url.startswith('https://tp.spfcas.com/') for url in requests), 1)
-
-    def test_saved_static_actor_portrait_does_not_fetch_movie_details(self):
-        from peach.jav_discovery_metadata import discovery_metadata
-        metadata = discovery_metadata(self.contract)
-        metadata.remember('EXM-001', {'actors': [{'id': 'Actor1', 'name': '甲', 'gender': 0,
-                                               'avatar_url': 'https://tp.spfcas.com/actor.jpg'}]})
-        with patch('peach.web_jav_detail.PUBLIC_API.image_from_url', return_value='data:image/jpeg;base64,c2FtcGxl') as image, \
-                patch('peach.web_jav_detail.PUBLIC_API.movie') as movie:
-            result = jav_image(self.contract, {'code': 'EXM-001', 'image': 'actor:Actor1'})
-        self.assertEqual(result[0], b'sample')
-        movie.assert_not_called()
-        image.assert_called_once_with('https://tp.spfcas.com/actor.jpg')
 
     def setUp(self):
         for name in ('dmm_preview', 'javdb_preview'):
@@ -674,12 +645,10 @@ class DetailProjectionTests(unittest.TestCase):
         self.addCleanup(self.contract.stop_background_jobs)
         self.contract.followups.stop()
 
-    def test_details_project_source_metadata_without_writing_ledger(self):
+    def test_details_project_source_metadata(self):
         movie = {'id': 'Exact', 'number': 'EXM-001', 'title': '示例作品', 'actors': [{'name': '示例人物'}],
                  'maker_name': '示例厂牌', 'series_name': '示例系列', 'tags': [{'name': '示例标签'}],
                  'score': 4.2, 'duration': 120, 'comments_count': 23, 'preview_images': []}
-        with self.contract.database.read_connection() as connection:
-            before = connection.execute('SELECT COUNT(*) FROM feed_discovery').fetchone()[0]
         with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value=movie):
             result = dispatch_api_get(self.contract, '/api/jav/detail', {'code': 'exm001'})
         self.assertEqual(result['state'], 'ready')
@@ -687,8 +656,6 @@ class DetailProjectionTests(unittest.TestCase):
         self.assertIsNone(result['performer_refs'][0]['id'])
         self.assertEqual(result['tags'], ['示例标签'])
         self.assertEqual(result['source_url'], 'https://javdb.com/v/Exact')
-        with self.contract.database.read_connection() as connection:
-            self.assertEqual(connection.execute('SELECT COUNT(*) FROM feed_discovery').fetchone()[0], before)
 
     def test_male_source_records_are_retained_without_display_references(self):
         movie = {"id": "Exact", "number": "EXM-001", "actors": [
@@ -696,10 +663,6 @@ class DetailProjectionTests(unittest.TestCase):
         with patch("peach.web_jav_detail.PUBLIC_API.movie", return_value=movie):
             rows = q_jav_detail(self.contract, {"code": "EXM-001"})["performer_refs"]
         self.assertEqual([row["gender"] for row in rows], ["female", "unknown"])
-        from peach.jav_discovery_metadata import discovery_metadata
-        recorded, _ = discovery_metadata(self.contract).peek('EXM-001')
-        self.assertEqual([{key: value for key, value in actor.items() if key != 'has_avatar'}
-                          for actor in recorded['actors']], movie['actors'])
 
     def test_source_studio_letter_case_uses_a_unique_local_identity(self):
         with self.contract.database.write_transaction() as connection:
@@ -737,14 +700,12 @@ class DetailProjectionTests(unittest.TestCase):
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM entity_alias').fetchone()[0], 1)
 
 
-    def test_source_failure_keeps_usable_detail_and_reviews_failure_is_explicit(self):
+    def test_source_failure_keeps_usable_detail(self):
         with patch('peach.web_jav_detail.PUBLIC_API.movie', side_effect=PublicSourceUnavailable('资料未取得')):
             result = q_jav_detail(self.contract, {'code': 'EXM-001'})
         self.assertEqual(result['code'], 'EXM-001')
         self.assertEqual(result['state'], 'partial')
         self.assertEqual(result['message'], '资料未取得')
-        with patch('peach.web_jav_detail.PUBLIC_API.reviews', side_effect=PublicSourceUnavailable('评论未取得')):
-            self.assertFalse(q_jav_reviews(self.contract, {'code': 'EXM-001'})['ok'])
 
     def test_invalid_identity_and_image_are_rejected_before_network(self):
         with patch('peach.web_jav_detail.PUBLIC_API.movie') as movie:
@@ -753,76 +714,6 @@ class DetailProjectionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 jav_image(self.contract, {'code': 'EXM-001', 'image': '-1'})
             movie.assert_not_called()
-
-    def test_resources_normalize_and_deduplicate_valid_magnets(self):
-        fingerprint = 'a' * 40
-        rows = [{'hash': fingerprint, 'name': '示例资源', 'cnsub': True, 'hd': True,
-                 'size': '3 GB', 'files_count': 2, 'created_at': '2026-10-12'},
-                {'hash': fingerprint}, {'hash': 'invalid'}]
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value={'id': 'Exact'}), \
-                patch('peach.web_jav_detail.PUBLIC_API.magnets', return_value=rows) as magnets, \
-                patch('peach.web_jav_detail.PUBLIC_API.reviews', return_value=[]):
-            result = q_jav_resources(self.contract, {'code': 'EXM-001', 'refresh': '1'})
-        magnets.assert_called_once_with('EXM-001', refresh=True, movie={'id': 'Exact'})
-        self.assertEqual(result['state'], 'ready')
-        self.assertEqual(len(result['items']), 1)
-        self.assertEqual(result['items'][0]['info_hash'], fingerprint)
-        self.assertTrue(result['items'][0]['uri'].startswith('magnet:?'))
-        self.assertEqual(result['items'][0]['attributes'], ['中字', '高清'])
-        self.assertEqual(result['source_url'], 'https://javdb.com/v/Exact')
-
-    def test_resource_sizes_are_mebibytes_written_with_units(self):
-        rows = [{'hash': 'a' * 40, 'size': 4219}, {'hash': 'b' * 40, 'size': 700},
-                {'hash': 'c' * 40, 'size': 0}, {'hash': 'd' * 40, 'size': '3 GB'}]
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value={'id': 'Exact'}), \
-                patch('peach.web_jav_detail.PUBLIC_API.magnets', return_value=rows), \
-                patch('peach.web_jav_detail.PUBLIC_API.reviews', return_value=[]):
-            result = q_jav_resources(self.contract, {'code': 'EXM-001'})
-        self.assertEqual([item['size'] for item in result['items']], ['4.12GB', '700MB', '', '3 GB'])
-
-    def test_resources_include_comment_ed2k_magnets_and_urls_with_origins(self):
-        digest = 'a' * 40
-        ed2k = 'ed2k://|file|www.98T.la@MIKR-096-U_1_chf3_prob4.mp4|19735225787|0936618B7ED1E5A0235FC6FBE27E104A|h=U5OZKZ4TELDTNANYLRNGQX5LCTDKAM52|/'
-        first = [{'id': n, 'content': '正文'} for n in range(9)] + [{'id': 31, 'content': '4K60:' + ed2k, 'created_at': '2026-05-15'}]
-        second = [{'id': 32, 'content': ed2k + '\nmagnet:?xt=urn:btih:' + digest + '\nhttps://example.test/download'}]
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value={'id': 'Exact'}), \
-                patch('peach.web_jav_detail.PUBLIC_API.magnets', return_value=[{'hash': digest, 'size': '3 GB'}]), \
-                patch('peach.web_jav_detail.PUBLIC_API.reviews', side_effect=[first, second]) as reviews:
-            result = q_jav_resources(self.contract, {'code': 'MIKR-096', 'refresh': '1'})
-        self.assertEqual([item['protocol'] for item in result['items']], ['magnet', 'ed2k', 'url'])
-        link = result['items'][1]
-        self.assertEqual(link['uri'], ed2k)
-        self.assertEqual(link['source'], 'JavDB 评论')
-        self.assertEqual(link['size'], '19,735,225,787 B')
-        self.assertEqual(link['origins'], ['https://javdb.com/v/Exact#review-item-31', 'https://javdb.com/v/Exact#review-item-32'])
-        self.assertEqual(reviews.call_count, 2)
-        self.assertEqual(result['warnings'], [])
-
-    def test_comment_failure_keeps_magnet_resources_and_reports_missing_comments(self):
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value={'id': 'Exact'}), \
-                patch('peach.web_jav_detail.PUBLIC_API.magnets', return_value=[{'hash': 'a' * 40}]), \
-                patch('peach.web_jav_detail.PUBLIC_API.reviews', side_effect=PublicSourceUnavailable('限流')):
-            result = q_jav_resources(self.contract, {'code': 'EXM-001'})
-        self.assertEqual(len(result['items']), 1)
-        self.assertEqual(result['warnings'], ['评论资源未取得：限流'])
-
-    def test_comment_resource_scan_has_a_page_limit(self):
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value={'id': 'Exact'}), \
-                patch('peach.web_jav_detail.PUBLIC_API.magnets', return_value=[]), \
-                patch('peach.web_jav_detail.PUBLIC_API.reviews', return_value=[{'content': '正文'}] * 10) as reviews:
-            result = q_jav_resources(self.contract, {'code': 'EXM-001'})
-        self.assertEqual(reviews.call_count, 8)
-        self.assertEqual(result['warnings'], ['已查询前 8 页评论资源。'])
-
-    def test_magnet_failure_keeps_comment_resources(self):
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value={'id': 'Exact'}), \
-                patch('peach.web_jav_detail.PUBLIC_API.magnets', side_effect=PublicSourceUnavailable('未取得')), \
-                patch('peach.web_jav_detail.PUBLIC_API.reviews', return_value=[{
-                    'id': 5, 'content': 'ed2k://|file|demo.mp4|123|' + 'b' * 32 + '|/'}]):
-            result = q_jav_resources(self.contract, {'code': 'EXM-001'})
-        self.assertEqual(result['state'], 'ready')
-        self.assertEqual([item['protocol'] for item in result['items']], ['ed2k'])
-        self.assertEqual(result['warnings'], ['磁链区资源未取得：未取得'])
 
     def test_source_avatars_and_studio_logos_preserve_each_identity(self):
         movie = {'id': 'Exact', 'actors': [
@@ -838,7 +729,9 @@ class DetailProjectionTests(unittest.TestCase):
         self.assertTrue(all(ref['source_avatar'] and ref['id'] is None for ref in result['performer_refs']))
         self.assertEqual(result['studio_refs'][0]['has_logo'], True)
         self.assertEqual(result['studio_refs'][0]['logo_version'], 'logo-version')
-        with patch('peach.web_jav_detail.PUBLIC_API.image_from_url', return_value='data:image/jpeg;base64,c2FtcGxl') as image:
+        with patch('peach.web_jav_detail.PUBLIC_API.movie', return_value=movie), \
+                patch('peach.web_jav_detail.PUBLIC_API.image_from_url',
+                      return_value='data:image/jpeg;base64,c2FtcGxl') as image:
             self.assertEqual(jav_image(self.contract, {'code': 'EXM-001', 'image': 'actor:Unknown'})[0], b'sample')
         image.assert_called_once_with('https://tp.spfcas.com/b.jpg')
 
@@ -901,10 +794,3 @@ class DetailProjectionTests(unittest.TestCase):
         self.assertEqual([(ref['name'], ref['source_name']) for ref in result['tag_refs']],
                          [('淫乱真实', '淫乱真实'), ('出轨', '白天出轨'), ('剧情', '戏剧'),
                           ('深喉', '深喉'), ('巨根', '巨大阴茎')])
-
-    def test_resource_source_failure_is_explicit(self):
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', side_effect=PublicSourceUnavailable('资料未取得')):
-            result = q_jav_resources(self.contract, {'code': 'EXM-001'})
-        self.assertEqual(result['state'], 'error')
-        self.assertEqual(result['items'], [])
-        self.assertEqual(result['error'], '资料未取得')

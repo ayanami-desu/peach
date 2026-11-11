@@ -28,7 +28,6 @@ it('缺图提示只选择没有可用卡面且可以补全的影片：免费网�
     item(4, { location: 'online' }), item(5, { disposal: 'trash' }), item(6, { medium: 'image' }),
     item(7, { location: '115' }), item(8, { code: 'ABW-001', location: 'pikpak', cost: 'metered' }),
     item(13, { location: 'pikpak', cost: 'metered' }),
-    item(9, { follow_thumb_url: 'https://example.test/image.jpg' }),
     item(10, { has_cover: true, cover_key: 'sample' }),
     item(11, { name: 'unknown.strm' }), item(12, { name: 'unknown.iso' }),
   ], 'cover')).toEqual([1, 7, 8]);

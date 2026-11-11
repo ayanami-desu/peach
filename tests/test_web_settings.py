@@ -139,10 +139,8 @@ class SettingsRoundTripTests(unittest.TestCase):
         self.assertEqual(q_settings(self.contract),
                          {"sidebarOrder": list(DEFAULT_SIDEBAR_ORDER),
                           "avatarRefreshDays": 90, "faviconRefreshDays": 365,
-                          "followInitialDays": 30, "postSetupTutorialDone": False,
+                          "postSetupTutorialDone": False,
                           "organizeTemplates": {}, "codePatterns": [],
-                          "feedHideGroupCompilations": True,
-                          "feedHideSoloCompilations": False, "feedHideExcerpts": True,
                           "searchHistoryLimit": None, "performerNameLanguage": "zh-CN", "taskSpeedMode": "standard",
                           "interfaceLanguage": "auto", "systemLanguage": None})
 
@@ -223,15 +221,6 @@ class SettingsRoundTripTests(unittest.TestCase):
                 w_settings(self.contract, {"searchHistoryLimit": odd})
         self.assertEqual(self._stored_json(), {"searchHistoryLimit": 20})
 
-    def test_the_compilation_switches_take_only_booleans(self):
-        with self.assertRaises(ValueError):
-            w_settings(self.contract, {"feedHideSoloCompilations": "yes"})
-        self.assertEqual(web_settings.hidden_compilations(self.contract),
-                         frozenset({"group", "excerpt"}))
-        w_settings(self.contract, {"feedHideSoloCompilations": True,
-                                   "feedHideGroupCompilations": False, "feedHideExcerpts": False})
-        self.assertEqual(web_settings.hidden_compilations(self.contract), frozenset({"solo"}))
-
     def test_avatar_and_favicon_periods_are_read_only(self):
         settings = q_settings(self.contract)
         self.assertEqual(settings["avatarRefreshDays"], 90)
@@ -242,14 +231,12 @@ class SettingsRoundTripTests(unittest.TestCase):
         self.assertEqual(self._stored_json(), {})
 
     def test_a_written_order_survives_a_reread(self):
-        order = ["", "follow", "tags", "trash"]
+        order = ["", "tags", "trash"]
         self.assertEqual(w_settings(self.contract, {"sidebarOrder": order}),
                          {"ok": True, "sidebarOrder": order,
                           "avatarRefreshDays": 90, "faviconRefreshDays": 365,
-                          "followInitialDays": 30, "postSetupTutorialDone": False,
+                          "postSetupTutorialDone": False,
                           "organizeTemplates": {}, "codePatterns": [],
-                          "feedHideGroupCompilations": True,
-                          "feedHideSoloCompilations": False, "feedHideExcerpts": True,
                           "searchHistoryLimit": None, "performerNameLanguage": "zh-CN", "taskSpeedMode": "standard",
                           "interfaceLanguage": "auto", "systemLanguage": None})
         self.assertEqual(q_settings(self.contract)["sidebarOrder"], order)
@@ -267,15 +254,6 @@ class SettingsRoundTripTests(unittest.TestCase):
         w_settings(self.contract, {"postSetupTutorialDone": True})
         self.assertEqual(w_settings(self.contract, {"sidebarOrder": ["", "tags"]})
                          ["postSetupTutorialDone"], True)
-
-    def test_initial_history_range_is_persisted_without_changing_other_preferences(self):
-        w_settings(self.contract, {"sidebarOrder": ["", "tags"]})
-        for days in (0, 7, 30, 90):
-            self.assertEqual(w_settings(self.contract, {"followInitialDays": days})['followInitialDays'], days)
-            self.assertEqual(web_settings.follow_initial_days(self.contract), days)
-        self.assertEqual(q_settings(self.contract)['sidebarOrder'], ['', 'tags'])
-        for invalid in (-1, True, None, 'invalid', 3650):
-            self.assertEqual(w_settings(self.contract, {"followInitialDays": invalid})['followInitialDays'], 30)
 
     def test_a_write_normalises_before_it_lands(self):
         """坏载荷不能进账本——存进去之后每次读都要再挡一遍。"""
@@ -348,24 +326,16 @@ class ContractRegistrationTests(unittest.TestCase):
             return tuple(item.strip().strip("'") for item in raw.split(","))
 
         self.assertEqual(js_list("DEFAULT_SIDEBAR_ORDER"), DEFAULT_SIDEBAR_ORDER)
-        # 默认那一份是首页、关注、JAV、三个索引、已标记、管理；播放列表和沉浸模式
+        # 默认那一份是首页、JAV、三个索引、已标记、管理；播放列表和沉浸模式
         # 是从别处发起的动作，只在可加清单里。
         self.assertEqual(
             DEFAULT_SIDEBAR_ORDER,
-            ("", "follow", "jav", "performers", "tags", "studios", "flagged", "manage"))
+            ("", "jav", "performers", "tags", "studios", "flagged", "manage"))
         self.assertNotIn("playlists", DEFAULT_SIDEBAR_ORDER)
         self.assertIn("playlists", web_settings.OPTIONAL_SIDEBAR_KEYS)
         self.assertIn("immerse", web_settings.OPTIONAL_SIDEBAR_KEYS)
         self.assertEqual(js_list("OPTIONAL_SIDEBAR_KEYS"),
                          web_settings.OPTIONAL_SIDEBAR_KEYS)
-
-    def test_initial_history_choices_are_in_settings_and_match_the_server(self):
-        import re
-        root = Path(__file__).resolve().parents[1]
-        page = (root / 'frontend/src/application/initial-follow-ranges.ts').read_text(encoding='utf-8')
-        options = re.search(r'\bFOLLOW_INITIAL_RANGE_OPTIONS\s*=\s*\[(.*?)\]\s*as const', page, re.S).group(1)
-        self.assertEqual(tuple(int(value) for value in re.findall(r"\['(\d+)',", options)),
-                         web_settings.FOLLOW_INITIAL_DAYS)
 
 if __name__ == "__main__":
     unittest.main()

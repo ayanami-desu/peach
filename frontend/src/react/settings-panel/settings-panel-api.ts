@@ -3,8 +3,8 @@
  * 界面偏好只有一份：壳在启动时归一化好的 `appSettings`，经 `createSettingsStore` 递进来
  * （`frontend/src/settings-store.ts`）。面板读 `store.value`、原地改字段、`store.save()` 落盘，
  * 再用 `changed(effect)` 告诉壳这一下要跟着做什么——重画网格、重取目录、换主题，这些都还是壳的事；
- * 侧栏顺序不经它，侧栏自己订阅这一份 store。跟数据库走的那几项（侧栏顺序、合集开关、首次采集范围、头像刷新、搜索记录
- * 条数）由面板经 `/api/settings` 写，成功后同样落进这一份对象。 */
+ * 侧栏顺序不经它，侧栏自己订阅这一份 store。跟数据库走的那几项（侧栏顺序、搜索记录条数）
+ * 由面板经 `/api/settings` 写，成功后同样落进这一份对象。 */
 import type { InterfaceLanguage, InterfaceLanguageChoice } from '../../i18n';
 import type { HomeGlow } from '@peach/appearance';
 
@@ -28,20 +28,12 @@ export interface PanelSettings {
   performerNameLanguage: 'zh-CN' | 'ja';
   interfaceLanguage: InterfaceLanguageChoice;
   systemLanguage: InterfaceLanguage | null;
-  feedAutoScroll: boolean;
-  feedLimit: number;
-  feedHideGroupCompilations: boolean;
-  feedHideSoloCompilations: boolean;
-  feedHideExcerpts: boolean;
   hoverDelaySeconds: number;
   detailAutoplay: boolean;
   miniplayer: boolean;
   seekSeconds: number;
   relatedLimit: number;
   searchHistoryLimit: number;
-  followInitialDays: number;
-  avatarRefreshDays: number;
-  faviconRefreshDays: number;
 }
 
 /** 改完一项之后壳要跟着做的事，一项一个名字；落盘已经由面板做过。 */
@@ -52,7 +44,7 @@ export type SettingsEffect =
   /** 光晕的开关、颜色、恢复默认与松手：侧栏那一层、其余玻璃面和侧栏配色钮一起对齐。 */
   | 'glow'
   | 'batchSize' | 'defaultSort' | 'sortDirection' | 'hoverDelay' | 'seekSeconds'
-  | 'groupCollapse' | 'feedAutoScroll' | 'feedLimit' | 'feedCompilations' | 'miniplayer' | 'javImage'
+  | 'groupCollapse' | 'miniplayer' | 'javImage'
   | 'searchHistoryLimit' | 'performerNameLanguage';
 
 /** `[值, 显示名, 字形]`，与壳里各张选项表同形。 */
@@ -68,7 +60,6 @@ export interface SettingsPanelHost {
   navCatalog: readonly Choice[];
   themeOptions: readonly Choice[];
   videoLayouts: readonly Choice[];
-  followInitialRanges: readonly Choice[];
   /** 视频封面默认大小跟着当前页走（首页与 JAV 各存一份），读写都归壳。 */
   videoLayout(): string;
   setVideoLayout(layout: string): void;

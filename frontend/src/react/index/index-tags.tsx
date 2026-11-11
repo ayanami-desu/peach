@@ -1,9 +1,7 @@
 /* 标签页的三块：筛选浮层、正文（字母表或标签云）、所选标签的操作条。
  *
- * 两套词表共用这三块，区别在颜色和去处：本地是 ledger 里的中文标签，按 ledger 的九类着色，
- * 点开回目录按它筛选，选择模式下拼成多标签筛选；在线是关注来源上的 booru 标签，按上游
- * tag_type 着色，点开去「关注 · 这个标签」，并且不进多选——多选拼的是目录筛选，拿在线标签
- * 去筛目录必然一条不中。 */
+ * 词表是 ledger 里的中文标签，按 ledger 的九类着色；点开回目录按它筛选，选择模式下拼成
+ * 多标签筛选。 */
 import { Radio, RadioGroup } from 'react-aria-components';
 import type { ReactNode } from 'react';
 
@@ -27,7 +25,6 @@ export interface TagEntry extends IndexTag {
 
 /** 一枚标签的交互：选择模式下切换选中，否则直接打开。 */
 export interface TagActions {
-  online: boolean;
   favorites?: boolean;
   edit?(tag: string): void;
   picked: ReadonlySet<string>;
@@ -36,8 +33,8 @@ export interface TagActions {
 
 const Dot = () => <span aria-hidden data-tag-dot="" className="size-1.75 flex-none rounded-full" />;
 const Pencil = spriteGlyph('pencil');
-const tagFavorite = (tag: TagEntry, online: boolean): Favorite => ({ kind: 'tag', name: tag.k, favorite: tag.favorite,
-  ...(online ? { scope: 'online', tag_id: tag.id || tag.k } : { entity_id: tag.entity_id }) });
+const tagFavorite = (tag: TagEntry): Favorite => ({ kind: 'tag', name: tag.k, favorite: tag.favorite,
+  entity_id: tag.entity_id });
 
 /* 一行一枚标签：36px 高、8px 圆角，取的是 Board 排名行那一档身量。nowrap 是省略号的前提，
    少了它长标签改成折行，同一行里的其它标签跟着被拉高，几列各行高度也对不齐。 */
@@ -45,14 +42,14 @@ function AlphaTag({ tag, actions }: { tag: TagEntry; actions: TagActions }) {
   const pressed = actions.picked.has(tag.k);
   return (
     <div className="flex min-w-0 items-center gap-1">
-    <button type="button" data-alpha-tag="" data-k={tag.k} data-tag-cat={tagColorKey(actions.online, tag.cat)}
+    <button type="button" data-alpha-tag="" data-k={tag.k} data-tag-cat={tagColorKey(tag.cat)}
       aria-pressed={pressed} title={tag.label} onClick={() => actions.press(tag.k)}
       className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2.25 rounded-lg px-2.5 text-left text-body-regular text-text-secondary outline-none hover:text-text-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring">
       <Dot />
       <span className="min-w-0 flex-1 truncate">{tag.label}</span>
       <span className="flex-none text-caption-1-regular text-text-secondary">{tag.n.toLocaleString()}</span>
     </button>
-    {actions.favorites !== false ? <FavoriteButton item={tagFavorite(tag, actions.online)} /> : null}
+    {actions.favorites !== false ? <FavoriteButton item={tagFavorite(tag)} /> : null}
     {actions.edit ? <EntityActionButton label={`编辑标签 ${tag.label}`} onClick={() => actions.edit?.(tag.k)}><Pencil /></EntityActionButton> : null}
     </div>
   );
@@ -87,17 +84,17 @@ export function TagCloud({ tags, actions }: { tags: TagEntry[]; actions: TagActi
   return (
     <div data-tag-cloud="" className="flex flex-wrap gap-1.75">
       {tags.map((tag) => (
-        <span key={tag.k} data-tag-token="" data-tag-cat={tagColorKey(actions.online, tag.cat)}
+        <span key={tag.k} data-tag-token="" data-tag-cat={tagColorKey(tag.cat)}
           className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-lg border p-1">
         <button type="button" data-tag-chip="" data-k={tag.k}
-          data-tag-cat={tagColorKey(actions.online, tag.cat)} aria-pressed={actions.picked.has(tag.k)}
+          data-tag-cat={tagColorKey(tag.cat)} aria-pressed={actions.picked.has(tag.k)}
           onClick={() => actions.press(tag.k)}
           className="inline-flex max-w-full min-w-0 cursor-pointer items-center rounded-lg px-2 py-0.5 text-body-2-regular text-text-secondary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring">
           <span className="min-w-0 truncate">{tag.label + NBSP}</span>
           <span data-tag-n="" className="text-caption-1-regular opacity-60">{tag.n.toLocaleString()}</span>
         </button>
         {actions.favorites !== false || actions.edit ? <span data-tag-actions="" className="inline-flex flex-none items-center gap-1">
-          {actions.favorites !== false ? <FavoriteButton item={tagFavorite(tag, actions.online)} /> : null}
+          {actions.favorites !== false ? <FavoriteButton item={tagFavorite(tag)} /> : null}
           {actions.edit ? <EntityActionButton label={`编辑标签 ${tag.label}`} onClick={() => actions.edit?.(tag.k)}><Pencil /></EntityActionButton> : null}
         </span> : null}
         </span>
@@ -112,17 +109,16 @@ const VIEWS: readonly (readonly [TagView, string, string])[] = [
 
 /** 筛选浮层：上排类型药丸，下排读数、按首字跳转与视图切换。只摆数得到的那几类。 */
 export function TagFilters(
-  { categories, category, online, readout, letters, view, onCategory, onJump, onView, status, actions }: {
+  { categories, category, readout, letters, view, onCategory, onJump, onView, status, actions }: {
     categories: readonly (readonly [string, string])[];
     category: string;
-    online: boolean;
     readout: string;
     letters: string[];
     view: TagView;
     onCategory(key: string): void;
     onJump(at: number): void;
     onView(view: TagView): void;
-    status?: { hidden: boolean; blocked?: boolean; onChange(hidden: boolean): void; onBlocked?(): void };
+    status?: { hidden: boolean; onChange(hidden: boolean): void };
     actions?: ReactNode;
   },
 ) {
@@ -132,12 +128,10 @@ export function TagFilters(
       top={<>
         {status ? <div role="group" aria-label="标签状态" className="flex flex-none items-center gap-1.75 border-r border-(--glass-low) pr-3">
           {[[false, '使用中'], [true, '已隐藏']].map(([hidden, label]) => <FilterPill key={String(hidden)}
-            data-tag-pill="" data-tag-cat="all" pressed={!status.blocked && status.hidden === hidden} onPress={() => status.onChange(Boolean(hidden))}>{label}</FilterPill>)}
-          {status.onBlocked ? <FilterPill data-tag-pill="" data-tag-cat="all" pressed={!!status.blocked}
-            onPress={status.onBlocked}>已屏蔽内容</FilterPill> : null}
+            data-tag-pill="" data-tag-cat="all" pressed={status.hidden === hidden} onPress={() => status.onChange(Boolean(hidden))}>{label}</FilterPill>)}
         </div> : null}
         {categories.map(([key, label]) => (
-        <FilterPill key={key} data-tag-pill="" data-tag-cat={key === 'all' ? 'all' : tagColorKey(online, key)}
+        <FilterPill key={key} data-tag-pill="" data-tag-cat={key === 'all' ? 'all' : tagColorKey(key)}
           pressed={category === key} onPress={() => onCategory(key)}>
           <Dot />{label}
         </FilterPill>

@@ -13,8 +13,7 @@ describe('接着看状态', () => {
     expect(host.querySelector('[data-empty-state] h3')?.textContent).toBe('暂无接着看的内容');
     expect(host.querySelector('[data-related-row]')).toBeNull();
     expect(host.querySelector('a')?.getAttribute('href')).toBe('/');
-    await rerender(<RelatedSection wireDrag={wireDrag} online empty />);
-    expect(host.querySelector('a')?.getAttribute('href')).toBe('/follow');
+    expect(host.querySelector('a')?.textContent).toBe('浏览馆藏');
   });
 
   it('失败显示原因和重试按钮，恢复后显示推荐', async () => {

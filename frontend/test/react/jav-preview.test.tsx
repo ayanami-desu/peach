@@ -13,9 +13,9 @@ afterEach(() => { queryClient.clear(); player.mockClear() });
 
 it('官方MP4预告进入现有播放器并在关闭时销毁', async () => {
   const src = '/jav-preview/EXM-001/0123456789abcdef';
-  const item: JavDetail = { code: 'EXM-001', title: '示例作品', state: 'ready', summary: '', director: '', publisher: '',
+  const item: JavDetail = { ok: true, code: 'EXM-001', title: '示例作品', state: 'ready', summary: '', director: '', publisher: '',
     performers: '', performer_refs: [], studio_refs: [], series_refs: [], tags: [], has_cover: false,
-    source_image: false, preview_count: 0, comments_count: 0, source_url: '', wanted: false, want_id: null,
+    source_image: false, preview_count: 0, comments_count: 0, source_url: '',
     preview_video_url: src };
   queryClient.setQueryData(javDetailKey(item.code), item);
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, image: '' }) })));
@@ -31,9 +31,9 @@ it('官方MP4预告进入现有播放器并在关闭时销毁', async () => {
   expect(dispose).toHaveBeenCalledOnce();
 });
 
-const missingCover: JavDetail = { code: 'EXM-002', title: '示例作品', state: 'ready', summary: '', director: '', publisher: '',
+const missingCover: JavDetail = { ok: true, code: 'EXM-002', title: '示例作品', state: 'ready', summary: '', director: '', publisher: '',
   performers: '', performer_refs: [], studio_refs: [], series_refs: [], tags: [], has_cover: false,
-  source_image: false, preview_count: 0, comments_count: 0, source_url: '', wanted: false, want_id: null };
+  source_image: false, preview_count: 0, comments_count: 0, source_url: '' };
 
 it('预告失败时销毁播放器，重试重新挂载，切回图片清理实例', async () => {
   const item = { ...missingCover, preview_video_url: '/jav-preview/EXM-002/unavailable.mp4' };

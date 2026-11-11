@@ -22,8 +22,6 @@ import { fitSkeleton, revealTexts } from '@peach/legacy/ui';
 import { detailSkeletonBody } from '../../board-skeleton';
 import { applyTheaterMode, closePlayerMenu, type PlayerResume } from '../../player';
 import { adoptToasts, overlayHost, topOverlay } from '../components/overlay-host';
-import { followItemKey, prefetchFollowDetail, type FollowDetailActions, type FollowDetailProps } from '../follow-detail/follow-detail';
-import { FollowDetailPage } from '../follow-detail/follow-detail-page';
 import { chooseItem, itemKey, prefetchItemDetail, queueKey, type DetailQueue, type ItemDetailActions, type ItemDetailProps } from '../item-detail/item-detail';
 import { ItemDetailPage } from '../item-detail/item-detail-page';
 import { javDetailKey, prefetchJavDetail, type JavDetailProps } from '../jav-detail/jav-detail';
@@ -37,8 +35,7 @@ type Phase = 'skeleton' | 'reveal' | 'content';
 
 type Content =
   | { kind: 'item'; props: ItemDetailProps }
-  | { kind: 'jav'; props: JavDetailProps }
-  | { kind: 'follow'; props: FollowDetailProps };
+  | { kind: 'jav'; props: JavDetailProps };
 
 interface View {
   generation: number;
@@ -138,8 +135,7 @@ function StageDialog({ view: current }: { view: View }) {
      自己按条目给 `Detail` 换键，队列取数留在外层不重来。 */
   const body = content.kind === 'item'
     ? <ItemDetailPage {...content.props} />
-    : content.kind === 'jav' ? <JavDetailPage key={content.props.code} {...content.props} />
-    : <FollowDetailPage key={content.props.id} {...content.props} />;
+    : <JavDetailPage key={content.props.code} {...content.props} />;
   return (
     <dialog ref={ref} id="stage" data-stage="" data-stage-kind={content.kind} aria-label="作品详情"
       onKeyDown={(event) => {
@@ -192,38 +188,22 @@ function contentFor(request: StageRequest): Content {
   const settings = () => stageHost().player.settings();
   /* 原地换条沿用浮窗开着时的代次（dialog 不重建），所以按这一次打开的 request 认：换条与重开都换一份新的。 */
   const live = () => view?.request === request;
-  if (request.kind === 'item') {
-    const { kind: _kind, resume: _resume, actions: base, ...props } = request;
-    const actions: ItemDetailActions = {
-      ...base,
-      close: requestClose,
-      present: (item, queue) => {
-        const performers = item.performers as string[] | undefined;
-        player.setStageMeta({ kind: 'item', item, title: String(item.title || item.name || ''),
-          sub: String(performers?.[0] || item.creator || '未归属') });
-        toggleStageModes(settings().ambientMode, settings().theaterMode);
-        queueMicrotask(() => { if (live()) base.present(item, queue) });
-      },
-      mountPlayer: (frame, item, _media, options) => player.attachStagePlayer(frame, {
-        kind: 'item', item, autoplay: options?.autoplay, resume: takeResume(item.id), id: 'vid',
-      }),
-    };
-    return { kind: 'item', props: { ...props, actions } };
-  }
   const { kind: _kind, resume: _resume, actions: base, ...props } = request;
-  const actions: FollowDetailActions = {
+  const actions: ItemDetailActions = {
     ...base,
     close: requestClose,
-    present: (item, kind) => {
-      player.setStageMeta({ kind: 'follow', item, title: item.title || '', sub: item.author || item.source_label || '' });
-      toggleStageModes(kind === 'video' && settings().ambientMode, kind === 'video' && settings().theaterMode);
-      queueMicrotask(() => { if (live()) base.present(item, kind) });
+    present: (item, queue) => {
+      const performers = item.performers as string[] | undefined;
+      player.setStageMeta({ kind: 'item', item, title: String(item.title || item.name || ''),
+        sub: String(performers?.[0] || item.creator || '未归属') });
+      toggleStageModes(settings().ambientMode, settings().theaterMode);
+      queueMicrotask(() => { if (live()) base.present(item, queue) });
     },
-    mountPlayer: (frame, item, media, options) => player.attachStagePlayer(frame, {
-      kind: 'follow', item, media, poster: item.thumb_url || undefined, onError: options.onError, resume: takeResume(item.id),
+    mountPlayer: (frame, item, options) => player.attachStagePlayer(frame, {
+      item, autoplay: options?.autoplay, resume: takeResume(item.id), id: 'vid',
     }),
   };
-  return { kind: 'follow', props: { ...props, actions } };
+  return { kind: 'item', props: { ...props, actions } };
 }
 
 /* 骨架抬成一层淡出，内容同时从模糊里清晰起来；走完（或 1s 兜底）摘掉那一层。 */
@@ -265,12 +245,11 @@ async function open(request: StageRequest): Promise<void> {
   closeRequested = false;
   dismissArmed = false;
   if (request.kind === 'jav') player.closeMiniplayer();
-  else player.prepareStageFor(request.kind, request.id ?? Number.NaN);
+  else player.prepareStageFor(request.id ?? Number.NaN);
   const content = contentFor(request);
   view = { generation: mine, request, content, phase: 'skeleton' };
   const waiting = content.kind === 'item' ? prefetchItemDetail(content.props, abort.signal)
-    : content.kind === 'jav' ? prefetchJavDetail(content.props, abort.signal)
-    : prefetchFollowDetail(content.props, abort.signal);
+    : prefetchJavDetail(content.props, abort.signal);
   if (mine !== generation || view?.request !== request) { await waiting.catch(() => {}); return }
   const cached = cachedContent(content);
   view = { ...view, phase: cached ? 'content' : 'skeleton' };
@@ -305,7 +284,6 @@ async function open(request: StageRequest): Promise<void> {
 /** 可立即完整呈现的详情沿用查询缓存，刷新只更新内容。 */
 function cachedContent(content: Content): boolean {
   if (content.kind === 'jav') return !!queryClient.getQueryData(javDetailKey(content.props.code));
-  if (content.kind === 'follow') return !!queryClient.getQueryData(followItemKey(content.props.id));
   const { queue: ref, id } = content.props;
   const queue = ref ? queryClient.getQueryData<DetailQueue>(queueKey(ref)) : null;
   if (ref && !queue) return false;
@@ -325,14 +303,13 @@ async function swap(request: StageRequest, dialog: HTMLDialogElement): Promise<v
   const content = contentFor(request);
   try {
     if (content.kind === 'item') await prefetchItemDetail(content.props, abort.signal);
-    else if (content.kind === 'jav') await prefetchJavDetail(content.props, abort.signal);
-    else await prefetchFollowDetail(content.props, abort.signal);
+    else await prefetchJavDetail(content.props, abort.signal);
   } catch {
     if (abort.signal.aborted) return;
   }
   if (mine !== generation || !view || swappable(request.kind) !== dialog) return;
   if (request.kind === 'jav') player.closeMiniplayer();
-  else player.prepareStageFor(request.kind, request.id ?? Number.NaN);
+  else player.prepareStageFor(request.id ?? Number.NaN);
   releaseHoverPreviews(dialog);
   closePlayerMenu();
   view = { ...view, request, content, phase: 'content' };
@@ -406,9 +383,7 @@ function update(patch: StagePatch): void {
   if (!view) return;
   view = { ...view, content: view.content.kind === 'item'
     ? { kind: 'item', props: { ...view.content.props, ...patch } }
-    : view.content.kind === 'jav' ? view.content
-    : { kind: 'follow', props: { ...view.content.props,
-      ...(patch.relatedLimit === undefined ? {} : { relatedLimit: patch.relatedLimit }) } } };
+    : view.content };
   paint();
 }
 

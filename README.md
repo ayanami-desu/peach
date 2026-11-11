@@ -24,10 +24,6 @@ Movie demo data; see [asset credits and licenses](https://peach.video/en/credits
 
 [![Charlie Chaplin's profile and films](https://peach.video/assets/screenshots/profile-wide-20261025-2-1280.webp)](https://peach.video/assets/screenshots/profile-wide-20261025-2.png)
 
-**Creator updates**
-
-[![Creator follows and new works](https://peach.video/assets/screenshots/follow-wide-20261025-2-1280.webp)](https://peach.video/assets/screenshots/follow-wide-20261025-2.png)
-
 **Library statistics**
 
 [![Library, storage and viewing statistics](https://peach.video/assets/screenshots/stats-wide-20261025-3-1280.webp)](https://peach.video/assets/screenshots/stats-wide-20261025-3.png)
@@ -44,7 +40,7 @@ Movie demo data; see [asset credits and licenses](https://peach.video/en/credits
 - **Drive-backed library**: connect Google Drive and OneDrive, pick scan roots and browse what is there. Videos stay where they are; Peach keeps the metadata, thumbnails and watch history.
 - **Playback**: play in the browser, or hand an expiring direct link to a desktop player. Resume position, playback speed and timeline previews are per title.
 - **Change tracking**: a delta every 15 minutes and a full listing once a day keep the library current, and the settings page can refresh on demand.
-- **Follows and discovery**: track performer and creator updates, discover titles and manage a want list.
+- **Library explore**: read-only recommendations from your own library — titles you have not watched, or barely started.
 - **Library management**: manage tags, duplicates, versions and parts; delete videos by performer while keeping profiles and photos.
 - **Task center**: pause, resume or cancel background work and watch its progress and issues.
 
@@ -61,7 +57,7 @@ OAuth clients are yours: register an application in Google Cloud or Azure and pa
 
 ## Documentation
 
-[Deployment](docs/DOCKER.md) · [Operations](docs/OPERATIONS.md) · [Sources](docs/SOURCING.md) · [External players](docs/EXTERNAL_PLAYERS.md) · [Diagnostics and data sharing](docs/DIAGNOSTICS.md) · [Changelog](CHANGELOG.md)
+[Deployment](docs/DOCKER.md) · [Operations](docs/OPERATIONS.md) · [Metadata](docs/METADATA.md) · [External players](docs/EXTERNAL_PLAYERS.md) · [Diagnostics and data sharing](docs/DIAGNOSTICS.md) · [Changelog](CHANGELOG.md)
 
 Development: [Contributing](CONTRIBUTING.md) · [Development guide](AGENTS.md) · [Testing](docs/TESTING.md)
 

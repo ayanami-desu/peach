@@ -38,7 +38,7 @@ class SettingsEndpointTests(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix="timeline-endpoint-"))
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.contract = MagicMock()
-        self.contract.follow_state_root = self.root / "state"
+        self.contract.state_root = self.root / "state"
         self.contract.timeline_root = self.root / "timeline"
         patcher = patch.object(web_timeline_thumbnails, "MODE_PATH", self.root / "mode.json")
         patcher.start()

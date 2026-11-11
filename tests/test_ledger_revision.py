@@ -17,9 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from peach import web_batch, web_follow, web_state, web_stats
-from peach.follow_sources import FollowCandidate, SourceFetch
-from peach.follow_store import FollowStore
+from peach import web_batch, web_state, web_stats
 from peach.previews import entity_image_key, logo_key
 from peach.repository import LedgerDatabase, in_background
 from peach.web_catalog import CATALOG_TOTAL_TABLES, FACETS_TABLES, GROUP_TABLES, TOPS_TABLES
@@ -297,8 +295,8 @@ class LedgerRevisionTests(unittest.TestCase):
         import asyncio
         from peach import api
         insert_asset(self.db_path, 1)
-        # 只看每页都碰到的那几份；口味、复核、关注那几份另有后台线程，不在这条测试里起。
-        pages = [entry for entry in api.WARM_AGGREGATES if entry[0] not in {"/api/taste", "/api/review", "/api/ads", "/api/follow"}]
+        # 只看每页都碰到的那几份；口味、复核那几份另有后台线程，不在这条测试里起。
+        pages = [entry for entry in api.WARM_AGGREGATES if entry[0] not in {"/api/taste", "/api/review", "/api/ads"}]
         with mock.patch.object(api, "WARM_AGGREGATES", tuple(pages)):
             asyncio.run(api._warm_ledger_aggregates(True, self.contract, asyncio.Event()))
         for key in ("entity-shapes", "catalog-group-rows", "search-recommendations:"):
@@ -369,8 +367,8 @@ class DeclaredTablesTests(unittest.TestCase):
         self.contract = WebContract(
             self.db_path, cover_root=self.root / "covers", avatar_root=self.root / "avatars",
             logo_root=self.root / "logos", candidate_root=self.root / "generated",
-            follow_sources_root=self.root / "sources", follow_secrets_root=self.root / "secrets",
-            follow_shared_root=self.root / "shared", follow_state_root=self.root / "state",
+            sources_root=self.root / "sources", secrets_root=self.root / "secrets",
+            state_root=self.root / "state",
             entry_links_root=self.root / "state")
         self.addCleanup(self.contract.stop_background_jobs)
         self.contract.followups.stop()
@@ -394,15 +392,8 @@ class DeclaredTablesTests(unittest.TestCase):
             return real_cached(contract, key, lambda: self.reads.measure(key, tables, fn),
                                *inputs, tables=tables, **options)
 
-        real_inputs = web_follow._follow_inputs
-
-        def follow_inputs(contract, connection):
-            return self.reads.measure("follow-inputs", web_follow.FOLLOW_GROUP_TABLES,
-                                      lambda: real_inputs(contract, connection))
-
         mock.patch.object(LedgerDatabase, "connect", connect).start()
         mock.patch.object(WebContract, "cached_until_changed", cached_until_changed).start()
-        mock.patch.object(web_follow, "_follow_inputs", follow_inputs).start()
         self.addCleanup(mock.patch.stopall)
 
     def _seed_ledger(self):
@@ -463,32 +454,6 @@ class DeclaredTablesTests(unittest.TestCase):
                 (json.dumps({"libraryShortcuts": {"favorites": [
                     {"entity_id": 11}, {"kind": "tag", "name": "足交"},
                     {"kind": "tag", "scope": "online", "tag_id": "animation", "name": "animation"}]}}),))
-        with self.contract.database.write_transaction() as connection:
-            store = FollowStore(lambda: connection, sources_root=self.contract.follow_sources_root)
-            source_id = store.register(provider="rule34video", ref="alice", label="Alice",
-                                       url="https://rule34video.test/alice", semantics="work",
-                                       moment=self.MOMENT)
-            store.record(source_id, SourceFetch(
-                provider="rule34video", ref="alice", request_url="https://rule34video.test/alice",
-                semantics="work", raw_body=b"<html/>", candidates=(
-                    FollowCandidate(provider="rule34video", external_id="1", title="Fiona - Paizuri",
-                                    url="https://rule34video.com/video/1/x/", duration=20.0,
-                                    media_url="https://example.test/1.mp4",
-                                    thumb_url="https://rule34video.com/t/1.jpg",
-                                    extra={"tags": ["animation", "fiona"],
-                                           "tag_types": {"animation": "general", "fiona": "character"}},
-                                    published_at="2026-08-18T00:00:00Z"),
-                    FollowCandidate(provider="rule34video", external_id="2", title="Fiona - Paizuri (Nude)",
-                                    url="https://rule34video.com/video/2/x/",
-                                    thumb_url="https://rule34video.com/t/2.jpg"))),
-                moment=self.MOMENT)
-            items = store.items()
-            store.save_asset(items[0].id, confirm=True)
-            store.record_playback(items[1].id, moment=self.MOMENT)
-            connection.execute(
-                "INSERT INTO follow_author_alias(alias_key,alias_name,canonical_key,canonical_name,"
-                "source,created_at,updated_at) VALUES('alice2','Alice2','alice','Alice','manual',"
-                "'2026-01-01','2026-01-01')")
 
     def _fresh(self):
         """清掉契约与模块级的结果缓存，下一次计算从账本读起。"""
@@ -516,21 +481,11 @@ class DeclaredTablesTests(unittest.TestCase):
         self._get("/api/folders")
         self._get("/api/ads", limit="10")
         self._get("/api/duplicates", limit="10")
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            source_id, item_id = (str(connection.execute(f"SELECT min(id) FROM {table}").fetchone()[0])
-                                  for table in ("follow_source", "follow_item"))
-        for args in ({}, {"summary": "1"}, {"item": item_id}, {"source": source_id},
-                     {"author": "Alice"}, {"status": "new", "sort": "old"}, {"offset": "1"}):
-            self._get("/api/follow", **args)
-        self._fresh()
-        web_follow.cover_alternatives(self.contract, int(item_id))
-        self._fresh()
         declarations = {
             "GROUP_TABLES": GROUP_TABLES, "TOPS_TABLES": TOPS_TABLES,
             "FACETS_TABLES": FACETS_TABLES, "INDEX_TABLES": INDEX_TABLES,
             "STATS_TABLES": web_stats.STATS_TABLES,
             "CATALOG_TOTAL_TABLES": CATALOG_TOTAL_TABLES,
-            "FOLLOW_GROUP_TABLES": web_follow.FOLLOW_GROUP_TABLES,
             "JUNK_SCORE_TABLES": web_batch.JUNK_SCORE_TABLES,
             "DUPLICATE_TABLES": web_batch.DUPLICATE_TABLES}
         names = {tuple(tables): name for name, tables in declarations.items()}
@@ -685,27 +640,21 @@ class ResultVersionTablesTests(unittest.TestCase):
     #: `frontend/test/react/result-updates.test.tsx` 核对。
     REFRESHED_BY = {
         "catalog-grid": ("catalog",),
-        "catalog-totals": ("catalog", "follow"),
-        "index": ("catalog", "follow", "discoveries"),
-        "stats": ("catalog", "follow"),
-        "follow-feed": ("catalog", "follow"),
+        "catalog-totals": ("catalog",),
+        "index": ("catalog",),
+        "stats": ("catalog",),
     }
-    #: 刻意不刷新的组合：在线播放每十秒写一次 `follow_playback`，跟着它刷新的话，看片
-    #: 期间整组页面每次心跳重取一遍；统计页的在线播放读数等下一次别的写入再更新。
-    EXEMPT = {("stats", "follow_playback")}
 
     def test_every_cached_page_is_refreshed_by_the_tables_it_reads(self):
         from peach.web_result_versions import RESULT_TABLES
         declared = {
             "catalog-grid": GROUP_TABLES, "index": INDEX_TABLES, "stats": web_stats.STATS_TABLES,
             "catalog-totals": CATALOG_TOTAL_TABLES,
-            "follow-feed": web_follow.FOLLOW_GROUP_TABLES,
         }
         missing = {}
         for page, keys in self.REFRESHED_BY.items():
             covered = set().union(*(RESULT_TABLES[key] for key in keys))
-            gap = {table for table in declared[page] if table not in covered
-                   and (page, table) not in self.EXEMPT}
+            gap = {table for table in declared[page] if table not in covered}
             if gap:
                 missing[page] = sorted(gap)
         self.assertEqual(missing, {}, "这些页面读到的表变了，结果版本却不变")

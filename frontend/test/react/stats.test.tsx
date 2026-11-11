@@ -46,12 +46,12 @@ const payload = (overrides: Partial<StatsData> = {}): StatsData => ({
   tag_cov: 2,
   top_tags: [{ k: 'tag:a', n: 9, cat: 'genre' }, { k: 'tag:b', n: 4, cat: 'genre' }],
   consumption: {
-    played: 2, library_played: 1, online_played: 1, play_seconds: 7200,
+    played: 2, play_seconds: 7200,
     o_total: 5, liked: 1, dislike: 1, seen: 2, trash: 0, skimmed: 1,
   },
   recent: [{
     id: 42, name: 'one.mp4', creator: '甲', play_seconds: 600,
-    duration: 1200, max_reached: 0.9, o_count: 0, kind: 'library',
+    duration: 1200, max_reached: 0.9, o_count: 0,
   }],
   storage_volumes: [{
     kind: 'media', label: 'R:', root: 'R:\\media',
@@ -268,7 +268,7 @@ it('计数取不到时读「未取得」，不白屏也不读成 NaN', async () 
     tag_cov: null,
     attribution: { videos: 4, creator: null, code: null, studio: null, thumb: null, duration: null },
     consumption: {
-      played: null, library_played: null, online_played: null, play_seconds: null,
+      played: null, play_seconds: null,
       o_total: null, liked: null, dislike: null, seen: null, trash: null, skimmed: null,
     },
   }));
@@ -379,7 +379,7 @@ it('点一个内容标签把键交回给壳，页面自己不跳转', async () =
 
 it('快进扫过和正常看完是两回事，一行里分得出来', async () => {
   expect(watchNote({
-    id: 1, name: '', creator: null, play_seconds: 100, duration: 1000, max_reached: 0.9, o_count: 0, kind: 'library',
+    id: 1, name: '', creator: null, play_seconds: 100, duration: 1000, max_reached: 0.9, o_count: 0,
   })).toBe('快进扫过');
   const { host } = await open();
   await click(tabNamed(host, '最近看过'));

@@ -1,6 +1,6 @@
 /* Application 交给路由树的能力，经 Context 下发给路由树画的那几页。
  *
- * 这里只放两类东西：换到还归壳的那一屏（目录、资料页、详情、关注、垃圾文件），和只有壳才有的
+ * 这里只放两类东西：换到还归壳的那一屏（目录、资料页、详情、垃圾文件），和只有壳才有的
  * 状态或回执（Toast、偏好存储、一次性上下文）。纯查表的助手（`tagLabel`、`javTitleHtml`）由页面
  * 从 `@peach/legacy/*` 直接 import；每次打开才算得出的值（只读状态、地址上的分类与页签、引导标记）
  * 跟着那一次打开走，不在这里。 */
@@ -12,9 +12,6 @@ import type { LibraryProcessingProps } from '../bundle';
 import type { CatalogFilterProps } from '../catalog-filter/catalog-filter';
 import type { CatalogGridProps, MediaCardActions, MediaCardHelpers } from '../catalog-grid/types';
 import type { EntityPageProps } from '../entity-page/entity-page';
-import type { FeedNewProps } from '../feed-new/feed-new';
-import type { OnlineAuthor } from '../follow/online-vocab';
-import type { FollowFeedProps } from '../follow-feed/follow-feed';
 import type { IndexKind, IndexPerson, IndexRoute, PeopleLayout, PersonAvatar } from '../index/index-data';
 import type { JunkQueueProps } from '../junk-queue/junk-queue';
 import type { SearchProps } from '../search/search';
@@ -36,8 +33,6 @@ export interface ShellActions {
   openManage(section: string): void;
   /** 管理区身份对应的路径；路由表里没有这个身份时是空串。 */
   managePath(section: string): string;
-  /** 去「看更新」那一页（`/follow`）。 */
-  openFollow(): void;
   /** 过去时回执（`actionReceipt`）；给了 `undo` 就带一颗撤销键。 */
   receipt(message: string, options?: { undo?: () => Promise<void> }): void;
   /** 全站 Toast 原样（`toast`）：`sound` 选提示音。 */
@@ -48,10 +43,6 @@ export interface ShellActions {
   revealSource(id: number): Promise<string>;
   /** 复核页把分类写回地址栏，不重开。 */
   routeReview(params: { category: string; queue?: string }): void;
-  /** 关注管理页把页签、页码与排序写回地址栏，不重开。 */
-  routeFollowManage(params: { tab: string; page: number; sort: string; dir: string }): void;
-  /** 关注管理页的偏好改了，存储归壳。 */
-  saveFollowPreference(patch: { pageSize?: number; layout?: string }): void;
   /** 来源徽标（含计费标记）的 HTML。 */
   srcBadge(location: string, cost: string): string;
   /** 索引页把过滤词、范围、视图与类型写回地址栏，不重开。`replace` 用在打字过滤那种一路改写的场合。 */
@@ -62,26 +53,21 @@ export interface ShellActions {
   exitSelectMode(): void;
   /** 本地名册一格的头像（圆框里那段 HTML 与人脸取景），回落链在壳里只有一份。 */
   personAvatar(item: IndexPerson, entityKind: string, big: boolean): PersonAvatar;
-  /** 在线创作者一格的头像 HTML：主页头像优先、归档兜底，都取不到落回首字母。 */
-  authorAvatar(author: OnlineAuthor): string;
   /** 回目录，按这一枚或这几枚本地标签筛选。 */
   showIndexTags(tags: string[], match: 'any' | 'all'): void;
-  /** 去关注页，只看这一位创作者或这一枚在线标签的更新。 */
-  openFollowAuthor(key: string): void;
-  openFollowTag(tag: string): void;
   /** 打开一份播放列表的播放队列（舞台），从 `resumeAssetId` 那一个接着播。 */
   openPlaylist(id: number, resumeAssetId: number): void;
   /** 此刻能不能悬停翻页：壳的多选、遮挡、减少动效与滚动中都回 false。 */
   canFlip(): boolean;
   /** 页面组换了一页：路由树里的页面元素挂上、开始取数之前报一次。壳收起上一页留下的面（悬停预览、在途读请求、
-   *  首页新作行、别的容器里那一页），再按种类铺开：管理区、关注页与播放列表页铺 `#stats`，索引页、
+   *  别的容器里那一页），再按种类铺开：管理区与播放列表页铺 `#stats`，索引页、
    *  资料页与目录铺首页那一侧。 */
   surfaceChanged(kind: SurfaceKind, path: string): void;
   /** 清空顶栏搜索框（带散开的残影）。 */
   clearSearch(): void;
   /** 打开沉浸模式，从 `id` 那一条开始；不给就从头。地址由调用方负责。 */
   openImmerse(id?: number): void;
-  /** 打开覆盖地址上的那一条（作品详情、队列里的一条或关注详情），地址已经在那里，不再写。 */
+  /** 打开覆盖地址上的那一条（作品详情或队列里的一条），地址已经在那里，不再写。 */
   openOverlay(target: OverlayTarget): void;
   /** 取走一次队列打开意图：等待队列定下实际条目，首屏确定后才写详情地址。 */
   openQueueRequest?(): void;
@@ -97,28 +83,9 @@ export interface ShellActions {
   /** 资料页那几样仍在壳里的东西。 */
   readonly entity?: EntityPageShell;
 
-  // ── 关注与播放列表用（`pages/follow.tsx`）──
-  /** 关注页那几样仍在壳里的东西。 */
-  readonly follow?: FollowFeedShell;
-
-  // ── 目录用（`pages/catalog.tsx`）：来源在线表、搜索框、顶部三层与取数都还在壳里 ──
+  // ── 目录用（`pages/catalog.tsx`）：搜索框、顶部三层与取数都还在壳里 ──
   /** 首页、三个筛选态、回收站与垃圾文件打开与重取时回到壳的那几步。 */
   readonly catalog?: CatalogShell;
-}
-
-/** 关注页元素打开时回到壳的那几步。筛选的那一份由壳从地址读进自己的变量（回到关注页时按它写地址，侧栏、标签
- *  抽屉与关注详情也读它），选择集、照片墙偏好与页面借用的助手和动作也都在壳里；进页骨架与冷启动铺的是同一张。 */
-export interface FollowFeedShell {
-  /** 按地址读一遍筛选。关注页还画在 `#stats` 里（资料页压过来时只藏起来）就铺开它，把筛选、取样种子与一个新的
-   *  刷新代次推过去，照片墙跟上、回到顶上，回 true；没画着回 false，由元素整页打开。 */
-  refresh(restored?: Pick<FollowFeedProps, 'view' | 'seed' | 'revision'>): boolean;
-  /** 进页骨架。 */
-  skeleton(): string;
-  /** 整页打开交给页面的 props：筛选、取样种子与刷新代次、选择集、照片墙偏好，以及壳里那一份助手与动作。 */
-  props(): FollowFeedProps;
-  /** 关注详情下面那一层（深链、或后退前进落到关注详情上时列表没画着）：舞台上开着的不是关注详情就先收起，再铺开
-   *  管理区那一侧；列表还画在 `#stats` 里就原样留着，没画着就清空 `#stats`，列表等关掉详情才打开。 */
-  ground(): void;
 }
 
 /** 目录元素回到壳的那几步。筛选由元素按地址写进 `@peach/shell` 的 `state`，之后的事归壳。 */
@@ -134,11 +101,11 @@ export interface CatalogShell {
   /** 没有背景的作品详情与队列地址（深链、刷新）下面补画目录网格：网格没被占着、又是启动那一条或还铺着目录骨架时，
    *  按当前地址取一次（不是首页口径，不写筛选）。 */
   fill(): void;
-  /** 离开目录：收起 `#grid` 那一页与首页新作行。 */
+  /** 离开目录：收起 `#grid` 那一页。 */
   release(): void;
 }
 
-/** 资料页元素打开时回到壳的那几步。骨架里可有可无的几块按形状名单画，名单、目录卡片的比例与新作骨架都在壳里；
+/** 资料页元素打开时回到壳的那几步。骨架里可有可无的几块按形状名单画，名单与目录卡片的比例都在壳里；
  *  筛选按地址解出要用壳的排序偏好；就地推要动壳的顶部三层与侧栏。 */
 export interface EntityPageShell {
   missing(kind: string): void;
@@ -154,7 +121,7 @@ export interface EntityPageShell {
 }
 
 /** 页面组里一页的种类，壳按它决定铺哪一侧（`surfaceChanged`）。 */
-export type SurfaceKind = 'management' | 'index' | 'entity' | 'catalog' | 'follow' | 'playlists';
+export type SurfaceKind = 'management' | 'index' | 'entity' | 'catalog' | 'playlists';
 
 /** 管理区那几页每次打开时交给页面的值，由页面元素从地址、偏好与壳的状态算（`pages/managed.tsx`），按页面分。
  *  管理区那几页画进 `#stats`。 */
@@ -168,22 +135,14 @@ export interface ManagedOpenProps extends Record<ConfigurationPath, { section?: 
   '/quality-goals': Record<string, never>;
   '/sources': Record<string, never>;
   '/tasks': Record<string, never>;
-  '/subscriptions': {
-    tab: string; page: number; sort: string; dir: string; pageSize: number; layout: string;
-    readOnly: boolean; readOnlyMessage: string; writerUrl: string;
-  };
 }
 
 export type ManagedPath = keyof ManagedOpenProps;
 
-/** 播放列表页与关注页同样画进 `#stats`，但不是管理区：由路由树的元素按匹配打开（`pages/follow.tsx`），从壳里
- *  进来由壳认领写地址再要求重开（关注页回到时带上离开时的筛选，重新进入还要重掷取样种子、回到干净的
- *  `/follow`），所以不进 `ManagedPath`。每次打开交进来的值同样按页面分，之后的开关经 `updateManagedRoute`
- *  推进来。关注页的助手与动作是壳里各一份、身份不变的对象（卡片按引用比较），跟着打开走：它们拼的 HTML、
- *  碰的 DOM 与写的地址都还在壳里。 */
+/** 播放列表页同样画进 `#stats`，但不是管理区：由路由树的元素按匹配打开（`pages/playlists.tsx`），所以不进
+ *  `ManagedPath`。每次打开交进来的值同样按页面分，之后的开关经 `updateManagedRoute` 推进来。 */
 export interface BrowseOpenProps {
   '/playlists': { revision: number };
-  '/follow': FollowFeedProps;
 }
 
 export type BrowseRoutePath = keyof BrowseOpenProps;
@@ -218,12 +177,11 @@ export type IndexOpenPropsTable = { [Path in IndexRoutePath]: IndexOpenProps };
  *  名字是壳从地址解码出来的那一份。 */
 export type EntityRoutePath = '/performers/*' | '/studios/*' | '/creators/*' | '/series/*' | '/agencies/*' | '/tags/*';
 
-/** 页面里的页面内组件，按名字登记、各画进壳的一个容器：首页筛选条（`#catalogFilter`）、首页新作行（`#feedNew`）、
- *  顶栏搜索下拉（`#searchMenu`）。props 由壳算好、整份交进来，
+/** 页面里的页面内组件，按名字登记、各画进壳的一个容器：首页筛选条（`#catalogFilter`）、
+ *  顶栏搜索下拉（`#searchMenu`）、任务面。props 由壳算好、整份交进来，
  *  之后经 `updateManagedRoute` 推补丁。 */
 export interface SurfaceOpenProps {
   'catalog-filter': CatalogFilterProps;
-  'feed-new': FeedNewProps;
   'library-processing': LibraryProcessingProps;
   search: SearchProps;
 }

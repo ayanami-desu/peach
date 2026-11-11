@@ -61,18 +61,9 @@ const PLACEHOLDERS: Record<string, () => string> = {
     ${pageSkeletonHtml('正在读取采集来源', { cards: true, count: 4, fill: false, className: 'cleanup-skeleton' })}</div>`,
 };
 
-/** 关注管理的骨架照这台浏览器上次选的视图画，排序框与方向键照地址栏上的那一档画：等数据的这段时间画成
- *  卡片、数据到了换成表格的话，同一次进入里版式会整个翻一遍。 */
-export interface FollowSkeletonState {
-  followLayout: string;
-  followSort: string;
-  followDir: string;
-}
-
 /** 这一页的加载态 HTML。 */
-export function managementSkeletonHtml(path: string, { followLayout, followSort, followDir }: FollowSkeletonState): string {
-  return boardPageSkeleton(path, { followLayout, ...(path === '/subscriptions' ? { followSort, followDir } : {}) })
-    || (PLACEHOLDERS[path] ?? (() => pageSkeletonHtml('正在读取页面')))();
+export function managementSkeletonHtml(path: string): string {
+  return boardPageSkeleton(path) || (PLACEHOLDERS[path] ?? (() => pageSkeletonHtml('正在读取页面')))();
 }
 
 /** 骨架的键：同一个键说明是同一张，不必重画。 */

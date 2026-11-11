@@ -6,7 +6,7 @@
  * 在同一个任务里换成整页。首帧 props 由元素自己从地址、偏好与壳的状态算。
  *
  * 按页面打开序号挂 key：没人认领的历史变化一次就是打开一次，同一路径再打开就重挂重取；认领的写地址（复核页换分类、
- * 关注管理换页签）代次不变，不重开。详情压在上面时页面组还匹配这一页：key 停在压上来之前那一次，页面不拆；经背景
+ * 复核页换分类）代次不变，不重开。详情压在上面时页面组还匹配这一页：key 停在压上来之前那一次，页面不拆；经背景
  * 匹配挂上的（后退落到压在这一页上的详情）先不打开，详情撤下时按那一刻的代次挂 key 打开。
  *
  * 卸载时这一页还画在 `#stats` 里、壳也没藏起它，才收起；资料页、首页压过来时壳只藏起 `#stats`，页面照旧活着，
@@ -14,8 +14,6 @@
 import { useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 
-import { appSettingsStore } from '@peach/appearance';
-import { followManageParams } from '../../follow-manage/manage-route';
 import { javTab } from '../../jav/jav-navigation';
 import { isOverlayPath, managedEntry, openManagedRoute, peachHistory, isConfigurationPath } from '@peach/history';
 import { api, isAbort } from '@peach/legacy/core';
@@ -47,7 +45,6 @@ const readStarted = () => pageOpens > 0;
 /** 壳开始路由没有（`pageOpens` 大于 0）。 */
 const useRoutingStarted = (): boolean => useSyncExternalStore(subscribeShell, readStarted);
 
-const followLayout = (): string => (appSettingsStore().value.followLayout === 'table' ? 'table' : 'default');
 const search = (): URLSearchParams => new URLSearchParams(window.location.search);
 
 /** 只读态：中止了回 null，照只能浏览以外的缺省处理。 */
@@ -71,7 +68,7 @@ async function openProps(path: ManagedPath, run: Run): Promise<object | null> {
   if (path === '/jav') {
     const runtime = await readRuntime(run);
     if (!run.live) return null;
-    /* 四个分区地址（`?tab=wants|discover|releases|library`）各画各的：页签从地址读，缺省回作品库。 */
+    /* 两个分区地址（`?tab=library|explore`）各画各的：页签从地址读，缺省回馆藏探索。 */
     return { tab: javTab(search().get('tab')), readOnly: !!runtime?.ledger_read_only } satisfies ManagedOpenProps['/jav'];
   }
   if (path === '/review') {
@@ -81,30 +78,16 @@ async function openProps(path: ManagedPath, run: Run): Promise<object | null> {
     return { category: isReviewCategory(category) ? category : '', queue: reviewQueueOf(search().get('queue')),
       ...writerProps(runtime, '/review') } satisfies ManagedOpenProps['/review'];
   }
-  if (path === '/subscriptions') {
-    const route = followManageParams('?' + search().toString());
-    const runtime = await readRuntime(run);
-    if (!run.live) return null;
-    const preferences = appSettingsStore().value;
-    return {
-      ...route, pageSize: Number(preferences.followPageSize) || 20, layout: followLayout(), ...writerProps(runtime, '/subscriptions'),
-    } satisfies ManagedOpenProps['/subscriptions'];
-  }
   return {};
 }
 
 async function openPage(path: ManagedPath, actions: ShellActions, run: Run): Promise<void> {
   const seq = peachHistory.navigation.seq;
   const isCurrent = () => run.live && peachHistory.navigation.seq === seq;
-  if (path === '/subscriptions' && search().get('tab') === 'source') {
-    peachHistory.replace('/sources'); return;
-  }
   const stats = document.getElementById('stats');
   if (!stats) return;
   actions.surfaceChanged('management', path);
-  paintManagementPlaceholder(stats, managementSkeletonHtml(path, {
-    followLayout: followLayout(), followSort: search().get('sort') || '', followDir: search().get('dir') || '',
-  }));
+  paintManagementPlaceholder(stats, managementSkeletonHtml(path));
   void pageNavigationReady(isCurrent, stats, { pending: true });
   const props = await openProps(path, run);
   if (!props) return;

@@ -526,33 +526,6 @@ class OperationalScriptTests(unittest.TestCase):
         cls.creator_attributions = load_script("audit_creator_attributions")
         cls.rehome_unknown = load_script("rehome_unknown_jav")
 
-    def tmp_ledger(self) -> Path:
-        """一份只含 rule34xxx 追更条目的临时账本：一条已有类型和时长、一条都还没有。
-
-        临时目录先 `.resolve()`：CI runner 的临时目录都是别名（macOS `/var` 软链到
-        `/private/var`，Windows `RUNNER~1` 展开成 `runneradmin`），不 resolve 的路径
-        喂给被测代码只会在 CI 上红。
-        """
-        root = Path(tempfile.mkdtemp()).resolve()
-        database = root / "ledger.db"
-        connection = sqlite3.connect(database)
-        connection.executescript(
-            "CREATE TABLE follow_source(id INTEGER PRIMARY KEY, provider TEXT);"
-            "CREATE TABLE follow_item(id INTEGER PRIMARY KEY, source_id INTEGER,"
-            " external_id TEXT, url TEXT, media_url TEXT, published_at TEXT,"
-            " published_precision TEXT, duration REAL, metadata_json TEXT);")
-        connection.execute("INSERT INTO follow_source VALUES(1,'rule34xxx')")
-        connection.executemany(
-            "INSERT INTO follow_item VALUES(?,1,?,?,?,?,'exact',?,?)",
-            [(1, "18622796", "https://rule34.xxx/index.php?id=18622796",
-              "https://api-cdn-mp4.rule34.xxx/images/1/a.mp4", "2026-09-14T03:02:05Z", 20.0,
-              json.dumps({"tag_types": {"nier": "copyright"}})),
-             (2, "18622794", "https://rule34.xxx/index.php?id=18622794",
-              "https://api-cdn-mp4.rule34.xxx/images/1/b.mp4", "2026-09-14T03:02:05Z", None,
-              json.dumps({"tag_types": {}}))])
-        connection.commit()
-        connection.close()
-        return database
 
     def test_import_has_no_filesystem_or_log_side_effect(self):
         self.assertIsNone(self.clean_names._logf)
@@ -749,67 +722,6 @@ class OperationalScriptTests(unittest.TestCase):
         # 定论复用，会让配置问题被冻结成来源判决，续跑再也不问这个番号。
         self.assertEqual(self.scrape_codes.SETTLED_ERROR_KINDS, frozenset({"not_found"}))
 
-    def test_rule34video_character_backfill_only_retypes_the_site_character_group(self):
-        """存量行只把站方 Characters 组里的名字改记 character，别的类型与列一格不动。"""
-        backfill = load_script("backfill_rule34video_characters")
-        self.assertIs(backfill.open_for_write, scripting.open_for_write)
-        root = Path(tempfile.mkdtemp()).resolve()
-        self.addCleanup(shutil.rmtree, root, True)
-        database = root / "ledger.db"
-        seeding = sqlite3.connect(database)
-        seeding.executescript(
-            "CREATE TABLE follow_source(id INTEGER PRIMARY KEY, provider TEXT);"
-            "CREATE TABLE follow_item(id INTEGER PRIMARY KEY, source_id INTEGER,"
-            " external_id TEXT, url TEXT, metadata_json TEXT);"
-            "INSERT INTO follow_source VALUES(1,'rule34video');")
-        typed = {"tags": ["harry potter (harry potter)", "d.mon (overwatch)", "sex"],
-                 "tag_types": {"harry potter (harry potter)": "general",
-                               "d.mon (overwatch)": "general", "sex": "general",
-                               "3D": "metadata"}}
-        seeding.executemany("INSERT INTO follow_item VALUES(?,1,?,?,?)", [
-            (1, "4708183", "https://rule34video.com/video/4708183/x/",
-             json.dumps(typed)),
-            (2, "4708184", "https://rule34video.com/video/4708184/y/",
-             json.dumps({"tags": []}))])
-        seeding.commit()
-        seeding.close()
-        detail = (
-            b'<html><body><div class="vp-group vp-group--characters">'
-            b'<a class="tag_item" href="https://rule34video.com/tags/h/">'
-            b'harry potter (harry potter)</a></div><div class="vp-group">'
-            b'<a class="tag_item" href="https://rule34video.com/tags/d/">d.mon (overwatch)</a>'
-            b'<a class="tag_item" href="https://rule34video.com/tags/s/">sex</a>'
-            b'</div></body></html>')
-        asked = []
-
-        class Connector:
-            def _get(self, url, headers=None):
-                asked.append(url)
-                return HttpResponse(200, {}, detail)
-
-            def _raise_if_rate_limited(self, response):
-                return None
-
-        out = root / "characters.csv"
-        common = ["--db", str(database), "--out", str(out), "--delay", "0"]
-        with mock.patch.object(backfill, "build_connector", return_value=Connector()), \
-                redirect_stdout(io.StringIO()):
-            self.assertEqual(backfill.run(backfill.build_parser().parse_args(common)), 0)
-            with closing(sqlite3.connect(database)) as peek:
-                self.assertEqual(json.loads(peek.execute(
-                    "SELECT metadata_json FROM follow_item WHERE id=1").fetchone()[0]), typed)
-            self.assertEqual(backfill.run(backfill.build_parser().parse_args(
-                common + ["--apply", "--backup", str(root / "b.db")])), 0)
-        # 没有 `tag_types` 的行留给常规检查，不问详情页。
-        self.assertEqual(asked, ["https://rule34video.com/video/4708183/x/"] * 2)
-        after = sqlite3.connect(database)
-        self.addCleanup(after.close)
-        rows = dict(after.execute("SELECT id, metadata_json FROM follow_item"))
-        self.assertEqual(json.loads(rows[1]), {
-            **typed, "tag_types": {**typed["tag_types"],
-                                   "harry potter (harry potter)": "character"}})
-        self.assertEqual(json.loads(rows[2]), {"tags": []})
-        self.assertEqual(backfill.settled_ids(out), {1})
 
     def test_test_entrypoints_guard_the_worktree_source_and_are_the_only_documented_command(self):
         """两个入口用哪个 venv、给运行器什么环境与参数，由 `test_test_environment.py` 真跑入口验；
@@ -910,12 +822,12 @@ class OperationalScriptTests(unittest.TestCase):
 
     def test_functional_test_scopes_are_explicit(self):
         runner = load_script("test_runner")
-        follow = {path.name for path in runner.selected_files("follow")}
+        catalog = {path.name for path in runner.selected_files("catalog")}
         full = {path.name for path in runner.selected_files("full")}
-        self.assertIn("test_follow_web.py", follow)
-        self.assertIn("test_migrations.py", follow)
-        self.assertNotIn("test_media.py", follow)
-        self.assertGreater(len(full), len(follow))
+        self.assertIn("test_migrations.py", catalog)
+        self.assertIn("test_rm_web.py", catalog)
+        self.assertNotIn("test_media.py", catalog)
+        self.assertGreater(len(full), len(catalog))
         with redirect_stdout(io.StringIO()) as listed:
             self.assertEqual(runner.main(["--list-scopes"]), 0)
         self.assertEqual(listed.getvalue().split(), ["full", "auto", *runner.SCOPES])
@@ -940,15 +852,15 @@ class OperationalScriptTests(unittest.TestCase):
             with mock.patch.object(runner, '_import_index', return_value=({}, {}, frozenset())):
                 return runner.scopes_for_changes(paths)
         # 前缀表：多个文件取并集，反斜杠路径也认。
-        self.assertEqual(pick(["src/peach/follow_store.py", "web/app.js"])[0], ("follow", "web"))
-        self.assertEqual(pick(["src\\peach\\preview_cache.py"])[0], ("follow", "catalog", "media", "web"))
+        self.assertEqual(pick(["src/peach/web_library_shortcuts.py", "web/app.js"])[0], ("catalog", "web"))
+        self.assertEqual(pick(["src\\peach\\preview_cache.py"])[0], ("catalog", "media", "web"))
         self.assertEqual(pick(["scripts/probe.py", "pyproject.toml", ".github/workflows/test.yml"])[0],
                          ("full",))
         self.assertEqual(pick(["README.md", "docs/STATUS.md", ".claude/skills/x/SKILL.md"])[0],
                          ("checks",))
         self.assertEqual(pick(["src/peach/web_entity.py", "src/peach/routes_pages.py"])[0],
                          ("catalog", "tooling", "web"))
-        self.assertEqual(pick(["src/peach/web_follow.py"])[0], ("follow",))
+        self.assertEqual(pick(["src/peach/preview_cache.py"])[0], ("catalog", "media", "web"))
         # 模块名 ↔ 测试文件名推断，登记在几个域就跑几个域。
         self.assertEqual(pick(["src/peach/media.py"])[0], ("media",))
         self.assertEqual(pick(["src/peach/jobs.py"])[0], ("media", "tooling"))
@@ -959,8 +871,8 @@ class OperationalScriptTests(unittest.TestCase):
         # 测试文件按自己的文件名归域；公共门槛文件归 tooling。
         self.assertEqual(pick(["tests/test_processing_control.py"])[0], ("media", "metadata", "web"))
         self.assertEqual(pick(["tests/test_context_budget.py"])[0], ("tooling",))
-        scopes, why = pick(["src/peach/follow.py", "web/app.js"])
-        self.assertTrue(why.startswith("Peach auto scope: follow, web <- "), why)
+        scopes, why = pick(["src/peach/web_library_shortcuts.py", "web/app.js"])
+        self.assertTrue(why.startswith("Peach auto scope: catalog, web <- "), why)
         self.assertIn("web: web/app.js", why)
         self.assertEqual(pick([])[0], ("checks",))
         # full 覆盖公共设施和未知影响面。
@@ -2920,7 +2832,6 @@ class ScriptingConventionTests(unittest.TestCase):
 
     #: 会真写 ledger、已经收口到本模块的脚本。
     LEDGER_WRITERS = (
-        "backfill_rule34video_characters",
         "clean_names",
         "install_entity_links",
         "localize_performer_names",

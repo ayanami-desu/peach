@@ -44,7 +44,7 @@ type ActionMocks = { [K in keyof ItemDetailActions]: Mock<ItemDetailActions[K]> 
 function actions(): ActionMocks {
   return {
     close: vi.fn(), present: vi.fn(), redirect: vi.fn(), openQueueItem: vi.fn(), mountPlayer: vi.fn(() => vi.fn()), reopen: vi.fn(),
-    checkSource: vi.fn(async () => false), openSavedFollow: vi.fn(), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
+    checkSource: vi.fn(async () => false), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
     openTag: vi.fn(), addToPlaylist: vi.fn(), saveMix: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
     reveal: vi.fn(async () => ''), sync: vi.fn(async () => ({ text: '', removed: [] })),
     rematch: vi.fn(async () => {}), trashChanged: vi.fn(async () => {}),
@@ -293,10 +293,9 @@ describe('身份与标签', () => {
     expect([ratingText(60), ratingText(0), ratingText(null)]).toEqual(['3 星', '未评分', '未评分']);
   });
 
-  it('播放区挡在前面的说明：没挂载、在线作品反查不到、计费来源', () => {
+  it('播放区挡在前面的说明：没挂载、在线作品、计费来源', () => {
     expect(mediaGate(item(1), true)).toBe('offline');
     expect(mediaGate(item(1, { location: 'online' }), false)).toBe('online');
-    expect(mediaGate(item(1, { location: 'online', follow_item_id: 5 } as Partial<DetailItem>), false)).toBe('');
     expect(mediaGate(item(1, { cost: 'metered' }), false)).toBe('metered');
     expect(mediaGate(item(1), false)).toBe('');
     expect(mediaGate(item(1, { name: 'ABC-123.ISO' }), false)).toBe('disc');
@@ -306,12 +305,8 @@ describe('身份与标签', () => {
 describe('首屏取数', () => {
   const signal = new AbortController().signal;
 
-  it('保存过的在线作品转关注详情；条目已不在收起舞台', async () => {
-    serve(undefined, { '/api/item?id=1': item(1, { location: 'online', follow_item_id: 9 } as Partial<DetailItem>),
-      '/api/item?id=2': { error: 'gone' } });
-    const first = props({ id: 1 });
-    await prefetchItemDetail(first, signal);
-    expect(first.actions.redirect).toHaveBeenCalledWith({ kind: 'follow', id: 9 });
+  it('条目已不在时收起舞台', async () => {
+    serve(undefined, { '/api/item?id=2': { error: 'gone' } });
     const second = props({ id: 2 });
     await prefetchItemDetail(second, signal);
     expect(second.actions.redirect).toHaveBeenCalledWith({ kind: 'gone' });
@@ -355,7 +350,7 @@ describe('交给壳的', () => {
     const { host, actions: done } = await show(item(1));
     expect(done.present).toHaveBeenCalledTimes(1);
     const frame = host.querySelector('[data-item-media="video"]');
-    expect(done.mountPlayer).toHaveBeenCalledWith(frame, expect.objectContaining({ id: 1 }), null, undefined);
+    expect(done.mountPlayer).toHaveBeenCalledWith(frame, expect.objectContaining({ id: 1 }), undefined);
     expect(host.querySelector('video')).toBeNull();
   });
 
@@ -368,7 +363,7 @@ describe('交给壳的', () => {
     const metered = await show(item(2, { cost: 'metered' }));
     expect(metered.actions.mountPlayer).not.toHaveBeenCalled();
     await click(metered.host.querySelector('[data-item-gate="metered"]'));
-    expect(metered.actions.mountPlayer).toHaveBeenCalledWith(metered.host.querySelector('[data-item-media="metered"]'), expect.objectContaining({ id: 2 }), null,
+    expect(metered.actions.mountPlayer).toHaveBeenCalledWith(metered.host.querySelector('[data-item-media="metered"]'), expect.objectContaining({ id: 2 }),
       { autoplay: true });
   });
 

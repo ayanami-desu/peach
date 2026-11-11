@@ -45,7 +45,7 @@ def _settings(root: Path, page: Path, **overrides) -> "PeachSettings":
         avatar_root=root / "avatars", logo_root=root / "logos",
         photo_root=root / "photos", candidate_root=root / "generated",
         secrets_root=root / "secrets",
-        ffmpeg_root=root / "ffmpeg", follow_state_root=root / "state",
+        ffmpeg_root=root / "ffmpeg", state_root=root / "state",
         entry_links_root=root / "entry-links",
         **overrides,
     )
@@ -406,7 +406,7 @@ class RelatedEndpointCacheTests(unittest.IsolatedAsyncioTestCase):
             transport=httpx.ASGITransport(app=self.app), base_url="http://test")
         self.addAsyncCleanup(self.client.aclose)
 
-    async def test_repeated_requests_only_rank_once_until_the_ledger_changes(self):
+    async def test_repeated_requests_use_cached_result(self):
         # patch 打在 `web_router` 上，不是 `web_contract`：那个 shim 只是再导出，
         # 处理器读的是自己模块里的名字。
         with patch("peach.web_router.q_related", side_effect=q_related) as spy:
@@ -416,19 +416,8 @@ class RelatedEndpointCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.json(), second.json())
         self.assertEqual(spy.call_count, 1)
 
-        contract = self.app.state.web_contract
-        # 后台任务写订阅新作那几张表时推荐不读它们，缓存留着。
-        with contract.write_transaction() as connection:
-            connection.execute("INSERT INTO feed_source(kind,url,created_at) VALUES('t','u','2026-11-08')")
-        with patch("peach.web_router.q_related", side_effect=q_related) as spy:
-            await self.client.get("/api/related?id=1")
-        self.assertEqual(spy.call_count, 0, "没读到的表变了不重算")
 
-        with contract.write_transaction() as connection:
-            connection.execute("UPDATE asset SET feedback='like' WHERE id=1")
-        with patch("peach.web_router.q_related", side_effect=q_related) as spy:
-            await self.client.get("/api/related?id=1")
-        self.assertEqual(spy.call_count, 1, "读到的表写过之后必须重算")
+        self.assertEqual(spy.call_count, 1)
 
     async def test_a_different_limit_is_a_different_result(self):
         """限流后的 limit 进了缓存键；不进的话第二次请求会拿到条数不对的列表。"""

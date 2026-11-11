@@ -7,7 +7,7 @@
 ## 背景
 
 匿名接口只依赖两个主机：签名常量从网页前端 `catembylegacy.fastcdn.dpdns.org` 读取，请求只发往 `jdforrepam.com`。
-任何一个被墙、DNS 解析失败或宕机，JavDB 这一档就整源冷却，新作页、发现、找资源和刮削一起停。
+任何一个被墙、DNS 解析失败或宕机，JavDB 这一档就整源冷却，作品资料抓取与馆藏探索一起停。
 
 另一个开源项目 javmoe（GPL-3.0）移植了 MDCx 的 JavDB App 适配：用写死的 App 签名材料，并按顺序尝试
 `apidd.czssdgz.com`、`apidd.spthgb.com`、`jdforrepam.com` 三个主机。2026-11-05 经用户同意，在本机同一出口

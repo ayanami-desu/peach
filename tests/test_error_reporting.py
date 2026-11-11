@@ -468,27 +468,6 @@ class ErrorReportingTests(unittest.TestCase):
             self.assertEqual(json.loads(archive.read('processing/library-sharing-attempt.json'))['status'], 'unknown')
             self.assertNotIn('processing/remote-reporting-frequency.json', archive.namelist())
 
-    def test_support_bundle_contains_recent_cover_attempts_and_discovery_job(self):
-        from peach.settings_file import PeachConfig
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True)
-        attempts = config.directory('generated') / 'feed-cover-attempts'
-        attempts.mkdir(parents=True)
-        for index in range(3):
-            path = attempts / f'ABC-00{index}.json'
-            path.write_text(json.dumps({'code': f'ABC-00{index}', 'ok': False, 'error_type': 'Unavailable',
-                                        'reason': '来源地址 返回 403'}), encoding='utf-8')
-            os.utime(path, (100 + index, 100 + index))
-        (attempts.parent / 'jav-discovery-metadata.job.json').write_text(json.dumps({
-            'status': 'complete', 'total': 3, 'failed_codes': ['ABC-002']}), encoding='utf-8')
-        (attempts.parent / 'jav-discovery-metadata.json').write_text('private-metadata-cache', encoding='utf-8')
-        with mock.patch.object(error_reporting, 'log_directories', return_value=[]), \
-                mock.patch.object(support_bundle, 'COVER_ATTEMPT_LIMIT', 2), \
-                zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes(config=config))) as archive:
-            names = sorted(name for name in archive.namelist() if name.startswith('covers/'))
-            self.assertEqual(names, ['covers/feed-cover-attempts/ABC-001.json', 'covers/feed-cover-attempts/ABC-002.json',
-                                     'covers/jav-discovery-metadata.job.json'])
-            self.assertEqual(json.loads(archive.read('covers/feed-cover-attempts/ABC-002.json'))['error_type'], 'Unavailable')
-            self.assertEqual(json.loads(archive.read('covers/jav-discovery-metadata.job.json'))['failed_codes'], ['ABC-002'])
 
     def test_bundle_contains_rotated_logs_and_state_evidence_with_invalid_config(self):
         from peach import settings_file
@@ -788,53 +767,6 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(exported["exception"][0]["winerror"], 5)
         for secret in ("private-cookie", "private-cid", "private-token"):
             self.assertNotIn(secret, content)
-
-    def test_follow_media_report_keeps_source_context_and_redacts_upstream_details(self):
-        from types import SimpleNamespace
-        from peach.follow_stream import FollowProxyError
-        from peach.routes_media import _report_follow_media_failure
-
-        item = SimpleNamespace(provider="fanbox", source_id=3, id=7,
-                               metadata={"media_items": [{"resource_provider": "gofile"}]})
-        try:
-            raise FollowProxyError(
-                "upstream https://media.gofile.io/private-file?token=private-token "
-                "Cookie: private-cookie", status_code=403)
-        except FollowProxyError as error:
-            _report_follow_media_failure(item, error, operation="stream", phase="upstream",
-                                         media_index=0)
-        with zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
-            payload = "\n".join(archive.read(name).decode() for name in archive.namelist()
-                                if "errors-" in name and name.endswith(".log"))
-        row = next(json.loads(line) for line in payload.splitlines()
-                   if json.loads(line).get("stage") == "follow-media")
-        self.assertEqual({key: row[key] for key in (
-            "provider", "source_id", "item_id", "resource_provider", "operation", "phase",
-            "media_index", "upstream_status")}, {
-                "provider": "fanbox", "source_id": 3, "item_id": 7, "resource_provider": "gofile",
-                "operation": "stream", "phase": "upstream", "media_index": 0, "upstream_status": 403})
-        self.assertEqual(row["exception"][0]["type"], "FollowProxyError")
-        self.assertTrue(row["frames"])
-        for secret in ("private-file", "private-token", "private-cookie", "media.gofile.io"):
-            self.assertNotIn(secret, payload)
-
-    def test_follow_media_report_handles_invalid_media_without_masking_the_failure(self):
-        from types import SimpleNamespace
-        from peach.routes_media import _report_follow_media_failure
-
-        item = SimpleNamespace(provider="kemono", source_id=4, id=8,
-                               metadata={"media_items": [None, {"resource_provider": "private-name"}]})
-        for index, expected in ((0, "kemono"), (1, "unknown")):
-            with self.subTest(index=index):
-                with mock.patch.object(error_reporting, "event") as emit:
-                    _report_follow_media_failure(item, ValueError("媒体条目格式不符"),
-                                                 operation="stream", phase="resolve", media_index=index)
-                self.assertEqual(emit.call_args.kwargs["resource_provider"], expected)
-        del item.source_id
-        with mock.patch.object(error_reporting, "event") as emit:
-            _report_follow_media_failure(item, ValueError("图片来源不可用"),
-                                         operation="image", phase="resolve")
-        self.assertIsNone(emit.call_args.kwargs["source_id"])
 
     def test_failure_dialog_points_to_an_existing_report_and_cli_needs_no_service(self):
         message = error_reporting.failure_details("startup", OSError("desktop unavailable"))

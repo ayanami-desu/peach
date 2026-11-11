@@ -14,7 +14,6 @@ import { preferredDirection } from './../sort-preferences';
 import { releaseHoverPreviews, setHoverState } from './../card-art/hover';
 import { reloadCurrentSurface } from './layout.js';
 import { refreshPageNavigation } from '../history/page-navigation';
-import { refreshFeedRows, syncFeedAutoScroll } from './feed.js';
 import { stageApi } from '../react/application-residents';
 import { syncJavImages } from './../jav-artwork';
 import { coverAnchor } from './../card-art/framing';
@@ -67,7 +66,6 @@ export function sidebarFacets(facetData,context){
       ...(preferencesState.sourceOffline(row.k)?{offline:preferencesState.OFFLINE_HINT}:{})})),
     regions:rows(facetData.regions),orientations:rows(facetData.orientations),years:rows(facetData.years),
     creators:rows(creators,row=>entityDisplayName('creator',row.k)),tags:rows(facetData.tags),tech:rows(facetData.tech),
-    followTags:rows(facetData.follow_tags,row=>tagLabel(row.k)),
     duration:!!facetData.stats?.duration,
   };
 }
@@ -206,9 +204,6 @@ preferencesState.settingsEffects = {
   seekSeconds:()=>repaintCatalogGrid(),
   /* 折叠是在渲染时做的，不重取的话已经被跳过的那些卡不会自己冒出来。 */
   groupCollapse:()=>reloadCurrentSurface(),
-  feedAutoScroll:()=>syncFeedAutoScroll(),
-  feedLimit:()=>refreshFeedRows(),
-  feedCompilations:()=>refreshFeedRows(),
   /* 设置说的是「离开详情不再进小窗」，已经开着的那个小窗留着反而像没生效。 */
   miniplayer:()=>{if(!preferencesState.appSettings.miniplayer)stageApi()?.closeMiniplayer()},
   javImage:()=>{

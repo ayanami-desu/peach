@@ -1,11 +1,10 @@
-/* 实体资料页顶上的资料卡与新作行（ADR-0031 第 10c 步）：数据形状与纯函数。
+/* 实体资料页顶上的资料卡（ADR-0031 第 10c 步）：数据形状与纯函数。
  *
- * `/api/entity` 由壳取，连同这一页的新作一起当 props 递进来；写操作都由壳做成 `actions`
- * 递进来，岛不自己拼请求。这里只把服务端下发的那份资料排成页面要画的几段：名字下面那一行、
- * 右边的资料表、外链、外部入口和同台艺人。 */
+ * `/api/entity` 由壳取，当 props 递进来；写操作都由壳做成 `actions` 递进来，岛不自己拼请求。
+ * 这里只把服务端下发的那份资料排成页面要画的几段：名字下面那一行、右边的资料表、外链、
+ * 外部入口和同台艺人。 */
 import { brandIcon, foldName, linkMarkUrl, officialLinkText } from '@peach/legacy/core';
 
-import type { FeedNew } from '../feed-new/feed-new';
 import type { PendingWorkItem } from '../components/pending-work';
 
 /** 一条外链，形状同 `/api/entity` 的 `links[]`。 */
@@ -64,17 +63,6 @@ export interface HeroNameGroups {
   groups?: { label?: string; names: { name: string; reading?: string }[] }[];
 }
 
-/** 创作者名下的关注来源（ADR-0096）。`key` 是关注页的作者键，没绑来源时是空串；`held` 是
- *  关注里同名、等用户认是不是同一个人的那几组。 */
-export interface HeroFollow {
-  key: string;
-  n: number;
-  providers: string[];
-  avatar: string;
-  avatar_fallback: string;
-  held: { key: string; name: string; providers: string[]; n: number; links: string[] }[];
-}
-
 /** `/api/entity` 里资料卡读到的那些字段。 */
 export interface EntityHeroData {
   favorite?: boolean;
@@ -102,8 +90,6 @@ export interface EntityHeroData {
   links?: HeroLink[];
   entry_links?: HeroEntryLink[];
   related_performers?: HeroCostar[];
-  feed?: { following: boolean } | null;
-  follow?: HeroFollow | null;
   profile?: HeroProfile | null;
   name_groups?: HeroNameGroups | null;
 }
@@ -116,18 +102,8 @@ export interface EntityHeroActions {
   chooseName(name: string): void;
   /** 打开「添加别名」弹层。 */
   addAlias(): void;
-  /** 订阅或取消订阅新作。失败时壳已发过失败回执，这里会收到抛出的错误。 */
-  follow(on: boolean): Promise<void>;
-  /** 刚订上：等服务端这一轮拉取跑完，再把新作那一行重取一遍。 */
-  refreshFeedAfterCheck(): void;
-  /** 新作卡上的「不想看」「标为已看过」。 */
-  feedAction(id: number, action: string): Promise<void>;
   /** 换完头像：重进这一页，头像索引在服务端已经换过。 */
   avatarPicked(): void;
-  /** 看这一位名下来源的更新：本人的切到这一页的在线视图，别的作者键去关注页只看那一位。 */
-  openFollowAuthor(key: string): void;
-  /** 「是同一个人」：把同名的那组关注作者绑到这位名下。失败时壳已发过失败回执。 */
-  confirmFollowAuthor(key: string, name: string): Promise<void>;
 }
 
 /** 仍由遗留层拼的那几段 HTML 与接线。 */
@@ -136,8 +112,6 @@ export interface EntityHeroHelpers {
   portraitImg(): string;
   /** 横滚行接上拖动与滚轮（`wireDrag`）。 */
   wireScroller(row: Element | null): void;
-  /** 新作那一行：拖动、滚轮，按设置接自动滚动。 */
-  wireFeedRow(row: Element | null): void;
   /** 操作回执（`actionReceipt`），给了 `undo` 就带一颗撤销键。 */
   receipt(message: string, options?: { undo?: () => Promise<void> }): void;
 }
@@ -147,12 +121,6 @@ export interface EntityHeroProps {
   /** 地址栏上的那个名字：首字母垫底取它，和骨架同一个字。 */
   name: string;
   entity: EntityHeroData;
-  /** 这一页的新作（`feed-new/feed-new.ts` 取回来的条目与壳拼好的整行 HTML）。 */
-  feedNew: FeedNew | null;
-  feedError?: string;
-  retryFeed?(): void;
-  /** 壳在 `#index` 里留给新作那一行的 `section.feednew[data-feed-new]`。 */
-  feedHost: HTMLElement | null;
   /** 这一页是不是 JAV 语境（`entityJavLayout`）。 */
   jav: boolean;
   actions: EntityHeroActions;
@@ -164,10 +132,6 @@ export const FACT_TAGS_SHOWN = 4;
 /** 公司页（厂牌、事务所）的门面是它自己的标识，方框；人是圆框，右下角有换头像的入口。 */
 export const isCompany = (kind: string) => kind === 'studio' || kind === 'agency';
 export const isPeople = (kind: string) => kind === 'performer' || kind === 'creator';
-
-export const entityFeedTip = (on: boolean) => on
-  ? '已订阅新作，点击取消订阅'
-  : '订阅新作';
 
 /** 当前语言的可选艺名，统称只保留一项；值仍指向已登记的名称。 */
 export function nameChoices(entity: EntityHeroData, language: 'zh-CN' | 'ja' = 'zh-CN'): { value: string; label: string }[] {

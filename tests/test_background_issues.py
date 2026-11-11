@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from peach.background_issues import IssueLog  # noqa: E402
-from peach.follow_scheduler import FollowUpdateScheduler  # noqa: E402
 from peach.metadata_amane import bridge_python  # noqa: E402
 from support.amane import write_amane_metadata  # noqa: E402
 
@@ -55,24 +54,6 @@ class BackgroundIssueTests(unittest.TestCase):
 
     def test_nothing_assembled_means_nothing_to_handle(self):
         self.assertEqual(self.log.collect(SimpleNamespace(), SimpleNamespace(), None), [])
-        self.assertEqual(self.collect(), [])
-
-    def test_a_failing_scheduler_carries_its_own_start_and_a_retry(self):
-        scheduler = FollowUpdateScheduler(
-            self.root / "state", lambda: {"ok": True, "checked": 1, "results": [{"ok": False}]},
-            available=True)
-        self.contract.follow_scheduler = scheduler
-        scheduler._run()
-        scheduler._run()
-        [row] = self.collect()
-        self.assertEqual({key: row[key] for key in ("key", "href", "link_label", "retry", "retry_available")}, {
-            "key": "follow-schedule", "href": "/settings/subscriptions#followScheduleSetting",
-            "link_label": "打开关注调度", "retry": "/api/follow/schedule/run", "retry_available": True})
-        self.assertEqual(row["since"], scheduler.status()["failing_since"])
-        self.assertNotIn("1 个来源检查失败", json.dumps(row, ensure_ascii=False))
-
-        scheduler.run_check = lambda: {"ok": True, "checked": 1, "results": [{"ok": True}]}
-        scheduler._run()
         self.assertEqual(self.collect(), [])
 
     def test_a_row_carries_the_moment_this_process_first_noticed_it(self):

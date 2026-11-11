@@ -36,7 +36,6 @@ COMMON_PATTERNS = ("test_context_budget.py", "test_test_collection.py", "test_co
 SCOPES: dict[str, tuple[str, ...]] = {
     "checks": ("test_copy_final_state.py", "test_dependency_policy.py", "test_repo_hygiene.py", "test_test_planning.py", "test_reference_updates.py", "test_readme_contracts.py",
                "test_complexity_ratchet.py", "test_source_assertion_ratchet.py", "test_python_lint.py"),
-    "follow": ("test_follow*.py", "test_http.py", "test_migrations.py", "test_wants_web.py"),
     "catalog": ("test_ad_judgement.py", "test_composite_name_split.py", "test_media_libraries.py", "test_media_folders.py",
                 "test_content_region.py", "test_performer_delete.py",
                 "test_duplicate_identity_merge.py",
@@ -45,19 +44,18 @@ SCOPES: dict[str, tuple[str, ...]] = {
                 "test_migrations.py",
                 "test_rm_web.py",
                 "test_entity_link_install.py", "test_web_links.py", "test_entry_links.py",
-                "test_feeds.py", "test_feeds_web.py", "test_wants_web.py",
                 "test_link_marks.py", "test_site_icons.py", "test_site_logos.py",
                 "test_avatar_face.py",
                 "test_brand_marks.py", "test_studio_icon_variants.py",
                 "test_media_probe.py",
                 "test_review_csv.py", "test_related.py",
-                "test_search_suggest.py",
+                "test_search_suggest.py", "test_follow_media_cache.py",
                 "test_task_runs.py", "test_followups.py", "test_task_center_integration.py",
                 "test_background_issues.py",
                 "test_studio_followup.py", "test_creator_identity_followup.py", "test_sample_images.py",
                 "test_jav_code_domain.py",
                 "test_web_ui.py", "test_web_js.py",
-                "test_web_perf.py", "test_record_rehome.py", "test_wants.py",
+                "test_web_perf.py", "test_record_rehome.py",
                 "test_web_orphan_records.py",
                 "test_web_review.py", "test_web_settings.py", "test_system_language.py"),
     # 任务中心的两个文件跟着 `test_jobs.py` 走：`jobs.py` 与 `task_runs.py` 是同一条
@@ -109,7 +107,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
                  "test_agency_entity.py", "test_agency_reject.py", "test_label_maker.py",
                  "test_seed_pack.py", "test_seed_followup.py", "test_seed_corrections.py"),
     "tooling": ("test_scripts.py", "test_trash_junk.py", "test_auth.py", "test_access.py", "test_cli.py", "test_server.py", "test_diagnostics.py", "test_error_reporting.py", "test_library_diagnostics.py", "test_script_policy.py",
-                "test_record_rehome.py", "test_downloads_retry.py", "test_wants.py", "test_media_probe.py", "test_onboarding.py", "test_folder_picker.py", "test_ledger_backups.py", "test_clear_camera_filename_codes.py",
+                "test_record_rehome.py", "test_downloads_retry.py", "test_media_probe.py", "test_onboarding.py", "test_folder_picker.py", "test_ledger_backups.py", "test_clear_camera_filename_codes.py",
                 "test_agent_worktree.py", "test_check_public_text.py", "test_issue_intake.py", "test_star_history.py", "test_test_evidence.py", "test_test_history.py", "test_test_environment.py", "test_dependency_policy.py",
                 "test_version_bump.py", "test_changelog.py", "test_runner_launcher.py",
                 "test_config.py", "test_log_retention.py",
@@ -120,7 +118,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
                 "test_review_csv.py", "test_jav_code_domain.py", "test_organize.py",
                 "test_link_repair.py", "test_tag_management.py",
                 "test_subprocess_encoding.py", "test_module_layering.py",
-                "test_outbound_proxy_policy.py", "test_network_reachability.py",
+                "test_outbound_proxy_policy.py", "test_network_reachability.py", "test_http.py",
                 "test_copy_final_state.py", "test_demo_dataset.py",
                 "test_process_job.py",
                 "test_seed_corrections.py"),
@@ -139,7 +137,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
             "test_legacy_shell_routes.py",
             "test_web_perf.py", "test_copy_final_state.py",
             "test_agency_entity.py", "test_label_maker.py", "test_dependency_policy.py",
-            "test_fastapi_api.py", "test_follow_assets.py", "test_follow_web.py",
+            "test_fastapi_api.py",
             "test_metadata_library.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py", "test_studio_icon_variants.py", "test_web_settings.py", "test_web_library_shortcuts.py", "test_web_tutorial.py", "test_company_profiles.py"),
     "core": ("test_access.py", "test_auth.py", "test_config.py", "test_field_owners.py",
              "test_entity_classification.py",
@@ -152,13 +150,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
                   "test_metadata_amane_bridge.py", ),
 }
 
-SCOPE_TEST_IDS: dict[str, tuple[str, ...]] = {
-    "follow": (
-        "test_rm_web.WebDataTests.test_contract_handler_registries_are_complete_and_unknown_routes_fail",
-        "test_rm_web.WebDataTests.test_read_only_post_routes_are_declared_and_all_exist",
-        "test_scripts.OperationalScriptTests.test_test_entrypoints_guard_the_worktree_source_and_are_the_only_documented_command",
-    ),
-}
+SCOPE_TEST_IDS: dict[str, tuple[str, ...]] = {}
 
 # `auto` 域按改动文件选域：每个文件先查 `AUTO_SCOPE_FILES` 的整路径，再按
 # `AUTO_SCOPE_PREFIXES` 取第一个命中的前缀，多个文件取并集。表里没有的
@@ -175,18 +167,18 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     "scripts/fetch_face_models.py": ("tooling", "packaging"),
     "src/peach/seed_corrections.py": ("metadata", "tooling"),
     "src/peach/seed_validation.py": ("metadata", "tooling"),
-    "src/peach/preview_cache.py": ("follow", "catalog", "media", "web"),
+    "src/peach/preview_cache.py": ("catalog", "media", "web"),
     "scripts/dev/copy-editor.js": ("web",),
     # 路由页面同时被目录、工具与前端三个域的测试读源码。
     "src/peach/routes_pages.py": ("catalog", "tooling", "web"),
     # 后台任务的 Job Object 由任务控制与工具域测试共同读源码。
     "src/peach/process_job.py": ("tooling",),
-    'src/peach/task_control.py': ('catalog', 'media', 'metadata', 'follow', 'tooling', 'web'),
+    'src/peach/task_control.py': ('catalog', 'media', 'metadata', 'tooling', 'web'),
     'tests/test_task_control.py': ('media', 'tooling'),
     'tests/test_task_resources.py': ('media', 'tooling'),
     'tests/test_resource_platform.py': ('media', 'tooling'),
     'src/peach/resource_platform.py': ('media', 'tooling', 'web'),
-    'src/peach/task_resources.py': ('catalog', 'media', 'metadata', 'follow', 'tooling', 'web'),
+    'src/peach/task_resources.py': ('catalog', 'media', 'metadata', 'tooling', 'web'),
     "src/peach/jav_poster_crop.py": ("metadata", "web"),
     # genre 词表按名字只推得出 metadata。复核队列与 API 那两处的用例拿「词表没收的词」
     # 当素材：词表一收那个词，`test_web_review.py`（catalog）与 `test_fastapi_api.py`
@@ -204,9 +196,6 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     "src/peach/library_processing_scope.py": ("metadata", "web"),
     # 卡片接触印相同样从网盘抽帧，和 `test_preview_sheets.py` 一起归 media。
     "src/peach/preview_sheets.py": ("media",),
-    # 磁力链解析由 `sources/javdb.py` 与 `javdb_public.py` 共用，用例在 `test_javdb_public.py`
-    # 与 `test_metadata_sources.py` 里，两域都要跑到。
-    "src/peach/magnets.py": ("metadata", "web"),
     # 任务状态根目录由 `task_control`、`task_resources`、`job_recovery` 共用，
     # 用例散在 `test_task_control.py` 与 `test_jobs.py`。
     "src/peach/task_state.py": ("tooling", "media"),
@@ -313,13 +302,6 @@ AUTO_SCOPE_PREFIXES: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("scripts/demo_dataset.py", ("web", "tooling")),
     ("scripts/vendor_web_dependencies.mjs", ("web", "tooling")),
     ("scripts/audit_video_endcards.py", ("media", "tooling")),
-    # 订阅源的解析与建壳验在 `test_feeds*.py`，两份都登记在 catalog：壳的边界是
-    # 「它不是 asset」，看得住这条的是目录域那批测试。
-    ("src/peach/feeds.py", "catalog"),
-    ("src/peach/feed_followup.py", "catalog"),
-    ("src/peach/follow", "follow"),
-    ("src/peach/fanbox.py", "follow"),
-    ("src/peach/web_follow.py", "follow"),
     ("src/peach/platform.py", "core"),
     # 产地的判据住在 `regions.py`，验它的测试叫 `test_content_region.py`：
     # 模块名与测试文件名对不上，按名字推不出来，只能在这里指明。

@@ -35,7 +35,7 @@ if str(SRC_DIR) not in sys.path:
 
 from peach import brand_marks
 from peach.config import GENERATED_DIR
-from peach.follow_assets import sniff
+from peach.images import sniff
 from peach.previews import LOGO_VARIANTS
 
 #: 嗅探出的 MIME → 落盘扩展名。`brand_marks.CONTENT_TYPES` 是它的反查表，两边必须

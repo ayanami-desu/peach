@@ -45,7 +45,7 @@ export interface PageOpenOptions {
 }
 
 /** 这一格什么时候按地址打开。`run(fresh, live)`：`fresh` 为真是整页打开（挂上、壳要求重开），为假是同一个
- *  元素领了新代次；`live()` 在元素卸下或又开了一次之后回 false。关注页与播放列表页的元素也用它。 */
+ *  元素领了新代次；`live()` 在元素卸下或又开了一次之后回 false。播放列表页的元素也用它。 */
 export function usePageOpen(
   epoch: number, run: (fresh: boolean, live: () => boolean) => void, options: PageOpenOptions = {},
 ): void {
@@ -188,14 +188,11 @@ async function openEntity(
   const { segment, kind, name } = target;
   if (!live()) return;
   writeShell({ entityJavLayout: false });
-  /* 卡外面依次是交集条与玻璃浮层、新作和正文，顶到底一条线。身份资料就绪时将四块宿主放进页面；
-     其余区域独立加载。资料卡、浮层与正文各带一层 `.peach-react`（React 子树的样式
-     范围）；新作那一行是遗留层的卡片，宿主不进这个范围。 */
+  /* 卡外面依次是交集条与玻璃浮层、正文，顶到底一条线。身份资料就绪时将三块宿主放进页面；
+     其余区域独立加载。资料卡、浮层与正文各带一层 `.peach-react`（React 子树的样式范围）。 */
   const frame = document.createElement('template');
-  const reserveFeed = !!host.querySelector('.feednew');
   frame.innerHTML = `<div data-entity-hero><div class="peach-react"></div></div>
     <div data-entity-filter><div class="peach-react"></div></div>
-    <section class="feednew" data-feed-new aria-label="未入库的新作" ${reserveFeed ? 'aria-busy="true"' : 'hidden'}></section>
     <div data-entity-body><div class="peach-react"></div></div>`;
   const parts = [...frame.content.childNodes];
   const hero = frame.content.querySelector('[data-entity-hero]')!;

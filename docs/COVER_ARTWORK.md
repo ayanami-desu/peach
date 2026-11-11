@@ -1,6 +1,6 @@
 # 封面取景与边车契约
 
-封面获取流程见 [JAV 封面技能](../.claude/skills/peach-jav-cover-workflow/SKILL.md)。本文件用于取景或边车任务；来源与算法实证见 [来源采集](SOURCING.md)，正式判据、阈值和版本在 `peach.jav_poster_crop` 与 `peach.face_detect`。
+封面获取流程见 [JAV 封面技能](../.claude/skills/peach-jav-cover-workflow/SKILL.md)。本文件用于取景或边车任务；来源与算法实证见 [来源采集](METADATA.md)，正式判据、阈值和版本在 `peach.jav_poster_crop` 与 `peach.face_detect`。
 
 ## 生产者与消费者
 

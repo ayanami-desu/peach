@@ -42,7 +42,7 @@ export function mountImmersePlayer(video: HTMLVideoElement, options: ImmersePlay
       const mounted = vjs(video, BARE);
       player = mounted;
       mounted.peachItem = item;
-      mounted.peachPlaybackKey = playbackKey('item', item);
+      mounted.peachPlaybackKey = playbackKey(item);
       mountPlayerRotation(mounted, video);
       mountPlaybackRate(mounted, video);
       if (segmented) mounted.one('error', () => { if (!released) mounted.src(direct) });

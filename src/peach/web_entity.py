@@ -14,8 +14,7 @@ import sqlite3
 
 from urllib.parse import urlsplit
 
-from . import (company_profiles, entry_links, feeds, link_status, performer_header, web_feeds,
-               web_follow)
+from . import (company_profiles, entry_links, link_status, performer_header)
 from .catalog_rules import (LENGTH_TAGS, dir_expr, photo_set_title, solo_performer_clause, tag_cat)
 from .entities import normalize_entity_name, resolve_entity, resolve_entity_id, prefer_entity_name
 from .social_links import ARCHIVE_HOSTS, is_archive
@@ -154,11 +153,10 @@ INDEX_ENTITY_KINDS = {"performers": "performer", "creators": "creator",
 
 
 def _performer_entries(contract: WebContract, c, d: dict, alias_rows) -> dict:
-    """女优资料卡上的外部入口，和「订阅新作」开关。
+    """女优资料卡上的外部入口。
 
     入口下发的是拼好的地址，不是模板：拼它要的站点 id、规范名和别名都在服务端，
-    前端再拼一遍就会有两份规则。缺 id 的站点不出现在这个列表里。开关只在她有
-    JavDB 演员页或 DMM 女优编号时出现，订阅地址同样由服务端拼，页面只管开和关。
+    前端再拼一遍就会有两份规则。缺 id 的站点不出现在这个列表里。
     """
     metadata = d.get("metadata") or {}
     localization = metadata.get("name_localization") if isinstance(metadata, dict) else None
@@ -168,9 +166,6 @@ def _performer_entries(contract: WebContract, c, d: dict, alias_rows) -> dict:
         "WHERE entity_id=? ORDER BY provider,external_kind,external_id", (d["id"],))]
     out = {"entry_links": entry_links.entry_links(
         contract.entry_links_root, d["canonical_name"], refs, alias_rows, localization)}
-    if (entry_links.javdb_actor_pages(d["canonical_name"], refs)
-            or feeds.dmm_actress_ids(c, d["id"])):
-        out["feed"] = {"following": feeds.entity_following(c, d["id"])}
     return out
 
 
@@ -334,8 +329,6 @@ def q_entity(contract: WebContract, args):
                 d["name_display"] = display(c, d["id"], d["canonical_name"], alias_rows, d["name_groups"])
         elif kind in {'studio', 'agency'}:
             d['company_profile'] = company_profiles.public_profile(metadata)
-        # 创作者在关注里的那一面（ADR-0096）：绑在名下的来源和同名等确认的那几组。
-        d["follow"] = web_follow.entity_follow(contract, c, d["id"]) if kind == "creator" else None
         d["pending_work"] = pending_work(contract, c, kind, d["id"])
         scope = scope_predicate(kind, "ae.entity_id") + _tag_scope_visibility(kind, "ae.entity_id", "a.id")
         count, rep = c.execute(
@@ -452,12 +445,10 @@ def agency_mark_link(links: list[dict]) -> int | None:
                  and not is_archive(link.get("url") or "")), None)
 
 
-def _entity_shape_parts(contract, connection, entity_id: int | None = None, *,
-                        feed: bool = True) -> dict[int, list[str]]:
-    """实体页形状的判据；深链只查询地址上的实体。`feed=False` 不算新作那一行，见 `entity_shape_rest`。"""
+def _entity_shape_parts(contract, connection, entity_id: int | None = None) -> dict[int, list[str]]:
+    """实体页形状的判据；深链只查询地址上的实体。"""
     scope = (entity_id,) if entity_id is not None else ()
-    parts = {key: ["feed"] for key in (web_feeds.feed_row_entity_ids(contract, connection) if feed else ())
-             if entity_id is None or key == entity_id}
+    parts: dict[int, list[str]] = {}
     # 全库按资产展开关联；深链沿实体索引只读当前人物的作品。
     relations = (
         "asset a CROSS JOIN asset_entity scope ON scope.asset_id=a.id"
@@ -525,7 +516,7 @@ def q_entity_latest(contract, args) -> dict:
 
 
 def q_entity_shapes(contract, args) -> dict:
-    """资料页上可有可无的那几块，哪些实体有：新作那一行（`feed`）、卡底的同台艺人（`costars`）、
+    """资料页上可有可无的那几块，哪些实体有：卡底的同台艺人（`costars`）、
     页头右侧那张资料表（`facts`，ADR-0069），以及作品的 JAV 版式（`jav`）。
 
     骨架在资料到达之前就要照最终形状画：不留位，那一块画出来时从中间顶进来；每页都
@@ -533,24 +524,13 @@ def q_entity_shapes(contract, args) -> dict:
     跳。同台艺人的判据与 `q_entity` 那一份同一套；事务所那份名单走名册，不在卡底。
     名单放在服务端，几台设备看到的是同一份。页面按地址里的名字比对，所以别名一起给。
     """
-    return entity_shapes(entity_shape_rest(contract), entity_shape_feed(contract))
-
-
-#: 只有新作那一行读的表。后台采集每几秒写一次，名单其余部分不读它们，缓存不跟着它们失效。
-FEED_SHAPE_TABLES = ("feed_source", "feed_item", "feed_discovery", "feed_discovery_entity")
-
-
-def entity_shape_feed(contract) -> dict:
-    """新作那一行：首页有没有、哪些实体有。判据还读资产与设置，随整本账本失效；只有两条查询。"""
-    with contract.database.read_connection() as connection:
-        return {"home": web_feeds.home_has_feed(contract, connection),
-                "ids": web_feeds.feed_row_entity_ids(contract, connection)}
+    return entity_shapes(entity_shape_rest(contract))
 
 
 def entity_shape_rest(contract) -> dict:
-    """新作那一行以外的形状，连同全部实体的名字与别名：只有新作那一行的实体也要按名字比对。"""
+    """资料页的各块形状，连同全部实体的名字与别名，页面按名字比对。"""
     with contract.database.read_connection() as connection:
-        parts = _entity_shape_parts(contract, connection, feed=False)
+        parts = _entity_shape_parts(contract, connection)
         entities = {int(row["id"]): {"id": int(row["id"]), "kind": row["kind"],
                                      "names": [row["canonical_name"]], "parts": parts.get(int(row["id"]), [])}
                     for row in connection.execute("SELECT id, kind, canonical_name FROM entity ORDER BY id")}
@@ -563,15 +543,12 @@ def entity_shape_rest(contract) -> dict:
     return {"entities": entities, "name_variants": name_variants}
 
 
-def entity_shapes(rest: dict, feed: dict) -> dict:
-    """两份合成名单；只列至少有一块的实体，新作那一行排在最前。"""
+def entity_shapes(rest: dict) -> dict:
+    """只列至少有一块的实体。"""
     from .kanji import JP_KANJI_TO_SIMPLIFIED
-    listed = []
-    for entity_id, entity in rest["entities"].items():
-        parts = (["feed"] if entity_id in feed["ids"] else []) + entity["parts"]
-        if parts:
-            listed.append({**entity, "parts": parts})
-    return {"ok": True, "home": {"feed": feed["home"]}, "entities": listed,
+    listed = [{**entity, "parts": entity["parts"]} for entity in rest["entities"].values()
+              if entity["parts"]]
+    return {"ok": True, "entities": listed,
             "name_variants": rest["name_variants"], "name_glyphs": JP_KANJI_TO_SIMPLIFIED}
 
 # ────────────────────────────── 照片 ──────────────────────────────
@@ -746,15 +723,6 @@ def q_photo_set(contract: WebContract, args):
         }
 
 
-def _attach_index_following(connection, rows: list[dict]) -> None:
-    """名册人物的订阅状态按已启用、绑定实体的来源汇总。"""
-    following = {source[0] for source in connection.execute(
-        "SELECT entity_id FROM feed_source WHERE enabled=1 "
-        "UNION SELECT entity_id FROM follow_source WHERE enabled=1")}
-    for row in rows:
-        row['following'] = row['entity_id'] in following
-
-
 def _attach_index_favorites(connection, rows: list[dict]) -> None:
     """按规范实体身份附加名册收藏状态。"""
     from .web_library_shortcuts import favorite_ids
@@ -764,12 +732,12 @@ def _attach_index_favorites(connection, rows: list[dict]) -> None:
         row["favorite"] = row.get("entity_id") in favorites
 
 
-#: 索引页账本那一段读到的表：计数与代表作、分类、事务所成员与官网、片商旗下 label、
-#: 订阅状态，以及收藏（存在 `profile` 里，按别名与重定向解析成规范实体）。
+#: 索引页账本那一段读到的表：计数与代表作、分类、事务所成员与官网、片商旗下 label，
+#: 以及收藏（存在 `profile` 里，按别名与重定向解析成规范实体）。
 INDEX_TABLES = ("asset", "asset_entity", "asset_tag", "asset_tag_preference", "entity",
                 "entity_alias", "entity_redirect", "entity_classification", "entity_external_ref",
                 "entity_identity_link", "entity_link", "entity_membership", "label_maker",
-                "feed_source", "follow_source", "profile")
+                "profile")
 
 
 def q_index(contract: WebContract, kind, q="", limit=600, offset=0, category=""):
@@ -869,7 +837,6 @@ def _index_rows(contract: WebContract, kind, q, limit, offset, category):
             summaries = entity_classification.summaries(c, [row['entity_id'] for row in rows])
             for row in rows:
                 row.update(summaries[row['entity_id']])
-            _attach_index_following(c, rows)
             category_counts = entity_classification.counts(c,entity_kind,q,COUNTED_VIDEO)
         else:
             sql = ("SELECT e.id entity_id,e.canonical_name k, count(DISTINCT " + video_work_key(contract, c) + ") n "

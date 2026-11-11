@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerNameWritings, setNameLanguage } from '../../src/core/entity-names';
 import { queryClient } from '../../src/react/query';
 import { FavoriteButton, LibraryShortcuts } from '../../src/react/library-shortcuts/shortcut-controls';
-import { favoriteHref, isFavorite, SHORTCUTS_KEY, type Favorite, type Shortcuts } from '../../src/react/library-shortcuts/library-shortcuts';
+import { favoriteHref, SHORTCUTS_KEY, type Shortcuts } from '../../src/react/library-shortcuts/library-shortcuts';
 import { click, mount, pending, settle, submit, type } from './render';
 
 notifyManager.setScheduler((notify) => notify());
@@ -36,31 +36,6 @@ describe('我的收藏', () => {
     await click(document.querySelector('[aria-label="取消收藏楓カレン"]')); await settle();
     expect(writes[0]).toMatchObject({ action: 'favorite', entity_id: 3, name: '枫花恋', on: false });
   });
-  it('同名在线标签和本地实体独立收藏，在线链接打开关注筛选', async () => {
-    const local: Favorite = { entity_id: 3, kind: 'tag', name: '户外' };
-    const online: Favorite = { kind: 'tag', scope: 'online', tag_id: 'outdoors', name: '户外', favorite: false };
-    let data: Shortcuts = { favorites: [local], filters: [] };
-    const writes: Record<string, unknown>[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      if (init?.body) {
-        const body = JSON.parse(init.body); writes.push(body);
-        data = { favorites: body.on ? [local, online] : [local], filters: [] };
-      }
-      return { ok: true, json: async () => data };
-    }));
-    queryClient.setQueryData(SHORTCUTS_KEY, data);
-    const host = await mount(<QueryClientProvider client={queryClient}><FavoriteButton item={online} /></QueryClientProvider>);
-    expect(isFavorite([local], online)).toBe(false);
-    expect(isFavorite([online], local)).toBe(false);
-    expect(favoriteHref(online)).toBe('/follow?tag=%E6%88%B7%E5%A4%96');
-    await click(host.querySelector('[aria-label="收藏户外"]')); await settle();
-    expect(writes[0]).toMatchObject({ action: 'favorite', scope: 'online', tag_id: 'outdoors', on: true });
-    expect(host.querySelector('[data-favorite]')?.getAttribute('aria-pressed')).toBe('true');
-    await click(host.querySelector('[aria-label="取消收藏户外"]')); await settle();
-    expect(writes[1]).toMatchObject({ scope: 'online', tag_id: 'outdoors', on: false });
-    expect(data.favorites).toEqual([local]);
-  });
-
   it('资料页的规范收藏状态不受旧身份缓存影响', async () => {
     queryClient.setQueryData(SHORTCUTS_KEY, { favorites: [
       { entity_id: 2, kind: 'performer', name: '旧人物' },

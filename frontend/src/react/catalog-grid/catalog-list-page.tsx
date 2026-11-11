@@ -114,17 +114,16 @@ export function CatalogListPage(props: CatalogGridProps) {
         cell: ({ row }) => <ListIdentity item={row.original} props={props} disabled={result.isPlaceholderData} /> }),
       helper.display({ id: 'library', header: '媒体库', cell: ({ row }) => <ListLibrary item={row.original} /> }),
       helper.display({ id: 'people', header: '艺人', cell: ({ row }) => <ListPeople item={row.original} props={props} /> }),
-      /* 标签与卡片同一套：关注条目的标签不可点，其余点一下按这个标签筛选。 */
+      /* 标签与卡片同一套：点一下按这个标签筛选。 */
       helper.display({ id: 'tags', header: '标签', cell: ({ row }) => {
-        const item = row.original;
-        const tags = item.follow_tags || item.tags || [];
+        const tags = row.original.tags || [];
         return tags.length
           ? <div data-media-tags="" data-list-tags="" onClick={event => {
             const tag = (event.target as HTMLElement).closest<HTMLElement>('[data-tag]');
             if (tag && !props.selectMode) props.actions.toggleTag(tag.dataset.tag || '');
           }}>
-            {tags.map(tag => <button key={tag} type="button" data-media-tag="" disabled={!!item.follow_item_id}
-              data-tag={item.follow_item_id ? undefined : tag}>{props.helpers.tagLabel(tag)}</button>)}
+            {tags.map(tag => <button key={tag} type="button" data-media-tag=""
+              data-tag={tag}>{props.helpers.tagLabel(tag)}</button>)}
           </div>
           : '—';
       } }),
@@ -189,7 +188,7 @@ export function CatalogListPage(props: CatalogGridProps) {
       ? completionReserved ? <i data-completion-skeleton="" aria-hidden="true" className="skeleton-sheen" /> : null
       : <LibraryCompletionPrompt className="" assetIds={missing} meteredIds={metered} />}
     {result.isError ? <RetryNote message={requestErrorMessage(result.error)} onRetry={() => void result.refetch()} /> : null}
-    <DataTableFrame follow preferences={preferences} onRowClick={props.selectMode ? id => { if (!result.isPlaceholderData) props.actions.toggleSelection(Number(id), false) } : undefined}>
+    <DataTableFrame sortable preferences={preferences} onRowClick={props.selectMode ? id => { if (!result.isPlaceholderData) props.actions.toggleSelection(Number(id), false) } : undefined}>
       <Table aria-label="作品列表" size="sm"
         sortDescriptor={sort ? { column: sort.id, direction: sort.desc ? 'descending' : 'ascending' } : undefined}
         onSortChange={next => table.setSorting([{ id: String(next.column), desc: next.direction === 'descending' }])}>

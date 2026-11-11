@@ -1078,21 +1078,21 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(runner.scopes_for_changes(paths, kinds=kinds)[0], ("full",))
 
     def test_known_file_addition_and_deletion_follow_their_domain(self):
-        name = "src/peach/web_follow.py"
+        name = "src/peach/web_library_shortcuts.py"
         path = self.repo / name
         path.write_text("value = 1\n", encoding="utf-8")
         self.git("add", "--", name)
         contents = runner.changed_contents(self.repo, "HEAD", [name])
         with mock.patch.object(runner, '_import_index', return_value=({}, {}, frozenset())):
-            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("follow",))
+            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("catalog",))
         self.git("commit", "-m", "test: fixture")
         path.unlink()
         contents = runner.changed_contents(self.repo, "HEAD", [name])
         with mock.patch.object(runner, '_import_index', return_value=({}, {}, frozenset())):
-            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("follow",))
+            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("catalog",))
 
     def test_known_python_file_execute_mode_requires_full(self):
-        name = "src/peach/web_follow.py"
+        name = "src/peach/web_library_shortcuts.py"
         (self.repo / name).write_text("value = 1\n", encoding="utf-8")
         self.git("add", "--", name)
         self.git("commit", "-m", "test: fixture")
@@ -1101,7 +1101,7 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("full",))
 
     def test_python_symlinks_require_full_for_each_change_kind(self):
-        name = "src/peach/web_follow.py"
+        name = "src/peach/web_library_shortcuts.py"
         for modes in (":000000 120000", ":120000 120000", ":120000 000000"):
             with self.subTest(modes=modes), mock.patch.object(evidence, "git", return_value=modes):
                 contents = runner.changed_contents(self.repo, "HEAD", [name])
@@ -1428,8 +1428,8 @@ class VerificationTests(unittest.TestCase):
     def test_auto_uses_scope_union_and_full_for_shared_inputs(self):
         self.assertEqual(runner.scopes_for_changes([])[0], ("checks",))
         self.assertEqual(runner.scopes_for_changes(["docs/HANDOFF.md"])[0], ("checks",))
-        self.assertEqual(runner.scopes_for_changes(["web/app.js", "src/peach/follow.py"])[0],
-                         ("follow", "web"))
+        self.assertEqual(runner.scopes_for_changes(["web/app.js", "src/peach/web_library_shortcuts.py"])[0],
+                         ("catalog", "web"))
         for path in ("pyproject.toml", "scripts/test_runner.py", "scripts/test_evidence.py", 'scripts/test_focus.py',
                      "uv.lock", "src/peach/unknown.py"):
             self.assertEqual(runner.scopes_for_changes([path])[0], ("full",))

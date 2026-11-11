@@ -14,7 +14,6 @@
     revert_auto_landing.py --source auto:metadata-tags
     revert_auto_landing.py --source adr-0139-official-replaces-verified
     revert_auto_landing.py --source auto:vanished-reattach --batch auto:vanished-reattach@3
-    revert_auto_landing.py --source auto:want-acquired
     revert_auto_landing.py --source auto:western-artwork --batch auto:western-artwork@20261008T000000Z
     revert_auto_landing.py --source upgrade:garbled-performers
     revert_auto_landing.py --source upgrade:javdb-actor-records
@@ -45,13 +44,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def print_acquired(planned: list[dict]) -> None:
-    """想要清单里对账标了已入库的那几条，一条一行。"""
-    for item in planned:
-        label = item["code"] or item["title"] or f"#{item['id']}"
-        print(f" - 想要 {label[:40]:<40} 资产 {item['acquired_asset_id']} {item['acquired_batch']}")
-
-
 def print_verified(planned: list[dict]) -> None:
     """核查结算的撤回清单：覆盖写还原几条资产、几条已被改过不动，并集删几个标签。"""
     for entry in planned:
@@ -80,7 +72,6 @@ def print_files(files: list[Path], covers: list[Path]) -> None:
 
 
 def print_plan(planned: dict) -> None:
-    print_acquired(planned["acquired"])
     print_verified(planned["verified"])
     for link in planned["links"]:
         print(f" - 链接 {link['entity'][:20]:<20} {link['url'][:56]} {link['batch']}")
@@ -89,8 +80,6 @@ def print_plan(planned: dict) -> None:
     for name in planned["names"]:
         print(f" - 中文名 {name['entity']} → {name['previous_name']} {name['source']}")
     print_profiles(planned["profiles"], planned["companies"])
-    for creator in planned["creators"]:
-        print(f" - 建档 {creator['name'][:20]:<20} {creator['sources']} 个来源 {creator['batch']}")
     for claim in planned["claims"]:
         print(f" - 断言 {claim['entity'][:20]:<20} {claim['facet']}={claim['value']} {claim['source']}")
     for ref in planned["refs"]:
@@ -130,13 +119,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         connection.close()
     removed = auto_landing_revert.remove_files(planned)
-    # 「删除文件」排在建档实体之后，和这一行一直以来的顺序一致。
-    summary = {}
-    for key, value in result.items():
-        summary[key] = value
-        if key == "删除建档实体":
-            summary["删除文件"] = removed
-    print({**summary, "integrity_check": integrity, "foreign_key_check": orphans})
+    print({**result, "删除文件": removed, "integrity_check": integrity,
+           "foreign_key_check": orphans})
     return 0
 
 

@@ -65,8 +65,8 @@ TASK_KEY = "performer-profile"
 TASK_LABEL = "补女优资料"
 SOURCE = "auto:performer-profile"
 MINNANO, AVBASE, AVWIKIDB, JAVDB = alias.MINNANO, "avbase", "avwikidb", "javdb"
-#: javdb 的女优页不另设间隔：取页时等 `library_processing.SOURCE_LIMITER`，与资料处理、订阅源同一份。
-#: 配额按出口 IP 算，两份互不知情的间隔同时跑会叠到每分钟 30 多页，超过用户定的 20 页（docs/SOURCING.md）。
+#: javdb 的女优页不另设间隔：取页时等 `library_processing.SOURCE_LIMITER`，与资料处理同一份。
+#: 配额按出口 IP 算，两份互不知情的间隔同时跑会叠到每分钟 30 多页，超过用户定的 20 页（docs/METADATA.md）。
 #: avbase 女优页与 minnano-av、avwikidb 同一档间隔（2026-11-04 实测 4 秒一页、32 页没撞墙）。
 AVBASE_INTERVAL = 3.0
 _AVBASE_LIMITER = HostLimiter({"avbase.net": AVBASE_INTERVAL})

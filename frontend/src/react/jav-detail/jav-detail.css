@@ -20,19 +20,6 @@
 .peach-react [data-jav-preview-toggle]:hover { background: rgba(0, 0, 0, .78); }
 .peach-react [data-jav-preview-toggle] svg { width: var(--icon-inline); height: var(--icon-inline); stroke: currentColor; fill: none; stroke-width: 2; }
 .peach-react [data-jav-art][data-jav-playing] { flex-direction: column; }
-.peach-react [data-jav-reviews], .peach-react [data-jav-resources] { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
-.peach-react :is([data-jav-reviews], [data-jav-resources]) summary { min-height: var(--control-h); width: 100%; gap: 8px; font-size: var(--fs-md); font-weight: 600; }
-.peach-react :is([data-jav-reviews], [data-jav-resources]) summary svg { width: var(--icon-inline); height: var(--icon-inline); flex: none; }
-.peach-react :is([data-jav-reviews], [data-jav-resources]) summary .contents svg { stroke: currentColor; fill: none; stroke-width: 2; }
-.peach-react [data-jav-review] { padding-top: 12px; border-top: 1px solid var(--line-soft); font-size: var(--fs-sm); }
-.peach-react [data-jav-review-meta] { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
-.peach-react [data-jav-review] time { color: var(--muted); }
-.peach-react [data-item-detail] [data-review-rating] { margin: 0; }
-.peach-react [data-review-rating] [data-rating-stars] { margin-left: 0; }
-.peach-react [data-review-rating] [data-rating-icon] { width: 16px; height: 16px; }
-.peach-react [data-review-rating] [data-rating-stars] [data-rate] { width: 16px; height: 16px; }
-.peach-react [data-review-rating] [data-rating-stars] [data-rate] svg { width: 16px; height: 16px; }
-.peach-react [data-review-rating] [data-rating-value] { display: none; }
 @media (min-width: 761px) {
   .peach-react [data-jav-detail] > [data-stage-side] { min-height: 0; }
   .peach-react [data-jav-detail] [data-stage-side-content] { max-height: none; }
@@ -41,7 +28,7 @@
   .peach-react [data-jav-detail] { grid-template-rows: minmax(0, 1fr); }
 }
 .peach-react [data-jav-info] { overflow-anchor: none; }
-.peach-react [data-jav-review] p:last-child, .peach-react [data-jav-summary] { white-space: pre-wrap; }
+.peach-react [data-jav-summary] { white-space: pre-wrap; }
 .peach-react [data-jav-failure] { position: relative; min-height: 260px; padding: 48px 24px; }
 @media (max-width: 640px) {
   .peach-react [data-jav-detail] [data-jav-art] { min-height: 220px; }

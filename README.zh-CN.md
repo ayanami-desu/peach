@@ -24,9 +24,7 @@
 
 [![查理·卓别林的资料与作品](https://peach.video/assets/screenshots/profile-wide-20261025-2-1280.webp)](https://peach.video/assets/screenshots/profile-wide-20261025-2.png)
 
-**创作者关注**
 
-[![创作者关注与作品更新](https://peach.video/assets/screenshots/follow-wide-20261025-2-1280.webp)](https://peach.video/assets/screenshots/follow-wide-20261025-2.png)
 
 **馆藏统计**
 
@@ -44,7 +42,7 @@
 - **网盘里的馆藏**：接上 Google Drive 与 OneDrive，选好要扫描的目录就能浏览。影片留在原处，Peach 只保存资料、缩略图和观看记录。
 - **播放**：在网页里播放，或者把一条带时限的直链交给桌面播放器；续播位置、倍速和时间轴预览按作品保存。
 - **变更跟踪**：每 15 分钟取一次增量、每天一次全量，配置页也能当场刷新。
-- **关注与发现**：订阅人物与创作者更新，发现作品，管理「想要」清单。
+- **馆藏探索**：只读账本，从自己的馆藏里列出没看过或刚开头的作品。
 - **馆藏管理**：管理标签、重复文件、多版本与分卷；按女优批量删除影片，保留人物档案和照片。
 - **任务中心**：暂停、继续或取消后台任务，看进度和问题。
 
@@ -61,7 +59,7 @@ OAuth 客户端由你自己申请：在 Google Cloud 或 Azure 上登记应用�
 
 ## 文档
 
-[部署](docs/DOCKER.md) · [运行与配置](docs/OPERATIONS.md) · [来源支持](docs/SOURCING.md) · [外部播放器](docs/EXTERNAL_PLAYERS.md) · [诊断与数据分享](docs/DIAGNOSTICS.md) · [更新日志](CHANGELOG.md)
+[部署](docs/DOCKER.md) · [运行与配置](docs/OPERATIONS.md) · [采集与资料](docs/METADATA.md) · [外部播放器](docs/EXTERNAL_PLAYERS.md) · [诊断与数据分享](docs/DIAGNOSTICS.md) · [更新日志](CHANGELOG.md)
 
 参与开发：[贡献说明](CONTRIBUTING.md) · [开发约定](AGENTS.md) · [测试](docs/TESTING.md)
 

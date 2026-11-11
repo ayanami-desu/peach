@@ -121,10 +121,9 @@ class WebContract:
                  poster_root: Path | None = None,
                  timeline_root: Path | None = None,
                  photo_root: Path | None = None,
-                 follow_sources_root: Path | None = None,
-                 follow_secrets_root: Path | None = None,
-                 follow_state_root: Path | None = None,
-                 follow_shared_root: Path | None = None,
+                 sources_root: Path | None = None,
+                 secrets_root: Path | None = None,
+                 state_root: Path | None = None,
                  entry_links_root: Path | None = None,
                  tools_root: Path | None = None,
                  database: LedgerDatabase | None = None):
@@ -148,21 +147,19 @@ class WebContract:
         # by isolated unit tests; it must never wander into the machine's real generated tree.
         self.resource_cleanup_enabled = any(
             root is not None for root in (poster_root, photo_root, timeline_root))
-        # 追更的原始证据与本机凭据目录同样做成实例属性，测试才能落在临时目录里。
-        self.follow_sources_root = (Path(follow_sources_root)
-                                    if follow_sources_root is not None else SOURCES_DIR)
-        self.follow_secrets_root = (Path(follow_secrets_root)
-                                    if follow_secrets_root is not None else SECRETS_DIR)
-        self.follow_state_root = (Path(follow_state_root)
-                                  if follow_state_root is not None else STATE_DIR)
+        # 采集的原始证据与本机凭据目录同样做成实例属性，测试才能落在临时目录里。
+        self.sources_root = (Path(sources_root)
+                             if sources_root is not None else SOURCES_DIR)
+        self.secrets_root = (Path(secrets_root)
+                            if secrets_root is not None else SECRETS_DIR)
+        self.state_root = (Path(state_root)
+                           if state_root is not None else STATE_DIR)
         # 人物页外部入口的开关与镜像域名。和上面几个同一个道理：走实例属性，测试才
         # 落得进临时目录，不会读到这台机器真实的偏好。
         self.entry_links_root = (Path(entry_links_root)
                                  if entry_links_root is not None else STATE_DIR)
         # 外部工具区（FFmpeg、amane 桥的 venv）。测试给临时目录，重建桥就不会碰真实工具区。
         self.tools_root = Path(tools_root) if tools_root is not None else TOOLS_DIR
-        # 双机同步已删，凭据只留在本机；参数留着是因为调用方还在传。
-        self.follow_shared_root = Path(follow_shared_root) if follow_shared_root is not None else None
         self.database = database or LedgerDatabase(db_path)
         self.db_path = self.database.db_path
         self.snapshot_root = Path(snapshot_root) if snapshot_root is not None else None
@@ -182,13 +179,12 @@ class WebContract:
         #: 最近一次后台提交之后的 `cache_generation`。进程外的写不经提交通知，两个数都不动。
         self.background_generation = 0
         #: 后台重算写回新值的次数，按那份结果读到的表各记一次，随结果版本下发，页面据此再取一次
-        #: （ADR-0146）。按表记而不是一个总数：写回一份封面统计不该让关注、发现几组页面也跟着重取。
+        #: （ADR-0146）。按表记而不是一个总数：写回一份封面统计不该让别的几组页面也跟着重取。
         self.cache_landed: dict[str, int] = {}
         #: `/api/result-updates` 上一次下发的结果版本，见 `web_tasks.q_result_updates` 的节流。
         self.published_versions: tuple[float, dict, int] | None = None
         self.stale_refreshing: set[str] = set()
         self._stale_refresher = None
-        self.follow_check_lock = threading.Lock()
         #: 任务中心。每个后台任务的开始、进度与结束都写这一张表，`/tasks` 只读它。
         #: 只读端由 `api` 关掉写入：那边的账本是复制来的，写一行就是一处合不回去的分叉。
         self.task_runs = TaskRunStore(self.database)
@@ -197,8 +193,6 @@ class WebContract:
         #: 不认识任何一种后继，登记表在 `followups.REGISTRY` 里。
         from . import avatar_followup  # noqa: F401  登记补头像后继
         from . import creator_identity_followup  # noqa: F401  登记创作者身份查找后继
-        from . import feed_followup  # noqa: F401  登记新作资料采集后继
-        from . import follow_creators  # noqa: F401  登记关注作者建档后继
         from . import performer_alias_followup  # noqa: F401  登记补女优别名后继
         from . import performer_profile_followup  # noqa: F401  登记补女优资料后继
         from . import sample_followup  # noqa: F401  登记番号样张采集后继
@@ -206,10 +200,6 @@ class WebContract:
         from . import studio_followup  # noqa: F401  登记厂牌官网与标识补全后继
         from .followups import FollowupRunner
         self.followups = FollowupRunner(self)
-        self.follow_job = self._job("PeachFollowCheckJob", "follow-check")
-        self.feed_job = self._job("PeachFeedCheckJob", "feed-check")
-        self.want_job = self._job("PeachWantScrapeJob", "want-scrape")
-        self.follow_resolve_job = self._job("PeachFollowResolveJob", "follow-resolve")
         self.link_prune_job = self._job("PeachLinkPruneJob", "link-prune")
         self.scraping_cover_job = self._job("PeachScrapingCoverJob", "scraping-cover")
         self.amane_bridge_job = self._job("PeachAmaneBridgeJob", "amane-bridge")
@@ -220,16 +210,6 @@ class WebContract:
         self.resource_apply_job = self._job("PeachResourceApplyJob", "resource-apply")
         # 整理（ADR-0039）：同一时间只跑一批，互斥由这个任务自己的键提供。
         self.organize_job = self._job("PeachOrganizeJob", "organize")
-        self.follow_scheduler = None
-        #: 关注卡缩略图的画面签名缓存（`follow_faces.FollowFaceIndex`），由 `api` 接上；
-        #: 裸契约不联网，组里只按缩略图地址认同一张。
-        self.follow_faces = None
-        #: 订阅源的定时拉取（ADR-0042）。与追更共用 `follow_scheduler` 那一个实现，
-        #: 只是各占一个 job id 与一份状态文件；由 `api` 在装配时接上。
-        self.feed_scheduler = None
-        #: 定时拉取上一次派存量后继的时刻（`time.monotonic()`）；None 是本进程还没派过
-        #: （`web_feeds.STOCK_INTERVAL`）。
-        self.feed_stock_planned_at = None
         # 两块后台任务的锁、状态和线程都归 BackgroundJob 管，契约上只留这两个字段。
         # 任务 id 的键名沿用各自原有的名字：它随公开投影下发，是前端契约。
         self.resource_scan = self._job(
@@ -461,23 +441,17 @@ class WebContract:
         谁在跑归契约自己知道，`api` 的 lifespan 不该再列一遍任务清单。
         """
         self.resource_scan.stop()
-        self.follow_job.stop()
         self.scraping_cover_job.stop()
         self.library_processing_job.stop()
-        self.follow_resolve_job.stop()
         self.link_prune_job.stop()
         self.resource_apply_job.stop()
         self.link_check.stop()
-        self.feed_job.stop()
-        self.want_job.stop()
         self.organize_job.stop()
         self.amane_bridge_job.stop()
         self.source_check_job.stop()
         self.face_models_job.stop()
         if hasattr(self, 'task_resource_monitor'):
             self.task_resource_monitor.close()
-        if hasattr(self, "jav_discovery_metadata"):
-            self.jav_discovery_metadata.stop()
         self.followups.stop()
         if self._stale_refresher is not None:
             self._stale_refresher.shutdown(wait=False, cancel_futures=True)
@@ -814,7 +788,7 @@ class WebContract:
 
         sidecar 由 `scripts/detect_avatar_faces.py` 离线写入，与封面取景同一
         约定；没算过、读不出或没检出都返回 None，页面维持几何居中。取值与校验在
-        `avatar_face.focus_hint`，关注页的题材圆标读的是同一份判据。
+        `avatar_face.focus_hint`，资料页的题材圆标读的是同一份判据。
 
         身份 id 和 `has_entity_image` 一样按不可信对待：复核队列和榜单里的行有的
         根本没有实体（扁平标签那一批，`entity_id` 是空串或 None），拿它去算落盘名

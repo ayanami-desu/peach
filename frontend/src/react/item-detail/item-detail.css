@@ -253,26 +253,26 @@
 /* ── 出演与署名 ──
    按类别分组：组标题在上，同类横向排开并按需换行；每个名字独占一行会让共演作品撑满整个侧栏。
    名字在头像正下方居中；格比头像宽，整排往左让出半个差值，头像左缘仍和组标题对齐。 */
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-item-identity] { display: flex; flex-direction: column; gap: 14px; margin: 0 0 18px; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-identity-primary] { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: flex-start; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-identity-primary] > [data-id-group] { width: max-content; max-width: 100%; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-group] { min-width: 0; --id-cell: 62px; --id-face: 46px; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-group="performer"] { --id-cell: 58px; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-label] {
+.peach-react [data-item-detail] [data-item-identity] { display: flex; flex-direction: column; gap: 14px; margin: 0 0 18px; }
+.peach-react [data-item-detail] [data-identity-primary] { display: flex; flex-wrap: wrap; gap: 14px 26px; align-items: flex-start; }
+.peach-react [data-item-detail] [data-identity-primary] > [data-id-group] { width: max-content; max-width: 100%; }
+.peach-react [data-item-detail] [data-id-group] { min-width: 0; --id-cell: 62px; --id-face: 46px; }
+.peach-react [data-item-detail] [data-id-group="performer"] { --id-cell: 58px; }
+.peach-react [data-item-detail] [data-id-label] {
   margin: 0 0 7px;
   font-size: var(--fs-xs);
   font-weight: 400;
   color: var(--muted);
   letter-spacing: .04em;
 }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-row] {
+.peach-react [data-item-detail] [data-id-row] {
   display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-start;
   margin-inline-start: calc((var(--id-face, 46px) - var(--id-cell, 62px)) / 2);
 }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-group="performer"] [data-id-row] { gap: 10px; }
+.peach-react [data-item-detail] [data-id-group="performer"] [data-id-row] { gap: 10px; }
 /* 有实体 id 的格是入口（`data-entity-kind`），「未归属」指向一个集合，样式同源；没有 id 的只是
    一个名字，不给指针。可点的身份只用颜色、头像描边反馈，不用下划线。 */
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell] {
+.peach-react [data-item-detail] [data-id-cell] {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -284,14 +284,14 @@
   padding: 0;
   cursor: default;
 }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell]:is([data-entity-kind], [data-open-unowned]) {
+.peach-react [data-item-detail] [data-id-cell]:is([data-entity-kind], [data-open-unowned]) {
   color: var(--tungsten);
   cursor: pointer;
   text-decoration: none;
 }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell]:is([data-entity-kind], [data-open-unowned]):hover { color: var(--ink); }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell][hidden] { display: none; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-face] {
+.peach-react [data-item-detail] [data-id-cell]:is([data-entity-kind], [data-open-unowned]):hover { color: var(--ink); }
+.peach-react [data-item-detail] [data-id-cell][hidden] { display: none; }
+.peach-react [data-item-detail] [data-id-face] {
   position: relative;
   width: var(--id-face, 46px);
   height: var(--id-face, 46px);
@@ -304,14 +304,14 @@
   font-size: var(--fs-md);
 }
 /* 没有图的头像（BoardUI avatar 的首字盘）：主文字色 10% 混底、次文字色首字，不与卡片底同色。 */
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-face]:not(:has(img)) {
+.peach-react [data-item-detail] [data-id-face]:not(:has(img)) {
   background: color-mix(in srgb, var(--color-text-primary) 10%, var(--color-background-primary-default));
   color: var(--color-text-secondary);
 }
 /* `#fff` 与首字母只在取不到图时露出来：厂牌标识文件是自带边距的不透明方图，图片那条 cover
    铺满整格，不再另给 logo 格加 padding 和 contain。 */
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell="studio"] [data-id-face] { border-radius: var(--surface-radius); background: #fff; color: #555; }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-face] img {
+.peach-react [data-item-detail] [data-id-cell="studio"] [data-id-face] { border-radius: var(--surface-radius); background: #fff; color: #555; }
+.peach-react [data-item-detail] [data-id-face] img {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -319,10 +319,10 @@
   object-fit: cover;
   display: block;
 }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-face] svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+.peach-react [data-item-detail] [data-id-face] svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
 /* 行高必须容得下下伸部：1.25 在 12px 下只有 15px 行框，而这里同时开着 overflow:hidden 截省略号，
    「Prestige」的 g 尾巴会被切掉。 */
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-name] {
+.peach-react [data-item-detail] [data-id-name] {
   font-size: var(--fs-xs);
   line-height: 1.5;
   text-align: center;
@@ -332,9 +332,9 @@
   white-space: nowrap;
   color: var(--ink-2);
 }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell]:is([data-entity-kind], [data-open-unowned]):hover [data-id-face] { box-shadow: 0 0 0 2px var(--ink-2); }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell]:is([data-entity-kind], [data-open-unowned]):hover [data-id-name] { color: var(--ink); }
-.peach-react :is([data-item-detail], [data-follow-detail]) [data-id-cell][data-entity-kind]:focus-visible { outline: 2px solid var(--tungsten); outline-offset: 2px; }
+.peach-react [data-item-detail] [data-id-cell]:is([data-entity-kind], [data-open-unowned]):hover [data-id-face] { box-shadow: 0 0 0 2px var(--ink-2); }
+.peach-react [data-item-detail] [data-id-cell]:is([data-entity-kind], [data-open-unowned]):hover [data-id-name] { color: var(--ink); }
+.peach-react [data-item-detail] [data-id-cell][data-entity-kind]:focus-visible { outline: 2px solid var(--tungsten); outline-offset: 2px; }
 .peach-react [data-item-detail] [data-cast-more] {
   align-self: center;
   margin: 0;

@@ -48,7 +48,7 @@ from .junk import (
 
 LOGGER = logging.getLogger(__name__)
 
-#: 垃圾评分读的账本表。不声明时任何一次提交（关注检查、任务记录）都让下一次打开当场重评
+#: 垃圾评分读的账本表。不声明时任何一次提交（任务记录、复核写回）都让下一次打开当场重评
 #: 十万行；声明后后台任务的提交先回上一份、后台重算（ADR-0146），前台写入照旧当场重算。
 JUNK_SCORE_TABLES = ("asset", "review_decision", "download_task")
 
@@ -224,7 +224,6 @@ def purge_assets(connection, rows, *, missing_only: bool = False, eligible=None)
             f"UPDATE playlist SET source_seed_asset_id=NULL WHERE source_seed_asset_id IN ({marks})",
             purged,
         )
-        connection.execute(f"UPDATE follow_item SET asset_id=NULL WHERE asset_id IN ({marks})", purged)
         for table in ASSET_REFERENCE_TABLES:
             connection.execute(f"DELETE FROM {table} WHERE asset_id IN ({marks})", purged)
         # 按文件出的资料候选键是 `asset:<编号>:<字段>`；资产删了，这些决定就没有可指的东西（#486）。

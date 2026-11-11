@@ -66,7 +66,7 @@ function serve(config: ConfigurationData, drive: DriveSnapshot | Reply = snapsho
   others: Record<string, unknown> = {}) {
   const replies: Record<string, unknown> = {
     [CONFIGURATION_URL]: config,
-    '/api/settings': { followInitialDays: 30, taskSpeedMode: 'standard' },
+    '/api/settings': { taskSpeedMode: 'standard' },
     '/api/configuration/access/sessions': { revision: 'access-1', sessions: [], manageable: false },
     [DRIVE_URL]: drive,
     '/api/libraries': { libraries: [], options: { icons: [], policies: ['auto', 'custom'], stages: [] } },

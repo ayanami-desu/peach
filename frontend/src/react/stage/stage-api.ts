@@ -1,6 +1,5 @@
-/* 舞台岛对壳的契约：壳只拿命令式入口，舞台、两座详情、播放器与小窗都在 `peach-app.js` 里。 */
+/* 舞台岛对壳的契约：壳只拿命令式入口，舞台、详情、播放器与小窗都在 `peach-app.js` 里。 */
 import type { PlayerItem, PlayerResume } from '../../player';
-import type { FollowDetailActions, FollowDetailProps } from '../follow-detail/follow-detail';
 import type { ItemDetailActions, ItemDetailProps } from '../item-detail/item-detail';
 import type { StagePlayerHost } from './stage-player';
 import type { JavDetailProps } from '../jav-detail/jav-detail';
@@ -15,14 +14,8 @@ export interface StageItemRequest extends Omit<ItemDetailProps, 'actions'> {
   resume?: PlayerResume | null;
 }
 
-export interface StageFollowRequest extends Omit<FollowDetailProps, 'actions'> {
-  kind: 'follow';
-  actions: Omit<FollowDetailActions, 'mountPlayer'>;
-  resume?: PlayerResume | null;
-}
-
 export interface StageJavRequest extends JavDetailProps { kind: 'jav'; id?: never; resume?: never }
-export type StageRequest = StageItemRequest | StageFollowRequest | StageJavRequest;
+export type StageRequest = StageItemRequest | StageJavRequest;
 
 /** 开着的详情上会变的那几样：选择态与版式推给「接着看」那一排。 */
 export type StagePatch = Partial<Pick<ItemDetailProps, 'layout' | 'selectMode' | 'selected' | 'seekSeconds' | 'relatedLimit'>>;

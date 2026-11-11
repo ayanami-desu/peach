@@ -14,7 +14,7 @@
 | `generated/cover-thumbs/<键>.<长边>.<画质>.<版本>.webp` | 封面派生件，长边 800 与 1600 两档 | `DerivedImageService` | 从本机封面原件重缩 |
 | `generated/avatar-thumbs/<键>.640.80.<版本>.webp` | 实体图派生件，长边 640 | `DerivedImageService` | 从本机实体图原件重缩 |
 | `generated/sample-cache/<番号>/<序号>.jpg` | 官方样张原图，附 `<序号>.thumb.jpg` 与失败标记 `<序号>.miss` | `SampleCache` | 重新联网取；失败标记一天内不再试 |
-| `generated/follow-assets/` | 关注来源的头像与站点图标，单张上限 2 MiB，失败后 `RETRY_SECONDS`（3600 秒）内不再试 | `follow_assets` | 重新联网取 |
+| `generated/jav-public/` | 作品公开资料与样张的持久快照：标题、人物、厂牌、样张索引与失败标记；抓到一次就留着，不按天数失效，只有盘上没有或手动重匹配时才再问来源 | `library_processing` 的 `public_cache`、`javdb_public` | 重新联网取 |
 | `generated/provider-cache/` | 资料站页面与头像原图：`performer-avatars/`、`seesaa-pages/`、`avwikidb-pages/`、`minnano-av-pages/`、`avbase-talent-pages/`、`javdb-pages/`、`sample-images/misses.json`、`followup-attempts/` | 各补全任务 | 重新联网取 |
 | `generated/remote-media/` | 外链图像与清单的本机副本 | `RemoteMediaCache` | 重新联网取，见下节 |
 | `generated/covers/`、`generated/avatars/`、`generated/logos/` | 封面、头像、厂牌标志的原件 | 采集与资料补全 | 重新联网取 |
@@ -42,7 +42,7 @@
 其余类别不提供清理入口，理由由 `data_storage.CATEGORIES` 写明：
 
 - 预览图（`snapshots`、`posters`、`timeline`、`photo-thumbs`）：重建要重新读取整部影片，网盘里的影片会重新下载。
-- 封面与网络资料（`covers`、`avatars`、`logos`、`follow-assets`、`sample-cache`、`provider-cache`）：删除后要重新联网下载，已下架的来源再也取不回来。
+- 封面与网络资料（`covers`、`avatars`、`logos`、`sample-cache`、`provider-cache`、`jav-public`）：删除后要重新联网下载，已下架的来源再也取不回来。
 - `media-cache` 与 `remote-media` 不在分类表里，落进「其他」，只能在数据目录里手动处理。
 
 容量保护另按一组目录算缓存占用（`storage_budget.cache_roots`）：`generated/remote-media` 与两个派生缩略图目录，外加大盘上另指定的一个外部缓存目录。`media-cache`、`snapshots`、`posters`、`timeline`、`photo-thumbs` 不在这组里，按数据算。

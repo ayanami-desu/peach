@@ -1,6 +1,6 @@
 /* 客户端导航（ADR-0031「React Router 外壳阶段接管」）：React Router 的 Declarative 模式接管 history。
- * 管理区那几页、播放列表页与关注页、索引页与资料页、目录网格与垃圾队列，以及页面里的页面内组件（首页筛选条、
- * 首页新作行、顶栏搜索下拉）与常驻组件（后台任务、底部批量条、侧栏配色卡、管理区页头、沉浸模式、设置面板、
+ * 管理区那几页、播放列表页、索引页与资料页、目录网格与垃圾队列，以及页面里的页面内组件（首页筛选条、
+ * 顶栏搜索下拉）与常驻组件（后台任务、底部批量条、侧栏配色卡、管理区页头、沉浸模式、设置面板、
  * 侧栏、详情舞台）（`managed-routes.tsx`）由这棵树画。每一页、沉浸模式与详情覆盖都由路由按匹配打开
  * （`pages/` 下各元素），壳不接派发：它只订阅历史同步标题与侧栏，换页时写地址。
  *
@@ -13,9 +13,9 @@
  *
  * 路由分两组：页面组按条目自己记的背景（`usr.backgroundLocation`，启动那一条不读）匹配，详情压在哪一页上就还
  * 匹配那一页，背景页不重挂；覆盖组按真实地址匹配详情与队列那几条（`OVERLAY_PATHS`，`pages/overlay.tsx`）。页面组
- * 里管理区、关注、索引、资料、目录与沉浸各挂按地址打开那一页的元素（`pages/managed.tsx`、`pages/follow.tsx`、
+ * 里管理区、索引、资料、目录与沉浸各挂按地址打开那一页的元素（`pages/managed.tsx`、`pages/playlists.tsx`、
  * `pages/index-entity.tsx`、`pages/catalog.tsx`、`pages/immerse.tsx`）；没有背景的覆盖地址也在页面组里挂一格：
- * 作品与队列补画目录网格，关注详情只让出 `#stats`。`path="*"` 是认不出的地址，什么都不打开。
+ * 作品与队列补画目录网格。`path="*"` 是认不出的地址，什么都不打开。
  *
  * 一处渲染错误只带走抛错的那一面：每一面各套一层错误边界（`SurfaceBoundary`），根上不套，两组 `<Routes>` 不随
  * 某一面卸掉。错误经根的 `onCaughtError` 交给 `reportError`，每次一条。 */
@@ -42,7 +42,7 @@ import {
   BROWSE_ROUTES, CATALOG_PATHS, CATALOG_ROUTES, ENTITY_ROUTES, IMMERSE_ROUTES, INDEX_ROUTES, MANAGED_ROUTES,
   isManagedPath, isRoutedPath, managedPage,
 } from './managed-routes';
-import { FollowDetailGround, OverlayMatch, QueueRequests } from './pages/overlay';
+import { OverlayMatch, QueueRequests } from './pages/overlay';
 import type { ShellActions } from './shell-actions';
 
 /* 页面打开序号（`@peach/history` 的 `openEpoch`）：没人认领的历史变化各领一个，认领的写地址不领。地址没变的
@@ -162,7 +162,7 @@ function RouteGroups({ children }: { children?: ReactNode }) {
 
 
 
-        {/* ── 关注 ── */}
+        {/* ── 浏览 ── */}
         {Object.entries(BROWSE_ROUTES).map(([path, route]) => <Route key={path} path={path} element={route.element} />)}
 
 
@@ -187,10 +187,9 @@ function RouteGroups({ children }: { children?: ReactNode }) {
 
 
 
-        {/* ── 没有背景的覆盖地址 ── 作品与队列挂目录元素，补画网格；关注详情只让出 `#stats`。 */}
+        {/* ── 没有背景的覆盖地址 ── 作品与队列挂目录元素，补画网格。 */}
         {OVERLAY_PATHS.map((path) => (
-          <Route key={path} path={path} element={path === '/works/:code' ? null
-            : path === '/posts/:id' ? <FollowDetailGround /> : CATALOG_ROUTES['/'].element} />
+          <Route key={path} path={path} element={path === '/works/:code' ? null : CATALOG_ROUTES['/'].element} />
         ))}
         {PREFERENCE_PATHS.map(path => <Route key={path} path={path} element={null} />)}
 

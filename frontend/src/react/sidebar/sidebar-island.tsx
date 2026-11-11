@@ -180,16 +180,11 @@ function countsOf(latest: SidebarFacets | null): Map<string, number> | null {
 function Groups({ host: at, content, filters, latest }: {
   host: SidebarHost; content: SidebarContent; filters: SidebarProps['filters']; latest: SidebarFacets | null;
 }) {
-  const key = content.kind === 'catalog' ? content.key
-    : `follow:${content.selected.join(',')}:${content.tags.map((row) => row.value).join(',')}`
-      + `:${(content.providers || []).map((row) => row.value).join(',')}:${filters.provider ?? ''}`
-      + `:${content.duration ? 1 : 0}:${filters.dur_min ?? ''}:${filters.dur_max ?? ''}`;
+  const key = content.key;
   /* 计数徽标弹不弹由 `popBadges` 按上一次见到的值判断，不按节点是不是新建的判断：每来一份新聚合
      问一次，换一条筛选时整列计数才不会一起弹。 */
-  useLayoutEffect(() => { if (content.kind === 'catalog') popBadges(at.scroll, 'drawer') }, [at, key, content.kind]);
-  const groups = content.kind === 'catalog'
-    ? catalogGroups(at, content.facets, filters, latest, key)
-    : followGroups(at, content, filters);
+  useLayoutEffect(() => { popBadges(at.scroll, 'drawer') }, [at, key]);
+  const groups = catalogGroups(at, content.facets, filters, latest, key);
   let index = 0;
   return groups.map((group) => group && (
     <Group key={group.title} title={group.title} kind={group.kind} active={group.active} index={index++} epoch={key}>
@@ -231,34 +226,6 @@ function catalogGroups(
     spec('创作者', 'artist', facets.creators, 'creator', false, 'creator'),
     spec('内容标签', 'general', facets.tags, 'tag', false, 'tag'),
     spec('影片属性', 'meta', facets.tech, 'tag', false, 'tech'),
-    facets.followTags.length ? {
-      title: '关注标签', kind: 'online', active: false,
-      body: <FollowChips rows={facets.followTags} host={at} selected={null} badges />,
-    } : null,
-  ];
-}
-
-/* 关注页与关注详情：次序同目录那一列，来源、时长在前，内容标签在后。来源与时长回的是关注页的筛选，
-   不是目录的 `commitContextFilter`。 */
-function followGroups(
-  at: SidebarHost, content: Extract<SidebarContent, { kind: 'follow' }>, filters: SidebarProps['filters'],
-): (GroupSpec | null)[] {
-  const providers = content.providers || [];
-  const provider = selectedValues(filters, 'provider');
-  const selected = new Set(content.selected);
-  return [
-    providers.length ? {
-      title: '来源', kind: 'src', active: providers.some((row) => provider.includes(row.value)),
-      body: <ChipList rows={providers} filterKey="provider" multi={false} selected={provider} counts={null} host={at}
-        onToggle={(_key, value) => at.selectFollowProvider(value)} />,
-    } : null,
-    content.duration
-      ? { title: '时长', kind: 'meta', active: false, body: <Duration host={at} filters={filters} commit={at.setFollowDuration} /> }
-      : null,
-    content.tags.length ? {
-      title: '内容标签', kind: 'online', active: content.tags.some((row) => selected.has(row.value)),
-      body: <FollowChips rows={content.tags} host={at} selected={selected} badges={false} />,
-    } : null,
   ];
 }
 
@@ -403,25 +370,6 @@ function MoreList({ epoch, title, rows, latest, limit, filterKey, selected, coun
             aria-label={`${expanded ? '收起' : '展开全部'}${title}`} onClick={more}><Icon name="chevron-down" /></button>
         : null}
     </>
-  );
-}
-
-function FollowChips({ rows, host: at, selected, badges }: {
-  rows: SidebarChip[]; host: SidebarHost; selected: Set<string> | null; badges: boolean;
-}) {
-  return (
-    <div data-sidebar-chips="">
-      {rows.map((row) => (
-        <button type="button" key={row.value} data-sidebar-chip="" data-online="" data-follow-drawer-tag={row.value}
-          aria-pressed={selected ? selected.has(row.value) : undefined} title={row.label}
-          onClick={() => (selected ? at.selectFollowTag(row.value) : at.openFollowTag(row.value))}>
-          <span data-sidebar-chip-label="">{row.label}</span>
-          <span data-sidebar-count="" data-count-badge={badges ? `follow:${row.value}` : undefined}>
-            {badges ? (row.n ?? 0).toLocaleString() : row.n}
-          </span>
-        </button>
-      ))}
-    </div>
   );
 }
 

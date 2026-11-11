@@ -1,18 +1,13 @@
 /* layout 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
-import { javCardPage } from '../jav-controls';
 import { DIRECT_MANAGE_NAV, MANAGE_MENU_SECTIONS, MANAGE_SECTIONS, NAV_CATALOG, OPTIONAL_SIDEBAR_ITEMS, SIDEBAR_ITEMS, getManageMenuSections } from './navigation-items';
-import { FOLLOW_INITIAL_RANGE_OPTIONS } from './initial-follow-ranges';
 import { noteHtml, revealTexts } from '../ui-kit';
 import { $, ROUTE_ENTITIES, STATE_LABELS, STATE_ROUTES, api, isCatalogPath } from '../core';
 import { buildBars, catalogLayoutProp, catalogState, clearCatalogGrid, commitContextFilter, emptyTrash, goHome, homePath, loadCatalog, paintCatalogFilter, repaintCatalogGrid, syncCatalogFilterScreen } from './catalog.js';
 import { rememberedSidebarPath, requestPageTop } from '../history/page-navigation';
-import { navigationState, openRoutedPage, paintSidebar, syncNavigation } from './navigation.js';
+import { navigationState, syncNavigation } from './navigation.js';
 import { paintManagementPlaceholder } from './../management-placeholder';
 import { hideDiscoveryBars } from './loading.js';
 import { releaseManagedRoute } from './../history/managed';
-import { isFeedNewPath } from './feed.js';
-import { tagLabel } from '../core/tags';
-import { followFeedLive, followState, followView, followViewPath, routeFollowFeed } from './follow.js';
 import { applicationEffects } from './effects';
 import { entityJavLayout, notifyShell, pageOpens, selectMode, selectSurface, state, writeShell } from './../shell/index';
 import { censorOn, preferencesState, setCensored, setHighContrast, setSfwShortcut, sfwShortcut } from './preferences.js';
@@ -66,25 +61,11 @@ export function showHomeSurfaces(){
      `#stats` 那一页不动（资料页压在它上面时它藏着继续活）。 */
   releaseManagedRoute($('#index'));
   $('#stats').hidden=true;$('#index').hidden=true;
-  if(!isFeedNewPath(location.pathname))$('#feedNew').hidden=true;
   $('#catalogFilter').style.display='';syncCatalogFilterScreen();
   buildManageBar();paintListTitle();   // 放在最后：管理区要盖掉上面刚恢复的首页横条
 }
 
 export function closeStats(){navigationState.route('/');showHomeSurfaces()}
-
-export function renderFollowDrawer({tags=[],providers=[],duration=false}){
-  const content=tags.length||providers.length||duration?{kind:'follow',
-    tags:tags.map(([tag,n])=>({value:tag,label:tagLabel(tag),n})),selected:[...followState.followTags],
-    providers:providers.map(([value,label,src])=>({value,label,n:null,...(src?{dot:{kind:'image',src}}:{})})),
-    duration}:null;
-  paintSidebar({content,filters:followState.followSidebarFilters()});
-}
-
-export function routeFollowFromSidebar(patch){
-  routeFollowFeed({...followView(),...patch});
-  paintSidebar({filters:followState.followSidebarFilters()});
-}
 
 export function narrowShell(){return matchMedia('(max-width:760px)').matches}
 
@@ -123,14 +104,6 @@ export function sidebarHost(){
         const i=cur.indexOf(value);if(i>=0)cur.splice(i,1);else cur.push(value);filters[key]=cur.join(',')}
       else filters[key]=filters[key]===value?'':value
     }),
-    setDuration:(lo,hi)=>commitContextFilter(filters=>{
-      filters.len='';filters.dur_min=lo?String(lo*60):'';filters.dur_max=hi<180?String(hi*60):''}),
-    openFollowTag:tag=>{
-      followState.followAuthors=new Set();followState.followProviders=new Set();followState.followMediaView='videos';followState.followFilter='saved';
-      followState.followDurMin=followState.followDurMax=0;followState.followTags=new Set([tag]);openDrawer(false);openRoutedPage(followViewPath())},
-    selectFollowTag:tag=>{followState.followTags=new Set([tag]);openDrawer(false);openRoutedPage(followViewPath())},
-    selectFollowProvider:provider=>routeFollowFromSidebar({provider:followState.followProviders.has(provider)?'':provider}),
-    setFollowDuration:(lo,hi)=>routeFollowFromSidebar({durMin:lo?lo*60:0,durMax:hi<180?hi*60:0}),
     attached:()=>{preferencesState.placeSidebarHead();preferencesState.syncGlassOptics()},
   };
 }
@@ -329,8 +302,6 @@ export async function reloadCurrentSurface(){
   const path=decodeURIComponent(location.pathname);
   // 路由树按匹配打开的索引页与还没画上的资料页：要路由树按地址从头重开。
   if(routeMetaOf(path)?.reload==='reopen'){writeShell({pageOpens:pageOpens+1});return}
-  // 关注页：路由树的关注元素推一个新代次，列表重取、不重挂。
-  if(path==='/follow'){writeShell({pageOpens:pageOpens+1});return}
   const hit=navigationState.routeMeta(path);
   if(hit?.route.reload){await hit.route.reload();return}
   await loadCatalog();
@@ -385,10 +356,9 @@ export function syncHeaderActions(){
     setSelectMode(false,true);
   const entity=parts.length>1&&Object.prototype.hasOwnProperty.call(ROUTE_ENTITIES,parts[0]);
   const catalog=isCatalogPath(path)||path==='/trash';
-  const javCards=javCardPage(path,location.search);
   if(path==='/jav'&&selectMode)setSelectMode(false,true);
-  const canSelect=catalog||entity||path==='/tags'||path==='/follow'||javCards;
-  const canDensity=catalog||entity||path==='/follow'||javCards;
+  const canSelect=catalog||entity||path==='/tags';
+  const canDensity=catalog||entity;
   $('#selectMode').hidden=!canSelect;$('#density').hidden=!canDensity;
   syncPhotoWalls();
   if(!canSelect&&selectMode)setSelectMode(false,true);
@@ -436,8 +406,6 @@ export function scheduleStickySurfaces(){
 }
 
 export function installLayout18() {
-followState.followSidebarFilters = ()=>({provider:[...followState.followProviders][0]||'',
-  dur_min:followState.followDurMin||'',dur_max:followState.followDurMax||''});
 applicationEffects.handler($('#filterBtn'), 'onclick', ()=>openDrawer(!$('#drawer').classList.contains('open')));
 layoutState.SIDEBAR_ITEMS = SIDEBAR_ITEMS;
 layoutState.MANAGE_SECTIONS = MANAGE_SECTIONS;
@@ -453,7 +421,6 @@ layoutState.settingsHost = ()=>({
   changed:effect=>preferencesState.settingsEffects[effect]?.(),
   sound:name=>playUiSound(name),
   navCatalog:layoutState.NAV_CATALOG,themeOptions:THEME_OPTIONS,videoLayouts:JAV_LAYOUTS,
-  followInitialRanges:FOLLOW_INITIAL_RANGE_OPTIONS,
   videoLayout:()=>cardLayout(),setVideoLayout,
   censored:censorOn,setCensored,sfwShortcut,setSfwShortcut,
   highContrast:()=>document.documentElement.classList.contains('board-high-contrast'),setHighContrast,
@@ -477,7 +444,6 @@ applicationEffects.listen(document, 'focusin', scheduleStickySurfaces);
 applicationEffects.listen(document, 'focusout', scheduleStickySurfaces);
 applicationEffects.listen(window, 'scroll', ()=>{
   scheduleStickySurfaces();
-  if(location.pathname==='/follow'&&followFeedLive())writeShell({followScrollY:scrollY});
   window.__scrolling=true;
   // 滚动中挂起悬停预览：内容从鼠标下滑过会连续触发 mouseenter，
   // 每次新建 video 并发 /stream，几十个并发直接把页面拖垮

@@ -26,8 +26,8 @@ MARKER = '\ufffd'
 #: 回执里记乱码人物补修删掉的行；撤回脚本按 `GARBLED_PEOPLE_SOURCE` 认这一类。
 RECEIPT_KEY = 'garbled_people'
 GARBLED_PEOPLE_SOURCE = 'upgrade:garbled-performers'
-#: 人维护的订阅与链接：挂着这些的乱码实体只解关联、不删。
-_CURATED_TABLES = ('follow_source', 'feed_source', 'entity_link')
+#: 人维护的链接：挂着它的乱码实体只解关联、不删。
+_CURATED_TABLES = ('entity_link',)
 
 
 def _damaged_snapshots(connection, root: Path) -> tuple[list[dict], list[int]]:

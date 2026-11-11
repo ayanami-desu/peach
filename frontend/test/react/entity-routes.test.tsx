@@ -44,12 +44,12 @@ afterEach(async () => {
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''), receipt: vi.fn(), toast: vi.fn(),
     failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
-    routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
+    srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
-    authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
+    showIndexTags: vi.fn(),
     openPlaylist: vi.fn(), canFlip: () => true,
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };
@@ -72,7 +72,7 @@ function entityFetch({ deferred = false } = {}) {
     const url = new URL(String(input), 'http://peach.test');
     if (url.pathname === '/api/entity') {
       const body = { id: 7001, kind: 'performer', canonical_name: url.searchParams.get('name'), aliases: [],
-        user_aliases: [], asset_count: 2, tags: [], related_performers: [], feed: { following: false } };
+        user_aliases: [], asset_count: 2, tags: [], related_performers: [] };
       if (!deferred) return Promise.resolve(reply(body));
       return new Promise<Reply>((resolve, reject) => {
         pending.push(() => resolve(reply(body)));
@@ -86,7 +86,6 @@ function entityFetch({ deferred = false } = {}) {
     if (url.pathname === '/api/photos') {
       return Promise.resolve(reply({ total: 0, sample_total: 0, sets: [], has_more: false, seed: '', items: [] }));
     }
-    if (url.pathname === '/api/feeds/discoveries') return Promise.resolve(reply({ items: [] }));
     return Promise.resolve(reply({ status: 'idle' }));
   });
   vi.stubGlobal('fetch', fetched);
@@ -110,13 +109,11 @@ function entityFrame() {
   const frame = document.createElement('template');
   frame.innerHTML = `<div data-entity-hero><div class="peach-react"></div></div>
     <div data-entity-filter><div class="peach-react"></div></div>
-    <section class="feednew" data-feed-new aria-label="未入库的新作" hidden></section>
     <div data-entity-body><div class="peach-react"></div></div>`;
   const parts = [...frame.content.childNodes];
   const hero = frame.content.querySelector<HTMLElement>('[data-entity-hero]')!;
   const hosts = {
     filter: frame.content.querySelector<HTMLElement>('[data-entity-filter]>.peach-react')!,
-    feed: frame.content.querySelector<HTMLElement>('[data-feed-new]')!,
     body: frame.content.querySelector<HTMLElement>('[data-entity-body]>.peach-react')!,
   };
   const place = (container: Element) => { container.replaceChildren(...parts); return hero.firstElementChild as HTMLElement };
@@ -126,7 +123,7 @@ function entityFrame() {
 function entityProps(name: string, hosts: EntityPageProps['hosts']): EntityPageProps {
   return {
     kind: 'performer', name, filters: {}, media: { media: 'videos', set: 0 }, jav: false, seed: '42',
-    revision: 0, feedRevision: 0, photoSize: 'small', photoLayout: 'masonry', followImagesOnly: false,
+    revision: 0, photoSize: 'small', photoLayout: 'masonry',
     javLayout: 'small', javLayouts: [['small', '小图', 'layout-grid']], photoLayouts: [['masonry', '瀑布流', 'columns-2']],
     states: [{ k: '', label: '全部' }], peopleLayout: 'big', hosts,
     layout: { active: false, size: 'small', portrait: false, javImage: 'cover' },
@@ -144,23 +141,15 @@ function entityProps(name: string, hosts: EntityPageProps['hosts']): EntityPageP
         canFlip: () => true, revealSource: vi.fn(async () => ''),
       },
     },
-    follow: {
-      helpers: { workMark: () => '', tagLabel: (tag) => tag, wireDrag: vi.fn(), wireScroller: vi.fn(),
-        listSkeletonHtml: () => '<div data-test-follow-skeleton></div>', jobProgress: vi.fn() },
-      actions: { route: vi.fn(), shuffle: vi.fn(), loaded: vi.fn(), openDetail: vi.fn(), openAuthor: vi.fn(),
-        toggleSelection: vi.fn(), setImagesOnly: vi.fn(), setPhotoLayout: vi.fn(), canFlip: () => false, toast: vi.fn(),
-        failure: vi.fn(), checkReport: vi.fn() },
-    },
     helpers: {
-      portraitImg: () => '', wireDrag: vi.fn(), wireScroller: vi.fn(), wireFeedRow: vi.fn(),
-      feedRowHtml: () => '<div class="feednewrow"></div>', receipt: vi.fn(), failure: vi.fn(),
+      portraitImg: () => '', wireDrag: vi.fn(), wireScroller: vi.fn(), receipt: vi.fn(), failure: vi.fn(),
       aliasForm: vi.fn(async () => {}), sourceToolsHtml: () => '', wireSourceTools: vi.fn(), comboItems: () => [],
       sortKeys: vi.fn(() => [{ key: 'new', label: '入库时间', pressed: true, dir: '' as const, ariaLabel: '' }]),
     },
     actions: {
       route: vi.fn(), toggleTag: vi.fn(), clearFilter: vi.fn(), clearAll: vi.fn(), setSort: vi.fn(),
       reshuffleVideos: vi.fn(() => '77'), setJavLayout: vi.fn(), setPhotoLayout: vi.fn(), openEntity: vi.fn(),
-      javContext: vi.fn(), painted: vi.fn(), missing: vi.fn(), avatarChanged: vi.fn(), openFollowAuthor: vi.fn(),
+      javContext: vi.fn(), painted: vi.fn(), missing: vi.fn(), avatarChanged: vi.fn(),
     },
   };
 }
@@ -195,7 +184,7 @@ it('冷启动深链资料页：骨架留到首屏取齐，元素排的框架与�
   await act(async () => { expect(await opened).toBe(true) });
   expect(batches[0], '骨架撤下的那一批变化里资料卡已经画好').toEqual({ skeleton: false, painted: true });
   expect([...index.children].map((el) => el.getAttribute('data-entity-hero') ?? el.getAttribute('data-entity-filter')
-    ?? el.getAttribute('data-feed-new') ?? el.getAttribute('data-entity-body'))).toEqual(['', '', '', '']);
+    ?? el.getAttribute('data-entity-body'))).toEqual(['', '', '']);
   expect(hosts.filter.childElementCount, '浮层经 portal 画进元素排的那一块').toBeGreaterThan(0);
   expect(hosts.body.querySelectorAll('[data-media-card]')).toHaveLength(2);
   expect(r.managedEntry(index)).toMatchObject({ path: '/performers/*', host: index.querySelector('[data-entity-hero] > .peach-react') });
@@ -219,8 +208,8 @@ it('资料页就地更新：换筛选只重取作品、换版式一次都不取�
   const revision = r.managedEntry(index)?.revision;
   const before = { entity: fetch.calls('/api/entity').length, items: fetch.calls('/api/items').length };
   await act(async () => { r.updateManagedRoute(index, { layout: { active: true, size: 'big', portrait: false, javImage: 'cover' } }) });
-  expect(fetch.fetched.mock.calls.length - before.entity - before.items - fetch.calls('/api/photos').length
-    - fetch.calls('/api/feeds/discoveries').length, '换版式不发请求').toBe(0);
+  expect(fetch.fetched.mock.calls.length - before.entity - before.items - fetch.calls('/api/photos').length,
+    '换版式不发请求').toBe(0);
   await act(async () => { r.updateManagedRoute(index, { filters: { tag: '巨乳' } }) });
   await until(() => fetch.calls('/api/items').length > before.items, '按新筛选重取作品');
   expect(fetch.calls('/api/items').at(-1)?.searchParams.get('tag')).toBe('巨乳');

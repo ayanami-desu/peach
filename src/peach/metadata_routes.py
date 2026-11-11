@@ -82,7 +82,7 @@ ROUTES: dict[str, tuple[str, ...]] = {
     # 无码：发行方自己那份作品 JSON 先问，但只在本机证据指着一本道时才问
     # （见 `route_for_code`）——日期式番号不带片商，カリビアンコム 与一本道同形，
     # 问错一家答回来的是同一天发行的另一部片。
-    # **不含 r18dev**：无码番号在 r18.dev 上没有（`docs/SOURCING.md`「一本道作品
+    # **不含 r18dev**：无码番号在 r18.dev 上没有（`docs/METADATA.md`「一本道作品
     # 资料与封面」、`catalog_rules.is_uncensored_release` 的实测注释、
     # 与 `sources/onepondo.py` 的模块说明）。留着它等于每个
     # 无码番号白等一次主机间隔，再把「问了都没有」读成「上游没有」。
@@ -99,7 +99,7 @@ ROUTES: dict[str, tuple[str, ...]] = {
     # 一份资料都没交过，还回 429 把自己送进冷却。站点代码留着，用户整条覆盖时仍可点名。
     # 不含 r18dev（实测 85 条全空）、不含 AVBase 与 JavBus（本机 1213 份来源证据里
     # 这两家对 FC2 番号一份都没给过，javdb 给了 166 份）。判据原文在
-    # `community_catalog.community_sources_for` 与 `docs/SOURCING.md`。
+    # `community_catalog.community_sources_for` 与 `docs/METADATA.md`。
     "fc2": ("javdb", "fc2", "fc2cmadb", "fc2ppvdb", "javten", "javarchive"),
     # 韩国 MIB 一家都不问：番号和日本番号同形，JAV 目录站按它去查返回的是别的作品，
     # 那份错值只能靠人一条条认出来。官网走 `scripts/harvest_kmib.py`，不在这条路上。
@@ -170,7 +170,7 @@ def classify(code: str | None, *hints: str | None) -> str:
     没有元数据的番号就永远轮不到该问的那个来源。
 
     「文件名被读成番号的创作者作品」不是一种内容类型：那道门在更前面，由
-    `catalog_rules.scrapes_as_jav` 拦（`docs/SOURCING.md`「哪些行不该进 JAV 刮削」），
+    `catalog_rules.scrapes_as_jav` 拦（`docs/METADATA.md`「哪些行不该进 JAV 刮削」），
     过不了那道门的行根本不会走到路由这一步。
 
     有码是兜底那一类，所以本机证据在这里再分三种（例子都是账本实测）：

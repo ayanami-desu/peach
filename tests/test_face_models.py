@@ -222,7 +222,6 @@ class LabelTests(unittest.TestCase):
     def test_every_task_written_by_the_service_has_a_chinese_name(self):
         self.assertEqual(task_label("face-models"), "人脸模型下载")
         self.assertEqual(task_label("amane-bridge"), "amane 桥重建")
-        self.assertEqual(task_label("follow-creator"), "关注作者建档")
 
 
 if __name__ == "__main__":

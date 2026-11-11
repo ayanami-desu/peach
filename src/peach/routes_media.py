@@ -4,7 +4,7 @@
 `media`／`drive_stream` 里。两个媒体异常（`MediaNotFound`、`MediaUnavailable`）由
 `api.py` 的异常处理器统一收口，路由里不要再手抄同一组 try/except。
 
-有一条贯穿整层的规矩：**上游地址一律不外露**。`/follow-stream`、`/follow-cover`、
+有一条贯穿整层的规矩：**上游地址一律不外露**。`/stream`、`/cover-image`、
 `/link-mark` 都只接受账本里的 id，自己去查地址；接受前端递过来的 URL 就等于开了一个
 任意地址抓取的口子。
 """
@@ -15,11 +15,8 @@ import json
 import logging
 import re
 import threading
-import time
 from functools import partial
-from dataclasses import replace
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -30,72 +27,34 @@ from fastapi.responses import (
 from starlette.staticfiles import StaticFiles
 
 from . import (
-    avatar_face, avatar_online, avatar_picker, avatar_provider, error_reporting,
-    follow_assets, follow_providers, images,
-    jav_poster_crop, link_marks, link_status, scraping_access, site_icons, social_links,
-    timeline_sheets, web_follow, web_timeline_thumbnails,
+    avatar_face, avatar_picker, avatar_provider,
+    images, jav_poster_crop, link_marks, link_status, scraping_access, site_icons,
+    social_links, timeline_sheets, web_timeline_thumbnails,
 )
 from .config import GENERATED_DIR, PROJECT_ROOT
 from .entities import resolve_entity_id
-from .follow import FollowSourceError
-from .follow_avatar import profile_avatar_tiers, profile_identities, resolve_official_avatar
-from .follow_covers import (
-    PLACEHOLDER_CONTENT_TYPE, PLACEHOLDER_IMAGE, FollowCoverUnavailable,
-)
-from .follow_store import FollowStore
-from .follow_stream import (
-    FollowMediaUnavailable, FollowProxyError, ResolvedFollowMedia, open_upstream,
-)
 from .media import MediaUnavailable
+from .upstream import UpstreamError, UpstreamTarget, open_upstream
 from .previews import ENTITY_THUMB_TYPE, PreviewUnavailable, entity_image_key
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, FAVICON_REFRESH_SECONDS, cache_for
 from .preview_cache import PreviewCache
 from .routes_auth import require_auth
+from .user_agent import USER_AGENT
 from .remote_media_cache import MEDIA_SECURITY_HEADERS
 
 router = APIRouter()
 
-#: 生成物的缓存时长。这些端点按 asset / follow_item id 取图：内容换了 id 也就换了
+#: 下载文件名里不能出现的字符；正文其余部分原样保留。
+_UNSAFE_FILENAME = re.compile('[\\/:*?"<>|]+|[\x00-\x1f]+')
+LOGGER = logging.getLogger(__name__)
+
+#: 生成物的缓存时长。这些端点按 asset id 取图：内容换了 id 也就换了
 #: （封面重生成写的是新文件），所以一年也不嫌长。
 #: 不加 immutable——那会让浏览器连刷新都不再回源，真要换图就只能干等过期。
 MEDIA_CACHE_SECONDS = 365 * 24 * 3600
 
 #: 头像单独短一档：id 不变但人会换头像，作者换得还挺勤。
 AVATAR_CACHE_SECONDS = AVATAR_REFRESH_SECONDS
-
-
-def _asset_root(state) -> Path:
-    return Path(state.settings.candidate_root) / follow_assets.ROOT_NAME
-
-
-def _asset_response(request: Request, path: Path | None, *, placeholder: bool = True):
-    """这些端点只出现在 `<img src>` 里，所以取不到时回的是占位图而不是 JSON：
-
-    错误正文对 `<img>` 毫无意义，只会留下一个碎图。状态码仍然是 404。
-
-    浏览器照样把 404 带的占位图当成加载成功，`error` 不触发。头像后面有一条兜底链
-    （归档站那张，再到首字母，`data-fallbacks`／`data-drop`），占位图会把它整条截住，
-    圆框里留一枚播放键：头像传 `placeholder=False`，404 不带图，`<img>` 报错走下一环。
-    """
-    if path is None:
-        if not placeholder:
-            return Response(status_code=404, headers={"cache-control": "no-store"})
-        return Response(PLACEHOLDER_IMAGE, status_code=404,
-                        media_type=PLACEHOLDER_CONTENT_TYPE,
-                        headers={"cache-control": "no-store"})
-    return _image_response(request, path, media_type=follow_assets.content_type(path))
-
-#: 取图标时报浏览器 UA。CDN 上的图标资产（p-smith、static.cdninstagram）对
-#: 机器人 UA 会直接 403，而这只是一次公开静态文件请求，没有伪装成用户的意思。
-from .user_agent import USER_AGENT
-
-#: 文件名里不能出现的字符，按 Windows 的最严口径取——落盘的那台多半是它。
-_UNSAFE_FILENAME = re.compile('[\\/:*?"<>|]+|[\x00-\x1f]+')
-
-#: FANBOX 官方身份的两种写法：pixiv 数字 user id，或 FANBOX 创作者 id。
-_FANBOX_IDENTITY_RE = re.compile(r"[A-Za-z0-9_-]{1,80}")
-
-LOGGER = logging.getLogger(__name__)
 
 
 def _image_response(request: Request, path: Path, media_type: str | None = None):
@@ -115,8 +74,8 @@ def _image_response(request: Request, path: Path, media_type: str | None = None)
 def _attachment_disposition(title: str, url: str) -> str:
     """按条目标题构造下载文件名，扩展名沿用上游地址的后缀。
 
-    不回传上游地址：主机名和签名同样是不该外露的东西，和 `/follow-stream`
-    整体的边界一致。`filename*` 用 RFC 5987 编码，标题里的中文和日文才落得下来。
+    不回传上游地址：主机名和签名同样是不该外露的东西，和整层的边界一致。
+    `filename*` 用 RFC 5987 编码，标题里的中文和日文才落得下来。
     """
     stem = _UNSAFE_FILENAME.sub(" ", str(title or "")).strip() or "peach-media"
     stem = " ".join(stem.split())[:120]
@@ -272,7 +231,7 @@ def _sample_response(request: Request, code: str, n: int, *, thumb: bool):
         with contract.read_connection() as connection:
             url = sample_images.sample_url(connection, code, n)
         if url is not None and not cache.failed_recently(code, n):
-            path = cache.fetch(code, n, url, sample_images.downloader(contract.follow_secrets_root),
+            path = cache.fetch(code, n, url, sample_images.downloader(contract.secrets_root),
                                thumb=thumb)
     if path is None:
         return JSONResponse({"error": "unavailable"}, status_code=404)
@@ -417,391 +376,11 @@ def avatar(request: Request, id: int, args: dict[str, str] = Depends(require_aut
     return _image_response(request, path, media_type="image/jpeg")
 
 
-@router.api_route("/follow-avatar", methods=["GET", "HEAD"])
-def follow_avatar(request: Request, service: str = "", id: str = "",
-                  provider: str = "", ref: str = "",
-                  args: dict[str, str] = Depends(require_auth)):
-    """作者头像：官方资料页的那张（`service`+`id`）或归档站的那张（`provider`+`ref`）。
-
-    两种都由服务端取回存在本机再交给页面，浏览器不直接碰对方站点。地址只从固定主机
-    拼：官方那条由 `resolve_official_avatar` 认 pixiv.pximg.net 一个主机、
-    `profile_avatar_tiers` 认 X、Patreon 与 FANBOX 各自的图床，归档那条由
-    `follow_assets.mirror_avatar_url` 按 provider 查表；前端递不进任何 URL。
-    查官方资料与取图共用应用那一条 client，不每次请求另开连接池。
-    """
-    state = request.app.state
-    transport = state.http_transport
-    client = transport.client
-    failures: list[str] = []
-    if provider:
-        target = follow_assets.mirror_avatar_url(provider, ref)
-        if target is None:
-            return _asset_response(request, None, placeholder=False)
-        key = f"mirror:{provider}:{ref}"
-
-        def fetch():
-            return follow_assets.fetch_image(client, target)
-    elif service == "profile":
-        # 名片上的 X、Patreon 与 pixiv：每家取到能用的最大一档，几家之间留像素最多的那张。
-        identities = profile_identities(id)
-        if not identities:
-            return _asset_response(request, None, placeholder=False)
-        key = f"official:profile:{id}"
-
-        def fetch():
-            tier_lists = []
-            for name, handle in identities:
-                try:
-                    tier_lists.append(profile_avatar_tiers(name, handle, transport=transport))
-                except FollowSourceError as error:
-                    failures.append(str(error))
-                    continue
-                except OSError:
-                    failures.append("头像来源暂不可用")
-                    continue
-            return follow_assets.largest_image(client, tier_lists)
-    else:
-        # 官方身份有两种写法：归档 ref 带的 pixiv 数字 id，和论坛名片链接里的
-        # FANBOX 创作者 id（`jul3dnsfw.fanbox.cc`）。两种的合法形状都由
-        # `resolve_official_avatar` 把关，这里只挡住明显不是身份的串。
-        if service != "fanbox" or not _FANBOX_IDENTITY_RE.fullmatch(id):
-            return _asset_response(request, None, placeholder=False)
-        key = f"official:{service}:{id}"
-
-        def fetch():
-            try:
-                resolved = resolve_official_avatar(service, id, transport=transport)
-            except (OSError, FollowSourceError):
-                return None
-            return follow_assets.fetch_image(client, resolved)
-    path = follow_assets.cached_image(_asset_root(state), "avatars", key,
-                                      AVATAR_REFRESH_SECONDS, fetch)
-    if path is None and service == "profile":
-        reason = "；".join(failures) or "社媒头像未取得，来源暂不可用或仍在重试等待中"
-        return JSONResponse({"error": reason}, status_code=404,
-                            headers={"cache-control": "no-store"})
-    return _asset_response(request, path, placeholder=False)
-
-
-@router.api_route("/source-icon", methods=["GET", "HEAD"])
-def source_icon(request: Request, provider: str = "", args: dict[str, str] = Depends(require_auth)):
-    """来源站标优先取应用资源，缓存未取得时显示地球；未知来源返回 404。"""
-    state = request.app.state
-    if provider in follow_assets.SOURCE_ICON_URLS:
-        bundled = PROJECT_ROOT / 'resources' / 'site-marks' / f'{provider}.png'
-        if bundled.is_file():
-            return _image_response(request, bundled, media_type='image/png')
-    target = follow_assets.SOURCE_ICON_URLS.get(provider)
-    if target is None:
-        path = None
-    else:
-        client = state.http_transport.client
-        path = follow_assets.cached_image(
-            _asset_root(state), "icons", provider, FAVICON_REFRESH_SECONDS,
-            lambda: follow_assets.legible_icon(follow_assets.fetch_image(client, target)))
-    if path is None:
-        return Response((PROJECT_ROOT / 'resources' / 'site-marks' / 'globe.svg').read_bytes(),
-                        status_code=404, media_type='image/svg+xml', headers={'cache-control': 'no-store'})
-    return _asset_response(request, path)
-
 
 #: 人脸探针，题材头像与换头像按番号取的封面共用。YuNet 的模型是个 232 KB 的 ONNX，
 #: 首次用到时才去取；取不到时回 None，圆标退回样式表里的默认取景、封面退回正封取景
 #: ——没网不该等于这一排一张图都没有。取不到之后隔 `avatar_face.RETRY_SECONDS` 再试。
 _WORK_FACE_PROBE = avatar_face.FaceProbe()
-
-
-#: 脸框至少要占画面长边这么多，才算这张图里看得见是谁。
-#
-#: 数是从落盘那一档反推的：`icon_side()` 要求落盘的图里脸框有 `FACE_PX_IN_STORE` 个
-#: 像素，而默认存 `ICON_SIDE` 那么大——脸占到长边这个比例，正好一条线。低于它的图不
-#: 是「存小了」，是脸在画面里本来就只有那么点，存多大都改不了圆标里露出的是别的东西。检出分数挡不住这一类——那个后脑勺是 0.83。
-_WORK_ICON_FACE_SHARE = follow_assets.FACE_PX_IN_STORE / follow_assets.ICON_SIDE
-
-
-def _usable_face(record: dict | None) -> bool:
-    """这张脸够不够撑起一枚圆标：构图上占得住，像素上放得大。
-
-    两条线问的是两件事，缺一条就漏一类。占比（`_WORK_ICON_FACE_SHARE`）问的是圆里落
-    下的到底是不是脸；像素（`FACE_PX_IN_STORE`）问的是这张脸放得大放不大——页面按脸
-    框放大时不许上采样，源图里那张脸有多少像素就是放大的天花板。`FACE_PX_IN_STORE` 正是「脸要填
-    满圆标那六成得有多少像素」，所以这条线不是新定的数，是那一档的定义本身。
-
-    两关合起来也保证了落盘那份够用：占比过关意味着 `icon_side()` 算出来就是
-    `ICON_SIDE`，缩完脸仍有 `ICON_SIDE × 占比` ≥ `FACE_PX_IN_STORE` 个像素；源图比
-    `ICON_SIDE` 还小的时候根本不缩，像素这一关直接就是落盘那份的读数。
-    """
-    return (avatar_face.face_share(record) >= _WORK_ICON_FACE_SHARE
-            and avatar_face.face_px_width(record) >= follow_assets.FACE_PX_IN_STORE)
-
-
-def _work_icon_targets(state, local: list[str], tag: str):
-    """这个题材可以拿来当代表图的地址，本库那几张在前。
-
-    后半截是生成器，本库这几张里挑得出脸就一个字节都不出网：`_pick_work_icon` 一找到
-    够大的脸就返回，站点那一趟根本不会被求值。走到那里的只有「本库这几张全都看不清」
-    ——那多半是这个题材在库里只有一两条更新，而站上同一个标签下有成千上万帖。
-    """
-    yield from local
-    seen = set(local)
-    for url in web_follow.work_icon_search_urls(state.web_contract, tag,
-                                                transport=state.http_transport):
-        if url not in seen:
-            seen.add(url)
-            yield url
-
-
-def _pick_work_icon(client, targets: Iterable[str]) -> tuple[bytes | None, dict | None]:
-    """按热度顺着候选找第一张看得清脸的图，返回落盘用的字节和人脸记录。
-
-    只取最热那一张的话，圆标里有一半是身体特写——最热的帖子常常就是特写。
-
-    「检出了脸」这一关太松，收下的常常不是脸：YuNet 在一张 3072×4096 的远景图上会给
-    出一个占长边百分之五、分数 0.69 的框，罩在肩背的纹身上，而圆标正是按这个框取景放
-    大的，于是圆里是一小块皮肤。判据因此是 `_usable_face`：脸得在画面里占得住，还得
-    有足够多的像素撑到放大到头，两条都过才停，否则继续看下一张候选。
-
-    一张都过不了这两关的题材按「没有头」处理：退回第一张取得到的图，不写人脸记录，
-    页面于是按样式表里的默认取景显示整张封面。这类题材多半真的给不出正脸——顶着头发
-    的背影、非人形的主角，或者站上那个标签下本来就只有远景。与其把画面里最大的那块
-    皮肤放大成一枚认不出的圆，不如老实摆一张全身：它至少还认得出是哪部作品。
-
-    检脸看的是站点那张高清封面，落盘的是缩过的那份：两件事要的尺寸不是一个数——
-    250px 的缩略图里一张脸只剩十几个像素，而显示出来只有 28px。
-
-    黑边在这三步之前就裁掉。站点上的 3D 封面常把 21:9 的画面压进 16:9 的帧里，上下
-    各留一道纯黑；那两道黑边跟着进圆标，圆里直接露出黑条，还把画面撑高、让 cover 把
-    脸缩得更小。裁完再检脸，坐标才落在这张图自己的坐标系里。
-    """
-    first: bytes | None = None
-    for target in targets:
-        body = follow_assets.fetch_image(client, target)
-        if not body:
-            continue
-        body = follow_assets.trim_letterbox(body)
-        record = _WORK_FACE_PROBE.on_bytes(body)
-        if _usable_face(record):
-            return _stored_icon(body, record)
-        if first is None:
-            first = body
-    return _stored_icon(first, None) if first is not None else (None, None)
-
-
-def _stored_icon(body: bytes, record: dict | None) -> tuple[bytes, dict | None]:
-    """缩到圆标那一档，并把记录里的源图像素换成落盘那张的。
-
-    存多大由 `icon_side` 按这张脸占画面多少来定，不是一个固定值：页面能放大到多少，
-    上限之一就是落盘那张里脸框有几个像素。
-
-    记录必须描述图旁边那个文件：页面拿 `naturalWidth` 核对脸框说的是不是同一张图，
-    对不上就退回几何居中。脸框本身是归一化的，比例缩放不动它；「这张脸有多少像素」
-    问的则是浏览器手里那张图，答案也只能是缩完之后的那个数。
-    """
-    small = follow_assets.shrink_image(body, follow_assets.icon_side(record))
-    size = follow_assets.image_size(small) if record else None
-    if size:
-        record = {**record, "px": [size[0], size[1]]}
-    return small, record
-
-
-@router.api_route("/work-icon", methods=["GET", "HEAD"])
-def work_icon(request: Request, work: str = "",
-              args: dict[str, str] = Depends(require_auth)):
-    """题材的代表图。
-
-    `work` 只是题材的身份，不是地址：服务端按它在账本里排出按热度排好的几个候选，
-    再核对图床主机是不是 `web_follow` 登记的那个。排这一步在缓存回调里做，本机那份
-    还新鲜时一行账本都不读；取回的字节照样要先能认成图片才落盘。
-
-    候选顺着往下取，停在第一张看得清脸的，判据见 `_pick_work_icon`。人脸记录跟着落盘
-    的那张图写在旁边，页面据它把取景挪到脸上、按脸框放大：圆标只有 28px，按几何中心
-    裁一张全身图出来常常只剩一截身子，而挪到哪、放多大都要看这张图里脸在哪、有多少
-    像素，猜不出来。
-    """
-    state = request.app.state
-    root = web_follow.work_root(work)
-    if not root:
-        return _asset_response(request, None)
-    client = state.http_transport.client
-    cache_root = _asset_root(state)
-    cached = follow_assets.cache_path(cache_root, "works", root)
-
-    picked: dict | None = None
-    replaced = False
-
-    def fetch():
-        nonlocal picked, replaced
-        with state.database.read_connection() as connection:
-            store = FollowStore(lambda: connection)
-            targets = web_follow.work_icon_urls(store, root)
-            tag = web_follow.work_icon_tag(store, root)
-        body, picked = _pick_work_icon(client, _work_icon_targets(state, targets, tag))
-        replaced = bool(body)
-        return body
-
-    path = follow_assets.cached_image(cache_root, "works", root, None, fetch)
-    if replaced:
-        # 换了图，旧的脸记录必须一起换：留着它页面会拿上一张的脸心给这一张取景，
-        # 而那在界面上和「这张图本来就该这么摆」看不出区别。
-        avatar_face.drop_sidecar(cached)
-        if path is not None and picked is not None:
-            avatar_face.write_sidecar(path, picked)
-    return _asset_response(request, path)
-
-
-def _report_follow_media_failure(item, error: Exception, *, operation: str, phase: str,
-                                 media_index: int | None = None) -> None:
-    """媒体失败按来源、资源来源和操作定位；地址与凭据交给统一脱敏入口。"""
-    rows = web_follow._raw_media_items(item)
-    index = media_index if media_index is not None else 0
-    resource_provider = item.provider
-    if ((operation != "image" or media_index is not None) and 0 <= index < len(rows)
-            and isinstance(rows[index], dict)):
-        resource_provider = str(rows[index].get("resource_provider") or item.provider)
-    if resource_provider not in follow_providers.PROVIDERS:
-        resource_provider = "unknown"
-    error_reporting.event(
-        "follow-media", error, provider=item.provider, source_id=getattr(item, "source_id", None),
-        item_id=item.id, resource_provider=resource_provider, operation=operation,
-        phase=phase, media_index=media_index, upstream_status=getattr(error, "status_code", None),
-    )
-
-
-def _follow_media_size(state, item, target: ResolvedFollowMedia) -> int | None:
-    """正片的字节数，取不到就是 None。
-
-    只能问上游：来源列表里没有这一项，账本里也只有落盘资源才有 size。一次 HEAD 就够，
-    正文一个字节都不取，而且走的是播放同一条 `open_upstream`——逐跳白名单和非 2xx 拒收
-    都在那里，这里不另开一条出网路径。
-
-    上游不给 content-length（分块传输、签名 URL 过期、限流挡住）时返回 None，
-    播放器那边退回按秒的读数；不拿估算的字节数冒充实测。
-    """
-    try:
-        response = open_upstream(state.http_transport.client, "HEAD", target, incoming={})
-    except (FollowProxyError, OSError, httpx.HTTPError) as error:
-        _report_follow_media_failure(item, error, operation="size", phase="upstream")
-        return None
-    try:
-        size = int(response.headers.get("content-length") or 0)
-    except ValueError:
-        size = 0
-    finally:
-        response.close()
-    return size or None
-
-
-@router.api_route("/follow-qualities", methods=["GET"])
-def follow_qualities(request: Request, id: int, args: dict[str, str] = Depends(require_auth)):
-    """这条关注视频有哪些清晰度可选，以及默认档有多少字节。
-
-    单独一个端点而不是塞进 /api/follow：解析要抓一次来源详情页，列表一次几百条，
-    逐条解析等于几百个外部请求。这里只在用户展开某个条目、播放器要画菜单时问一次，
-    解析结果本身在 resolver 里有缓存。
-
-    只有 rule34video 给多档（video_url 加 video_alt_url{,2,3}）；其余来源返回空表，
-    播放器据此只显示「原画」。取不到不是错误——签名 URL 会过期、来源也可能改版，
-    那时照常播默认档就行。
-
-    `size` 跟着一起回：渐进下载在浏览器里量不到字节速率（media 请求的
-    `encodedBodySize` 是 0），只有拿文件大小和时长换出平均码率，才能把缓冲前沿推进的
-    秒数折成 MB/s。这里已经解析完媒体地址，多一次 HEAD 就能拿到，比让浏览器再发一趟便宜。
-    """
-    state = request.app.state
-    with state.database.read_connection() as connection:
-        item = FollowStore(lambda: connection).item(id)
-    if item is None:
-        return JSONResponse({"error": "no such follow item"}, status_code=404)
-    try:
-        resolved = state.follow_media_resolver.resolve(item)
-    except FollowMediaUnavailable as error:
-        _report_follow_media_failure(item, error, operation="qualities", phase="resolve")
-        return {"qualities": [], "size": None}
-    # 档位数量不写死：正则匹配 video_url 与任意编号的 video_alt_urlN，
-    # 站点给几档就是几档（实测同一作者下有 4 档也有 5 档的条目）。
-    # 2160 按站点自己的写法叫 4K，不叫 2160p。
-    return {"qualities": [
-        {"height": height, "label": "4K" if height >= 2160 else f"{height}p"}
-        for height, _ in resolved.qualities if height
-    ], "size": _follow_media_size(state, item, resolved)}
-
-
-@router.api_route("/follow-stream", methods=["GET", "HEAD"])
-def follow_stream(request: Request, id: int, media: int | None = None,
-                  quality: int | None = None, download: int = 0,
-                  args: dict[str, str] = Depends(require_auth)):
-    """Play a remote follow candidate through Peach without exposing its upstream URL."""
-    state = request.app.state
-    with state.database.read_connection() as connection:
-        item = FollowStore(lambda: connection).item(id)
-    if item is None:
-        return JSONResponse({"error": "no such follow item"}, status_code=404)
-    phase = "resolve"
-    try:
-        key = f"follow:{item.id}:media:{media}:quality:{quality}"
-        cache = cache_for(state.web_contract)
-        extra = {"content-disposition": _attachment_disposition(item.title, item.media_url or item.url)} if download else None
-        cached = cache.response(key, request, headers=extra)
-        if cached is not None:
-            return cached
-        target = state.follow_media_resolver.resolve(item, media, quality)
-        phase = "upstream"
-        # 跟重定向、逐跳过白名单、非 2xx 一律不转发，都在 follow_stream 里；
-        # 这里只负责把 Peach 的请求接到那个流上。
-        extra = {"content-disposition": _attachment_disposition(item.title, target.url)} if download else None
-        return cache.stream(key, request,
-            lambda: open_upstream(state.http_transport.client, request.method, target, incoming=request.headers),
-            headers=extra)
-    except FollowMediaUnavailable as error:
-        _report_follow_media_failure(item, error, operation="stream", phase=phase, media_index=media)
-        return JSONResponse({"error": str(error)}, status_code=404)
-    except FollowProxyError as error:
-        # 上游的状态码与正文不转发：403 页面、限流提示、错误 JSON 交给播放器
-        # 没有用处，还会把上游主机和提示语抄给浏览器。对外统一是 502。
-        _report_follow_media_failure(item, error, operation="stream", phase=phase, media_index=media)
-        return JSONResponse({"error": "follow media unavailable"}, status_code=502)
-    except (OSError, httpx.HTTPError) as error:
-        LOGGER.exception("follow media proxy failed for provider %s item %s", item.provider, id)
-        _report_follow_media_failure(item, error, operation="stream", phase=phase, media_index=media)
-        return JSONResponse({"error": "follow media unavailable"}, status_code=502)
-
-@router.api_route("/follow-image", methods=["GET", "HEAD"])
-def follow_image(request: Request, id: int, media: int | None = None,
-                 args: dict[str, str] = Depends(require_auth)):
-    state = request.app.state
-    with state.database.read_connection() as connection:
-        item = FollowStore(lambda: connection).item(id)
-    if item is None:
-        return Response(status_code=404)
-    cache = cache_for(state.web_contract)
-    phase = "resolve"
-    try:
-        if media is None:
-            url = web_follow._remote_thumb_url(item)
-        else:
-            rows = web_follow._raw_media_items(item)
-            if media < 0 or media >= len(rows):
-                raise ValueError("媒体序号不存在")
-            url = rows[media].get("thumb_url") or rows[media].get("url")
-        from .http import public_https_url
-        if not public_https_url(url or ""):
-            raise ValueError("图片来源不可用")
-        key = f"image:{url}"
-        hit = cache.response(key, request)
-        if hit is not None:
-            return hit
-        target = ResolvedFollowMedia(url, item.url,
-            allowed_hosts=follow_providers.hosts().get(item.provider, ()), public_hosts=True)
-        if media is not None:
-            resolved = state.follow_media_resolver.resolve(item, media)
-            if resolved.headers:
-                target = replace(resolved, url=url)
-        phase = "upstream"
-        return cache.stream(key, request, lambda: open_upstream(
-            state.http_transport.client, request.method, target, incoming=request.headers))
-    except (ValueError, FollowMediaUnavailable, FollowProxyError, OSError, httpx.HTTPError) as error:
-        _report_follow_media_failure(item, error, operation="image", phase=phase, media_index=media)
-        return Response(status_code=404, headers={"cache-control": "no-store"})
 
 
 @router.api_route("/cover-image", methods=["GET", "HEAD"])
@@ -823,15 +402,15 @@ def cover_image(request: Request, code: str, args: dict[str, str] = Depends(requ
         hit = cache.response(key, request)
         if hit is not None:
             return hit
-        target = ResolvedFollowMedia(url, candidate_for(url).referer, allowed_hosts=COVER_PROXY_HOSTS)
+        target = UpstreamTarget(url, candidate_for(url).referer, allowed_hosts=COVER_PROXY_HOSTS)
         def fetch():
             upstream = open_upstream(state.http_transport.client, request.method, target, incoming=request.headers)
             if PLACEHOLDER.search(str(upstream.url)):
                 upstream.close()
-                raise FollowProxyError("上游给的是「准备中」占位图")
+                raise UpstreamError("上游给的是「准备中」占位图")
             return upstream
         return cache.stream(key, request, fetch)
-    except (ValueError, FollowProxyError, OSError, httpx.HTTPError):
+    except (ValueError, UpstreamError, OSError, httpx.HTTPError):
         return Response(status_code=404, headers={"cache-control": "no-store"})
 
 
@@ -847,7 +426,7 @@ def jav_image(request: Request, code: str, image: str = "cover", args: dict[str,
     再开同一部作品由浏览器缓存直接给。取不到回 404 且不缓存，页面换成「未取得」并可重试。
     """
     import hashlib
-    from .follow_assets import sniff
+    from .images import sniff
     from .web_jav_detail import jav_image as source_image
     try:
         body, max_age = source_image(request.app.state.web_contract, {"code": code, "image": image})
@@ -864,15 +443,14 @@ def jav_image(request: Request, code: str, image: str = "cover", args: dict[str,
                     headers={**headers, "content-length": str(len(body))})
 
 
-def _jav_preview_target(url: str) -> ResolvedFollowMedia:
+def _jav_preview_target(url: str) -> UpstreamTarget:
     """已验证的预览来源使用固定主机范围，其他 CDN 逐跳核对公网解析。"""
-    return ResolvedFollowMedia(url, allowed_hosts=("www.prestige-av.com", "jdforrepam.com", "cc3001.dmm.co.jp",
+    return UpstreamTarget(url, allowed_hosts=("www.prestige-av.com", "jdforrepam.com", "cc3001.dmm.co.jp",
                                                   "ygp.blxr5es.com"), public_hosts=True)
 
 
 @router.api_route("/jav-preview/{code}/{ref}", methods=["GET", "HEAD"])
 def jav_preview(request: Request, code: str, ref: str, args: dict[str, str] = Depends(require_auth)):
-    from .follow_stream import open_upstream
     from .web_jav_detail import detail_code
     cache = cache_for(request.app.state.web_contract)
     previews = PreviewCache(cache)
@@ -906,37 +484,12 @@ def jav_preview(request: Request, code: str, ref: str, args: dict[str, str] = De
                 kind = response.headers.get('content-type', '').split(';')[0].lower()
                 if kind not in {'video/mp4', 'application/octet-stream', 'binary/octet-stream'}:
                     response.close()
-                    raise FollowProxyError('视频预览响应未取得')
+                    raise UpstreamError('视频预览响应未取得')
                 response.headers['content-type'] = 'video/mp4'
             return response
         return cache.stream(f"preview:{code}:{ref}", request, media)
-    except (ValueError, OSError, FollowProxyError, httpx.HTTPError):
+    except (ValueError, OSError, UpstreamError, httpx.HTTPError):
         return Response(status_code=404, headers={"cache-control": "no-store"})
-
-
-@router.api_route("/follow-cover", methods=["GET", "HEAD"])
-def follow_cover(request: Request, id: int, media: int | None = None,
-                 args: dict[str, str] = Depends(require_auth)):
-    """Return a cached clear still for a follow video; keep its URL server-side.
-
-    `media` 与 `/follow-stream` 同义，按原始媒体清单的序号点名帖子里的某个视频。
-    """
-    state = request.app.state
-    with state.database.read_connection() as connection:
-        item = FollowStore(lambda: connection).item(id)
-    if item is None:
-        return JSONResponse({"error": "no such follow item"}, status_code=404)
-    try:
-        if item.provider == "rule34video":
-            # 同作品别的版本只在磁盘缓存未命中时才去查：命中的请求不该先算一遍整库分组。
-            path = state.follow_cover_service.cover(
-                item, media, alternatives=lambda: web_follow.cover_alternatives(state.web_contract, item.id))
-        else:
-            path = state.follow_cover_service.cover(item, media)
-    except FollowCoverUnavailable:
-        # 失败响应不包含可解码图像，图片组件以 error 状态显示占位并允许重试。
-        return Response(status_code=404, headers={"cache-control": "no-store"})
-    return _image_response(request, path, media_type="image/jpeg")
 
 
 @router.api_route("/logo", methods=["GET", "HEAD"])
@@ -953,13 +506,17 @@ def logo(request: Request, studio: str = "", variant: str = "",
     return response
 
 
+#: 站点圆标取不到后隔多久再试：断网时每个外链都会各等 8 秒，一小时够站点恢复。
+SITE_MARK_RETRY_SECONDS = 3600
+
+
 def _site_mark_response(state, url: str, root: Path):
     """站点圆标的取图、挑图、合成与缓存；调用方负责先把地址查出来。
 
     地址一律由服务端自己从某张表或账本解析，函数本身不判断来路——但它是唯一会
     真的去连对方站点的地方，所以每个调用方都得先说清自己的地址从哪来。
 
-    取不到时留一个 `.failed` 标记，`follow_assets.RETRY_SECONDS` 内不再出网：一次
+    取不到时留一个 `.failed` 标记，`SITE_MARK_RETRY_SECONDS` 内不再出网：一次
     取图要试首页、manifest 和几个候选，各等 8 秒，断网时资料页每枚外链都重跑一遍，
     图标区就一直卡着。标记期间有旧图发旧图，没有就 404 露出地球图标。
     """
@@ -971,7 +528,7 @@ def _site_mark_response(state, url: str, root: Path):
         return JSONResponse({"error": "unavailable"}, status_code=404)
     marker = cached.with_suffix(".failed")
     if (not link_marks.is_fresh(cached, ttl=FAVICON_REFRESH_SECONDS)
-            and not follow_assets.is_fresh(marker, follow_assets.RETRY_SECONDS)):
+            and not link_marks.is_fresh(marker, ttl=SITE_MARK_RETRY_SECONDS)):
         def fetch(target: str):
             try:
                 upstream = state.http_transport.client.get(
@@ -1012,7 +569,7 @@ def _site_mark_response(state, url: str, root: Path):
 def link_mark(request: Request, id: int = 0, args: dict[str, str] = Depends(require_auth)):
     """资料页外链的圆标：站点自己最好的那份图标资产，能上色就上色。
 
-    地址只从账本按链接 id 解析，绝不接受前端递过来的 URL——和 `/follow-stream`
+    地址只从账本按链接 id 解析，绝不接受前端递过来的 URL——和 `/stream`
     同一条规矩，否则这就是一个任意地址抓取的口子。取哪一份交给 `site_icons`：
     先读首页声明的 apple-touch-icon / SVG / manifest，都没有才落到 favicon.ico。
 
@@ -1139,85 +696,6 @@ def _remember_library(providers_root: Path, body: bytes, origin: dict,
         cache.store(str(origin.get("upstream_url") or ""), body, inspected)
 
 
-def _picker_online_projection(item) -> avatar_online.MediaChoices:
-    """候选与关注卡共用可见媒体和封面策略，HTTP 地址由 web 层决定。"""
-    indexes = tuple(media["index"] for media in web_follow._media_items(item)
-                    if media["media_kind"] == "image")
-    if (not web_follow._raw_media_items(item) and not item.hidden_media
-            and web_follow._media_kind(item) == "image" and item.media_url):
-        indexes = (None,)
-    return avatar_online.MediaChoices(cover=web_follow._thumb_url(item), images=indexes)
-
-
-def _picker_online(request: Request, connection, entity_id: int):
-    """复用关注代理的主机、凭据与有界封面判据，按候选缓存原图。"""
-    state = request.app.state
-    providers_root, _ = _picker_roots(state.web_contract)
-    cache = avatar_provider.AvatarCandidateCache(providers_root / "follow-content")
-    avatar_origin: dict = {}
-
-    def media(item, index):
-        target = state.follow_media_resolver.resolve(item, index)
-        upstream = open_upstream(state.http_transport.client, "GET", target, incoming={})
-        try:
-            chunks, length = [], 0
-            deadline = time.monotonic() + avatar_picker.FETCH_TIMEOUT
-            for chunk in upstream.iter_bytes():
-                if time.monotonic() > deadline:
-                    raise avatar_picker.PickerError("这张图未取得：请求超时")
-                length += len(chunk)
-                if length > avatar_picker.MAX_IMAGE_BYTES:
-                    raise avatar_picker.PickerError("图太大了")
-                chunks.append(chunk)
-            return b"".join(chunks)
-        finally:
-            upstream.close()
-
-    def image(item, url):
-        if url.startswith("/follow-cover"):
-            return state.follow_cover_service.cover(item).read_bytes()
-        if url.startswith("/follow-stream"):
-            return media(item, None)
-        if not avatar_picker.allowed_source(url):
-            raise avatar_picker.PickerError("封面地址不可用")
-        return avatar_picker.fetch_image(state.http_transport, url)
-
-    def avatar(params, ref):
-        cached = avatar_online.cached_profile_avatar(providers_root, entity_id, params)
-        if cached is not None:
-            body, record = cached
-            avatar_origin.update({key: record[key] for key in (
-                "provider", "source_kind", "external_id", "upstream_url", "cached_at",
-                "matched_name", "name_source") if key in record})
-            return body
-        remembered = cache.lookup(f"peach:online/{entity_id}/{ref}")
-        if remembered is not None:
-            return remembered
-        response = follow_avatar(request, args={}, **params)
-        if isinstance(response, FileResponse):
-            return Path(response.path).read_bytes()
-        if isinstance(response, JSONResponse):
-            raise avatar_picker.PickerError(json.loads(response.body)["error"])
-        return None
-
-    def resolve(ref):
-        avatar_origin.clear()
-        def remembered(fetch):
-            def wrapped(*args):
-                found = cache.lookup(f"peach:online/{entity_id}/{ref}")
-                return found if found is not None else fetch(*args)
-            return wrapped
-        try:
-            body, origin = avatar_online.resolve(ref, connection, entity_id,
-                project=_picker_online_projection,
-                image=remembered(image), avatar=lambda params: avatar(params, ref), media=remembered(media))
-        except (OSError, httpx.HTTPError, FollowMediaUnavailable, FollowProxyError, FollowCoverUnavailable) as error:
-            raise avatar_picker.PickerError("在线图片未取得") from error
-        cache.store(f"peach:online/{entity_id}/{ref}", body, avatar_picker.accept_image(body))
-        origin.update(avatar_origin)
-        return body, origin
-    return resolve
-
 
 @router.get("/api/avatar-choices")
 def avatar_choices(request: Request, kind: str = "performer", id: int = 0,
@@ -1230,12 +708,9 @@ def avatar_choices(request: Request, kind: str = "performer", id: int = 0,
     providers_root, avatar_root = _picker_roots(state)
     id = current_entity_id(state, id)
     with state.read_connection() as connection:
-        online = [choice for choice in avatar_online.choices(
-            connection, id, project=_picker_online_projection, providers_root=providers_root)
-            if kind == "creator" or choice.source == "social"]
         listing = avatar_picker.choices(
             connection, providers_root, avatar_root, _picker_kind(kind), id,
-            cover_root=state.cover_root, online=online)
+            cover_root=state.cover_root)
     refresher = _index_refresher(request.app)
     queued = refresher.request()
     listing["index_refreshing"] = bool(queued or refresher.refreshing or (
@@ -1259,8 +734,7 @@ def avatar_choice(request: Request, kind: str = "performer", id: int = 0,
         try:
             body, origin = avatar_picker.resolve(
                 ref, connection, providers_root, id,
-                request.app.state.http_transport, _picker_artwork(request),
-                online=_picker_online(request, connection, id))
+                request.app.state.http_transport, _picker_artwork(request))
             body = avatar_picker.prepare_image(body)
         except avatar_picker.PickerError as error:
             return JSONResponse({"error": str(error)}, status_code=404)
@@ -1323,16 +797,10 @@ async def avatar_frame(request: Request, args: dict[str, str] = Depends(require_
         with state.read_connection() as connection:
             found, origin = avatar_picker.resolve(
                 ref, connection, providers_root, entity_id, transport,
-                _picker_artwork(request), online=_picker_online(request, connection, entity_id))
-            listed = avatar_online.choices(connection, entity_id, project=_picker_online_projection) if ref.startswith("follow:") else []
+                _picker_artwork(request))
         found = avatar_picker.prepare_image(found)
         _remember_library(providers_root, found, origin, avatar_picker.accept_image(found))
-        choice = avatar_picker.framed(ref, found, probe, source="", label="")
-        if ref.startswith("follow:"):
-            original = next((one for one in listed if ref in one.bases), None)
-            if original:
-                choice = replace(choice, bases=original.bases)
-        return choice
+        return avatar_picker.framed(ref, found, probe, source="", label="")
 
     try:
         if ref:
@@ -1386,8 +854,7 @@ async def avatar_pick(request: Request, args: dict[str, str] = Depends(require_a
                 selected, origin = avatar_picker.resolve(
                     ref, connection, providers_root, entity_id,
                     request.app.state.http_transport, _picker_artwork(request),
-                    version=version if isinstance(version, str) else None,
-                    online=_picker_online(request, connection, entity_id))
+                    version=version if isinstance(version, str) else None)
             selected = avatar_picker.prepare_image(selected)
             _remember_library(providers_root, selected, origin, avatar_picker.accept_image(selected))
         elif selected:
@@ -1421,20 +888,13 @@ def _official_cover(contract, key: str) -> bytes:
     """官方渠道里这个番号最大的那张封面，和重探封面走同一个 `best_cover`。"""
     from .catalog_rules import is_korean_mib_code
     from .jav_cover_fetch import (
-        MIB_NOT_JAV, DeadlineExceeded, HostLimitedTransport, NotFound, Unavailable, best_cover,
+        MIB_NOT_JAV, DeadlineExceeded, NotFound, Unavailable, official_cover,
     )
-    from .scraping_access import SourcePaused, SourceTransport
 
     if is_korean_mib_code(key):
         raise avatar_picker.PickerError(MIB_NOT_JAV)
-    raw = SourceTransport(contract.follow_secrets_root, max_requests=40,
-                          max_bytes=32 * 1024 * 1024, max_seconds=CODE_COVER_SECONDS)
-    transport = HostLimitedTransport(raw, 1.0)
     try:
-        _candidate, _size, data = best_cover(
-            transport, key, 0,
-            metadata_root=contract.follow_sources_root / "metadata" / "javinizer-go",
-            deadline=time.monotonic() + CODE_COVER_SECONDS)
+        _candidate, _size, data = official_cover(contract, key, seconds=CODE_COVER_SECONDS)
     except NotFound as error:
         raise avatar_picker.PickerError("官方渠道没有这个番号的封面") from error
     except Unavailable as error:
@@ -1442,12 +902,6 @@ def _official_cover(contract, key: str) -> bytes:
     except DeadlineExceeded as error:
         raise avatar_picker.PickerError(
             f"{CODE_COVER_SECONDS} 秒内没取到这个番号的封面，稍后再试") from error
-    except SourcePaused as error:
-        raise avatar_picker.PickerError(str(error)) from error
-    except httpx.TransportError as error:
-        raise avatar_picker.PickerError("来源连接失败，请检查来源连接设置") from error
-    finally:
-        transport.close()
     return data
 
 

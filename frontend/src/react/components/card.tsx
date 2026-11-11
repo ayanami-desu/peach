@@ -4,7 +4,7 @@
  *
  * - **填充**：`background:var(--ground);border:0`，圆角 16px（图表卡 20px），底下压一层
  *   1px 接触阴影。读数卡 `.metricstrip>button`、口味读数 `.tastesummary`、面板
- *   `.insightpanel`、分区 `.followmanage .fmain>.fsec`、图表卡 `.board-radial-card` 都是这一族。
+ *   `.insightpanel`、图表卡 `.board-radial-card` 都是这一族。
  *   `--ground` 接的就是 `--color-background-secondary-default`（`web/board.css` 的 `:root`
  *   映射），阴影取上游同一用途的 `--shadow-card`（「1px contact shadow used on white cards
  *   sitting on the secondary background」）。

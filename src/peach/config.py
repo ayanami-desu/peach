@@ -97,8 +97,8 @@ class PeachSettings:
     ffmpeg_root: Path = FFMPEG_DIR
     # 复核候选 CSV 的目录。走 settings 而不是模块常量，测试才不会读到真实的 generated 目录。
     candidate_root: Path = GENERATED_DIR
-    # 自动追更频率是本机运行偏好，不属于 ledger 真相。
-    follow_state_root: Path = STATE_DIR
+    # 时间轴预览偏好等本机运行状态，不属于 ledger 真相。
+    state_root: Path = STATE_DIR
     # 人物页外部入口的开关与镜像域名，同样是本机偏好。
     entry_links_root: Path = STATE_DIR
 

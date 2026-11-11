@@ -204,25 +204,6 @@ class EntityRedirectTests(unittest.TestCase):
                          source_name="新ありな", alias_source="test:merge")
         self.assertIsNotNone(self.con.execute("SELECT 1 FROM entity WHERE id=11").fetchone())
 
-    def test_follows_and_feed_subscriptions_follow_the_merge(self):
-        """关注与订阅绑在人身上，合并后跟着走，不悬空在已删的实体上。"""
-        self.con.executescript("""
-          INSERT INTO follow_source(id,entity_id,provider,ref,label,url,created_at,updated_at)
-            VALUES(1,11,'x','arina','arina','https://x.test/arina','t','t');
-          INSERT INTO feed_source(id,kind,url,entity_id,created_at)
-            VALUES(1,'javdb_actor','https://j.test/1',11,'t');
-          INSERT INTO feed_discovery(id,code,discovered_at)
-            VALUES(1,'ABC-001','t'),(2,'ABC-002','t');
-          INSERT INTO feed_discovery_entity(discovery_id,entity_id) VALUES(1,10),(1,11),(2,11);
-        """)
-        moved = merge(self.con, 11, 10, "新ありな")
-        self.assertEqual((moved["follows"], moved["feeds"], moved["discoveries"]), (1, 1, 1))
-        self.assertEqual(self.con.execute("SELECT entity_id FROM follow_source").fetchall(), [(10,)])
-        self.assertEqual(self.con.execute("SELECT entity_id FROM feed_source").fetchall(), [(10,)])
-        self.assertEqual(self.con.execute(
-            "SELECT discovery_id,entity_id FROM feed_discovery_entity ORDER BY 1").fetchall(),
-            [(1, 10), (2, 10)])
-        self.assertEqual(self.con.execute("PRAGMA foreign_key_check").fetchall(), [])
 
     def test_a_review_row_carrying_the_old_id_shows_the_target(self):
         """候选 CSV 的 `entity_id` 停在出候选那一刻；实体并入别人之后，这一行认现在那一条。"""

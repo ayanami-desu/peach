@@ -122,7 +122,7 @@ export function DataTable<T extends RowData>({ label, items, columns, rowId, row
         {actions(chosen, () => onSelected([]))}
         <Button variant="ghost" size="small" onClick={() => onSelected([])}>取消选择</Button>
       </SelectionDock>
-      <DataTableFrame follow preferences={preferences} onRowClick={(id) => table.getRow(id)?.toggleSelected()}>
+      <DataTableFrame sortable preferences={preferences} onRowClick={(id) => table.getRow(id)?.toggleSelected()}>
         <Table aria-label={label} size="sm"
           sortDescriptor={sorting[0] ? { column: sorting[0].id, direction: sorting[0].desc ? 'descending' : 'ascending' } : undefined}
           onSortChange={(sort) => table.getColumn(String(sort.column))?.toggleSorting(sort.direction === 'descending')}>

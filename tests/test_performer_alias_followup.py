@@ -199,7 +199,7 @@ class Case(unittest.TestCase):
         self.busted = []
         self.contract = SimpleNamespace(
             database=self.database, candidate_root=self.generated,
-            follow_secrets_root=self.cooldown, cache_bust=lambda: self.busted.append(1))
+            secrets_root=self.cooldown, cache_bust=lambda: self.busted.append(1))
         self.minnano = Transport({
             minnano_av.search_url("神山ももか"): (200, MINNANO_SEARCH.encode("utf-8")),
             PROFILE_URL: (200, MINNANO_PROFILE.encode("utf-8")),

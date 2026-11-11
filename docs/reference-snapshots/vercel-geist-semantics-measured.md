@@ -90,7 +90,7 @@
   手工截图的 SHA-256 为
   `037CBD12E6254072817F402864A0B11C641AA920CA4BD9EDEC08D591DAF2EA1E`（1673×189）。
 
-Peach 保留的差异：添加关注沿用现有 38px 输入基线，因此筛选钮是 38×38px；Tooltip
+Peach 保留的差异：筛选钮沿用现有 38px 输入基线，因此是 38×38px；Tooltip
 使用 Peach 的暗色 surface 且不复制箭头或淡入动画。复用的是可聚焦语义、严格视口夹取、
 菜单无展开动画，以及 Collapse 的高度／chevron 过渡，不把三种组件的 motion 混用。
 
@@ -322,8 +322,8 @@ Peach 的两列侧栏导航按上表对齐：`.edge button` 与 `.dnav button` �
   批量已看/忽略保持 secondary；回收站清空区用红发丝边框卡。
 - 行内状态：`ok`/`error` 用低饱和 tint 徽章（`.sbadge`），不再是裸文字。
 - 检查失败报告条：对齐 danger 卡语义——红发丝边 + 微红底，去掉左侧粗条。
-- 低密度管理页（统计/口味/复核等）内容列限宽约 1000px 居中；浏览页（首页/
-  关注）保持全宽。
+- 低密度管理页（统计/口味/复核等）内容列限宽约 1000px 居中；浏览页（首页）
+  保持全宽。
 - 正文字体栈补 CJK sans：`"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",
   "Hiragino Sans GB","Noto Sans CJK SC"` 置于 sans-serif 前。
 
@@ -474,7 +474,7 @@ Peach 的两列侧栏导航按上表对齐：`.edge button` 与 `.dnav button` �
 虚线只借给 `#tagbar` 那一排，即首页顶上的筛选条：未生效 `background:transparent` +
 `1px dashed var(--field-ring-hover)`，已生效 `background:var(--ground)` +
 `1px solid var(--field-ring)`；浅色一档实测就是 `rgba(0,0,0,.21)` 与 `rgba(0,0,0,.08)`。
-`.brandpill`、关注页和实体页的 `.pill` 一律实线，只保留「选中填 `--ground`」这一半。
+`.brandpill` 与实体页的 `.pill` 一律实线，只保留「选中填 `--ground`」这一半。
 虚线在 Vercel 上说的是「这条筛选还没加上去」，配得上它的只有恒常在场、可开可关的那一排；
 随内容来去的药丸也画成虚线，整页就是一片没生效的框，虚线不再指向任何东西。
 中间加了一档 Vercel 没有的悬停：只把虚线拉成实线，不填色。原因是语义不同——
@@ -521,8 +521,8 @@ Vercel 的令牌可叠加，悬停预演成生效态没有代价；Peach 首页�
 3. **整页那条的命中区收到滑块本身。** 侧栏轨道只覆盖侧栏，吃掉的点击本来就是它自己的；整页
    那条从窗口顶贯到底，12px 的透明条会把右边缘所有点击一并吃掉，而设置面板正贴在那儿。
 
-站内其余滚动容器（设置面板、详情侧栏、标签选择、混播队列、统计页的指标带与宽表、关注管理的
-来源列表与分页条）走同一个 `attachOverlayScrollbar()`，容器名单写在 `web/js/ui-components.js`
+站内其余滚动容器（设置面板、详情侧栏、标签选择、混播队列、统计页的指标带与宽表）
+走同一个 `attachOverlayScrollbar()`，容器名单写在 `web/js/ui-components.js`
 的 `OVERLAY_SCROLLERS` 一处。横轴同样自绘：轨道贴底、滑块 3px→6px，几何换成
 可视宽/内容宽。原生那条由 `[data-overlay-scrollbar]` 关掉——属性是脚本挂上去的，
 所以脚本没跑到的容器留着系统滚动条兜底，不会出现既没滑块又拖不动的死框。

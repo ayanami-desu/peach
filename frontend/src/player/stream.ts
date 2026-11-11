@@ -18,18 +18,9 @@ export function directStreamSource(item: PlayerItem, session: string): PlayerSou
   };
 }
 
-/* 在线作品的 `path` 是来源作品页，不是可播地址。能播的那条代理在 `/follow-stream?id=<follow_item>`，
-   保存时写了 `follow_item.asset_id`，`/api/item` 反查后回传 `follow_item_id`。 */
-function followStreamSource(item: PlayerItem): PlayerSource | null {
-  return item.location === 'online' && item.follow_item_id
-    ? { src: `/follow-stream?id=${item.follow_item_id}`, type: 'video/mp4' } : null;
-}
-
 /** 起播片源只有这一个判据，详情和沉浸模式共用：服务端说要转码分片就给分片，否则直读。
  *  有 B 帧却缺 ctts 的 MP4 直读时浏览器按错的显示顺序丢帧，整片持续卡顿。 */
 export async function playableStreamSource(item: PlayerItem, session: string): Promise<PlayerSource> {
-  const proxied = followStreamSource(item);
-  if (proxied) return proxied;
   try {
     const plan = await api(`/api/stream-plan?id=${item.id}&session=${encodeURIComponent(session)}`) as
       { protocol?: string; src?: string; mime_type?: string } | null;

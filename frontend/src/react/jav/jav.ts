@@ -1,11 +1,10 @@
 import { apiGet, apiSend } from '../../api';
 import { queryClient } from '../query';
-import { fetchWants, WANTS_KEY } from '../wants/wants';
-import type { CoverState, FaceRef, CoverItem } from '@peach/card-art';
+import type { CoverItem, FaceRef } from '@peach/card-art';
 import { coverImage, javArtwork, remoteCoverUrl } from '@peach/card-art';
 import { esc } from '@peach/legacy/core';
 import { peachHistory, shellNavigate } from '@peach/history';
-import { RELEASE_SORTS, type DiscoveryDirection, type DiscoverySort, type ReleaseSort } from './discovery-sorts';
+import type { DiscoveryDirection, DiscoverySort } from './discovery-sorts';
 
 export { JAV_TABS, javTab, javPath, javLibraryPath } from './jav-navigation';
 
@@ -16,17 +15,15 @@ export function writeJavQuery(patch: Record<string, string>): void {
   shellNavigate(location.pathname + (params.size ? `?${params}` : ''), { replace: true, state: peachHistory.navigation.location.state });
 }
 
+/** `/api/jav/discoveries` 的一行：馆藏里还没看过的作品，带官方封面与实体引用。 */
 export interface Discovery extends CoverItem {
   id: number; code: string; title: string; performers: string; release_date: string;
-  studio: string; link: string; cover_url: string; has_cover: boolean; wanted: boolean;
+  studio: string; link: string; cover_url: string; has_cover: boolean; has_thumb?: boolean;
   performer_refs?: (FaceRef & { name: string; source_actor_id?: string; source_avatar?: boolean })[];
-  asset_id?: number | null; tags?: string[]; reasons?: string[]; score?: number;
-  taste_score?: number | null; ranking_score?: number | null; rank?: number;
+  asset_id?: number | null; tags?: string[]; rank?: number;
   source_score?: number | null; duration?: number | null;
-  metadata_state?: 'pending' | 'ready' | 'partial' | 'unavailable' | 'stale'; metadata_message?: string;
-  cover_state?: CoverState | null; cover_reason?: string;
+  metadata_state?: 'pending' | 'ready' | 'partial' | 'unavailable' | 'stale';
 }
-export type DiscoveryScope = 'external' | 'library';
 
 /** `/api/jav/cover` 的回话：取到了就带上版本与取景的两份边车，没取到是原因。 */
 export interface CoverNow {
@@ -53,7 +50,7 @@ export function fetchCoverNow(code: string, signal?: AbortSignal): Promise<Cover
 }
 
 /** 一批番号逐部当场取，`parallel` 部并行。`fetchOne` 回这一部取没取到；`alive()` 为假就停在当前这部，
- *  没轮到的照旧排在后台的队里。JAV 页「新作」与首页、女优页的新作那一行共用。 */
+ *  没轮到的照旧排在后台的队里。探索页与首页的封面补取共用。 */
 export async function prioritiseCovers(codes: string[], fetchOne: (code: string) => Promise<boolean>,
   progress: (done: number) => void, alive: () => boolean, parallel = 2): Promise<number> {
   const queue = [...codes];
@@ -70,92 +67,30 @@ export async function prioritiseCovers(codes: string[], fetchOne: (code: string)
   return got;
 }
 
-/** 当场取到的封面补进「新作」「发现」两个分区已取回的数据：卡片换上本机那张，不必整页重问
- *  （`/api/jav/releases` 每问一次都把全部候选重算一遍）。 */
+/** 当场取到的封面补进探索分区已取回的数据：卡片换上本机那张，不必整页重问。 */
 export function coverArrived(code: string, result: CoverNow): void {
   const patch = (data: unknown) => {
     const items = (data as { items?: Discovery[] } | undefined)?.items;
     return items ? { ...(data as object), items: items.map(item => item.code === code ? { ...item, has_cover: true,
-      cover_version: result.cover_version, cover_frame: result.cover_frame, poster_box: result.poster_box, cover_state: null } : item) } : data;
+      cover_version: result.cover_version, cover_frame: result.cover_frame, poster_box: result.poster_box } : item) } : data;
   };
-  for (const key of ['jav-releases', 'jav-discoveries']) queryClient.setQueriesData({ queryKey: [key] }, patch);
+  queryClient.setQueriesData({ queryKey: ['jav-discoveries'] }, patch);
 }
-export interface DiscoveryMetadataJob {
-  job_id: string; status: 'running' | 'complete' | 'stopped' | 'failed' | 'cancelling' | 'cancelled'; completed: number; total: number;
-  failed: number; requests: number; bytes: number; stop_reason?: string; message?: string;
-}
+
 export interface DiscoveryResult {
-  items: Discovery[]; candidate_total: number; limited: boolean; ranking_method?: 'mmr' | 'field-sort';
-  metadata_job?: DiscoveryMetadataJob | null; poll_after_ms?: number;
+  items: Discovery[]; candidate_total: number; sort: DiscoverySort; direction: DiscoveryDirection;
+  limited: boolean; source: 'library';
 }
-export const discoveryKey = (scope: DiscoveryScope, sort: DiscoverySort = 'taste', direction: DiscoveryDirection = 'desc') =>
-  ['jav-discoveries', scope, sort, direction] as const;
-/** 推荐列表只读：资料读取由 `controlDiscoveryMetadata` 起停，进度由 `fetchDiscoveryMetadata` 单独轮询。 */
-export function fetchDiscoveries(scope: DiscoveryScope, signal: AbortSignal, options: {
+
+export const discoveryKey = (sort: DiscoverySort = 'release_date', direction: DiscoveryDirection = 'desc') =>
+  ['jav-discoveries', sort, direction] as const;
+
+/** 馆藏探索只读：一页按所选字段排序的作品。 */
+export function fetchDiscoveries(signal: AbortSignal, options: {
   sort?: DiscoverySort; direction?: DiscoveryDirection;
 } = {}) {
-  const params = new URLSearchParams({ scope, limit: '100', sort: options.sort || 'taste', direction: options.direction || 'desc' });
+  const params = new URLSearchParams({ limit: '100', sort: options.sort || 'release_date', direction: options.direction || 'desc' });
   return apiGet<DiscoveryResult>(`/api/jav/discoveries?${params}`, signal);
-}
-
-export const DISCOVERY_METADATA_KEY = ['jav-discovery-metadata'] as const;
-/** 资料读取进行中，推荐与新作列表隔这么久重取一次，把读到的标签与评分带上来；进度条另按任务轮询走。 */
-export const DISCOVERY_REFRESH_MS = 15000;
-export type DiscoveryMetadataStatus = Pick<DiscoveryResult, 'metadata_job' | 'poll_after_ms'>;
-/** 资料读取进度：只读任务快照，不重算推荐。 */
-export const fetchDiscoveryMetadata = (signal: AbortSignal) =>
-  apiGet<DiscoveryMetadataStatus>('/api/jav/discoveries/metadata', signal);
-/** `start` 只读过期或从没读过的，`refresh` 整批重读，`cancel` 停下当前这一轮。读的是当前排序下那一页。 */
-export function controlDiscoveryMetadata(action: 'start' | 'refresh' | 'cancel', options: {
-  sort?: DiscoverySort; direction?: DiscoveryDirection; jobId?: string;
-}, signal?: AbortSignal) {
-  return apiSend<DiscoveryMetadataStatus>('/api/jav/discoveries/metadata', {
-    action, limit: 100, sort: options.sort || 'taste', direction: options.direction || 'desc', job_id: options.jobId || '',
-  }, 'POST', signal);
-}
-
-/** 新作分区的筛选与排序：都写在地址栏里，刷新与返回原样恢复。`seed` 只在换一批时有值。 */
-export interface ReleaseFilters {
-  page: number; size: number; performer: string; studio: string; tag: string; q: string;
-  sort: ReleaseSort; dir: DiscoveryDirection; seed: string;
-}
-export interface ReleaseFacetPerformer extends FaceRef { name: string; count: number; source_actor_id?: string; source_avatar?: boolean }
-export interface ReleaseFacetStudio { name: string; count: number; has_logo: boolean; logo_version?: string }
-/** `/api/jav/releases`：一页新作，加只取自订阅新作的筛选项。只读：`metadata_unread` 是筛选结果里
- *  从没读过来源资料的部数，读取由 `controlReleaseMetadata` 起停。 */
-export interface ReleaseResult {
-  items: Discovery[]; total: number; candidate_total: number; page: number; size: number;
-  facets: { performers: ReleaseFacetPerformer[]; studios: ReleaseFacetStudio[]; tags: { name: string; count: number }[] };
-  metadata_unread?: number; metadata_job?: DiscoveryMetadataJob | null; poll_after_ms?: number;
-}
-export const RELEASE_PAGE_SIZE = 24;
-export const RELEASE_PAGE_SIZES = [10, 20, 24, 50, 100] as const;
-export function releaseFilters(search: string): ReleaseFilters {
-  const params = new URLSearchParams(search);
-  const sort = params.get('sort');
-  const seed = params.get('seed') || '';
-  const page = Number(params.get('page'));
-  const size = RELEASE_PAGE_SIZES.find(value => value === Number(params.get('size'))) || RELEASE_PAGE_SIZE;
-  return { page: Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1, size, performer: params.get('performer') || '',
-    studio: params.get('studio') || '', tag: params.get('tag') || '', q: (params.get('q') || '').trim(),
-    sort: sort === 'random' && seed ? 'random' : RELEASE_SORTS.find(([key]) => key === sort)?.[0] || 'release_date',
-    dir: params.get('dir') === 'asc' ? 'asc' : 'desc', seed };
-}
-export const releaseKey = (filters: ReleaseFilters) =>
-  ['jav-releases', filters.page, filters.size, filters.performer, filters.studio, filters.tag, filters.q, filters.sort, filters.dir, filters.seed] as const;
-const RELEASE_FILTER_KEYS = ['performer', 'studio', 'tag', 'q', 'seed'] as const;
-export function fetchReleases(filters: ReleaseFilters, signal: AbortSignal) {
-  const params = new URLSearchParams({ page: String(filters.page), size: String(filters.size),
-    sort: filters.sort, direction: filters.dir });
-  for (const key of RELEASE_FILTER_KEYS) if (filters[key]) params.set(key, filters[key]);
-  return apiGet<ReleaseResult>(`/api/jav/releases?${params}`, signal);
-}
-/** 新作页的资料读取：`start` 读当前筛选结果里从没读过的那几部，`cancel` 停下当前这一轮。
- *  与「发现」共用一个任务，进度同样由 `fetchDiscoveryMetadata` 轮询。 */
-export function controlReleaseMetadata(action: 'start' | 'cancel', filters: ReleaseFilters, jobId = '', signal?: AbortSignal) {
-  const body: Record<string, string> = { action, sort: filters.sort, direction: filters.dir, job_id: jobId };
-  for (const key of RELEASE_FILTER_KEYS) if (filters[key]) body[key] = filters[key];
-  return apiSend<DiscoveryMetadataStatus>('/api/jav/releases/metadata', body, 'POST', signal);
 }
 
 export function discoveryArtwork(item: Discovery, layout: 'big' | 'small', javImage: unknown): string {
@@ -168,17 +103,7 @@ export function discoveryArtwork(item: Discovery, layout: 'big' | 'small', javIm
 }
 
 export async function prefetchJav(tab: string, signal: AbortSignal) {
-  if (tab === 'wants') {
-    await queryClient.ensureQueryData({ queryKey: WANTS_KEY, queryFn: () => fetchWants(signal),
-      staleTime: 30_000, revalidateIfStale: true }); return;
-  }
-  if (tab === 'discover') {
-    await queryClient.ensureQueryData({ queryKey: discoveryKey('external'), queryFn: () => fetchDiscoveries('external', signal),
-      staleTime: 30_000, revalidateIfStale: true }); return;
-  }
-  if (tab === 'releases') {
-    const filters = releaseFilters(location.search);
-    await queryClient.ensureQueryData({ queryKey: releaseKey(filters), queryFn: () => fetchReleases(filters, signal),
-      staleTime: 30_000, revalidateIfStale: true });
-  }
+  if (tab !== 'explore') return;
+  await queryClient.ensureQueryData({ queryKey: discoveryKey(), queryFn: () => fetchDiscoveries(signal),
+    staleTime: 30_000, revalidateIfStale: true });
 }

@@ -31,7 +31,7 @@ class StylesheetPartitionTests(unittest.TestCase):
         "09-skeleton.css", "11-identity.css", "12-cards.css",
         "15-detail.css", "16-settings.css",
         "17-overlay.css", "18-chips.css", "19-immersive.css",
-        "21-online.css", "22-followmanage.css", "23-configuration.css",
+        "22-feedback.css", "23-configuration.css",
         "25-motion.css",
     )
 

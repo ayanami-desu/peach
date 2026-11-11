@@ -100,7 +100,7 @@ ZIP 结构：
 收集范围与上限：
 
 - 固定名单里实际存在的服务日志各取一份，带月分段 `.until-*.log` 的另取最近 2 份；`errors-*.log` 最近 8 份，`crash-*.log` 最近 4 份。
-- `processing/` 收录 `library-processing.json`、`media-processing.json` 等状态文件，`library-processing-*.issues.jsonl` 最近 8 份，`job-recovery/*.json` 最近 32 份；`covers/` 取资料任务状态与 `feed-cover-attempts/*.json` 最近 500 份。
+- `processing/` 收录 `library-processing.json`、`media-processing.json` 等状态文件，`library-processing-*.issues.jsonl` 最近 8 份，`job-recovery/*.json` 最近 32 份。
 - 文本日志读尾部最多 96 KiB，截断时从第一个完整行开始。
 - 结构化 JSON 先完整读最多 16 MiB，解析后按字段脱敏。导出内容超过 96 KiB 时缩减：集合保留 20 项、文本保留 4000 字符、嵌套最多 8 层，键按任务标识与状态、阶段、计数优先，其次是步骤与问题预览；仍放不下就整字段丢弃，并记下丢弃数量。
 - JSONL 也读尾部 96 KiB，从完整行开始，只导出能解析成对象或数组的记录。

@@ -1,4 +1,4 @@
-/* 本地与在线详情共用标签外观、选择器和标签名称编辑。 */
+/* 详情页的标签外观、选择器与标签名称编辑。 */
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RiArrowDownSLine, RiArrowUpSLine } from '@remixicon/react';
@@ -7,7 +7,7 @@ import { Button } from '@/components/base/buttons/button';
 import { foldName, icon } from '@peach/legacy/core';
 import { apiGet } from '../../api';
 import { pickerSections, recentTags, type DetailTag, type TagCount } from '../item-detail/item-detail';
-import { TagEditor, type ManagedTag, type TagScope } from '../index/tag-operations';
+import { TagEditor, type ManagedTag } from '../index/tag-operations';
 import { composingKey } from './ime';
 import { Note } from './note';
 import { useOverlayScrollbar } from './overlay-scrollbar';
@@ -15,27 +15,27 @@ import { useAction, busyProps } from '../settings/use-action';
 import { queryClient } from '../query';
 
 const Glyph = ({ name }: { name: string }) => <span className="contents" dangerouslySetInnerHTML={{ __html: icon(name) }} />;
-/* 标签多时先露前面一截：在线来源一帖常挂上百个标签，全摊开会把侧栏推成一整屏胶囊。来源分类排在
-   前面（作品、角色、作者），收起时留下的正是它们。只多出几个时不折，省得为三两个标签多点一下。 */
+/* 标签多时先露前面一截，全摊开会把侧栏推成一整屏胶囊。来源分类排在前面（作品、角色、
+   作者），收起时留下的正是它们。只多出几个时不折，省得为三两个标签多点一下。 */
 const TAGS_SHOWN = 20;
 const TAGS_SLACK = 4;
 interface DetailTagsProps {
-  tags: DetailTag[]; candidates: readonly TagCount[]; scope?: TagScope; id?: string; adding?: boolean;
+  tags: DetailTag[]; candidates: readonly TagCount[]; id?: string; adding?: boolean;
   label(tag: string): string; onOpen(tag: string): void; onAdd(tag: string): void; onRemove(tag: DetailTag): void;
   busyAttrs(tag: string): { 'aria-busy'?: boolean; 'aria-disabled'?: boolean };
 }
 
-export function DetailTags({ tags, candidates, scope = 'local', id, adding, label, onOpen, onAdd, onRemove, busyAttrs }: DetailTagsProps) {
+export function DetailTags({ tags, candidates, id, adding, label, onOpen, onAdd, onRemove, busyAttrs }: DetailTagsProps) {
   const [editing, setEditing] = useState<ManagedTag | null>(null);
   const [asked, setAsked] = useState(false);
-  const inventory = useQuery({ queryKey:['tag-management', scope],
-    queryFn:({ signal }) => apiGet<{ items:ManagedTag[] }>(`/api/tag-management${scope === 'online' ? '?scope=online' : ''}`, signal),
-    enabled:asked && (scope === 'online' || !candidates.length) });
-  const options = inventory.data?.items?.filter(tag => !tag.hidden && !tag.blocked && (scope === 'online' || tag.cat !== 'meta')) || candidates;
+  const inventory = useQuery({ queryKey:['tag-management'],
+    queryFn:({ signal }) => apiGet<{ items:ManagedTag[] }>('/api/tag-management', signal),
+    enabled:asked && !candidates.length });
+  const options = inventory.data?.items?.filter(tag => !tag.hidden && !tag.blocked && tag.cat !== 'meta') || candidates;
   const action = useAction();
   const rename = (tag: DetailTag) => { void action.run('rename', async signal => {
-    const result = await queryClient.fetchQuery({ queryKey: ['tag-management', scope],
-      queryFn: () => apiGet<{ items: ManagedTag[] }>(`/api/tag-management${scope === 'online' ? '?scope=online' : ''}`, signal) });
+    const result = await queryClient.fetchQuery({ queryKey: ['tag-management'],
+      queryFn: () => apiGet<{ items: ManagedTag[] }>('/api/tag-management', signal) });
     const row = result.items.find(value => value.k === tag.k || value.aliases.includes(tag.k));
     if (!row) throw new Error('标签已变化，请重新打开详情');
     return row;
@@ -49,7 +49,7 @@ export function DetailTags({ tags, candidates, scope = 'local', id, adding, labe
   return <>
     <div data-stage-tags="" data-detail-tags="" id={id}>
       {shown.map(tag => <span key={tag.k} data-detail-tag="" data-tag-cat={tag.cat}>
-        <button type="button" data-tag={tag.k} data-follow-tag={scope === 'online' ? tag.k : undefined}
+        <button type="button" data-tag={tag.k}
           title={label(tag.k)} onClick={() => onOpen(tag.k)}>{label(tag.k)}</button>
         <button type="button" data-edit-tag={tag.k} title="修改标签名称" aria-label={`修改标签 ${label(tag.k)}`}
           {...busyProps(!!action.busy)} onClick={() => rename(tag)}><Glyph name="pencil" /></button>
@@ -59,12 +59,12 @@ export function DetailTags({ tags, candidates, scope = 'local', id, adding, labe
       {long ? <Button variant="secondary" size="small" data-tags-more="" aria-expanded={open}
         trailingIcon={open ? RiArrowUpSLine : RiArrowDownSLine} onClick={() => setOpen(!open)}>
         {open ? '收起' : `还有 ${tags.length - shown.length} 个`}</Button> : null}
-      <TagPicker tags={tags} candidates={options} label={label} onAdd={add} adding={adding} scope={scope}
+      <TagPicker tags={tags} candidates={options} label={label} onAdd={add} adding={adding}
         onOpen={() => setAsked(true)} loading={inventory.isFetching} />
     </div>
     {action.error ? <Note tone="error">{action.error}</Note> : null}
     {inventory.isError ? <Note tone="error" action={<Button variant="secondary" onClick={() => void inventory.refetch()}>立即重试</Button>}>无法读取标签候选</Note> : null}
-    {editing ? <TagEditor operation="rename" selected={[editing]} scope={scope}
+    {editing ? <TagEditor operation="rename" selected={[editing]}
       close={() => setEditing(null)} done={() => setEditing(null)} /> : null}
   </>;
 }
@@ -72,7 +72,7 @@ export function DetailTags({ tags, candidates, scope = 'local', id, adding, labe
 /* 标签选择器：最近使用 + 全部（或搜索结果），上下键挑、回车加，输入的词没有完全命中就多一格
    「新建」。开合走全站菜单那一对口（`presentMenu`／`dismissMenu`），`hidden` 由它们管。
    选字过程中框里是半截拼音，筛选按 `term` 走、组完字才跟上，不拿「zhon」去筛。 */
-function TagPicker({ tags, candidates, label, onAdd, adding, scope, onOpen, loading }: Pick<DetailTagsProps, 'tags' | 'candidates' | 'label' | 'onAdd' | 'adding' | 'scope'> & { onOpen():void; loading:boolean }) {
+function TagPicker({ tags, candidates, label, onAdd, adding, onOpen, loading }: Pick<DetailTagsProps, 'tags' | 'candidates' | 'label' | 'onAdd' | 'adding'> & { onOpen():void; loading:boolean }) {
   const plus = useRef<HTMLButtonElement>(null);
   const picker = useRef<HTMLDivElement>(null);
   const body = useOverlayScrollbar<HTMLDivElement>();
@@ -146,11 +146,9 @@ function TagPicker({ tags, candidates, label, onAdd, adding, scope, onOpen, load
     const at = index;
     const selected = tags.some(value => foldName(value.k) === foldName(tag.k));
     const category = tag.cat || tags.find(value => foldName(value.k) === foldName(tag.k))?.cat || 'unknown';
-    const color = category === 'unknown' ? 'r34-unknown'
-      : scope === 'online' && ['general', 'artist', 'character', 'copyright', 'metadata'].includes(category) ? `r34-${category}` : category;
     return (
       <button key={`${at}:${tag.k}`} type="button" data-pick={tag.k} data-active={at === active ? '' : undefined}
-        data-tag-cat={color}
+        data-tag-cat={category}
         aria-pressed={selected} onClick={() => pick(tag, selected)}>
         <Glyph name={selected ? 'check' : 'tags'} /><span data-pick-name="">{label(tag.k)}</span>
         <span data-pick-count="">{(tag.n || 0).toLocaleString()}</span>

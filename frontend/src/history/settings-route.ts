@@ -6,7 +6,7 @@
  *
  * 两套键没有重名，`settingsPath(title)` 按标题在两套里一起找。 */
 export const PREFERENCE_SECTIONS = {
-  appearance: '外观与导航', browsing: '浏览与播放', jav: 'JAV 与新作', search: '搜索与推荐', content: '内容显示',
+  appearance: '外观与导航', browsing: '浏览与播放', jav: 'JAV', search: '搜索与推荐', content: '内容显示',
 } as const;
 export const CONFIGURATION_SECTIONS = {
   drives: '网盘', libraries: '媒体库', access: '访问与安全', token: 'API 令牌', devices: '设备会话',
@@ -24,13 +24,12 @@ export function configurationSection(path: string): string {
   return CONFIGURATION_SECTIONS[path.split('/')[2] as ConfigurationSectionKey] || CONFIGURATION_SECTIONS.drives;
 }
 
-/** 服务端与旧书签里还留着的旧分区地址。能力没了的（订阅源、下载渠道、应用与维护）转到还在的那一页上。 */
+/** 服务端与旧书签里还留着的旧分区地址。能力没了的（下载渠道、应用与维护）转到还在的那一页上。 */
 const LEGACY_SETTINGS_TARGETS: Readonly<Record<string, string>> = {
   '/settings/library': '/settings/drives',
   '/settings/downloads': '/settings/drives',
   '/settings/network': '/settings/access',
   '/settings/maintenance': '/settings/diagnostics',
-  '/settings/subscriptions': '/sources',
   '/settings/playback': '/settings/browsing',
 };
 /** 旧的设置地址换成现在的落点；不是旧地址就原样返回。 */

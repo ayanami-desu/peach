@@ -2,8 +2,8 @@
 
 - 状态：Proposed（方案已修订，运行时尚未实施）
 - 日期：2026-09-05
-- 关系：ADR-0023 的陌生用户安装流程；ADR-0018 的元数据候选；ADR-0019 的来源凭据；ADR-0017 的本机数据边界。
-- 证据与逐脚本审计：[来源采集](../SOURCING.md)；来源细节见 [SOURCING](../SOURCING.md)，依赖决策见 [REUSE](../REUSE.md)。
+- 关系：ADR-0023 的陌生用户安装流程；ADR-0018 的元数据候选；来源凭据沿用 `CredentialStore`（原关注侧的凭据表单已由 [ADR-0158](0158-remove-follow-feeds-wants.md) 删除）；ADR-0017 的本机数据边界。
+- 证据与逐脚本审计：[来源采集](../METADATA.md)；依赖决策见 [REUSE](../REUSE.md)。
 
 ## 目标与边界
 
@@ -55,7 +55,7 @@
 
 ## GUI 配置与会话
 
-复用关注管理的凭据表单、`CREDENTIAL_GUIDE`、`CredentialStore`、保存与撤销接口，扩展成来源配置页。现有表单已经支持粘贴字段；Instagram、FC2、元数据工具和网络设置的统一接入属于待实施内容。
+复用 `CREDENTIAL_GUIDE`、`CredentialStore`、保存与撤销接口，扩展成来源配置页。现有表单已经支持粘贴字段；Instagram、FC2、元数据工具和网络设置的统一接入属于待实施内容。
 
 1. 首次安装展示来源能力、标准／最高可得画质、预计范围与可选登录条件；无需先填 Cookie 才能开始公开来源。
 2. 每个需要登录的来源提供「打开官方登录页」「粘贴 Cookie」「导入 Cookie 文件」「验证连接」「撤销」。文件导入先复用标准库 `MozillaCookieJar`，限制站点域名、大小和格式，禁止执行上传内容。

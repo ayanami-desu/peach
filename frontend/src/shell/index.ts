@@ -1,6 +1,6 @@
 /* 壳自己的内存状态（ADR-0031「壳自己的内存状态也只有一份」）。
  *
- * 目录口径、选择集与选择模式、详情与关注详情「关掉回哪里」的来处、跳到配置页某一节与活动页预填这类
+ * 目录口径、选择集与选择模式、详情「关掉回哪里」的来处、跳到配置页某一节与活动页预填这类
  * 一次性请求，整页只有这一份：Application 与 React 页面直接引用共享源码，随 `peach-app.js` 发出。读法就是
  * ES 模块的活绑定，导入方读到的永远是这里的当前值；导入方不能给绑定赋值，整体换掉一个值走
  * `writeShell`。
@@ -8,7 +8,7 @@
  * 对象语义照壳原样保留：整体重建的写点经 `writeShell` 换引用，其余写点原地改同一个对象的字段，
  * 改完调 `notifyShell`。`barsContext.filters` 与 `state` 的别名关系由写点自己决定，这里不替谁修：
  * `writeShell({state})` 只换 `state`，`barsContext.filters` 仍指旧对象，直到写点再把 `barsContext`
- * 指回来。选择集是两个常驻的 `Set`，原地增删。
+ * 指回来。选择集是一个常驻的 `Set`，原地增删。
  *
  * 每次写入之后通知订阅者，版本号单调递增，React 读者按 `useSyncExternalStore(subscribeShell, shellVersion)`
  * 接。服务端事实（来源在线状态、目录总数、聚合、实体形态、回收站计数）不在这里，归 TanStack Query；
@@ -46,14 +46,12 @@ export let barsContext: BarsContext | undefined;
 /** 作品详情打开前的那份语境，关掉详情时还原。 */
 export let detailReturnBarsContext: BarsContext | null = null;
 
-/** 目录（含资料页、回收站、垃圾文件）与关注页各一份选择集，整页常驻、原地增删。 */
+/** 目录（含资料页、回收站、垃圾文件）的选择集，整页常驻、原地增删。 */
 export const selected = new Set<number>();
-export const followSelected = new Set<number>();
 export let selectMode = false;
-/** Shift 连选的起点：目录与关注页各一个。 */
+/** Shift 连选的起点。 */
 export let lastSelectedId: number | null = null;
-export let followLastSelectedId: number | null = null;
-/** 进选择模式时所在的那一类页面（`catalog`、`follow`、`junk`）；换到别的一类就退出选择。 */
+/** 进选择模式时所在的那一类页面（`catalog`、`junk`）；换到别的一类就退出选择。 */
 export let selectSurface = '';
 
 /** 关掉作品详情回到的地址。 */
@@ -68,9 +66,6 @@ export let activeQueue: ActiveQueue | null = null;
 export let pendingQueueRoute: string | null = null;
 /** 详情岛最近一次画出来的那一条。 */
 export let presentedItem: PresentedItem | null = null;
-/** 关掉关注详情回到的地址。 */
-export let followDetailReturnPath = '/follow';
-
 /** 配置页下一次打开要选中的那一组页签名，选中之后清空。 */
 export let configurationRequestedSection = '';
 /** 这一次是不是从设置完成页（或教程卡）进来的：口味页打开时取走，取一次就清。 */
@@ -84,23 +79,16 @@ export let pageOpens = 0;
 export let queueOpens = 0;
 /** 资料页按第一页作品推出来的 JAV 语境（壳的 `javActive` 读）：页面推上来，资料页每打开一次先清掉。 */
 export let entityJavLayout = false;
-/** 关注页这一次进入的取样种子：创作者、题材、标签三排露出哪些由它定，列表按它取样。重新进入与「换一批」时重掷。 */
-export let followDiscoverySeed = Math.floor(Math.random() * 0xffffffff);
-/** 关注页的刷新代次：画着时要求重读（回到这一页、批量标记之后）推一个新代次让列表重取，不重挂。 */
-export let followRevision = 0;
-/** 关注列表停在哪：停在 `/follow` 上滚动时随手记下，列表要从头画时照它滚回去；重新进入时清零。 */
-export let followScrollY = 0;
 /** 播放列表页的刷新代次：停在这一页时要求重读（顶栏「换一批」）推一个新代次，页面重取、不重挂。 */
 export let playlistsRevision = 0;
 
-/** `writeShell` 能整体换掉的那几项。两个选择集是常驻实例，不在其中。 */
+/** `writeShell` 能整体换掉的那几项。选择集是常驻实例，不在其中。 */
 export interface ShellFields {
   state: CatalogFilters | undefined;
   barsContext: BarsContext | undefined;
   detailReturnBarsContext: BarsContext | null;
   selectMode: boolean;
   lastSelectedId: number | null;
-  followLastSelectedId: number | null;
   selectSurface: string;
   detailReturnPath: string;
   detailOriginAnchor: Element | null;
@@ -109,14 +97,10 @@ export interface ShellFields {
   activeQueue: ActiveQueue | null;
   pendingQueueRoute: string | null;
   presentedItem: PresentedItem | null;
-  followDetailReturnPath: string;
   configurationRequestedSection: string;
   pageOpens: number;
   queueOpens: number;
   entityJavLayout: boolean;
-  followDiscoverySeed: number;
-  followRevision: number;
-  followScrollY: number;
   playlistsRevision: number;
   cameFromSetup: boolean;
 }
@@ -133,7 +117,6 @@ export function writeShell(patch: Partial<ShellFields>): void {
   if (has('detailReturnBarsContext')) detailReturnBarsContext = patch.detailReturnBarsContext!;
   if (has('selectMode')) selectMode = patch.selectMode!;
   if (has('lastSelectedId')) lastSelectedId = patch.lastSelectedId!;
-  if (has('followLastSelectedId')) followLastSelectedId = patch.followLastSelectedId!;
   if (has('selectSurface')) selectSurface = patch.selectSurface!;
   if (has('detailReturnPath')) detailReturnPath = patch.detailReturnPath!;
   if (has('detailOriginAnchor')) detailOriginAnchor = patch.detailOriginAnchor!;
@@ -142,14 +125,10 @@ export function writeShell(patch: Partial<ShellFields>): void {
   if (has('activeQueue')) activeQueue = patch.activeQueue!;
   if (has('pendingQueueRoute')) pendingQueueRoute = patch.pendingQueueRoute!;
   if (has('presentedItem')) presentedItem = patch.presentedItem!;
-  if (has('followDetailReturnPath')) followDetailReturnPath = patch.followDetailReturnPath!;
   if (has('configurationRequestedSection')) configurationRequestedSection = patch.configurationRequestedSection!;
   if (has('pageOpens')) pageOpens = patch.pageOpens!;
   if (has('queueOpens')) queueOpens = patch.queueOpens!;
   if (has('entityJavLayout')) entityJavLayout = patch.entityJavLayout!;
-  if (has('followDiscoverySeed')) followDiscoverySeed = patch.followDiscoverySeed!;
-  if (has('followRevision')) followRevision = patch.followRevision!;
-  if (has('followScrollY')) followScrollY = patch.followScrollY!;
   if (has('playlistsRevision')) playlistsRevision = patch.playlistsRevision!;
   if (has('cameFromSetup')) cameFromSetup = patch.cameFromSetup!;
   notifyShell();

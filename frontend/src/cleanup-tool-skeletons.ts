@@ -3,7 +3,7 @@
  * 标题、说明与表头是静态文案，直接写出来；条数、读数、库名与模板要等数据，只画占位。
  * 说明文字与 React 卡共用这里的常量，写两份的话骨架上那一段会比真卡短一截，接管时整张卡跳一次。
  * 只在跑过一趟任务后才出现的结果区（扫描结论、死链清单）不预画。 */
-import { followCheck, SORT_MARK } from './board-skeleton';
+import { skeletonCheckbox, SORT_MARK } from './board-skeleton';
 import { islandButton, islandSearchInput, islandSelect } from './island-skeleton';
 import type { CleanupToolKey } from './cleanup-tools';
 import { cardClass } from './react/components/card';
@@ -72,16 +72,16 @@ interface TableColumn { label: string; width: number; cell: string }
 function dataTable({ title: name, description, search = '', columns, rows }:
   { title: string; description: string; search?: string; columns: TableColumn[]; rows: number }): string {
   const least = columns.reduce((sum, { width }) => sum + width, 48);
-  const head = `<th style="width:48px"><span class="flex items-center gap-0.5">${followCheck()}</span></th>${columns.map(({ label, width }, index) =>
+  const head = `<th style="width:48px"><span class="flex items-center gap-0.5">${skeletonCheckbox()}</span></th>${columns.map(({ label, width }, index) =>
     `<th${index ? ` style="width:${width}px"` : ''}><span class="flex items-center gap-0.5">${label}<span data-sort-indicator>${SORT_MARK}</span></span></th>`).join('')}<th data-table-space style="width:0"></th>`;
-  const row = `<tr><td>${followCheck()}</td>${columns.map(({ cell }) => `<td>${cell}</td>`).join('')}<td data-table-space></td></tr>`;
+  const row = `<tr><td>${skeletonCheckbox()}</td>${columns.map(({ cell }) => `<td>${cell}</td>`).join('')}<td data-table-space></td></tr>`;
   const searchBox = search ? `<div data-index-search class="ml-auto min-w-0 max-w-80 flex-1">${islandSearchInput('', '', search)}</div>` : '';
   return `<div data-data-table-panel class="${cardClass({ padding: 'none', className: 'flex flex-col gap-4 px-6 py-5 max-sm:px-4' })}">
     <div data-responsive-toolbar><div data-toolbar-heading>${title(name, '')}<span class="text-body-2-regular tabular-nums text-text-secondary">${text('4em')}</span></div>
       <div data-toolbar-actions>${searchBox}<div class="flex flex-none gap-2">${islandButton({ variant: 'secondary', label: '显示列' })}${islandButton({ variant: 'secondary', label: '重置列宽' })}</div>
         <span class="flex flex-none items-center gap-2">${islandSelect('默认顺序', { prefix: '排序' })}${islandButton({ variant: 'secondary', glyph: 'arrow-up', attrs: WAITING })}</span></div></div>
     <p class="text-body-2-regular text-text-secondary">${description}</p>
-    <div data-board-data-table data-resizable-table data-follow-table><div class="relative min-w-0"><div class="w-full overflow-x-auto"><table class="bui-table bui-table-sm" style="min-width:${least}px"><thead><tr>${head}</tr></thead><tbody>${row.repeat(rows)}</tbody></table></div></div></div>
+    <div data-board-data-table data-resizable-table><div class="relative min-w-0"><div class="w-full overflow-x-auto"><table class="bui-table bui-table-sm" style="min-width:${least}px"><thead><tr>${head}</tr></thead><tbody>${row.repeat(rows)}</tbody></table></div></div></div>
     <div data-table-pagination class="flex flex-wrap items-center justify-between gap-3"><span class="mr-auto text-body-2-regular tabular-nums text-text-secondary">${text('8em')}</span><div data-toolbar-actions>${islandSelect('每页 20 条', { size: 'sm' })}</div></div>
   </div>`;
 }

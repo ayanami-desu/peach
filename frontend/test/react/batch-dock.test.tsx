@@ -59,12 +59,12 @@ afterEach(async () => {
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''), receipt: vi.fn(), toast: vi.fn(),
     failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
-    routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
+    srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
-    authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
+    showIndexTags: vi.fn(), 
     openPlaylist: vi.fn(), canFlip: vi.fn(() => true),
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };
@@ -116,13 +116,7 @@ describe('每种语境的键', () => {
     expect(shape('trash')).toEqual(['还原', '彻底删除!', '取消']);
     expect(shape('junk')).toEqual(['不是垃圾', '移入回收站!', '取消']);
     expect(shape('junk', true)).toEqual(['重新判断', '移入回收站!', '取消']);
-    expect(shape('follow')).toEqual(['保存到数据库', '标记已看', '忽略', '取消']);
-  });
-
-  it('「忽略」用划掉的眼睛，不借「取消」那枚叉', () => {
-    const glyph = (operation: string) => batchActions('follow').find((action) => action.operation === operation)!.glyph;
-    expect([glyph('ignored'), glyph('clear')]).toEqual(['eye-off', 'x']);
-  });
+});
 });
 
 describe('浮条', () => {
@@ -182,16 +176,6 @@ describe('常驻组件', () => {
     const { root } = await setup();
     expect([...root.children].map((child) => [child.className, child.getAttribute('data-context')]))
       .toEqual([['peach-react', 'catalog']]);
-  });
-
-  it('句柄 render 返回时浮条已经画好，不等下一次渲染', async () => {
-    const { root, api } = await setup();
-    /* 不包 act：act 会把 flushSync 推到它结束时，看不出句柄自己同步没有。 */
-    (globalThis as ActFlag).IS_REACT_ACT_ENVIRONMENT = false;
-    api.render({ count: 4, context: 'follow', junkDismissed: false });
-    const status = root.querySelector('[data-selection-dock] [role="status"]')?.textContent;
-    const context = root.querySelector('[data-batch-scope]')?.getAttribute('data-context');
-    expect([status, context]).toEqual(['已选 4 项', 'follow']);
   });
 
   it('壳的 loadBatchDock 在这一面画上之后才交出句柄', async () => {

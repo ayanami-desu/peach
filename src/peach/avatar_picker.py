@@ -62,7 +62,6 @@ SOURCE_NAMES = {
     "gfriends": "图库",
     "jae": "展会名录",
     "social-web": "社交主页",
-    "follow-content": "在线作品",
     "cover": "作品封面",
     "cover-fallback": "作品封面",
     "cover-face": "封面人脸",
@@ -181,7 +180,7 @@ def index_refresher(contract) -> IndexRefresher:
             from .scraping_access import SourceTransport
             refresher = IndexRefresher(
                 contract.candidate_root / "provider-cache" / "performer-avatars" / GFRIENDS_CACHE,
-                lambda: SourceTransport(contract.follow_secrets_root))
+                lambda: SourceTransport(contract.secrets_root))
             contract.gfriends_index = refresher
         return refresher
 
@@ -855,8 +854,7 @@ def resolve(ref: str, connection: sqlite3.Connection, providers_root: Path,
             entity_id: int,
             transport: HttpTransport | None,
             artwork: ArtworkSource | None = None,
-            version: str | None = None,
-            online: Callable[[str], tuple[bytes, dict]] | None = None) -> tuple[bytes, dict]:
+            version: str | None = None) -> tuple[bytes, dict]:
     """把页面回递的 `ref` 换成图片字节和一份来源记录。
 
     `ref` 只认这里自己刚枚举出来的那些：图库候选要在索引里真的存在，历史候选要在
@@ -865,10 +863,6 @@ def resolve(ref: str, connection: sqlite3.Connection, providers_root: Path,
     `version` 是交框时页面回递的封面版本（`Choice.version`）。给了就核对，封面在列出
     候选之后被换过就拒收；只取预览图时不给。
     """
-    if ref.startswith(("follow:", "follow-avatar:", "follow-link:")):
-        if online is None:
-            raise PickerError("未取得在线备选头像")
-        return online(ref)
     if ref.startswith("sha256:"):
         digest = ref.split(":", 1)[1].strip().lower()
         body = _cached_object(providers_root, digest)

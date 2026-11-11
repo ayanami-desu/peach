@@ -106,9 +106,8 @@
 - `src/peach/review_csv.py`：候选 CSV 的读写口径（`read_rows()`/`write_rows()`/`read_candidates()`/`latest_candidate_file()`，`utf-8-sig` BOM、`newline=""`）。
 - `src/peach/metadata_policy.py`：来源分级与字段结算，两套刮削栈的取舍见 ADR-0044/0048。
 - `src/peach/junk.py`：垃圾判定证据与复核评分，扫描、后处理与页面共用同一套规则。
-- `src/peach/wants.py`：「想要」清单与入库对账，写入口只有这一处 SQL。
 
-采集与资料处理的完整流程见[采集与资料](SOURCING.md)。
+采集与资料处理的完整流程见[采集与资料](METADATA.md)。
 
 ## 诊断
 

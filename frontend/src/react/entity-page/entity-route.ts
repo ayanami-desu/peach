@@ -21,7 +21,7 @@ export function entityFilterSearch(filters: EntityFilters): string {
 
 export function parseMediaView(search: string): EntityMedia {
   const params = new URLSearchParams(search), set = params.get('set') || '', media = params.get('media');
-  return { media: media === 'photos' || media === 'online' ? media : 'videos',
+  return { media: media === 'photos' ? media : 'videos',
     set: media === 'photos' && /^\d+$/.test(set) ? Number(set) : 0 };
 }
 
@@ -30,7 +30,7 @@ export function entityViewSearch(filters: EntityFilters, media?: EntityMedia): s
   if (media?.media === 'photos') {
     params.set('media', 'photos');
     if (media.set) params.set('set', String(media.set));
-  } else if (media?.media === 'online') params.set('media', 'online');
+  }
   return params.toString();
 }
 

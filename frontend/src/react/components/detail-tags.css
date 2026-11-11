@@ -12,11 +12,6 @@
   height: var(--control-h-inline);
   max-width: 100%;
 }
-.peach-react [data-detail-tags] [data-detail-tag][data-tag-cat^="r34-"]:not([data-tag-cat="r34-unknown"]) {
-  border-color:color-mix(in srgb,var(--tag-color) 42%,var(--surface));
-  background:color-mix(in srgb,var(--tag-color) 10%,var(--surface));
-}
-/* 外框连边线取行内档，与旁边的添加键同高；里面的按钮撑满框内。 */
 .peach-react [data-detail-tags] [data-detail-tag] button { border: 0; background: transparent; color: var(--ink-2); cursor: pointer; height: 100%; }
 /* 长标签单行省略：按钮高度随外框定死，折成两行时第二行会被切掉一半。全名在 title 上。 */
 .peach-react [data-detail-tags] [data-detail-tag] [data-tag] { min-width: 0; padding: 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

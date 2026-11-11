@@ -13,8 +13,7 @@ const segments = (label: string, value: string, options: readonly SegmentOption[
   `<span data-entity-layout="" class="${SEGMENTED_GLASS_TRACK}" role="radiogroup" aria-label="${esc(label)}">${options.map(([key, text, glyph]) =>
     `<span class="${SEGMENT_GLASS}" role="radio" aria-label="${esc(text)}" aria-checked="${key === value}" data-glass-segment=""${key === value ? ' data-selected=""' : ''} ${FILTER_WAITING}>${icon(glyph)}</span>`).join('')}</span>`;
 
-/** 已知的控件保留文字、字形与按下态；等待接线时不能执行动作。`folders` 为假时不画文件夹开关
- *  （JAV 新作分区没有文件夹浏览，其余换一批、卡片版式、卡片／列表与排序键照画）。 */
+/** 已知的控件保留文字、字形与按下态；等待接线时不能执行动作。`folders` 为假时不画文件夹开关。 */
 export function filterControlsSkeletonHtml(sorts: readonly EntitySortKey[], layout: Layout | null, { folders = true } = {}): string {
   const view = catalogView();
   const params = new URLSearchParams(location.search);

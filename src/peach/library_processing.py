@@ -72,11 +72,11 @@ MISS_TTL_SECONDS = 7 * 24 * 3600
 #: 主机间隔。默认 2 秒；javdb 按出口 IP 计配额，这一档由用户定（2026-09-22 定为 3 秒，
 #: 每分钟 20 页）。参照面：每分钟 40～50 页实测会招来 3～7 天的封 IP，`harvest_directory_links`
 #: 那条批量线仍按 5 秒跑。撞上 403 不再是盲等 24 小时——`scraping_access.FIRST_BLOCKED_PAUSE`
-#: 先停 15 分钟，连着再撞才翻倍，所以这一档收紧的代价是有限且可观测的（docs/SOURCING.md）。
+#: 先停 15 分钟，连着再撞才翻倍，所以这一档收紧的代价是有限且可观测的（docs/METADATA.md）。
 SOURCE_INTERVALS = {'javdb.com': 3.0, 'jdbstatic.com': 3.0}
-#: 按 `SOURCE_INTERVALS` 等的那一份间隔，整个进程共用。想要作品资料采集、新作资料采集、资料处理
-#: 各起各的 provider，间隔若各算各的，几条同时跑时问同一主机的请求就叠在一起，配额照样按
-#: 出口 IP 一份算。补女优资料的 javdb 女优页、详情页视频预告与订阅源取页也等这一份。
+#: 按 `SOURCE_INTERVALS` 等的那一份间隔，整个进程共用。资料采集各起各的 provider，
+#: 间隔若各算各的，几条同时跑时问同一主机的请求就叠在一起，配额照样按出口 IP 一份算。
+#: 补女优资料的 javdb 女优页、详情页视频预告也等这一份。
 SOURCE_LIMITER = HostLimiter(SOURCE_INTERVALS, default_interval=2.0)
 #: 认人 Wiki 的取页层自己不再等主机间隔：它的传输就是 provider 的 `transport`，那里已经按
 #: `SOURCE_LIMITER` 等过一次，再等一遍每页就要 4 秒。
@@ -335,7 +335,7 @@ class LibraryMetadataProvider:
     `CredentialStore` 自己会拼上那一层。多给一层的表现不是报错，是每个来源都读成
     「没有凭据」——采集设置里贴好的 JavBus、javdb Cookie 一条都不会被带上。
 
-    `public_cache` 是匿名 JavDB 资料的快照目录（`<生成目录>/jav-public`），与新作页、发现共用；
+    `public_cache` 是匿名 JavDB 资料的快照目录（`<生成目录>/jav-public`），与作品页共用；
     不给就只在本进程内存里复用。
     """
     def __init__(self, secrets_root, *, tools_root=None, public_cache=None, wiki_root=None):

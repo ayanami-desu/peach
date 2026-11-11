@@ -4,7 +4,7 @@
  *   ready 之后挂设置菜单、拖动预览、Media Session、转圈与字幕。
  * - `attachPlayerChrome` 把统计面板、加载速度角标与氛围光接到一块媒体框上。播放器进小窗时摘下，
  *   展开回舞台时接到新的媒体框上，实例本身不重建。
- * - `mountPlayer` 是舞台播放区与沉浸模式每一格的入口：插氛围光画布与统计角标，按作品或关注条目
+ * - `mountPlayer` 是舞台播放区与沉浸模式每一格的入口：插氛围光画布与统计角标，按作品
  *   给片源、海报与上报，返回拆掉这一个播放器的函数。 */
 import { detailPosterUrl } from '@peach/card-art';
 import { api, esc, fmtClock, fmtSize, icon, realDuration } from '@peach/legacy/core';
@@ -24,8 +24,8 @@ import {
   playerSpeedBits, playerStatsOverlayHtml, playerStatsPlot, pushPlayerStat, streamEntries,
 } from './stats';
 import { detailStreamSession, detailStreamSource, directDetailSource } from './stream';
-import { stopTelemetry, wireFollowTelemetry, wireTelemetry } from './telemetry';
-import type { MediaFacts, PlayerItem, PlayerSource, SourceQuality, VjsPlayer } from './types';
+import { stopTelemetry, wireTelemetry } from './telemetry';
+import type { PlayerItem, VjsPlayer } from './types';
 import { ensureVideojs } from './videojs';
 import { isPlayerGuidePreview } from './guide-preview';
 
@@ -35,15 +35,7 @@ export interface PlayerResume { time: number; autoplay: boolean }
 export interface DetailPlayerOptions {
   guidePreview?: boolean;
   playbackKey?: string;
-  /** 给定片源（关注条目的 `/follow-stream`）；不给就按作品的来源解析。 */
-  source?: PlayerSource;
-  /** 播放出错时要不要查来源状态判脱盘。关注条目的片源不在本机来源里，不查。 */
-  checkSourceStatus?: boolean;
-  size?: number | null | undefined;
   poster?: string | undefined;
-  qualities?: SourceQuality[] | null;
-  /** 清晰度表与字节数，跟默认片源并行解析，回来得比挂载晚。 */
-  mediaPromise?: Promise<MediaFacts | null>;
   resume?: PlayerResume | null;
 }
 
@@ -85,13 +77,12 @@ export async function mountDetailPlayer(
   const resume = options.resume ?? null;
   if (resume?.autoplay) autoplay = true;
   if (options.guidePreview) autoplay = false;
-  const source = () => (options.source ? Promise.resolve(options.source) : detailStreamSource(item));
   /* 拉不到就退回原生 video，和「页面里没有 videojs」是同一个兜底出口。 */
   let videojs;
   try { videojs = await ensureVideojs() } catch {
     video.controls = true;
     if (options.guidePreview) return null;
-    source().then((next) => {
+    detailStreamSource(item).then((next) => {
       video.addEventListener('loadedmetadata', () => {
         if (resume && resume.time > 0) video.currentTime = Math.min(resume.time, realDuration(video.duration) || resume.time);
       }, { once: true });
@@ -112,7 +103,7 @@ export async function mountDetailPlayer(
   });
   setDetailPlayer(player);
   player.peachItem = item;
-  player.peachPlaybackKey = options.playbackKey || playbackKey('item', item);
+  player.peachPlaybackKey = options.playbackKey || playbackKey(item);
   wirePlayerContextMenu(player);
   /* 手机上的画面格按视频自己的比例排（`--peach-video-ratio`）。 */
   player.on('loadedmetadata', () => {
@@ -122,9 +113,8 @@ export async function mountDetailPlayer(
   // 非正时长一律当未知。
   const expected = realDuration(item.duration);
   const statsHistory = { speed: [] as number[], activity: [] as number[], buffer: [] as number[] };
-  /* 关注条目的字节数要回源 HEAD 才知道，跟清晰度表同一趟回来，比挂载晚。码率是速度读数的
-     换算系数，所以留一个可以后填的口子，别把它固定在挂载那一刻。 */
-  let mediaSize = Number(options.size ?? item.size) || 0;
+  /* 码率是速度读数的换算系数：文件大小来自这条作品自己。 */
+  const mediaSize = Number(item.size) || 0;
   const meter = createBufferMeter(averageBitrate(mediaSize, item.duration));
   let statsLoaded = 0;
   let correcting = false;
@@ -170,7 +160,7 @@ export async function mountDetailPlayer(
       : ['已下载', byteScale ? `${fmtSize(loaded)}${mediaSize > 0 ? ` / ${fmtSize(mediaSize)}` : ''}` : `${loaded.toFixed(0)} 秒`,
         byteScale ? `最近一秒下载 ${activity ? fmtSize(activity) : '0 B'}` : `最近一秒下载 ${activity.toFixed(1)} 秒`];
     const rows: [string, string, string?][] = [
-      ['视频 ID / 会话', stream && !options.source ? `${item.id} / ${stream.slice(0, 8)}` : `${item.id}`],
+      ['视频 ID / 会话', stream ? `${item.id} / ${stream.slice(0, 8)}` : `${item.id}`],
       ['视口 / 帧', `${Math.round(rect.width)}×${Math.round(rect.height)} / ${quality ? `${quality.totalVideoFrames - quality.droppedVideoFrames} of ${quality.totalVideoFrames}` : '—'}`],
       ['当前 / 最佳分辨率', `${current} / ${item.width || video.videoWidth || '?'}×${item.height || video.videoHeight || '?'}`],
       ['编码 / 传输', `${container} / ${segmented ? 'HLS' : 'HTTP Range'}`],
@@ -220,7 +210,6 @@ export async function mountDetailPlayer(
       return;
     }
     // 播到一半掉盘时 video 元素只报通用错误；来源状态才分得清脱盘和文件损坏。
-    if (options.checkSourceStatus === false) return;
     void host.loadSourceStatus().then((status) => {
       if (status[String(item.root_id || item.location)] !== false || player.isDisposed()) return;
       player.error({ code: 2, message: `媒体目录无法访问 · ${host.offlineReason(String(item.root_id || item.location))}` });
@@ -228,20 +217,14 @@ export async function mountDetailPlayer(
   });
   player.ready(() => {
     enforceDuration();
-    const updateQualities = mountPlayerQualityControl(player, video, item.height, options.qualities ?? null);
-    options.mediaPromise?.then((next) => {
-      if (!live()) return;
-      updateQualities?.(next?.qualities?.length ? next.qualities : null);
-      const size = Number(next?.size) || 0;
-      if (size > 0 && !mediaSize) { mediaSize = size; meter.bitrate = averageBitrate(size, item.duration) }
-    }).catch(() => {});
-    mountPlayerSeekPreview(player, item, { thumbnail: !options.source });
+    mountPlayerQualityControl(player, video, item.height, null);
+    mountPlayerSeekPreview(player, item, { thumbnail: true });
     if (!options.guidePreview) mountPlayerMediaSession(player, item);
     mountPlayerSpinner(player);
     session.ready = true;
     if (session.chrome?.statsButton) session.chrome.statsButton.hidden = false;
   });
-  if (!options.guidePreview) source().then((next) => {
+  if (!options.guidePreview) detailStreamSource(item).then((next) => {
     if (!live()) return;
     segmentedSource = String(next.type || '').includes('mpegurl');
     if (resume && resume.time > 0) player.one('loadedmetadata', () => {
@@ -315,13 +298,9 @@ export function attachPlayerChrome(player: VjsPlayer, frame: HTMLElement): () =>
   return detach;
 }
 
-/** 关注条目里的一份媒体（组里的第几条视频）。 */
-export interface PlayerMedia { index: number; media_type?: string; size?: number | null }
-
 export interface MountPlayerOptions {
-  kind: 'item' | 'follow';
+  kind: 'item';
   item: PlayerItem;
-  media?: PlayerMedia | null;
   /** 不给就按设置（`detailAutoplay`）。 */
   autoplay?: boolean | undefined;
   resume?: PlayerResume | null;
@@ -339,30 +318,19 @@ export interface MountPlayerOptions {
  *  氛围光画布与统计角标在挂载之前插进媒体框：Video.js 一包，`video` 的父级就换成它自己的那层了。
  *  - 作品（`item`）：片源由 `mountDetailPlayer` 按来源解析，海报是本地图，这一次挂载第一次开播时
  *    记一次播放，离开位置与真实观看由 `wireTelemetry` 随播放写回侧栏。
- *  - 关注（`follow`）：片源是 `/follow-stream`，清晰度与字节数（`/follow-qualities`）跟默认片源并行
- *    解析——它要回源抓详情、再 HEAD 一次正片，不能挡住播放器挂载。
  *  - 沉浸模式的一格（`immerse`）：裸 Video.js、这一格自己的流会话，见 `immerse-player.ts`。
  *  返回的清理在舞台卸下这块媒体区时调：换一份媒体只拆这一个播放器；被小窗接走的只摘读数。 */
 export function mountPlayer(video: HTMLVideoElement, options: MountPlayerOptions | ImmersePlayerOptions): () => void {
   if (options.kind === 'immerse') return mountImmersePlayer(video, options);
-  const { kind, item, media = null, handedOff, onPlayer } = options;
+  const { item, handedOff, onPlayer } = options;
   const guidePreview = isPlayerGuidePreview();
   const host = playerHost();
   const frame = options.chrome === false ? null : video.parentElement;
   if (frame) preparePlayerFrame(frame, video);
-  const key = playbackKey(kind, item, media?.index ?? null);
-  let detail: DetailPlayerOptions = { guidePreview, playbackKey: key, resume: guidePreview ? null : options.resume ?? { time: playbackPosition(key, item), autoplay: false } };
-  if (kind === 'follow') {
-    detail = {
-      ...detail,
-      source: { src: `/follow-stream?id=${item.id}${media ? `&media=${media.index}` : ''}`, type: media?.media_type || item.media_type || 'video/mp4' },
-      checkSourceStatus: false, size: media?.size, poster: item.thumb_url,
-      mediaPromise: (api(`/follow-qualities?id=${encodeURIComponent(item.id)}`) as Promise<MediaFacts | null>).catch(() => null),
-    };
-  } else {
-    const poster = detailPosterUrl(item, host.settings().javImage);
-    if (poster) video.poster = poster;
-  }
+  const key = playbackKey(item);
+  const detail: DetailPlayerOptions = { guidePreview, playbackKey: key, resume: guidePreview ? null : options.resume ?? { time: playbackPosition(key, item), autoplay: false } };
+  const poster = detailPosterUrl(item, host.settings().javImage);
+  if (poster) video.poster = poster;
   let player: VjsPlayer | null = null, released = false, detachChrome = () => {}, trackedVideo = video;
   const release = () => {
     detachChrome();
@@ -382,13 +350,10 @@ export function mountPlayer(video: HTMLVideoElement, options: MountPlayerOptions
       onPlayer?.(mounted); return;
     }
     trackPlaybackPosition(key, trackedVideo);
-    if (kind === 'follow') wireFollowTelemetry(item, trackedVideo);
-    else {
-      trackedVideo.addEventListener('play', () => {
-        void (api('/api/play', { method: 'POST', body: JSON.stringify({ id: item.id }) }) as Promise<unknown>).catch(() => {});
-      }, { once: true });
-      wireTelemetry(item, trackedVideo, { watched: '#watched', mark: '#mark', ratio: '#ratioTxt' });
-    }
+    trackedVideo.addEventListener('play', () => {
+      void (api('/api/play', { method: 'POST', body: JSON.stringify({ id: item.id }) }) as Promise<unknown>).catch(() => {});
+    }, { once: true });
+    wireTelemetry(item, trackedVideo, { watched: '#watched', mark: '#mark', ratio: '#ratioTxt' });
     if (!mounted) { onPlayer?.(null); return }
     if (frame) detachChrome = attachPlayerChrome(mounted, frame);
     onPlayer?.(mounted);

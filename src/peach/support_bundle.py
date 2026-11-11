@@ -217,12 +217,6 @@ def _archive_state(archive, directory, entries):
     _archive_files(archive, directory, migrations, 'updates', entries)
 
 
-def _archive_covers(archive, directory, entries):
-    candidates = [directory / 'jav-discovery-metadata.job.json']
-    candidates += _recent(directory, 'feed-cover-attempts/*.json', COVER_ATTEMPT_LIMIT, entries)
-    _archive_files(archive, directory, candidates, 'covers', entries, structured=True)
-
-
 def _archive_scraping(archive, config, entries, *, progress, cancelled, include_details):
     from .scraping_diagnostics import bundle_to, summary, ExportCancelled
     index = summary(config)
@@ -257,7 +251,7 @@ def bundle_to(destination, *, report: dict | None = None, config=None, browser: 
     from . import diagnostic_context
     facts['browser'] = diagnostic_context.browser(browser)
     directories = error_reporting.log_directories()
-    processing_directory = generated_directory = None
+    processing_directory = None
     try:
         from . import settings_file
         config = config or settings_file.load_config()
@@ -265,7 +259,6 @@ def bundle_to(destination, *, report: dict | None = None, config=None, browser: 
                                   "port": config.server.port}
         directories.insert(0, config.directory("logs"))
         processing_directory = config.directory('state')
-        generated_directory = config.directory('generated')
         try:
             facts['runtime'] = diagnostic_context.runtime(config)
         except Exception as error:
@@ -278,7 +271,7 @@ def bundle_to(destination, *, report: dict | None = None, config=None, browser: 
         facts["configuration"] = {"status": "unavailable", **error_reporting.exception_facts(error)}
         try:
             root, _ = settings_file.discover_data_root()
-            processing_directory, generated_directory = root / 'state', root / 'generated'
+            processing_directory = root / 'state'
         except Exception:
             pass
     if report:
@@ -313,11 +306,6 @@ def bundle_to(destination, *, report: dict | None = None, config=None, browser: 
                 _archive_state(archive, processing_directory, entries)
             except OSError as error:
                 entries.append({'name': '<state>', 'status': type(error).__name__})
-        if generated_directory is not None:
-            try:
-                _archive_covers(archive, generated_directory, entries)
-            except OSError as error:
-                entries.append({'name': '<covers>', 'status': type(error).__name__})
         if config is not None:
             try:
                 facts['scraping'] = _archive_scraping(archive, config, entries, progress=progress,

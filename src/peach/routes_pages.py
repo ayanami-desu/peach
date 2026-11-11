@@ -673,20 +673,13 @@ def work_route(request: Request, code: str, args: dict[str, str] = Depends(requi
     return index(request, args)
 
 
-@router.api_route("/follow/item/{item_id}", methods=["GET", "HEAD"])
-def post_route_redirect(request: Request, item_id: int,
-                        args: dict[str, str] = Depends(require_page_auth)):
-    return _page_redirect(request, f"/posts/{item_id}")
-
-
 @router.api_route("/activity", methods=["GET", "HEAD"])
 @router.api_route("/scraping", methods=["GET", "HEAD"])
 @router.api_route("/configuration", methods=["GET", "HEAD"])
-@router.api_route("/follow-manage", methods=["GET", "HEAD"])
 @router.api_route("/diagnostics", methods=["GET", "HEAD"])
 def management_route_redirect(request: Request, args: dict[str, str] = Depends(require_page_auth)):
     paths = {"/activity": "/tasks", "/scraping": "/sources",
-             "/configuration": "/settings/drives", "/follow-manage": "/subscriptions",
+             "/configuration": "/settings/drives",
              "/diagnostics": "/settings/diagnostics"}
     return _page_redirect(request, paths[request.url.path])
 
@@ -756,6 +749,8 @@ def entity_route(request: Request, name: str,
     return index(request, args)
 
 
+# 主站各屏都是同一份 island：地址交给前端路由解析，深链贴过来也直接打开，不做 404。
+# 任务中心与来源两屏的数据各走 `/api/tasks`、`/api/sources`。
 @router.api_route("/assets/{item_id}", methods=["GET", "HEAD"])
 @router.api_route("/posts/{item_id}", methods=["GET", "HEAD"])
 @router.api_route("/playlists", methods=["GET", "HEAD"])
@@ -782,15 +777,18 @@ def entity_route(request: Request, name: str,
 @router.api_route("/data-cleanup/batch-delete", methods=["GET", "HEAD"])
 @router.api_route("/duplicates", methods=["GET", "HEAD"])
 @router.api_route("/quality-goals", methods=["GET", "HEAD"])
-# 任务中心那一屏（island），数据走 `/api/tasks`。深链要能直接打开：定时任务被挡下时
-# 留下的记录是「刚才为什么没跑」的唯一答案，从别处贴过来的地址不该是 404。
 @router.api_route("/tasks", methods=["GET", "HEAD"])
 @router.api_route("/sources", methods=["GET", "HEAD"])
-@router.api_route("/follow", methods=["GET", "HEAD"])
+def client_route(request: Request, args: dict[str, str] = Depends(require_page_auth)):
+    return index(request, args)
+
+
+#: 订阅入口已下线，旧书签与旧设置分区都落到来源页。
 @router.api_route("/subscriptions", methods=["GET", "HEAD"])
-# 配置页是主站里的一屏（island），数据走 `/api/configuration`。未配置时 `index()` 给的是
+def subscriptions_route_redirect(request: Request, args: dict[str, str] = Depends(require_page_auth)):
+    return _page_redirect(request, "/sources")
+# 配置页也是主站里的一屏（island），数据走 `/api/configuration`。未配置时 `index()` 给的是
 # 首次运行表单，正好就是「请先完成首次设置」该长的样子。
 @router.api_route("/settings", methods=["GET", "HEAD"])
-def client_route(request: Request, item_id: int | None = None,
-                 args: dict[str, str] = Depends(require_page_auth)):
+def settings_route(request: Request, args: dict[str, str] = Depends(require_page_auth)):
     return index(request, args)

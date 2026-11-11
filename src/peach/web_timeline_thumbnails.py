@@ -44,8 +44,8 @@ def write_mode(mode: str, path: Path | None = None) -> None:
 
 def q_media_processing(contract, _args):
     from .media_processing_policy import acceleration
-    return {'video_previews': not metadata_only(contract.follow_state_root),
-            'preview_acceleration': acceleration(contract.follow_state_root)}
+    return {'video_previews': not metadata_only(contract.state_root),
+            'preview_acceleration': acceleration(contract.state_root)}
 
 
 def w_media_processing(contract, body):
@@ -56,7 +56,7 @@ def w_media_processing(contract, body):
         patch['metadata_only'] = not bool(body['video_previews'])
     if 'preview_acceleration' in body:
         patch['preview_acceleration'] = body['preview_acceleration']
-    save_preferences(contract.follow_state_root, patch)
+    save_preferences(contract.state_root, patch)
     return q_media_processing(contract, {})
 
 
@@ -137,7 +137,7 @@ def w_thumbnail_jobs(contract, body):
     mode = str((body or {}).get('mode') or timeline_sheets.OFF)
     if mode not in timeline_sheets.MODES:
         raise ValueError('采集密度无效')
-    if mode != timeline_sheets.OFF and metadata_only(contract.follow_state_root):
+    if mode != timeline_sheets.OFF and metadata_only(contract.state_root):
         raise ValueError('视频预览生成已关闭，请先在媒体库设置中开启')
     write_mode(mode)
     return q_thumbnail_jobs(contract, {})

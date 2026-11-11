@@ -28,13 +28,11 @@ describe('当前馆藏推荐', () => {
 });
 
 describe('馆藏与资料空状态', () => {
-  it('空首页提供添加内容与来源的真实入口', () => {
+  it('空首页提供添加媒体的真实入口', () => {
     const html = catalogEmptyHtml({});
     expect(html).toContain('data-geist-empty-state');
     expect(html).toContain('href="/settings/drives"');
-    expect(html).toContain('href="/subscriptions?tab=add"');
     expect(catalogEmptyHtml()).toContain('href="/settings/drives"');
-    expect(catalogEmptyHtml({ online: true })).toContain('class="geist-button primary" href="/subscriptions?tab=add"');
     expect(catalogEmptyHtml({}).match(/class="geist-button primary"/g)).toHaveLength(1);
   });
   it('JAV 与筛选无结果可查看未筛选内容', () => {
@@ -49,12 +47,11 @@ describe('馆藏与资料空状态', () => {
     for (const kind of ['tags', 'performers', 'creators', 'studios', 'agencies', 'series']) {
       expect(catalogEmptyHtml({ kind })).toContain('data-geist-empty-state');
     }
-    expect(catalogEmptyHtml({ kind: 'tags', online: true })).toContain('关注来源');
     expect(catalogEmptyHtml({ kind: 'creators' })).toContain('还没有卖家');
   });
-  it('清除条件保留当前索引、视图与在线范围', () => {
-    expect(clearCatalogAddress('/tags?scope=online&view=alphabet&q=missing&tag=x&category=role'))
-      .toBe('/tags?scope=online&view=alphabet&thumb=0');
+  it('清除条件保留当前索引与视图', () => {
+    expect(clearCatalogAddress('/tags?view=alphabet&q=missing&tag=x&category=role'))
+      .toBe('/tags?view=alphabet&thumb=0');
     expect(clearCatalogAddress('/?q=x&dur_min=60&state=seen&view=list')).toBe('/?view=list&thumb=0');
   });
 });

@@ -15,11 +15,10 @@ export const NAVIGATION_GROUPS = {
     ['all', '全部'], ['filters', '保存的筛选'], ['performer', '艺人'], ['creator', '创作者'],
     ['tag', '标签'], ['series', '系列'], ['studio', '片商与厂牌'], ['agency', '事务所'],
   ] },
-  jav: { label: 'JAV 分区', items: [['library', '馆藏'], ['wants', '想要'], ['releases', '新作'], ['discover', '发现']] },
-  follow: { label: '关注管理', items: [['list', '关注列表'], ['add', '添加关注'], ['tags', '标签管理']] },
-  tags: { label: '标签词表', items: [['local', '本地'], ['online', '在线']] },
+  jav: { label: 'JAV 分区', items: [['library', '馆藏'], ['explore', '馆藏探索']] },
+  tags: { label: '标签词表', items: [['local', '本地']] },
   preferences: { label: '个人设置', items: [
-    ['appearance', '外观与导航'], ['browsing', '浏览与播放'], ['jav', 'JAV 与新作'],
+    ['appearance', '外观与导航'], ['browsing', '浏览与播放'], ['jav', 'JAV'],
     ['search', '搜索与推荐'], ['content', '内容显示'],
   ] },
 } as const;

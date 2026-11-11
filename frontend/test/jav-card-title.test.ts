@@ -1,15 +1,6 @@
 import { expect, it } from 'vitest';
-import { feedNewCardHtml } from '../src/application/feed.js';
 import { javTitleHtml } from '../src/core/jav-title';
 import { textLang } from '../src/core/text-lang';
-
-it('新作订阅还没入库，卡片只给番号与片名，不出版次与画质徽章', () => {
-  const host = document.createElement('div');
-  host.innerHTML = feedNewCardHtml({ id: 1, code: 'ABC-123', title: '示例新作', width: 3840, height: 2160,
-    edition_badges: ['中字', '无码破解'] });
-  expect(host.querySelector('.ui-javcode')?.textContent).toBe('ABC-123');
-  expect(host.querySelectorAll('.javedition')).toHaveLength(0);
-});
 
 it('已确认的版本标签与 4K 位于标题，分辨率未取得时不添加画质标记', () => {
   const host = document.createElement('div');

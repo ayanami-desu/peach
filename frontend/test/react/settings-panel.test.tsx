@@ -17,7 +17,6 @@ import type {
 } from '../../src/react/settings-panel/settings-panel-api';
 import { createSettingsStore } from '../../src/settings-store';
 import { DEFAULT_SFW_SHORTCUT, parseShortcut, type Shortcut } from '../../src/keyboard-shortcut';
-import { FOLLOW_INITIAL_RANGE_OPTIONS } from '../../src/application/initial-follow-ranges';
 
 import { click, pending, settle } from './render';
 
@@ -84,12 +83,12 @@ afterEach(async () => {
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''), receipt: vi.fn(), toast: vi.fn(),
     failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
-    routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
+    srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
-    authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
+    showIndexTags: vi.fn(), 
     openPlaylist: vi.fn(), canFlip: vi.fn(() => true),
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };
@@ -110,9 +109,9 @@ async function connect(r: Loaded) {
 const settings = (): PanelSettings => ({
   theme: 'system', uiSounds: true, homeGlow: { ...normalizeHomeGlow(null), on: true, preset: 'ash' }, accent: 'blue',
   sidebarOrder: [''], batchSize: 60, defaultSort: 'seed', defaultSortDirection: '', groupCollapse: true,
-  javImage: 'cover', performerNameLanguage: 'zh-CN', interfaceLanguage: 'zh-CN', systemLanguage: null, feedAutoScroll: true, feedLimit: 12, feedHideGroupCompilations: true, feedHideSoloCompilations: false,
-  feedHideExcerpts: true, hoverDelaySeconds: 5, detailAutoplay: false, miniplayer: true, seekSeconds: 10,
-  relatedLimit: 24, searchHistoryLimit: 10, followInitialDays: 30, avatarRefreshDays: 90, faviconRefreshDays: 365,
+  javImage: 'cover', performerNameLanguage: 'zh-CN', interfaceLanguage: 'zh-CN', systemLanguage: null,
+  hoverDelaySeconds: 5, detailAutoplay: false, miniplayer: true, seekSeconds: 10,
+  relatedLimit: 24, searchHistoryLimit: 10,
 });
 
 /** 壳 `settingsHost()` 交进来的那一份。 */
@@ -129,7 +128,6 @@ function panelHost() {
     navCatalog: [['', '首页', 'house']],
     themeOptions: [['system', '跟随系统', 'monitor'], ['light', '浅色', 'sun'], ['dark', '深色', 'moon']],
     videoLayouts: [['small', '小'], ['large', '大']],
-    followInitialRanges: FOLLOW_INITIAL_RANGE_OPTIONS,
     videoLayout: () => 'small', setVideoLayout: () => {},
     censored: () => false, setCensored: () => {}, highContrast: () => false, setHighContrast,
     sfwShortcut: () => parseShortcut(DEFAULT_SFW_SHORTCUT)!, setSfwShortcut,
@@ -192,7 +190,7 @@ describe('设置面板与壳的接缝', () => {
         names.setNameLanguage(language);
       }
     };
-    const panel = await open(current, 'JAV 与新作');
+    const panel = await open(current, 'JAV');
     const field = panel.querySelector<HTMLElement & { value: string }>('#performerNameLanguageSetting > div')!;
     expect(field.value).toBe('zh-CN');
     await act(async () => { field.value = 'ja'; field.dispatchEvent(new Event('change', { bubbles: true })) });
@@ -236,20 +234,19 @@ describe('设置面板与壳的接缝', () => {
     const current = await setup();
     const openConfiguration = vi.fn();
     current.host.openConfiguration = openConfiguration;
-    const panel = await open(current, 'JAV 与新作');
+    const panel = await open(current, 'JAV');
     expect([...panel.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent))
-      .toEqual(['外观与导航', '浏览与播放', 'JAV 与新作', '搜索与推荐', '内容显示']);
+      .toEqual(['外观与导航', '浏览与播放', 'JAV', '搜索与推荐', '内容显示']);
     expect(panel.querySelector('#javImageSetting')?.closest('section')?.hidden).toBe(false);
     expect(panel.querySelector('#detailAutoplaySetting')?.closest('section')?.hidden).toBe(true);
     expect(panel.querySelector('#videoThumbnailSetting')).toBeNull();
-    expect(panel.querySelector('#followScheduleSetting')).toBeNull();
-    /* 分卷与版次折叠在首页和资料页网格上都生效，归「浏览与播放」；新作数量归「JAV 与新作」。 */
+    /* 分卷与版次折叠在首页和资料页网格上都生效，归「浏览与播放」。 */
     const group = (selector: string) => panel.querySelector(selector)?.closest('[data-setting-group]')?.id;
-    expect([group('#groupCollapseSetting'), group('#hoverDelaySetting'), group('#feedLimitSetting')])
-      .toEqual(['settings-group-1', 'settings-group-1', 'settings-group-2']);
+    expect([group('#groupCollapseSetting'), group('#hoverDelaySetting')])
+      .toEqual(['settings-group-1', 'settings-group-1']);
     const headings = (index: number) => [...panel.querySelectorAll(`#settings-group-${index} [data-settings-subheading]`)]
       .map((node) => node.textContent);
-    expect([headings(1), headings(2)]).toEqual([['作品列表', '播放'], ['作品显示', '新作显示']]);
+    expect([headings(1), headings(2)]).toEqual([['作品列表', '播放'], ['作品显示']]);
     /* 转码方式是运行 Peach 那台电脑的服务配置，在 Peach 配置里，弹窗里没有这一行（ADR-0103）。 */
     expect(panel.querySelector('#playbackAccelerationSetting')).toBeNull();
     const entry = panel.querySelector<HTMLButtonElement>('[data-settings-service] button')!;
@@ -265,7 +262,7 @@ describe('设置面板与壳的接缝', () => {
     const panel = await open(current);
     for (const [id, field, effect] of [
       ['uiSoundsSetting', 'uiSounds', 'uiSounds'], ['groupCollapseSetting', 'groupCollapse', 'groupCollapse'],
-      ['miniplayerSetting', 'miniplayer', 'miniplayer'], ['feedAutoScrollSetting', 'feedAutoScroll', 'feedAutoScroll'],
+      ['miniplayerSetting', 'miniplayer', 'miniplayer'],
     ] as const) {
       current.changed.mockClear();
       current.save.mockClear();
@@ -281,24 +278,6 @@ describe('设置面板与壳的接缝', () => {
     current.changed.mockClear();
     await click(panel.querySelector('#themeSetting input[value="dark"]'));
     expect([current.value.theme, effects(current.changed)]).toEqual(['dark', ['theme']]);
-    await close(current);
-  });
-
-  it('新作显示数量：失焦提交后落盘一次、报 feedLimit，越界不提交', async () => {
-    const current = await setup();
-    const panel = await open(current, 'JAV 与新作');
-    const input = panel.querySelector<HTMLInputElement>('#feedLimitSetting input[type=number]')!;
-    const commit = (value: string) => act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    current.changed.mockClear();
-    current.save.mockClear();
-    await commit('101');
-    expect([current.value.feedLimit, current.save.mock.calls.length, effects(current.changed)]).toEqual([12, 0, []]);
-    await commit('30');
-    expect([current.value.feedLimit, current.save.mock.calls.length, effects(current.changed)]).toEqual([30, 1, ['feedLimit']]);
     await close(current);
   });
 

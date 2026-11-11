@@ -18,7 +18,6 @@ import time
 from typing import Protocol
 
 from .catalog_rules import compile_code_patterns
-from .feeds import DEFAULT_HIDDEN_COMPILATIONS, EXCERPT, GROUP_COMPILATION, SOLO_COMPILATION
 from .media_sources import SCANNABLE_LOCATIONS
 from .onboarding import RELOAD_NAME
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, FAVICON_REFRESH_SECONDS
@@ -35,22 +34,20 @@ def persist_config(config) -> None:
     (config.directory("state") / RELOAD_NAME).write_text("reload", encoding="utf-8")
 
 
-#: 默认就在侧栏里的入口，顺序即默认顺序。首页之后是关注（每天有新东西的那一屏），
-#: 再是主库最常用的浏览模式 JAV，然后三个索引，回头找的已标记，管理垫底。
+#: 默认就在侧栏里的入口，顺序即默认顺序。首页之后是主库最常用的浏览模式 JAV，
+#: 然后三个索引，回头找的已标记，管理垫底。
 DEFAULT_SIDEBAR_ORDER = (
-    "", "follow", "jav", "performers", "tags", "studios", "flagged", "manage",
+    "", "jav", "performers", "tags", "studios", "flagged", "manage",
 )
 #: 可以加进侧栏、但默认不在的入口。播放列表和沉浸模式都是从一条作品或一个索引里
 #: 发起的动作，常驻一格换来的是每次都要跳过它，所以归到这里等人自己加。
 OPTIONAL_SIDEBAR_KEYS = (
     "playlists", "immerse",
-    "stats", "review", "data-cleanup", "trash", "follow-manage", "quality", "activity",
+    "stats", "review", "data-cleanup", "trash", "quality", "activity",
 )
 ALL_SIDEBAR_KEYS = frozenset(DEFAULT_SIDEBAR_ORDER) | frozenset(OPTIONAL_SIDEBAR_KEYS)
 SIDEBAR_KEY_ALIASES = {"ads": "data-cleanup", "dupes": "data-cleanup"}
 
-FOLLOW_INITIAL_DAYS = (0, 7, 30, 90)
-DEFAULT_FOLLOW_INITIAL_DAYS = 30
 #: 搜索框下拉里列几条最近搜索；0 是不记录。记录本身就在账本里（`/api/search-history`），
 #: 上限跟着它走，否则同一份记录在两台设备上显示的条数不一样。
 SEARCH_HISTORY_LIMIT_MAX = 50
@@ -64,22 +61,13 @@ INTERFACE_LANGUAGE_CHOICES = ("auto", *INTERFACE_LANGUAGES)
 #: `postSetupTutorialDone` 说的是「这套馆藏已经装完了」，不是「这台设备看过教程」——
 #: 装完就是装完，换台设备打开不该再被教一遍，所以它也跟着账本走。
 #: 整理模板（ADR-0039）同理：它是「我要我的库长什么样」，不是这台设备上的顺手。
-#: 新作那一行收不收合集（`feeds.compilation_kind`）同样是服务端行为：列表、未读数和
-#: 替哪些壳补封面都按它算，所以跟着账本走。
 #: 番号识别规则描述的是这套馆藏的命名，处理任务按它往账本里写番号，同样跟着账本走。
 #: 界面语言（ADR-0156）是用这套馆藏的那个人读的语言，每个部署只有一人，换台设备不该再选一遍。
 SYNCED_SETTING_KEYS = frozenset({
-    "sidebarOrder", "manageOrder", "navigationOrders", "libraryOrder", "followInitialDays", "postSetupTutorialDone",
-    "organizeTemplates", "feedHideGroupCompilations", "feedHideSoloCompilations",
-    "feedHideExcerpts", "searchHistoryLimit", "codePatterns", "performerNameLanguage", "taskSpeedMode",
+    "sidebarOrder", "manageOrder", "navigationOrders", "libraryOrder", "postSetupTutorialDone",
+    "organizeTemplates", "searchHistoryLimit", "codePatterns", "performerNameLanguage", "taskSpeedMode",
     "interfaceLanguage",
 })
-#: 三个收起开关的键与各自对应的那一类，缺省值取 `feeds.DEFAULT_HIDDEN_COMPILATIONS`。
-FEED_COMPILATION_SWITCHES = (
-    ("feedHideGroupCompilations", GROUP_COMPILATION),
-    ("feedHideSoloCompilations", SOLO_COMPILATION),
-    ("feedHideExcerpts", EXCERPT),
-)
 
 
 class SettingsContract(Protocol):
@@ -87,15 +75,14 @@ class SettingsContract(Protocol):
     def write_transaction(self): ...
 
 
-DEFAULT_MANAGE_ORDER = ('stats', 'cleanup', 'follow', 'activity', 'configuration')
+DEFAULT_MANAGE_ORDER = ('stats', 'cleanup', 'activity', 'configuration')
 NAVIGATION_ORDERS = {
     'review': ('metadata_fields', 'creator_tags', 'code_creators', 'western_identity', 'performer_avatars',
                'studio_logos', 'fc2_markings', 'fc2_similarity', 'video_endcards'),
     'configuration': ('drives', 'libraries', 'access', 'token', 'devices', 'speed', 'diagnostics'),
     'favorites': ('all', 'filters', 'performer', 'creator', 'tag', 'series', 'studio', 'agency'),
-    'jav': ('library', 'wants', 'releases', 'discover'),
-    'follow': ('list', 'add', 'tags'),
-    'tags': ('local', 'online'),
+    'jav': ('library', 'explore'),
+    'tags': ('local',),
     'preferences': ('appearance', 'browsing', 'jav', 'search', 'content'),
 }
 
@@ -149,21 +136,6 @@ def normalise_sidebar_order(raw) -> list[str]:
             continue
         seen.append(key)
     return seen or list(DEFAULT_SIDEBAR_ORDER)
-
-
-def normalise_follow_initial_days(raw) -> int:
-    """首次采集的历史天数；0 表示不限时间。"""
-    if isinstance(raw, bool):
-        return DEFAULT_FOLLOW_INITIAL_DAYS
-    try:
-        days = int(raw)
-    except (TypeError, ValueError):
-        return DEFAULT_FOLLOW_INITIAL_DAYS
-    return days if days in FOLLOW_INITIAL_DAYS else DEFAULT_FOLLOW_INITIAL_DAYS
-
-
-def follow_initial_days(contract: SettingsContract) -> int:
-    return normalise_follow_initial_days(_stored(contract).get("followInitialDays"))
 
 
 def normalise_search_history_limit(raw) -> int | None:
@@ -227,18 +199,6 @@ def _stored_code_patterns(payload: dict) -> list[str]:
         return []
 
 
-def _feed_switches(payload: dict) -> dict[str, bool]:
-    return {key: payload[key] if isinstance(payload.get(key), bool)
-            else kind in DEFAULT_HIDDEN_COMPILATIONS
-            for key, kind in FEED_COMPILATION_SWITCHES}
-
-
-def hidden_compilations(contract: SettingsContract) -> frozenset[str]:
-    """新作那一行收起哪几类合集。"""
-    switches = _feed_switches(_stored(contract))
-    return frozenset(kind for key, kind in FEED_COMPILATION_SWITCHES if switches[key])
-
-
 def _stored(contract: SettingsContract) -> dict:
     with contract.read_connection() as connection:
         row = connection.execute(
@@ -264,11 +224,9 @@ def q_settings(contract: SettingsContract, _args=None) -> dict:
         **({"libraryOrder": payload["libraryOrder"]} if isinstance(payload.get("libraryOrder"), list) else {}),
         "avatarRefreshDays": AVATAR_REFRESH_SECONDS // 86400,
         "faviconRefreshDays": FAVICON_REFRESH_SECONDS // 86400,
-        "followInitialDays": normalise_follow_initial_days(payload.get("followInitialDays")),
         "postSetupTutorialDone": payload.get("postSetupTutorialDone") is True,
         "organizeTemplates": normalise_organize_templates(payload.get("organizeTemplates")),
         "codePatterns": _stored_code_patterns(payload),
-        **_feed_switches(payload),
         "searchHistoryLimit": normalise_search_history_limit(payload.get("searchHistoryLimit")),
         "performerNameLanguage": "ja" if payload.get("performerNameLanguage") == "ja" else "zh-CN",
         "interfaceLanguage": payload["interfaceLanguage"] if payload.get("interfaceLanguage") in INTERFACE_LANGUAGE_CHOICES else "auto",
@@ -323,8 +281,6 @@ def w_settings(contract: SettingsContract, body) -> dict:
         merged["manageOrder"] = normalise_manage_order(body["manageOrder"])
     if "sidebarOrder" in body:
         merged["sidebarOrder"] = normalise_sidebar_order(body["sidebarOrder"])
-    if "followInitialDays" in body:
-        merged["followInitialDays"] = normalise_follow_initial_days(body["followInitialDays"])
     if "postSetupTutorialDone" in body:
         merged["postSetupTutorialDone"] = body["postSetupTutorialDone"] is True
     if "organizeTemplates" in body:
@@ -336,11 +292,6 @@ def w_settings(contract: SettingsContract, body) -> dict:
         if limit is None:
             raise ValueError(f"searchHistoryLimit 只收 0 到 {SEARCH_HISTORY_LIMIT_MAX} 的整数")
         merged["searchHistoryLimit"] = limit
-    for key, _kind in FEED_COMPILATION_SWITCHES:
-        if key in body:
-            if not isinstance(body[key], bool):
-                raise ValueError(f"{key} 只收 true 或 false")
-            merged[key] = body[key]
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with contract.write_transaction() as connection:
         row = connection.execute("SELECT settings_json FROM profile WHERE id=?", (DEFAULT_PROFILE_ID,)).fetchone()

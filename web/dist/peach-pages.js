@@ -2,7 +2,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "d1d6e565-0534-4808-846c-cadc1f655cca", e._sentryDebugIdIdentifier = "sentry-dbid-d1d6e565-0534-4808-846c-cadc1f655cca");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "f6035e11-4b52-4ad8-a78f-84942e37bb97", e._sentryDebugIdIdentifier = "sentry-dbid-f6035e11-4b52-4ad8-a78f-84942e37bb97");
 	} catch {}
 })();
 var e = Object.create, t = Object.defineProperty, n = Object.getOwnPropertyDescriptor, r = Object.getOwnPropertyNames, i = Object.getPrototypeOf, a = Object.prototype.hasOwnProperty, o = (e, t) => () => (t || (e((t = { exports: {} }).exports, t, t.exports), e = null), t.exports), s = (e, i, o, s) => {
@@ -23,7 +23,7 @@ var e = Object.create, t = Object.defineProperty, n = Object.getOwnPropertyDescr
 	aac: "audio/mp4; codecs=\"mp4a.40.2\"",
 	ac3: "audio/mp4; codecs=\"ac-3\"",
 	opus: "audio/webm; codecs=\"opus\""
-}, u = /^\/(?:stream(?:\/hls\/\d+\/(?:index\.m3u8|\d+\.ts))?|follow-stream|preview-stream|strm-resource\/\d+\/[a-f0-9]+)$/, d = (e) => {
+}, u = /^\/(?:stream(?:\/hls\/\d+\/(?:index\.m3u8|\d+\.ts))?|preview-stream|strm-resource\/\d+\/[a-f0-9]+)$/, d = (e) => {
 	try {
 		return e();
 	} catch {
@@ -16183,4 +16183,4 @@ ee();
 var Gl = document.getElementById("peach-page"), Kl = Gl ? Wl[Gl.dataset.page ?? ""] : void 0;
 Gl && Kl && (0, D.createRoot)(Gl).render(/* @__PURE__ */ (0, F.jsx)(Kl, { data: { ...Gl.dataset } }));
 
-//# debugId=d1d6e565-0534-4808-846c-cadc1f655cca
+//# debugId=f6035e11-4b52-4ad8-a78f-84942e37bb97

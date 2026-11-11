@@ -1,7 +1,6 @@
 /* media 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
 import { loadSourceStatus, preferencesState, wireDrag } from './preferences.js';
 import { receiptsState } from './receipts.js';
-import { followState, followViewPath, openFollowDetail } from './follow.js';
 import { immerseApi, loadImmerse, loadStage, stageApi } from '../react/application-residents';
 import { cancelQueueRequest, navigationState, openRoutedPage, requestOverlay } from './navigation.js';
 import { activeQueue, barsContext, detailOriginAbove, detailOriginAnchor, detailReturnBarsContext, detailReturnNeedsRestore, detailReturnPath, pageOpens, pendingQueueRoute, presentedItem, queueOpens, selectMode, selected, state, writeShell } from './../shell/index';
@@ -183,7 +182,7 @@ mediaState.stageHost = {
   },
   sourceOffline:key=>preferencesState.sourceOffline(key),
   /* 小窗里的「展开」：同一个播放器搬回这一条的详情，地址与来处照点卡片进来的那一条走。 */
-  expand:(kind,id,mediaIndex)=>{if(kind==='follow')void openFollowDetail(id,true,mediaIndex);else void openItem(id,true)},
+  expand:(kind,id,mediaIndex)=>void openItem(id,true),
   openItem:id=>void openItem(id),
 };
 mediaState.stageOpen = ()=>!!stageApi()?.isOpen();
@@ -217,16 +216,10 @@ mediaState.itemDetailActions = {
     loadingState.syncPageTitle(location.href);
     buildBars();
   },
-  /* 取数时发现要换去别处：保存过的在线作品转关注详情，队列取不到退回普通详情，播放列表空了
-     回列表页，条目已不在就收起舞台。壳一换舞台，岛这一次挂载就作废。 */
+  /* 取数时发现要换去别处：队列取不到退回普通详情，播放列表空了回列表页，条目已不在就收起舞台。
+     壳一换舞台，岛这一次挂载就作废。 */
   redirect:to=>{
     const push=!!pendingQueueRoute;
-    if(to.kind==='follow'){
-      navigationState.queueOpenRequest=null;
-      writeShell({pendingQueueRoute:null,followDetailReturnPath:detailReturnPath||'/'});
-      navigationState.route(`/posts/${to.id}`,!push,overlayState('follow'));
-      void openFollowDetail(to.id,false,null,true);return;
-    }
     if(to.kind==='item'){void openItem(to.id,true);return}
     // 队列地址还没推、人就停在播放列表页上：只重读那一页。
     if(to.kind==='playlists'){if(push||location.pathname!=='/playlists')openRoutedPage('/playlists');else rereadPlaylists();return}
@@ -242,10 +235,6 @@ mediaState.itemDetailActions = {
     else void openItem(it.id,false);
   },
   checkSource:async key=>(await loadSourceStatus())[key]!==false,
-  /* 直接进「已保存」这一档。关注页的筛选照地址推导，所以状态要先写进地址，光设全局会被推回未看。 */
-  openSavedFollow:()=>{
-    followState.followAuthors=new Set();followState.followProviders=new Set();followState.followTags=new Set();followState.followWorks=new Set();followState.followMediaView='videos';
-    followState.followDurMin=followState.followDurMax=0;followState.followFilter='saved';openRoutedPage(followViewPath())},
   openEntity:(kind,name)=>openEntity(kind,name),
   openUnowned:()=>goHome({owner:'none'}),
   openRegion:region=>goHome({region:region||'none'}),

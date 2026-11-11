@@ -57,7 +57,7 @@ class DriveSync:
         self.interval = interval
         self.full_every = full_every
         self._clock = clock
-        #: 一轮同步之后的跟进（探时长、想要对账、旧行接回）；它出问题不改写扫描结论。
+        #: 一轮同步之后的跟进（探时长、旧行接回）；它出问题不改写扫描结论。
         self._after = after
         #: 上一轮同步的时刻，按账号记：进程刚起来时不该把所有账号一次扫完。
         self._synced: dict[str, float] = {}

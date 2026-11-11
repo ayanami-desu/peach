@@ -65,7 +65,7 @@ class MetadataProviderError(RuntimeError):
 CREDENTIAL_STATUS_CODES = frozenset({401})
 
 #: 成因不止一种的状态码。403 在本项目的实测里多半不是凭据问题而是出口 IP 被封：
-#: `docs/SOURCING.md` 记着 javbus 与 minnano-av 都发生过，javdb 那次封了 3～7 日，
+#: `docs/METADATA.md` 记着 javbus 与 minnano-av 都发生过，javdb 那次封了 3～7 日，
 #: 页面直接建议换节点。换 Cookie 对这一半没有用，只能等或换出口。响应本身分不开
 #: 这两种成因，所以措辞不替用户下结论——「本批停止该来源」这个动作对两种都对，
 #: 「换一份凭据」这句话只对其中一种。

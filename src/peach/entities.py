@@ -16,7 +16,7 @@ _RESOLVED: ContextVar[dict | None] = ContextVar("peach_resolved_entities", defau
 def memoized_resolution():
     """一次只读请求里同一个名字只解析一次。
 
-    新作与发现把订阅里的每部片逐个解析演员与厂牌，同一批名字要解析上千次，每次两条扫表查询。
+    资料采集与馆藏列表会逐部解析演员与厂牌，同一批名字要解析上千次，每次两条扫表查询。
     请求内不写账本，解析结果不会变；块外与写路径照旧每次现查。
     """
     if _RESOLVED.get() is not None:
@@ -461,7 +461,7 @@ def merge_entity(
     stamp = now or datetime.now(timezone.utc).isoformat()
     moved = {"assets": 0, "aliases": 0, "refs": 0, "links": 0, "terms": 0,
              "dropped_refs": 0, "memberships": 0, "members": 0, "labels": 0, "profiles": 0,
-             "follows": 0, "feeds": 0, "discoveries": 0, "redirects": 0}
+             "redirects": 0}
     from .entity_classification import transfer
     transfer(connection, source_id, target_id)
 
@@ -554,21 +554,6 @@ def merge_entity(
         (target_id, source_id))
     moved["profiles"] = connection.execute("SELECT changes()").fetchone()[0]
     connection.execute("DELETE FROM performer_profile WHERE entity_id=?", (source_id,))
-
-    # 关注与订阅绑在人身上（0018、0034）。表上声明的 SET NULL / CASCADE 在不开外键的连接上
-    # 不执行，不搬就悬空，合并后的 `foreign_key_check` 跟着不为 0。
-    connection.execute(
-        "UPDATE follow_source SET entity_id=? WHERE entity_id=?", (target_id, source_id))
-    moved["follows"] = connection.execute("SELECT changes()").fetchone()[0]
-    connection.execute(
-        "UPDATE feed_source SET entity_id=? WHERE entity_id=?", (target_id, source_id))
-    moved["feeds"] = connection.execute("SELECT changes()").fetchone()[0]
-    connection.execute(
-        "INSERT OR IGNORE INTO feed_discovery_entity(discovery_id,entity_id)"
-        " SELECT discovery_id,? FROM feed_discovery_entity WHERE entity_id=?",
-        (target_id, source_id))
-    moved["discoveries"] = connection.execute("SELECT changes()").fetchone()[0]
-    connection.execute("DELETE FROM feed_discovery_entity WHERE entity_id=?", (source_id,))
 
     _transfer_favorites(connection, source_id, target_id, stamp)
     # 墓碑先写、先压平，再删 source：删 source 时触发器会清掉仍指向它的墓碑。

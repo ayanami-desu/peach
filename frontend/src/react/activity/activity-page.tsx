@@ -288,8 +288,6 @@ function SettledRun(
         : summary.length ? <ul className="flex list-disc flex-col gap-1 pl-5 text-caption-1-regular text-text-secondary wrap-anywhere">
             {summary.map((line, index) => <li key={index}>{line}</li>)}
           </ul> : null}
-      {!issues.length && hasResultProblems(run) && ['follow-check', 'feed-check'].includes(run.task_key)
-        ? <p className="text-body-2-regular text-text-secondary">未取得本轮逐项详情，可到来源列表查看检查结果。</p> : null}
       {destination
         ? <LinkButton href={destination.href} size="small" trailingIcon={RiArrowRightLine}
             className="self-start">

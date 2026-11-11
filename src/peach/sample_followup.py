@@ -152,7 +152,7 @@ def run(contract, key: str, handle, *, transport=None, clock=time.monotonic) -> 
     """跑一条补样张后继，返回活动页上那一行的摘要。"""
     generated = Path(contract.candidate_root)
     misses = sample_images.Misses(sample_images.misses_path(generated))
-    snapshots = sample_images.snapshot_index(Path(contract.follow_sources_root))
+    snapshots = sample_images.snapshot_index(Path(contract.sources_root))
     checkpoint = _SampleCheckpoint(contract, handle, misses, snapshots)
     codes = checkpoint.codes
     if not codes:
@@ -161,7 +161,7 @@ def run(contract, key: str, handle, *, transport=None, clock=time.monotonic) -> 
     owned = transport is None
     if owned:
         transport = HostLimitedTransport(
-            SourceTransport(Path(contract.follow_secrets_root), max_requests=BATCH * 3,
+            SourceTransport(Path(contract.secrets_root), max_requests=BATCH * 3,
                             max_bytes=64 * 1024 * 1024, max_seconds=BUDGET_SECONDS), 2.0)
     deadline = clock() + BUDGET_SECONDS
     landed, images = checkpoint.landed, checkpoint.images
@@ -251,7 +251,7 @@ def refresh_code(contract, code: str, *, transport=None, clock=time.monotonic) -
     owned = transport is None
     if owned:
         transport = HostLimitedTransport(
-            SourceTransport(Path(contract.follow_secrets_root), max_requests=8,
+            SourceTransport(Path(contract.secrets_root), max_requests=8,
                             max_bytes=32 * 1024 * 1024, max_seconds=SAMPLE_SECONDS), 2.0)
     skipped = {"recent_miss": 0, "paused": 0}
     try:

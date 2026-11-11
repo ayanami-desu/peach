@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .follow_secrets import CredentialStore
+from .credentials import CredentialStore
 from .fsutil import atomic_write_text
 
 

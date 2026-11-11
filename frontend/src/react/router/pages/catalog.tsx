@@ -190,7 +190,7 @@ export function CatalogMatch() {
     if (pathname !== '/wall') return;
     document.body.setAttribute('data-wall-open', '');
     document.documentElement.removeAttribute('data-wall-entry');
-    const chrome = Array.from(document.querySelectorAll<HTMLElement>('header.top,#drawer,#main,#catalogFilter,#count,#javLibraryHeader,#feedNew'));
+    const chrome = Array.from(document.querySelectorAll<HTMLElement>('header.top,#drawer,#main,#catalogFilter,#count,#javLibraryHeader'));
     const inert = chrome.map(node => node.inert);
     chrome.forEach(node => { node.inert = true });
     return () => {

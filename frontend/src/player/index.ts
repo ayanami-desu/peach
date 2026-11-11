@@ -6,7 +6,7 @@ export { configurePlayer } from './host';
 export type { PlayerMenuHooks } from './menu';
 export { closePlayerMenu, configurePlayerMenu } from './menu';
 export { applyAmbientMode, applyTheaterMode, clickPlayerControl } from './controls';
-export type { DetailPlayerOptions, MountPlayerOptions, PlayerMedia, PlayerResume } from './detail-player';
+export type { DetailPlayerOptions, MountPlayerOptions, PlayerResume } from './detail-player';
 export {
   attachPlayerChrome, mountDetailPlayer, mountPlayer, preparePlayerFrame, stopPlayerPanels,
 } from './detail-player';
@@ -21,7 +21,7 @@ export {
   cancelDetailStream, cancelStreamSession, directStreamSource, newStreamSession, playableStreamSource,
 } from './stream';
 export type { TelemetryOptions } from './telemetry';
-export { wireFollowTelemetry, wireTelemetry } from './telemetry';
+export { wireTelemetry } from './telemetry';
 export type { PlayerItem, VjsPlayer } from './types';
 export { ensureVideojs } from './videojs';
 export { mountPreviewPlayer } from './preview-player';

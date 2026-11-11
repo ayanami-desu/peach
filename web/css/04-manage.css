@@ -31,7 +31,7 @@
    176px 地板是用来对齐同一行的，改成单列后它只是把每张卡都撑出一段空白。 */
 .cleanupfieldset{display:flex;flex-direction:column;min-width:0;margin:0;padding:0;overflow:hidden;
   border:1px solid var(--field-ring);border-radius:var(--floating-radius);background:var(--ground)}
-.cleanupfieldset>.geist-fieldset-content{flex:1;min-height:0;padding:20px}.cleanupfieldset strong{display:block;font-size:var(--fs-md);font-weight:500;color:var(--ink-2)}
+.cleanupfieldset strong{display:block;font-size:var(--fs-md);font-weight:500;color:var(--ink-2)}
 .cleanupfieldset p{margin:0;color:var(--muted);font-size:var(--fs-md);line-height:1.45}
 /* 主数字下面那行分项。空着时整行不占位——没有分项的卡不该比别人多一段留白。 */
 /* 操作条上的按钮一律填 --ground：条子是 --page，按钮要比条子亮才分得出来，

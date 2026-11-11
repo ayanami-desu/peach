@@ -34,8 +34,6 @@ export interface SuggestItem {
   /** 作品那一类：署名人的头像，画在署名前面。 */
   whoAvatarHtml?: string;
   subtitle?: string;
-  followMedia?: 'videos' | 'images';
-  mediaIndex?: number | null;
   [key: string]: unknown;
 }
 
@@ -78,7 +76,6 @@ export interface SearchActions {
   openItem(id: number): void;
   openEntity(kind: string, name: string): void;
   openPath?(path: string): void;
-  openFollow?(id: number, media: 'videos' | 'images', mediaIndex: number | null): void;
 }
 
 /** 仍由遗留层给的几样。 */
@@ -129,7 +126,7 @@ export const SUGGEST_ONE_KIND = 20;
 /** 有脸的那几类点开的是资料页；标签没有资料页，点它照旧是按这个词搜。 */
 export const SUGGEST_PROFILE_KINDS = new Set(['performer', 'creator', 'studio', 'agency', 'series']);
 /** 下拉栏按宽度分两栏：左栏是身份和词，右栏是作品封面格。 */
-export const SUGGEST_RIGHT_KINDS = new Set(['asset', 'jav', 'post', 'photo', 'release']);
+export const SUGGEST_RIGHT_KINDS = new Set(['asset', 'jav']);
 /** 推荐栏一组翻到下一页；翻到头接着从池首取，一页总是摆满。 */
 export function nextPage(group: SuggestGroup): SuggestGroup {
   const pool = group.pool ?? [];

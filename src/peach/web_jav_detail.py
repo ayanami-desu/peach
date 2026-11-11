@@ -6,18 +6,21 @@ import json
 import base64
 from datetime import datetime, timezone
 from functools import wraps
+from pathlib import Path
 
-from . import entities, wants, web_catalog
+from . import entities, web_catalog
 from .catalog_rules import normalise_code_key, tag_cat
 from .genre_decisions import load_genre_decisions
 from .genre_taxonomy import resolve_genre
-from .javdb_public import (MAX_REVIEW_PAGES, PAGE_SIZE, PUBLIC_API, PublicSourceUnavailable,
+from .javdb_public import (PUBLIC_API, PublicSourceUnavailable,
                           PublicIdentityAmbiguous, actor_gender, preview_video_url, public_image_url,
-                          public_cache_scope, cache_checked_at, cache_error)
-from .jav_discovery_metadata import discovery_metadata
+                          public_cache_scope, cache_error)
 from .sources.javdb import maker_writing
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, cache_for
 from .preview_cache import PreviewCache
+
+#: 详情页「重新匹配封面」的预算：人在弹层里等着，挑不出来就报原因。
+COVER_SECONDS = 60.0
 
 
 def detail_code(args) -> str:
@@ -37,16 +40,10 @@ def discovery_cover_url(item, source) -> str:
 
 
 def stored_cover_url(contract, code) -> str:
-    """`/cover-image` 按番号取的上游地址；只读账本与已缓存的来源资料，不联网。
+    """`/cover-image` 按番号取的上游地址；只读已缓存的来源资料，不联网。
     官方只回占位图的那几部没有地址：代理缓存里存着的那张占位图也就不再给出去。"""
-    from .feed_followup import awaiting_official_cover
-    from .web_jav_discovery import _cached_movie
-    with contract.database.read_connection() as connection:
-        row = connection.execute("SELECT cover_url,release_date FROM feed_discovery WHERE code=? COLLATE NOCASE LIMIT 1",
-                                 (code,)).fetchone()
-    if row and awaiting_official_cover(contract, code, row["release_date"]):
-        return ''
-    return discovery_cover_url(dict(row) if row else {}, _cached_movie(code, contract))
+    from .javdb_public import PUBLIC_API
+    return discovery_cover_url({}, PUBLIC_API.peek_movie(code) or {})
 
 
 def _refs(contract, connection, kind, names):
@@ -72,8 +69,7 @@ def _source_cache(handler):
     def read(contract, args):
         with public_cache_scope(contract.cover_root.parent / 'jav-public') as reads:
             payload = handler(contract, args)
-            prefix ={'q_jav_reviews': ('reviews:',), 'q_jav_resources': ('reviews:', 'magnets:')}.get(
-                handler.__name__, ('movie:',))
+            prefix = ('movie:',)
             selected = [row for row in reads if row['key'].startswith(prefix)]
             if selected:
                 payload['checked_at'] = datetime.fromtimestamp(min(row['saved'] for row in selected), timezone.utc).isoformat()
@@ -90,23 +86,15 @@ def _source_cache(handler):
 @_source_cache
 def q_jav_detail(contract, args) -> dict:
     code = detail_code(args)
-    with contract.database.read_connection() as connection:
-        row = connection.execute("SELECT * FROM feed_discovery WHERE code=? COLLATE NOCASE LIMIT 1", (code,)).fetchone()
-        item = dict(row) if row else {}
+    item: dict = {}
     source = None
     message = ""
     ambiguous = False
     try:
-        stored, _ = discovery_metadata(contract).peek(code)
-        PUBLIC_API.remember_movie_identity(code, stored or {})
         source = PUBLIC_API.movie(code, refresh=True) if args.get('refresh') == '1' else PUBLIC_API.movie(code)
-        discovery_metadata(contract).remember(code, source, checked_at=cache_checked_at('movie:'))
-        if cache_error('movie:' + code):
-            discovery_metadata(contract).remember(code, error=cache_error('movie:' + code))
     except PublicSourceUnavailable as error:
         message = str(error)
         ambiguous = isinstance(error, PublicIdentityAmbiguous)
-        discovery_metadata(contract).remember(code, error=message)
     if source:
         item.update(title=source.get("origin_title") or source.get("title") or item.get("title"),
                     release_date=source.get("release_date") or item.get("release_date"),
@@ -149,11 +137,8 @@ def _identity_fields(contract, code, item, source):
             ref["has_logo"] = contract.has_logo(ref["name"])
             ref["logo_version"] = contract.logo_version(ref["name"])
         series_refs = _refs(contract, connection, "series", [(source or {}).get("series_name")])
-        wanted = code in wants.wanted_keys(connection, [code])
-        want = connection.execute("SELECT id FROM want_item WHERE code_key=? AND state<>'acquired' LIMIT 1", (code,)).fetchone()
     return {"performers": "、".join(ref["name"] for ref in performer_refs),
-            "performer_refs": performer_refs, "studio_refs": studio_refs, "series_refs": series_refs,
-            "wanted": wanted, "want_id": int(want[0]) if want else None}
+            "performer_refs": performer_refs, "studio_refs": studio_refs, "series_refs": series_refs}
 
 
 def source_performer_refs(contract, connection, actors):
@@ -214,49 +199,38 @@ def _source_fields(source, decisions):
             "comments_count": int(source.get("comments_count") or 0)}
 
 
-@_source_cache
-def q_jav_reviews(contract, args) -> dict:
-    code = detail_code(args)
-    page = int(args.get("page") or 1)
-    try:
-        if args.get('refresh') == '1':
-            movie = PUBLIC_API.movie(code, refresh=True)
-            rows = PUBLIC_API.reviews(code, page, refresh=True, movie=movie)
-        else:
-            rows = PUBLIC_API.reviews(code, page)
-    except PublicSourceUnavailable as error:
-        return {"ok": False, "items": [], "more": False, "message": str(error)}
-    items = [{"id": str(row.get("id")), "username": str(row.get("username") or "匿名用户"),
-              "content": str(row.get("content") or ""), "score": row.get("score"),
-              "created_at": str(row.get("created_at") or "")} for row in rows[:PAGE_SIZE] if isinstance(row, dict)]
-    return {"ok": True, "items": items, "page": page,
-            "more": len(items) == PAGE_SIZE and page < MAX_REVIEW_PAGES,
-            "message": ""}
-
-
 def w_jav_cover(contract, body) -> dict:
-    """详情页「立即重试」与新作卡「优先处理」：按番号取官方封面装进本机封面目录，与后台补封面同一条路。
+    """详情页「重新匹配封面」：按番号问官方渠道，取到最大一张装进本机封面目录。
 
-    只写封面目录与取图记录，不写账本；同步等到取完，`feed_followup.COVER_SECONDS` 封顶。
-    取到时带上取景的两份边车，新作卡原地换图也按它取景。
-    没取到时 `message` 是取图记录里那句去掉来源地址的原因。
+    只写封面目录与取景边车，不写账本；同步等到取完，`COVER_SECONDS` 封顶。
+    取不到时 `message` 是给人看的原因，不带来源地址。
     """
-    from . import feed_followup
+    from .catalog_rules import is_korean_mib_code
+    from .cover_artwork import install_cover
+    from .jav_cover_fetch import (
+        MIB_NOT_JAV, DeadlineExceeded, NotFound, Unavailable, official_cover,
+    )
+
     code = detail_code(body)
-    with contract.database.read_connection() as connection:
-        row = connection.execute("SELECT cover_url FROM feed_discovery WHERE code=? COLLATE NOCASE LIMIT 1",
-                                 (code,)).fetchone()
     message = ''
-    try:
-        feed_followup.ensure_cover(contract, code, row[0] if row else None)
-    except Exception:  # noqa: BLE001 - 原因已写进取图记录，下面读它
-        try:
-            record = json.loads(feed_followup.cover_attempt_path(contract.cover_root, code).read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            record = {}
-        message = str(record.get('reason') or '') if isinstance(record, dict) else ''
-    contract.cache_bust()
     covered = contract.has_cover(code)
+    if is_korean_mib_code(code):
+        message = MIB_NOT_JAV
+    else:
+        try:
+            candidate, size, data = official_cover(contract, code, seconds=COVER_SECONDS)
+            install_cover(Path(contract.cover_root) / f'{code}.jpg', code, data, size,
+                          evidence={"source_url": candidate.url, "source": candidate.source})
+            covered = True
+        except NotFound:
+            message = '官方渠道没有这个番号的封面'
+        except Unavailable as error:
+            message = f'取不到这个番号的封面：{error}'
+        except DeadlineExceeded:
+            message = f'{COVER_SECONDS} 秒内没取到这个番号的封面，稍后再试'
+        except OSError as error:
+            message = f'封面写入失败：{error}'
+    contract.cache_bust()
     return {"ok": True, "code": code, "has_cover": covered, "cover_version": contract.cover_version(code),
             "cover_frame": contract.cover_frame(code), "poster_box": contract.poster_box(code),
             "message": '' if covered else message or '没有找到可用的官方封面'}
@@ -293,8 +267,6 @@ def jav_image(contract, args) -> tuple[bytes, int]:
     with public_cache_scope(contract.cover_root.parent / 'jav-public'):
         movie = None
         if not actor:
-            stored, _ = discovery_metadata(contract).peek(code)
-            PUBLIC_API.remember_movie_identity(code, stored or {})
             movie = PUBLIC_API.movie(code)
         key = f"jav:actor:{index.removeprefix('actor:')}" if actor else f"jav:{code}:{movie['id']}:image:{index}"
         body = cache_for(contract).bytes(key,
@@ -304,19 +276,13 @@ def jav_image(contract, args) -> tuple[bytes, int]:
 
 
 def _fetch_image(contract, code, index, *, movie=None):
-    stored, _ = discovery_metadata(contract).peek(code)
-    PUBLIC_API.remember_movie_identity(code, stored or {})
     if index.startswith('actor:'):
-        actor = next((person for person in (stored or {}).get('actors', [])
+        stored = PUBLIC_API.peek_movie(code) or {}
+        actor = next((person for person in stored.get('actors', [])
                       if isinstance(person, dict) and str(person.get('id')) == index.removeprefix('actor:')), {})
         if public_image_url(actor.get('avatar_image')):
             return PUBLIC_API.image_from_url(actor['avatar_image'])
-    image = PUBLIC_API.image(code, index, movie=movie)
-    if index.startswith('actor:'):
-        movie = PUBLIC_API.peek_movie(code)
-        if movie:
-            discovery_metadata(contract).remember(code, movie, checked_at=cache_checked_at('movie:' + code + ':'))
-    return image
+    return PUBLIC_API.image(code, index, movie=movie)
 
 
 def _preview_fields(contract, code, source, *, refresh=False):
@@ -325,9 +291,9 @@ def _preview_fields(contract, code, source, *, refresh=False):
     prestige = ('prestige' in str(source.get('maker_name') or '').casefold()
                 or 'プレステージ' in str(source.get('maker_name') or ''))
     provider = 'prestige' if prestige else 'dmm'
-    fetch = (lambda: prestige_preview(code, contract.follow_secrets_root)) if prestige else (
-        lambda: dmm_preview(code, contract.follow_secrets_root))
-    sources = [(provider, fetch), ('javdb', lambda: javdb_preview(code, source.get('id'), contract.follow_secrets_root))]
+    fetch = (lambda: prestige_preview(code, contract.secrets_root)) if prestige else (
+        lambda: dmm_preview(code, contract.secrets_root))
+    sources = [(provider, fetch), ('javdb', lambda: javdb_preview(code, source.get('id'), contract.secrets_root))]
     url, errors = '', []
     for provider, fetch in sources:
         try:
@@ -356,22 +322,3 @@ def _preview_fields(contract, code, source, *, refresh=False):
     ref = PreviewCache(cache_for(contract)).register(code, url, playlist=playlist,
                                                      media_type='' if playlist else 'video/mp4')
     return {'preview_video_url': f"/jav-preview/{code}/{ref}{'.m3u8' if playlist else ''}", 'preview_state': 'ready'}
-
-
-@_source_cache
-def q_jav_resources(contract, args) -> dict:
-    """公开资源列表；只返回候选，下载提交由既有入口接受用户选择。"""
-    import time
-
-    code = detail_code(args)
-    try:
-        found = PUBLIC_API.resources(code, refresh=args.get('refresh') == '1')
-    except PublicSourceUnavailable as error:
-        return {"state": "error", "items": [], "error": str(error), "checked_at": None}
-    warnings = found["warnings"]
-    magnet_failed, comments_failed = found["magnet_failed"], found["comments_failed"]
-    failed = magnet_failed and comments_failed and not found["items"]
-    return {"state": "error" if failed else "ready", "items": found["items"],
-            "error": "；".join(warnings) if failed else "", "source_url": found["source_url"],
-            "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "warnings": warnings,
-            "cache_stale": magnet_failed or comments_failed, "complete": not (magnet_failed or comments_failed)}

@@ -392,7 +392,7 @@ body.settings-open>.ovtrack.page,body.photolight-open>.ovtrack.page{display:none
 /* 横滚容器的 overflow-x:auto 会把计算后的 overflow-y 一起变成 auto，圆头像贴着容器
    上沿时，:hover 和选中态那圈外扩 box-shadow 就被削平。留 3px 上方余量再用等量负
    margin 抵掉，位置一点不动。头像圈被遮是同一个缺陷重犯多次，横向头像行统一走这
-   一条，不要再逐处补 padding。`.followauthors` 自带余量，不在此列。 */
+   一条，不要再逐处补 padding。 */
 .tier,.relatedpeople{padding-top:3px;margin-top:-3px}
 
 /* 锚定菜单：无展开动画，固定在视口内，内容在菜单内滚动而不是把页面撑出滚动条。

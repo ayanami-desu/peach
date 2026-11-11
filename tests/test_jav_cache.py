@@ -6,8 +6,7 @@ from pathlib import Path
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from unittest.mock import Mock, patch
-from types import SimpleNamespace
+from unittest.mock import Mock
 
 from peach.jav_cache import DAY, PublicSnapshots, cache_fresh
 from peach.javdb_public import PublicAPI, PublicSourceUnavailable, public_cache_scope, cache_checked_at
@@ -32,7 +31,7 @@ class PublicationCacheTests(unittest.TestCase):
             self.assertIsNone(store.load('movie:EXM-001'))
             self.assertTrue(path.is_file())
 
-    def test_public_api_reuses_movie_comments_and_resources_after_restart(self):
+    def test_public_api_reuses_a_movie_snapshot_after_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             now = [stamp('2026-10-13')]
@@ -40,20 +39,15 @@ class PublicationCacheTests(unittest.TestCase):
             movie = {'id': 'Exact', 'number': 'EXM-001', 'release_date': '2020-01-01', 'javdb_rule': 2}
             api._cached('movie-id:EXM-001', lambda: ['Exact'])
             api._cached('movie:EXM-001:Exact', lambda: movie)
-            api._rows = Mock(side_effect=[[{'id': 'review'}], [{'hash': 'resource'}]])
-            self.assertEqual(api.reviews('EXM-001', 1), [{'id': 'review'}])
-            self.assertEqual(api.magnets('EXM-001'), [{'hash': 'resource'}])
             now[0] = stamp('2030-01-01')
             reader = self.api(root, now)
             reader._rows = Mock(return_value=[{'id': 'Exact', 'number': 'EXM-001'}])
             with public_cache_scope(root):
                 self.assertEqual(reader.movie('EXM-001'), movie)
-                self.assertEqual(reader.reviews('EXM-001', 1), [{'id': 'review'}])
-                self.assertEqual(cache_checked_at('reviews:'), stamp('2026-10-13'))
-                self.assertEqual(reader.magnets('EXM-001'), [{'hash': 'resource'}])
+                self.assertEqual(cache_checked_at('movie:'), stamp('2026-10-13'))
             reader._rows.assert_not_called()
 
-    def test_a_successful_snapshot_survives_until_a_manual_refresh(self):
+    def test_snapshot_stays_until_a_manual_refresh_and_a_failed_refresh_keeps_it(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             now = [stamp('2026-10-13')]
@@ -115,36 +109,15 @@ class PublicationCacheTests(unittest.TestCase):
             self.assertEqual(api.media_movie('EXM-001')['cover_url'], 'https://tp.spfcas.com/current.jpg')
             self.assertEqual(api._json.call_count, 1)
 
-    def test_discovery_rebuilds_a_missing_projection_from_the_fixed_source_timestamp(self):
-        from peach.jav_discovery_metadata import DiscoveryMetadata
-        from peach.web_jav_discovery import _cached_movie
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            now = [stamp('2026-10-13')]
-            movie = {'id': 'Exact', 'number': 'EXM-001', 'release_date': '2020-01-01', 'tags': [],
-                     'score': 4, 'duration': 120, 'javdb_rule': 2}
-            writer = self.api(root / 'jav-public', now)
-            writer._cached('movie-id:EXM-001', lambda: ['Exact'])
-            writer._cached('movie:EXM-001:Exact', lambda: movie)
-            now[0] += 10 * DAY
-            reader = self.api(root / 'jav-public', now)
-            metadata = DiscoveryMetadata(root / 'metadata.json', api=reader, clock=lambda: now[0])
-            contract = SimpleNamespace(cover_root=root / 'covers')
-            with patch('peach.javdb_public.PUBLIC_API', reader), patch('peach.web_jav_discovery.discovery_metadata', return_value=metadata):
-                self.assertEqual(_cached_movie('EXM-001', contract), movie)
-            self.assertEqual(metadata.peek('EXM-001')[1]['metadata_checked_at'], stamp('2026-10-13'))
-
-    def test_a_snapshot_stays_but_one_taken_before_the_release_is_retaken(self):
-        saved = stamp('2026-10-12')
-        for released in ('2026-10-01', None, '', 'unknown'):
-            self.assertTrue(cache_fresh(saved, released, saved + 365 * DAY))
-        self.assertFalse(cache_fresh(saved, '2026-11-01', saved + 365 * DAY))
-
-    def test_only_a_plausible_timestamp_counts_as_taken(self):
-        self.assertTrue(cache_fresh(stamp('2026-09-20'), '2026-09-01', stamp('2036-10-13')))
-        self.assertFalse(cache_fresh(float('nan'), '2020-01-01', stamp('2026-10-13')))
-        self.assertFalse(cache_fresh(stamp('2026-10-14'), '2020-01-01', stamp('2026-10-13')))
-        self.assertFalse(cache_fresh(-1, '2020-01-01', stamp('2026-10-13')))
+    def test_cache_fresh_only_judges_whether_the_timestamp_is_plausible(self):
+        saved = stamp('2020-01-01')
+        for released in ('2020-01-01', None, '', 'unknown'):
+            self.assertTrue(cache_fresh(saved, released, saved + 3650 * DAY))
+            self.assertTrue(cache_fresh(saved, released))
+        self.assertFalse(cache_fresh(float('nan')))
+        self.assertFalse(cache_fresh(-1))
+        self.assertFalse(cache_fresh('2020-01-01'))
+        self.assertFalse(cache_fresh(stamp('2026-10-14'), None, stamp('2026-10-13')))
 
     def test_disk_snapshot_survives_reconstruction_and_keeps_its_timestamp(self):
         with tempfile.TemporaryDirectory() as directory:

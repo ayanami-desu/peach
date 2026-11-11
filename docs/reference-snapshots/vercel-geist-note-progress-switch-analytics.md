@@ -65,22 +65,12 @@
 
 ## Peach 有意差异
 
-### 关注任务容器复核（2026-09-05）
-
-HTTPX 取得 `https://vercel.com/geist/fieldset` 当前 HTML，SHA-256 为
-`6a5bde91b9d131014d4837763227457711eee2575e68994a1d9c51a44948aa0c`。
-正文提供 Without Footer 示例，DOM 使用 `group/fieldset material-base`、正文 `p-5`；
-关注任务复用现有 Fieldset 的 20px 正文内边距、项目表面 token 与真实来源计数 Progress，
-不加无动作的页脚。官方浏览器读取两次报 `js execution timed out; kernel reset`，
-当前交互与计算样式未取得；本地桌面与手机另行验收。
-此段是人工笔记，不登记到可变上游快照注册表。
-
 - Peach 是无构建的原生 HTML／CSS／ES module，不引入 Geist React 包；复用语义、状态与可测量层级，统一实现位于 `web/js/ui-components.js`。
 - `/stats` 当前没有环境与日期参数，不复制无消费者的筛选器；使用有 ARIA 的指标 tab 切换库存、
   观看、覆盖和系统盘主详情，再用同层 tablist 切换标签、最近观看和标签来源。
 - `/taste` 保留现有真实时间窗；以 radio 切换浏览器／Peach 证据，摘要指标、主详情和排行面板随
   证据来源切换。宽屏使用一个 1100px 阅读列，窄屏指标带内部横向滚动，页面本身不得横向溢出。
-- 关注页的可关闭历史失败是页面级 Banner，不是 Note；检查失败明细、资源同步失败和口味加载失败使用持久 error Note。
+- 检查失败明细、资源同步失败和口味加载失败使用持久 error Note。
 
 ## 2026-09-06 提示与任务进度复核
 

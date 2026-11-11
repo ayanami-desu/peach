@@ -557,7 +557,7 @@ def open_sites(contract) -> dict:
 
 
 def _cooldown_root(contract) -> Path:
-    root = getattr(contract, "follow_secrets_root", None)
+    root = getattr(contract, "secrets_root", None)
     return Path(root) if root is not None else Path(contract.candidate_root) / "provider-cache"
 
 

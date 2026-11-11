@@ -322,7 +322,7 @@ class Case(unittest.TestCase):
         self.busted = []
         self.contract = SimpleNamespace(
             database=self.database, candidate_root=self.generated,
-            follow_secrets_root=self.cooldown, cache_bust=lambda: self.busted.append(1))
+            secrets_root=self.cooldown, cache_bust=lambda: self.busted.append(1))
         self.minnano = Transport({
             minnano_av.search_url("美ノ嶋めぐり"): (200, MINNANO_SEARCH),
             MINNANO_URL: (200, MINNANO_PROFILE)})
@@ -696,25 +696,6 @@ class JavdbTests(Case):
                 " WHERE entity_id=? AND provider=? ORDER BY external_id",
                 (entity_id, followup.JAVDB))]
 
-    def test_javdb_actor_pages_queue_behind_library_processing_on_one_interval(self):
-        """资料处理刚问过 javdb.com，女优页这一问要等满同一份 3 秒；两份间隔各算各的会叠到每分钟 30 多页。"""
-        from peach import library_processing
-        from peach.scripting import HostLimiter
-
-        now, slept = [100.0], []
-
-        def sleep(delay):
-            slept.append(delay)
-            now[0] += delay
-
-        shared = HostLimiter(library_processing.SOURCE_INTERVALS, default_interval=2.0,
-                             clock=lambda: now[0], sleeper=sleep)
-        with mock.patch.object(library_processing, "SOURCE_LIMITER", shared):
-            pages = followup.open_sites(self.contract)[followup.JAVDB]
-            shared.wait("https://javdb.com/v/Ab12")
-            pages.limiter.wait("https://javdb.com/actors/Ab12")
-        self.assertEqual(slept, [3.0])
-        self.assertEqual(60 / library_processing.SOURCE_INTERVALS["javdb.com"], 20)
 
     def test_her_censored_and_uncensored_records_are_both_bound(self):
         """有碼、無碼两条是同一个人；名字对不上的近似结果不算。"""

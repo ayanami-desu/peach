@@ -31,18 +31,12 @@
 
 ## Peach 复用了什么
 
-检查更新的反馈拆成两条通道（`web/app.js` 的 `followCheckToast` /
-`followCheckFailNote`，样式在 `web/css/17-overlay.css`）：
-
-- 「检查了 N 个来源：新增/更新/回查…」是用户主动动作的回执 → toast，
-  右下角、自动消失、hover 暂停、右上角关闭，`aria-live="polite"`。
-- 失败（含证据未留档）→ 一句短 toast（`N 个失败`），原因明细与
-  「去管理关注处理」的恢复入口留在页内持久行（`.fcheckreport`，左侧红条），
-  toast 关掉也还在。
-- 上次检查的存量失败是持久状态，用页内行（`.fwarn`）+ 恢复入口表达，不走 toast。
+Peach 按 Related 的口径分工：用户主动动作的结果用 toast 收尾——右下角、自动消失、
+hover 暂停、右上角关闭，`aria-live="polite"`；失败明细与需要补救的入口留在页内持久行，
+toast 关掉也还在。
 - toast 的量纲不取自本次抓取（正文没有视觉规格），沿用
   `vercel-geist-controls-measured.md` 的实测值：8px 卡片圆角、发丝边、
   比页面亮一档的表面、无重底色。
-- 详情、批量、关注管理和播放列表的写操作统一调用 `actionReceipt()`；适合逆向
+- 详情、批量与播放列表的写操作统一调用 `actionReceipt()`；适合逆向
   写回的反馈、标签、稍后看、版本需求、偏好和状态提供“撤销”，永久删除、凭据
   与保存到账本等不安全或不可逆操作只报终态，不伪造撤销。

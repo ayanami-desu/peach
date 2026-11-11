@@ -1,7 +1,7 @@
 /* 作品详情（ADR-0031）：舞台里那一整块——播放区、右侧队列、侧栏与下方的「接着看」。
  *
- * 舞台（`<dialog id="stage">`）、它的进出场、小窗与 Video.js 都归舞台岛（`../stage/`），关注详情
- * 也在用；这里只画舞台里的内容，播放区的媒体框画好之后经 `actions.mountPlayer` 交给舞台挂播放器。
+ * 舞台（`<dialog id="stage">`）、它的进出场、小窗与 Video.js 都归舞台岛（`../stage/`）；
+ * 这里只画舞台里的内容，播放区的媒体框画好之后经 `actions.mountPlayer` 交给舞台挂播放器。
  * 点身份、标签、地区回列表或资料页，队列里换一条，都经壳：地址与顶栏上下文要换。队列里换条时舞台
  * 原地换内容，浮窗不重开。
  *
@@ -172,7 +172,7 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
     if (!node || !started) return;
     const complete = () => ended.current();
     node.addEventListener('ended', complete, true);
-    const unmount = actions.mountPlayer(node, mounting.current, null,
+    const unmount = actions.mountPlayer(node, mounting.current,
       started === 'clicked' || autoplay ? { autoplay: true } : undefined);
     return () => { node.removeEventListener('ended', complete, true); unmount() };
   }, [actions, started]);
@@ -209,8 +209,7 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
           <div id="onlineGate" role="status" data-item-gate="online">
             <Html html={badge} />
             <b>在线作品</b>
-            <span>这条没有对应的关注条目，媒体地址无从解析。</span>
-            <button className="chip" id="openSavedFollow" type="button" onClick={actions.openSavedFollow}>打开已保存关注</button>
+            <span>在线作品的媒体地址不在馆藏里，无法播放。</span>
           </div>
         ) : gate === 'metered' && !started ? (
           <div id="gate" data-item-gate="metered" data-item-cover={cover ? '' : undefined} onClick={() => setStarted('clicked')}>

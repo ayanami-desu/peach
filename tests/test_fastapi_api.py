@@ -228,7 +228,7 @@ class RobotsTests(unittest.IsolatedAsyncioTestCase):
         # 账本要真的建出来：`/api/items` 走只读连接（`mode=ro`），文件不存在就打不开，
         # 响应变成 500 并往日志里吐一整段回溯，用例却因为响应头照样在而通过。
         cls.app = create_app(PeachSettings(
-            configured=True, db_path=fresh_ledger(root), follow_state_root=root / "state"))
+            configured=True, db_path=fresh_ledger(root), state_root=root / "state"))
 
     @classmethod
     def tearDownClass(cls):
@@ -348,7 +348,7 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         self.photo_root = self._directory("photos")
         self.candidate_root = self._directory("candidates")
         self.secrets_root = self._directory("secrets")
-        self.follow_state_root = self._directory("follow-state")
+        self.state_root = self._directory("state")
         self.entry_links_root = self._directory("entry-links")
 
         self.access_path = self.root / "access.json"
@@ -394,7 +394,7 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
             photo_root=self.photo_root,
             candidate_root=self.candidate_root,
             secrets_root=self.secrets_root,
-            follow_state_root=self.follow_state_root,
+            state_root=self.state_root,
             entry_links_root=self.entry_links_root,
         )
         self.settings = PeachSettings(**self.defaults)
@@ -599,12 +599,6 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         unknown = await self.client.get("/site-mark", params={"source": "nope", "t": "secret"})
         self.assertEqual(unknown.status_code, 404)
 
-    async def test_the_source_icon_route_serves_bundled_marks(self) -> None:
-        served = await self.client.get("/source-icon", params={"provider": "f95zone", "t": "secret"})
-        self.assertEqual(served.status_code, 200, served.text)
-        self.assertIn("image/png", served.headers["content-type"])
-        unknown = await self.client.get("/source-icon", params={"provider": "nope", "t": "secret"})
-        self.assertEqual(unknown.status_code, 404)
 
     async def test_the_cover_route_serves_the_stored_artwork(self) -> None:
         from peach.web_state import normalise_code_key
@@ -636,12 +630,6 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer.status_code, 200, answer.text)
         self.assertIn("image/jpeg", answer.headers["content-type"])
 
-    async def test_the_follow_avatar_route_hides_unknown_sources(self) -> None:
-        answer = await self.client.get("/follow-avatar",
-                                       params={"provider": "nope", "ref": "x", "t": "secret"})
-        self.assertEqual(answer.status_code, 404)
-        # 头像后面还有一条兜底链，所以这里不带占位图。
-        self.assertEqual(answer.content, b"")
 
     async def test_the_work_icon_route_has_nothing_for_an_unknown_work(self) -> None:
         answer = await self.client.get("/work-icon", params={"work": "nonsense", "t": "secret"})
@@ -706,7 +694,7 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_aggregate_endpoints_answer(self) -> None:
         for path in ("/api/items", "/api/stats", "/api/entity/shapes", "/api/tasks",
-                     "/api/settings", "/api/follow", "/api/feeds"):
+                     "/api/settings"):
             answer = await self.client.get(path, params={"t": "secret"})
             self.assertEqual(answer.status_code, 200, f"{path}: {answer.text}")
             self.assertIsInstance(answer.json(), (dict, list))
@@ -893,7 +881,7 @@ class UnconfiguredMachineTests(unittest.IsolatedAsyncioTestCase):
             ffmpeg_root=missing / "ffmpeg",
             candidate_root=missing,
             secrets_root=missing / "secrets",
-            follow_state_root=missing / "state",
+            state_root=missing / "state",
             entry_links_root=missing / "entry-links",
         )
         self.app = create_app(self.settings)
@@ -912,8 +900,6 @@ class UnconfiguredMachineTests(unittest.IsolatedAsyncioTestCase):
     async def test_setup_lifespan_keeps_ledger_workers_stopped(self):
         async with self.app.router.lifespan_context(self.app):
             self.assertFalse(self.app.state.ledger_background_ready)
-            self.assertFalse(self.app.state.follow_scheduler._started)
-            self.assertFalse(self.app.state.web_contract.feed_scheduler._started)
             response = await self.client.get("/healthz")
             self.assertEqual(response.status_code, 200)
             self.assertFalse(response.json()["configured"])
@@ -957,8 +943,6 @@ class UnconfiguredMachineTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertLogs("peach.api", level="WARNING") as captured:
                     async with self.ledger_client(database) as (app, client):
                         self.assertFalse(app.state.ledger_background_ready)
-                        self.assertFalse(app.state.follow_scheduler._started)
-                        self.assertFalse(app.state.web_contract.feed_scheduler._started)
                         self.assertEqual((await client.get("/healthz")).status_code, 200)
                         ready = await client.get("/healthz?ready=1")
                         self.assertEqual(ready.status_code, 503)
@@ -978,14 +962,10 @@ class UnconfiguredMachineTests(unittest.IsolatedAsyncioTestCase):
         database = fresh_ledger(parent)
         async with self.ledger_client(database) as (app, client):
             self.assertTrue(app.state.ledger_background_ready)
-            self.assertTrue(app.state.follow_scheduler._started)
-            self.assertTrue(app.state.web_contract.feed_scheduler._started)
             ready = await client.get('/healthz?ready=1')
             self.assertEqual(ready.status_code, 200)
             self.assertTrue(ready.json()['ready'])
         self.assertFalse(app.state.ledger_background_ready)
-        self.assertFalse(app.state.follow_scheduler._started)
-        self.assertFalse(app.state.web_contract.feed_scheduler._started)
 
     async def test_preparing_the_ledger_requires_a_service_restart_to_resume_background_work(self):
         parent = self.settings.db_path.parent
@@ -1144,7 +1124,7 @@ class RouteAuthContractTests(unittest.TestCase):
         root = Path(cls.tmp.name).resolve()
         cls.app = create_app(PeachSettings(
             configured=True, db_path=root / "ledger.db",
-            follow_state_root=root / "state"))
+            state_root=root / "state"))
         cls.guards = {getattr(routes_auth, name) for name in cls.GUARD_NAMES}
         cls.routes = {(",".join(sorted(route.methods)), route.path):
                       {dependency.call for dependency in route.dependant.dependencies}
@@ -1198,7 +1178,7 @@ class LoginPageWithoutSessionTests(unittest.IsolatedAsyncioTestCase):
         access_path = root / "access.json"
         access.save(access_path, "entry-password")
         app = create_app(PeachSettings(configured=True, token="entry-token", access_path=access_path,
-                                       db_path=fresh_ledger(root), follow_state_root=root / "state"))
+                                       db_path=fresh_ledger(root), state_root=root / "state"))
         self.addCleanup(app.state.http_transport.close)
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
         self.addAsyncCleanup(self.client.aclose)

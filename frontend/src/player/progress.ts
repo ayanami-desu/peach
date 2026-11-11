@@ -11,9 +11,8 @@ export function stopPlaybackPosition(video: HTMLVideoElement): void {
   tracking.delete(video);
 }
 
-export function playbackKey(kind: 'item' | 'follow', item: PlayerItem, media: number | null = null): string {
-  const follow = kind === 'follow' ? item.id : item.location === 'online' ? item.follow_item_id : null;
-  return follow ? `follow:${follow}:${media ?? 'main'}` : `item:${item.id}`;
+export function playbackKey(item: PlayerItem): string {
+  return `item:${item.id}`;
 }
 
 function storedPosition(key: string): number | null {

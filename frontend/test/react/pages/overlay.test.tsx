@@ -49,7 +49,6 @@ function shellActions(r: Loaded) {
     }),
     closeStage: vi.fn(), openImmerse: vi.fn(), surfaceChanged: vi.fn(),
     catalog: { defaultLoc: () => 'local', open: vi.fn(), load: vi.fn(), release: vi.fn(), fill: vi.fn() },
-    follow: { refresh: vi.fn(() => false), skeleton: vi.fn(() => ''), props: vi.fn(), ground: vi.fn() },
   } as unknown as ShellActions;
   return { actions, opened };
 }
@@ -93,7 +92,7 @@ async function pop(path?: string, entry?: unknown) {
   await settle();
 }
 
-const over = (pathname: string, overlay: 'item' | 'follow' = 'item', search = '') =>
+const over = (pathname: string, overlay: 'item' = 'item', search = '') =>
   ({ backgroundLocation: { pathname, search }, overlay });
 const entry = (state: unknown, key = 'x') => ({ usr: state, key, idx: 1 });
 
@@ -124,12 +123,10 @@ it('后退前进落到覆盖地址上接上背景并打开；没有请求的认�
   expect(opened, '认领条目没有打开请求时不会重开舞台').toEqual([]);
   await pop('/assets/8', entry(over('/nowhere', 'item', '?q=1'), 'a'));
   await pop('/assets/4?mix=3', entry(over('/nowhere'), 'b'));
-  await pop('/posts/5', entry(over('/nowhere', 'follow'), 'c'));
   await pop('/assets/9?playlist=2', entry(over('/nowhere'), 'd'));
   expect(opened).toEqual([
     { target: { kind: 'item', id: 8 }, from: '/nowhere?q=1' },
     { target: { kind: 'queue', queue: 'mix', key: 3, item: 4 }, from: '/nowhere' },
-    { target: { kind: 'follow', id: 5 }, from: '/nowhere' },
     { target: { kind: 'queue', queue: 'playlist', key: 2, item: 9 }, from: '/nowhere' },
   ]);
   expect(actions.closeStage, '覆盖之间换来换去不收舞台').not.toHaveBeenCalled();
@@ -179,22 +176,10 @@ it('深链 `/assets/:id`：壳开始路由之前只挂着，那一刻打开那�
   await start(r);
   expect(opened).toEqual([{ target: { kind: 'item', id: 7 }, from: null }]);
   expect(actions.catalog!.fill).toHaveBeenCalledTimes(1);
-  expect(actions.follow!.ground).not.toHaveBeenCalled();
   expect(actions.surfaceChanged, '条目里记的背景页不打开').not.toHaveBeenCalled();
   await act(async () => { r.shellNavigate('/assets/7?t=12', { replace: true }) });
   await settle();
   expect(opened).toHaveLength(1);
-});
-
-it('深链 `/posts/:id`：打开那一条，只让出 `#stats`、不挂列表也不补画目录', async () => {
-  const r = await load('/posts/5');
-  const { actions, opened } = shellActions(r);
-  await mount(r, actions);
-  await start(r);
-  expect(opened).toEqual([{ target: { kind: 'follow', id: 5 }, from: null }]);
-  expect(actions.follow!.ground).toHaveBeenCalledTimes(1);
-  expect(actions.follow!.refresh).not.toHaveBeenCalled();
-  expect(actions.catalog!.fill).not.toHaveBeenCalled();
 });
 
 it('路由根晚于壳开始路由才挂上：挂上就打开启动那一条，只开一次', async () => {

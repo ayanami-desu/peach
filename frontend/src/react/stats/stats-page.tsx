@@ -259,7 +259,7 @@ function RecentWatches({ rows, hasMedia }: { rows: RecentPlay[]; hasMedia: boole
       {rows.map((row) => {
         const real = watchedShare(row);
         return (
-          <article key={`${row.kind}:${row.id}`} className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <article key={row.id} className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <div className="min-w-0 grow basis-64">
               <h3 className="min-w-0 text-body-2-medium text-text-primary">
                 <a href={playedItemUrl(row)} data-middle-truncate
@@ -356,8 +356,6 @@ export function StatsPage(props: StatsProps) {
         <TabPanel id="viewing" className="flex flex-col gap-5">
           <Detail headline={<Headline term="观看" figure={fmtCount(consumption.played)} unit="个作品有播放记录" />}>
             <div className="inline-grid w-full gap-3 sm:grid-cols-2">
-              <Fact term="馆藏观看" value={consumption.library_played} />
-              <Fact term="在线直接观看" value={consumption.online_played} />
               <Fact term="高潮计数" value={consumption.o_total} />
               <Fact term="快进扫过" value={consumption.skimmed} />
               <Fact term="喜欢" value={consumption.liked} />

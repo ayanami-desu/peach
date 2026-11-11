@@ -47,7 +47,6 @@ Geist 把排版发成 Tailwind 类，分四组：`text-heading-*`（引导页面
   `max-width:640px` 才到 Heading 20（`--fs-xl`）。
 - **字距不照抄**：Geist 的 -0.04em 是给拉丁字母调的，压在中文标题上会把字挤成一团，
   Peach 保留 -0.01em。这是本仓库对该规范唯一的显式偏离。
-- 标题外边距 Geist 没有规定，Peach 自己定为下 20px（索引页与关注页记在
-  `.ihead`/`.followhead` 上，三处同值）。
+- 标题外边距 Geist 没有规定，Peach 自己定为下 20px（索引页记在 `.ihead` 上）。
 
 最后复核：2026-09-04

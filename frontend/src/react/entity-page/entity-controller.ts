@@ -38,7 +38,7 @@ export interface EntityControllerPorts {
 
 /** 页内换筛选复用当前宿主，地址提交由历史的唯一拥有者执行。 */
 export function createEntityController(ports: EntityControllerPorts, helpers: EntityPageHelpers,
-  delegated: Pick<EntityPageActions, 'toggleTag' | 'openFollowAuthor' | 'javContext'>) {
+  delegated: Pick<EntityPageActions, 'toggleTag' | 'javContext'>) {
   const route = (kind: string, name: string, filters: EntityFilters,
     media: EntityMedia = { media: 'videos', set: 0 }, { push = true }: { push?: boolean } = {}) => {
     if (push) ports.route(entityViewPath(kind, name, filters, media));

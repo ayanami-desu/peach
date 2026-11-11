@@ -28,8 +28,8 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 3. `DriveConnections(settings, lambda: http_transport.client)` → `app.state.drive`，再 `build_streamer(drive.providers, ...)` → `MediaEngine(repository, streamer, cache_root=settings.photo_root.parent / "media-cache")` → `app.state.media_engine`。
 4. `ScanService(drive.providers, repository, drive.roots_map())` → `app.state.scan`；`DriveSync(scan_service, after=after_scan)` → `app.state.drive_sync`，并让 `drive.sync_state`、`drive.refresh_hook` 指到它。
 5. 图像服务：`PreviewService`、`PhotoThumbnailService`、`sample_cache` 与三个 `DerivedImageService`（实体头像、封面、封面缩略）。
-6. 采集：`default_registry()` 的资料源、`OpenCodeGoClient`、`FollowUpdateScheduler`（关注）与另一个 `FollowUpdateScheduler`（订阅源，`job_id=FEED_JOB_ID`、`feed-schedule.json`）、`RecoveryService`。
-7. `lifespan`：`_LedgerActivation` 起调度，`_warm_ledger_aggregates` 预热 `WARM_AGGREGATES` 里的七个入口（`/api/entity/shapes`、`/api/items?limit=60`、`/api/stats`、`/api/search/recommendations`、`/api/review`、`/api/ads`、`/api/follow`），再 `asyncio.create_task(drive_sync.run(sync_stop))` 跑同步循环；退出时等这个 task 结束，然后停后台任务、摘掉人脸模型、关 HTTP 与关注媒体解析器。
+6. 采集：`default_registry()` 的资料源、`OpenCodeGoClient`、`RecoveryService`。
+7. `lifespan`：`_LedgerActivation` 起调度，`_warm_ledger_aggregates` 预热 `WARM_AGGREGATES` 里的六个入口（`/api/entity/shapes`、`/api/items?limit=60`、`/api/stats`、`/api/search/recommendations`、`/api/review`、`/api/ads`），再 `asyncio.create_task(drive_sync.run(sync_stop))` 跑同步循环；退出时等这个 task 结束，然后停后台任务、摘掉人脸模型、关 HTTP。
 
 `app.state` 上的对象就是可注入的服务表：
 
@@ -42,8 +42,7 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 | `scan` | `ScanService` | 全量与增量扫描 |
 | `drive_sync` | `DriveSync` | 定时同步循环与「立即刷新」 |
 | `media_engine` | `MediaEngine` | 取流、按需落缓存、给 ffmpeg 的输入地址 |
-| `providers` | 资料源注册表 | 刮削、订阅、来源检查 |
-| `follow_scheduler`、`follow_media_resolver`、`follow_cover_service`、`follow_evidence` | 关注链 | 追更调度、媒体解析、封面、证据 |
+| `providers` | 资料源注册表 | 刮削与来源检查 |
 | `http_transport` | `HttpxTransport` | 共用连接池、限流、代理 |
 | `background_issues` | 后台问题清单 | 任务问题的统一出口 |
 | `external_playback_key` | 票据签名材料 | 外部播放器链接 |
@@ -52,7 +51,7 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 
 ## 路由分派
 
-五个 `APIRouter` 分片：`routes_auth`（登录与会话）、`routes_pages`（页面）、`routes_configuration`（设置面）、`routes_media`（取流与图像）、`routes_api`（`/api/*`），按这个顺序注册——FastAPI 按注册顺序匹配路径，顺序变了会抢走前面那条。`/api/{route}` 由 `web_router.py` 的 handler 表分派到 `web_catalog`、`web_entity`、`web_stats`、`web_batch`、`web_follow` 等域模块，这个文件是唯一 import 全部域模块的地方，域模块之间不互相认识。`READ_ONLY_POST_ROUTES` 是只读端仍允许的 POST 清单，漏登记的表现是按钮吃 409。
+五个 `APIRouter` 分片：`routes_auth`（登录与会话）、`routes_pages`（页面）、`routes_configuration`（设置面）、`routes_media`（取流与图像）、`routes_api`（`/api/*`），按这个顺序注册——FastAPI 按注册顺序匹配路径，顺序变了会抢走前面那条。`/api/{route}` 由 `web_router.py` 的 handler 表分派到 `web_catalog`、`web_entity`、`web_stats`、`web_batch`、`web_jav_detail` 等域模块，这个文件是唯一 import 全部域模块的地方，域模块之间不互相认识。`READ_ONLY_POST_ROUTES` 是只读端仍允许的 POST 清单，漏登记的表现是按钮吃 409。
 
 ## 账本身份
 
@@ -62,7 +61,18 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 
 `asset.drive_root`（迁移 `0056`）记下这个文件是在哪个配置的扫描根下被找到的，媒体库分组按（来源，扫描根）这一对收窄。挂载时代的旧行（115、PikPak、光鸭、已挂载网盘）保留原样只读展示，`remote_id` 为空，不参与扫描与播放。
 
-`0000_legacy_schema.sql` 里 `UNIQUE(location, path)` 还在，扫描写库时按身份判新建、按这对列做幂等 upsert，撞上老行只计冲突不改行。
+`0000_legacy_schema.sql` 里 `UNIQUE(location, path)` 还在，扫描写库时按身份判新建、按这对键做幂等 upsert，撞上老行只计冲突不改行。
+
+## 馆藏探索
+
+JAV 页两个页签：`tab=library` 是馆藏本身，`tab=explore` 是馆藏探索。探索只读账本，不发 HTTP、不问来源：`web_jav_discovery.q_jav_discoveries()` 按 `JAV_ASSET_PREDICATE` 与 `medium='video'` 取候选，再筛掉已移除、标记过 `dislike`／`seen`、看过两次以上、以及播放进度已过半的片子；男优记录不参与，同番号只留一张卡。
+
+- 上限：候选按 `CANDIDATE_LIMIT = 4000` 截断，一次最多返回 100 部（`limit` 缺省 60）。
+- 排序：`DISCOVERY_SORTS = ("release_date", "source_score", "duration", "code")`，升降序由 `direction` 指定；缺失值排在末尾。
+- 返回：`{items, candidate_total, sort, direction, limited, source: "library"}`，`limited` 表示候选在 4 000 部处被截断。
+- 缓存：键 `jav-explore`，不返回陈旧结果；账本除 `follow_playback`、`activity_event`、`search_history` 之外的表改动都会让它失效。
+
+页面入口与筛选控件见[前端](FRONTEND.md)，接口地址见[路由](ROUTES.md)。
 
 ## 扫描与同步
 
@@ -84,15 +94,11 @@ ids = list(result.new_ids)
 if not ids: return
 choice = resolver.ffprobe()
 media_probe.probe_missing(database, media_engine, choice.path if choice else None, asset_ids=ids)
-with closing(sqlite3.connect(database, timeout=30)) as connection:
-    connection.row_factory = sqlite3.Row
-    wants.reconcile(connection, ids); connection.commit()
 record_rehome.reattach_in(database, ids)
 ```
 
 1. `media_probe.probe_missing`：用 provider 给的宽高时长（Drive `videoMediaMetadata`、OneDrive `video` facet）先填，缺的再用 HTTP Range 喂 `ffprobe`，探测结果只写账本，不落本地文件。
-2. `wants.reconcile`：按番号把「想要」清单里的条目对上账本资产。
-3. `record_rehome.reattach_in`：把旧账本里已消失、但同一番号又出现的记录接回新资产，个人记录不丢。
+2. `record_rehome.reattach_in`：把旧账本里已消失、但同一番号又出现的记录接回新资产，个人记录不丢。
 
 扫描本身不碰字节：登记只看列表响应里的元数据。探测和抽帧是唯一会读片源的地方。
 
@@ -111,7 +117,7 @@ record_rehome.reattach_in(database, ids)
 | --- | --- |
 | `database/` | `ledger.db` 及其 `-wal`/`-shm`，`ledger.pre-<用途>-<时间戳>.db` 备份与 `drive_sync` 的游标 |
 | `generated/` | 封面、头像、海报、时间轴接触印相、`organize-backups/` 等可重建或需留档的产物 |
-| `sources/` | 刮削与追更的原始输入、证据快照 |
+| `sources/` | 刮削的原始输入与证据快照 |
 | `state/` | 任务检查点、本机运行状态、调度偏好、存储占用统计 |
 | `secrets/` | 访问策略、`browser-sessions.json`、网盘令牌（权限 0600，不进账本也不进设置文件） |
 | `logs/` | 当前运行日志，容器里由 `log_retention` 按月切段 |

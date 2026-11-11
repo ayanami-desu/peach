@@ -1,22 +1,20 @@
-/* 任务卡标题前的图标：按任务做的事分十类，同类共用一枚。关注、数据管理、口味三类与导航里对应页面同一枚，
+/* 任务卡标题前的图标：按任务做的事分九类，同类共用一枚。数据管理与口味两类与导航里对应页面同一枚，
  * 其余按对象选。35 种任务各配一枚会有一半长得差不多，反而认不出来。不在表里的任务用通用任务图标。 */
 import type { RemixiconComponentType } from '@remixicon/react';
 import {
   RiDownloadCloud2Line, RiFileSearchLine, RiFilmLine, RiHardDrive3Line, RiHeart3Line, RiImage2Line,
-  RiLinksLine, RiRssLine, RiTaskLine, RiToolsLine, RiUser3Line,
+  RiLinksLine, RiTaskLine, RiToolsLine, RiUser3Line,
 } from '@remixicon/react';
 
 type Icon = RemixiconComponentType;
 
 const FAMILIES: [Icon, string[]][] = [
-  [RiRssLine, ['follow-check', 'follow-resolve', 'follow-creator', 'follow-evidence-reclaim', 'feed-check', 'feed-scrape',
-    'feed-cover']],
   [RiHardDrive3Line, ['library-processing', 'organize', 'batch', 'resource-scan', 'resource-apply', 'seed-import']],
-  [RiFileSearchLine, ['scrape-codes', 'jav-discovery-metadata', 'want-scrape', 'upgrade-library']],
+  [RiFileSearchLine, ['scrape-codes', 'upgrade-library']],
   [RiImage2Line, ['scraping-cover', 'jav-covers', 'code-samples', 'timeline-thumbnails', 'entity-avatar']],
   [RiUser3Line, ['performer-profile', 'performer-alias', 'creator-identity', 'studio-mark']],
   [RiFilmLine, ['media-repair', 'mp4-header-repair']],
-  [RiLinksLine, ['link-check', 'link-prune', 'source-check']],
+  [RiLinksLine, ['link-check', 'link-prune']],
   [RiDownloadCloud2Line, ['download-postprocess']],
   [RiHeart3Line, ['taste-refresh']],
   [RiToolsLine, ['upgrade-repairs', 'diagnostic-export', 'amane-bridge', 'face-models', 'ledger-backup', 'ledger-restore']],

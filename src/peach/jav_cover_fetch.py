@@ -102,7 +102,7 @@ PLACEHOLDER_MARK = "「准备中」占位图"
 #: 占位图是来源自己说「没有图」：DMM 发售前还没出图、下架的作品两个版本都只剩这一张。
 PLACEHOLDER_REASON = f"来源给的是{PLACEHOLDER_MARK}"
 #: 官方候选里取到的只有占位图、没有偏小的真图时的说法。
-OFFICIAL_PLACEHOLDER_ONLY = f"官方封面地址只回{PLACEHOLDER_MARK}：未发售的新作是官方还没出图，旧作多半已从官方下架"
+OFFICIAL_PLACEHOLDER_ONLY = f"官方封面地址只回{PLACEHOLDER_MARK}：还没发售的作品是官方还没出图，旧作多半已从官方下架"
 #: 韩国 MIB 的编号不在 JAV 目录站上，封面来源一律不问；记进日志算确认落空，不重探。
 MIB_NOT_JAV = "韩国 MIB 不适用 JAV 封面来源"
 #: 量尺寸只需要 JPEG 头部，别把整张 1 MB 的图拉下来。
@@ -1009,6 +1009,20 @@ FIELDS = ("code", "result", "source", "width", "height", "kb", "url", "note", "o
 #: 判定为「所有渠道都没有」的落空，续跑时不必重来；连接类失败必须重试。
 #: 三态口径：一次超时不等于确认没有，不能靠它把番号永久踢出队列。
 TRANSIENT = re.compile(r"(Error|Timeout|SSL|Connect|Proxy|Protocol)", re.I)
+
+
+def official_cover(contract, code: str, *, seconds: float = 60.0) -> tuple[Candidate, tuple[int, int], bytes]:
+    """官方渠道里这个番号最大的一张封面；给详情页「重新匹配封面」用。
+
+    预算按秒封顶：人在弹层里等着，挑不出来就报原因。候选与重探封面共用 `best_cover`。
+    """
+    transport = HostLimitedTransport(
+        SourceTransport(contract.secrets_root, max_requests=40,
+                        max_bytes=32 * 1024 * 1024, max_seconds=seconds), 1.0)
+    return best_cover(
+        transport, code, 0,
+        metadata_root=contract.sources_root / "metadata" / "javinizer-go",
+        deadline=time.monotonic() + seconds)
 
 
 def settled_misses(log: Path) -> set[str]:

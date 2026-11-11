@@ -19,46 +19,6 @@ it('未显示页面的后台预取继续读取，不阻塞当前页面的版本�
   expect(await prefetched).toBe('预取内容');
 });
 
-it('运行中的任务发布确认结果时更新列表，状态与凭据查询保持原值', async () => {
-  const data = { busy: true,
-    result_versions: { follow: '1' } };
-  queryClient.setQueryData(RESULT_UPDATES_KEY, data);
-  queryClient.setQueryData(['follow-feed'], '首项');
-  queryClient.setQueryData(['follow-manage', 'check'], 'running');
-  queryClient.setQueryData(['follow-manage', 'credentials'], '凭据');
-  queryClient.setQueryData(['catalog-grid'], '馆藏');
-  queryClient.setQueryData(['index', 'performers'], '旧名册');
-  let current = '首项';
-  const read = vi.fn(async () => current);
-  function Feed() {
-    const feed = useQuery({ queryKey: ['follow-feed'], queryFn: read });
-    return <p>{feed.data}</p>;
-  }
-  const host = await mount(<QueryClientProvider client={queryClient}><ResultUpdates openItem={vi.fn()} /><Feed /></QueryClientProvider>);
-  await settle();
-  expect(read).not.toHaveBeenCalled();
-  await act(async () => {
-    current = '首项、次项';
-    queryClient.setQueryData(RESULT_UPDATES_KEY, { ...data, result_versions: { follow: '2' } });
-  });
-  await settle();
-  expect(host.textContent).toBe('首项、次项');
-  expect(read).toHaveBeenCalledTimes(1);
-  expect(queryClient.getQueryState(['follow-manage', 'check'])?.isInvalidated).toBe(false);
-  expect(queryClient.getQueryState(['follow-manage', 'credentials'])?.isInvalidated).toBe(false);
-  expect(queryClient.getQueryState(['catalog-grid'])?.isInvalidated).toBe(false);
-  expect(queryClient.getQueryState(['index', 'performers'])?.isInvalidated).toBe(true);
-});
-
-it('关注结果变了，统计与口味也重取：两页的服务端缓存都读关注来源', async () => {
-  // 页面与版本键的对应和 `tests/test_ledger_revision.py` 的 `ResultVersionTablesTests` 一致。
-  for (const key of [['stats'], ['taste', 'all'], ['catalog-grid']]) queryClient.setQueryData(key, '旧');
-  await createResultRefresher()({ follow: '1' }, { follow: '2' });
-  expect(queryClient.getQueryState(['stats'])?.isInvalidated).toBe(true);
-  expect(queryClient.getQueryState(['taste', 'all'])?.isInvalidated).toBe(true);
-  expect(queryClient.getQueryState(['catalog-grid'])?.isInvalidated).toBe(false);
-});
-
 it('版本到达前已发出的读取结束后再核查一次，旧响应不能盖住确认结果', async () => {
   const old = pending<string>();
   let reads = 0;

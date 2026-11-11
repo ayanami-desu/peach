@@ -79,7 +79,7 @@ def playback(value):
                      booleans=('paused', 'ended', 'muted', 'same_origin', 'source_assigned'), numbers=PLAYBACK_NUMBERS)
     if not isinstance(value, dict):
         return result
-    route = re.compile(r'/(?:stream|follow-stream|media)')
+    route = re.compile(r'/(?:stream|media)')
     for key in ('source_route', 'declared_route'):
         if isinstance(raw := value.get(key), str) and route.fullmatch(raw):
             result[key] = raw

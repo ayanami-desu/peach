@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { boundedPreference } from '../../src/number-setting';
-import { dayReading, NumberSetting, type NumberSettingId } from '../../src/react/settings-panel/number-setting';
+import { NumberSetting, type NumberSettingId } from '../../src/react/settings-panel/number-setting';
 import './render';
 
 const unmounts: (() => void)[] = [];
@@ -74,7 +74,7 @@ it('外面换来的值关掉再打开也填得回来', async () => {
 });
 
 it('还没取到值时整块禁用，取回来之后按档位开合', async () => {
-  const { input, toggle, rerender, host } = await setup('followScheduleSetting', null, '关注自动更新');
+  const { input, toggle, rerender, host } = await setup('searchHistoryLimitSetting', null, '搜索记录');
   expect(input().disabled).toBe(true);
   expect(toggle().disabled).toBe(true);
   await rerender(0);
@@ -97,11 +97,4 @@ it('读回的偏好只认区间内的整数', () => {
   expect(boundedPreference(0, 0, 50, 10)).toBe(0);
   expect(boundedPreference(2.5, 1, 50, 10)).toBe(10);
   expect(boundedPreference(99, 1, 50, 10)).toBe(10);
-});
-
-it('以分钟计的间隔满一天时在单位旁换算成天，不满一天或不是分钟时不说', () => {
-  expect(dayReading(10080, '分钟')).toBe('7 天');
-  expect(dayReading(2160, '分钟')).toBe('约 1.5 天');
-  expect(dayReading(1439, '分钟')).toBe('');
-  expect(dayReading(10080, '秒')).toBe('');
 });

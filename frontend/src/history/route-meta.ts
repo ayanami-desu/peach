@@ -40,7 +40,6 @@ const ROUTE_ENTRIES = {
   '/duplicates': { section: 'cleanup', title: '重复文件', refresh: 'reopen' },
   '/quality-goals': { section: 'quality', title: '高清版', refresh: 'reopen' },
   '/sources': { section: 'cleanup', title: '来源和凭证', refresh: 'reopen' },
-  '/subscriptions': { section: 'follow', title: '关注管理', refresh: 'skip' },
   '/tasks': { section: 'activity', title: '任务中心', refresh: 'reopen' },
   '/performers': { nav: 'performers', title: '艺人', reload: 'reopen' },
   '/creators': { title: '卖家', reload: 'reopen' },
@@ -55,8 +54,6 @@ const ROUTE_ENTRIES = {
   '/agencies/*': { reload: 'reopen' },
   '/tags/*': { reload: 'reopen' },
   '/playlists': { nav: 'playlists', title: '播放列表', refresh: 'reopen' },
-  // 关注页重画要联网取一遍卡面，「换一批」只由页面自己的按钮触发。
-  '/follow': { nav: 'follow', title: '关注', refresh: 'skip' },
   // 目录：首页的标签按栏目取（`homeRouteLabel`），三个筛选态与垃圾文件的侧栏键与标签同 `STATE_ROUTES`、`STATE_LABELS`。
   '/': {},
   '/unseen': { nav: 'fresh', title: '没看过' },
@@ -64,10 +61,9 @@ const ROUTE_ENTRIES = {
   '/flagged': { nav: 'flagged', title: '已标记' },
   '/junk-files': { nav: 'ads', title: '垃圾文件' },
   '/trash': { section: 'trash', title: t('navigation:manage.trash') },
-  // 覆盖：详情、四种队列与关注详情。分卷与版本队列没有自己的标签。
+  // 覆盖：详情与四种队列。分卷与版本队列没有自己的标签。
   '/assets/:id': { title: '媒体记录' },
   '/works/:code': { nav: 'jav', title: 'JAV 作品' },
-  '/posts/:id': { title: '关注' },
   // 沉浸模式进页面组，不算覆盖。
   '/immerse': { nav: 'immerse', title: '沉浸模式' },
   '/wall': { nav: 'wall', title: '播放墙' },

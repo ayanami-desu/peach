@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-11-05
-- 关系：扩展 [ADR-0038](0038-field-priority-chain-settles-dissent.md) 的字段优先级例外表，沿用 [ADR-0061](0061-fc2cmadb-cast-lists-name-the-woman-behind-a-nickname.md) 的「演员栏听按片中人整理的来源」；Seesaa 取页层见 `docs/SOURCING.md`「Seesaa Wiki 作品证据」
+- 关系：扩展 [ADR-0038](0038-field-priority-chain-settles-dissent.md) 的字段优先级例外表，沿用 [ADR-0061](0061-fc2cmadb-cast-lists-name-the-woman-behind-a-nickname.md) 的「演员栏听按片中人整理的来源」；Seesaa 取页层见 `docs/METADATA.md`「Seesaa Wiki 作品证据」
 
 ## 背景
 

@@ -12,9 +12,7 @@ RESULT_TABLES = {
                 'asset_tag_preference', 'entity', 'entity_alias', 'entity_redirect',
                 'entity_classification', 'entity_identity_link', 'entity_link', 'entity_external_ref',
                 'entity_membership', 'label_maker', 'performer_profile', 'asset_quality_goal',
-                'playlist', 'playlist_item', 'watch_queue'),
-    'follow': ('follow_item', 'follow_source', 'follow_author_alias', 'entity', 'profile'),
-    'discoveries': ('feed_source', 'feed_item', 'feed_discovery', 'feed_discovery_entity', 'watch_queue'),
+                'profile', 'playlist', 'playlist_item', 'watch_queue'),
     'review': ('review_decision', 'genre_decision'),
 }
 
@@ -24,7 +22,7 @@ def result_versions(contract):
 
     后台任务写账本后，按表缓存的那几页先回旧值、另起重算（ADR-0146）；重算写回时版本已经
     不会再变，所以每个账本键带上自己那几张表的写回次数，页面看到它变了再取一次新值。
-    写回按表记：一份只读关注表的结果写回，不让馆藏那一组页面也跟着重取。
+    写回按表记：一份只读复核表的结果写回，不让馆藏那一组页面也跟着重取。
     """
     with contract.cache_lock:
         landed = dict(contract.cache_landed)

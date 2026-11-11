@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, urljoin
 
 import httpx
 
-from .follow_secrets import CredentialStore
+from .credentials import CredentialStore
 from . import peach_proxy
 from .http import HttpRequest, HttpxTransport
 from .scripting import USER_AGENT, host_under, hostname_of
@@ -61,7 +61,7 @@ SOURCES = {
     "1pondo": {"label": "一本道", "domains": ("1pondo.tv",), "login": "https://www.1pondo.tv/"},
     "instagram": {"label": "Instagram", "domains": ("instagram.com", "cdninstagram.com"), "login": "https://www.instagram.com/accounts/login/", "cookie": True},
     # 三家社区来源拒绝访问时回 403，不发 Retry-After：javdb 是出口 IP 超了配额（一封 3～7 日，
-    # docs/SOURCING.md），AVBase 是 Cloudflare 验证，JavBus 的 403 原因未取得。封期里接着问只会每条都
+    # docs/METADATA.md），AVBase 是 Cloudflare 验证，JavBus 的 403 原因未取得。封期里接着问只会每条都
     # 再撞一次，所以整个来源停下——停多久按 `FIRST_BLOCKED_PAUSE` 翻倍，`blocked_pause` 是这个来源的上限。
     # 回 200 的验证页由解析器认成 `cloudflare_challenge`，经 `SourceTransport.hold` 进同一份记录。
     # `session`：公开采集也带上用户在采集设置里贴的 Cookie。javdb 有登录墙，JavBus 有年龄门，

@@ -127,17 +127,6 @@ it('扫描各阶段已结束且留有问题时显示部分结果状态', async (
   expect(host.querySelector('[data-task-key="library-processing"] > div > ul')?.textContent).not.toContain('partial');
 });
 
-it('追更检查的问题详情绑定任务快照并提供来源入口', async () => {
-  serve(payload({ finished: [run({ status: 'succeeded', result_summary: { source_failed: 1,
-    issues: [{ source: 7, label: '示例作者', provider: '示例站点', kind: '检查失败', error: 'HTTP 403' }] } })] }));
-  await prefetchTasks(new AbortController().signal);
-  const host = await mount(page());
-  expect(host.querySelector('[data-task-issues]')?.textContent).toContain('示例作者 · 示例站点 · 检查失败');
-  expect(host.querySelector('[data-task-issues]')?.textContent).toContain('HTTP 403');
-  expect(host.querySelector('[data-task-issues]')?.closest('details')?.open).toBe(false);
-  expect(host.querySelector('a[href="/subscriptions"]')?.textContent).toContain('查看关注来源');
-});
-
 it('扫描与采集只有最新那一轮失败才去卡片上重试未完成项', async () => {
   const scan = (overrides: Partial<TaskRunPayload>) => run({ task_key: 'library-processing', task_label: '扫描与采集',
     status: 'failed', progress_total: null, error: '768 项需要处理，其中 533 项是来源限流，等一会儿再跑；其余可重试未完成的部分。',

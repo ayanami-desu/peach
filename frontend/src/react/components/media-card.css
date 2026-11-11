@@ -164,11 +164,6 @@ body[data-surface="/trash"] .peach-react button[data-media-title] {
  * 四周垫 8px 再用 -8px 抵消，头像的悬停描边和焦点环不被裁；垫出来的一圈不接指针。
  * 接着看那一排只有一行、往横向排，屏外的卡不改变整页高度，不套这份估计。 */
 .peach-react [data-media-meta] {
-  --card-meta-byline: calc(2lh + 2px);
-  --card-meta-tags: calc(var(--fs-xs) * 1.45 + var(--tag-pad-y) * 2 + 2px + 12px);
-  --card-meta-block: calc(var(--fs-md) * 2.7 + 6px + var(--card-meta-byline) + var(--card-meta-tags));
-}
-.peach-react [data-media-card]:not([data-follow-item]) [data-media-meta] {
   --card-meta-byline: 20px;
   --card-meta-tags: calc(var(--fs-xs) * 1.45 + var(--tag-pad-y) * 2 + 2px);
   --card-meta-block: calc(var(--fs-md) * 2.7 + 12px + var(--card-meta-byline) + var(--card-meta-tags));
@@ -183,9 +178,9 @@ body[data-surface="/trash"] .peach-react button[data-media-title] {
   contain-intrinsic-block-size: auto var(--card-meta-block);
 }
 .peach-react [data-media-card]:not([data-variant="next"]) [data-media-meta] > * { pointer-events: auto; }
-.peach-react [data-media-card]:not([data-follow-item], [data-variant="next"]) [data-media-meta] { height: calc(var(--card-meta-block) + 16px); }
-body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-follow-item], [data-variant="next"]) [data-media-meta] { height: auto; }
-.peach-react [data-media-card][data-variant="next"]:not([data-follow-item]) [data-media-meta] {
+.peach-react [data-media-card]:not([data-variant="next"]) [data-media-meta] { height: calc(var(--card-meta-block) + 16px); }
+body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-variant="next"]) [data-media-meta] { height: auto; }
+.peach-react [data-media-card][data-variant="next"] [data-media-meta] {
   --card-meta-tags: calc(var(--fs-xs) * 2.9);
   height: var(--card-meta-block);
 }
@@ -328,10 +323,10 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-follo
   transition: opacity .15s ease;
 }
 /* 悬停或键盘聚焦时封面上的角标淡出，右上角让给悬停工具。分卷／版本计数还要退出命中与 Tab 序：
- * 它压在倒计时圈上面，只透明的话圈接不到指针；visibility 等淡出走完再翻。关注卡的合并计数同一套
- * （`../follow-feed/follow-feed.css`）。聚焦认 `:focus-visible`，鼠标点过留下的焦点不算。 */
+ * 它压在倒计时圈上面，只透明的话圈接不到指针；visibility 等淡出走完再翻。聚焦认 `:focus-visible`，
+ * 鼠标点过留下的焦点不算。 */
 @media (hover: hover) and (pointer: fine) {
-  .peach-react [data-media-card]:is(:hover, :has(:focus-visible)) :is([data-media-badge], [data-media-duration], [data-follow-sources]) { opacity: 0; visibility: hidden; pointer-events: none; }
+  .peach-react [data-media-card]:is(:hover, :has(:focus-visible)) :is([data-media-badge], [data-media-duration]) { opacity: 0; visibility: hidden; pointer-events: none; }
   .peach-react [data-media-card]:is(:hover, :has(:focus-visible)) [data-media-group] {
     opacity: 0;
     visibility: hidden;
@@ -679,7 +674,7 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-follo
   -webkit-box-orient: vertical;
 }
 .peach-react span[data-media-title] { cursor: default; }
-.peach-react [data-media-card]:not([data-follow-item]) [data-media-title] { min-height: 2.7em; }
+.peach-react [data-media-card] [data-media-title] { min-height: 2.7em; }
 /* 番号与版本徽标在别处是一个不折行的整块；卡片标题只有两行，整块比卡宽时会被直接切掉、
  * 没有省略号。这里拆成行内的几枚徽标，放不下的折到下一行，第二行末尾照样由 line-clamp 收住。
  * 这两枚类由 `core/jav-title.ts` 挂上，按 `[class~=…]` 认，权重与类选择器相同。 */

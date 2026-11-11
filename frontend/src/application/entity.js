@@ -14,12 +14,11 @@ import { navigationState, openRoutedPage } from './navigation.js';
 import { releaseHoverPreviews } from './../card-art/hover';
 import { preferencesState, wireDrag } from './preferences.js';
 import { fitSkeleton, formModal, indexSkeletonHtml, wireHorizontalScroller } from '../ui-kit';
-import { feedRowHtml, feedState, loadEntityShapes, wireFeedNewRow } from './feed.js';
+import { entityShapesState, loadEntityShapes } from './entity-shapes.js';
 import { receiptsState } from './receipts.js';
 import { JAV_LAYOUTS, PHOTO_LAYOUTS, javLayout, photoLayout, photoSize, storePhotoLayout, storePhotoSize } from './../appearance/layout';
 import { dropBars } from './../catalog-bars';
-import { indexState, openFollowAuthorFromIndex } from './index.js';
-import { followState, pushFollowFeed } from './follow.js';
+import { indexState } from './index.js';
 import { applyDensity, paintPhotoSizeButton } from './../appearance/density';
 import { applicationEffects } from './effects';
 import { entitySkeletonHtml } from './../entity-skeleton';
@@ -28,7 +27,7 @@ import { FILTER_WAITING, filterControlsSkeletonHtml } from './../filter-controls
 import { cardRatio, gridLayout } from './../appearance/layout';
 import { islandShortcutsEntry } from './../island-skeleton';
 import { catalogContentSkeletonHtml } from '../catalog-content-skeleton';
-export const entityState = { ENTITY_FILTER_KEYS: undefined, emptyEntityFilters: undefined, parseEntityFilters: undefined, entityFilterSearch: undefined, cloneBarsContext: undefined, activeFilterState: undefined, entityPageView: undefined, entityPageWall: undefined, entityPageRevision: undefined, entityPageCurrent: undefined, entityPageLive: undefined, EMPTY_ENTITY_MEDIA: undefined, parseMediaView: undefined, entityViewSearch: undefined, entityBodyCanLoadMore: undefined, entityBodySkeleton: undefined, entityPageHelpers: undefined, entityFollowActions: undefined, SOURCE_HINTS: undefined, sourceHint: undefined, syncedText: undefined, sourceToolButtons: undefined, application: undefined };
+export const entityState = { ENTITY_FILTER_KEYS: undefined, emptyEntityFilters: undefined, parseEntityFilters: undefined, entityFilterSearch: undefined, cloneBarsContext: undefined, activeFilterState: undefined, entityPageView: undefined, entityPageWall: undefined, entityPageRevision: undefined, entityPageCurrent: undefined, entityPageLive: undefined, EMPTY_ENTITY_MEDIA: undefined, parseMediaView: undefined, entityViewSearch: undefined, entityBodyCanLoadMore: undefined, entityBodySkeleton: undefined, entityPageHelpers: undefined, SOURCE_HINTS: undefined, sourceHint: undefined, syncedText: undefined, sourceToolButtons: undefined, application: undefined };
 
 export function entityPageEntry(){
   const entry=managedEntry($('#index'));
@@ -60,9 +59,8 @@ export function entityPageActions(kind,name){return entityState.application.acti
 export function entityPageProps(kind,name,filters,media){return entityState.application.props(kind,name,filters,media)}
 
 export function photoViewActive(){return hasPhotoView({entityWall:entityState.entityPageWall,
-    entityCurrent:entityState.entityPageCurrent(),indexVisible:!$('#index').hidden,pathname:location.pathname,
-    followMedia:followState.followMediaView,statsVisible:!$('#stats').hidden},
-    ()=>[...document.querySelectorAll('.followphotowall')].some(wall=>wall.getClientRects().length>0))}
+    entityCurrent:entityState.entityPageCurrent(),indexVisible:!$('#index').hidden},
+    ()=>[...document.querySelectorAll('.peach-react [data-photo-wall]')].some(wall=>wall.getClientRects().length>0))}
 
 export function syncPhotoWalls(){entityState.photos.sync()}
 
@@ -152,7 +150,7 @@ export async function entityAliasForm(mine,write){
 }
 
 export function showEntityLoading(kind,name){
-  const jav=['performer','studio'].includes(kind)&&feedState.hasEntityPart(kind,name,'jav');
+  const jav=['performer','studio'].includes(kind)&&entityShapesState.hasEntityPart(kind,name,'jav');
   const head=`<div data-filter-row="bottom" class="flex min-w-0 items-center gap-3 px-3 py-2 min-h-12"><h3 data-entity-readout><span data-skeleton="count" class="relative inline-block h-3.5 w-24 rounded-md align-middle skeleton-sheen"></span></h3>${islandShortcutsEntry()}${kind==='agency'?'':filterControlsSkeletonHtml(sortKeys(state.sort,state.dir,jav),jav?{name:'jav-layout',label:'JAV 卡片版式',value:javLayout(),options:JAV_LAYOUTS}:null)}</div>`;
   const top=kind==='agency'?'':`<div data-entity-media><button type="button" data-media-view="videos" aria-label="视频" aria-pressed="true" ${FILTER_WAITING}>${icon('play')}</button><button type="button" data-media-view="photos" data-media-icon="image" aria-label="照片" ${FILTER_WAITING}>${icon('pics')}</button></div><span data-entity-sep></span><div data-entity-scroll><div data-entity-states>${catalogState.catalogViews().map(view=>`<button type="button" data-entity-state="${esc(view.k)}" aria-pressed="${state.state===view.k}" ${FILTER_WAITING}>${esc(view.label)}</button>`).join('')}<span data-entity-sep></span></div>`;
   const body=kind==='agency'
@@ -170,12 +168,10 @@ export function syncEntitySkeletonParts(kind,name){
   const skeleton=$('#index').firstElementChild;
   if(skeleton?.dataset.skeleton!==`entity/${kind}`)return;
   const sync=(present,wanted,insert)=>{if(wanted&&!present)insert();else if(!wanted&&present)present.remove()};
-  sync(skeleton.querySelector('.entityfoot'),kind!=='agency'&&feedState.hasEntityPart(kind,name,'costars'),
-    ()=>skeleton.querySelector('.entityhero')?.insertAdjacentHTML('beforeend',feedState.costarSkeletonFoot()));
-  sync(skeleton.querySelector('.feednew'),feedState.hasEntityPart(kind,name,'feed'),
-    ()=>skeleton.querySelector('.entitysection')?.insertAdjacentHTML('beforebegin',feedState.feedNewSkeletonSection()));
-  sync(skeleton.querySelector('.entityfacts'),kind==='performer'&&feedState.hasEntityPart(kind,name,'facts'),
-    ()=>skeleton.querySelector('.entityprofile')?.insertAdjacentHTML('beforeend',feedState.factsSkeleton()));
+  sync(skeleton.querySelector('.entityfoot'),kind!=='agency'&&entityShapesState.hasEntityPart(kind,name,'costars'),
+    ()=>skeleton.querySelector('.entityhero')?.insertAdjacentHTML('beforeend',entityShapesState.costarSkeletonFoot()));
+  sync(skeleton.querySelector('.entityfacts'),kind==='performer'&&entityShapesState.hasEntityPart(kind,name,'facts'),
+    ()=>skeleton.querySelector('.entityprofile')?.insertAdjacentHTML('beforeend',entityShapesState.factsSkeleton()));
 }
 
 export function showEntityMissing(kind){
@@ -213,8 +209,6 @@ entityState.entityBodySkeleton = ()=>catalogSkeletonHtml();
 entityState.entityPageHelpers = {
   wireDrag:row=>{if(row)wireDrag(row)},
   wireScroller:row=>{if(row)wireHorizontalScroller(row)},
-  wireFeedRow:row=>wireFeedNewRow(row),
-  feedRowHtml,
   receipt:(message,options)=>receiptsState.actionReceipt(message,options),
   failure:(label,error)=>receiptsState.actionFailure(label,error),
   aliasForm:(mine,write)=>entityAliasForm(mine,write),
@@ -223,8 +217,6 @@ entityState.entityPageHelpers = {
   comboItems:filters=>comboItems(filters),
   sortKeys:(sort,dir,jav)=>sortKeys(sort,dir,jav),
 };
-entityState.entityFollowActions = {...followState.followFeedActions,
-  route:()=>{},shuffle:()=>{},loaded:()=>{},toggleSelection:()=>{}};
 entityState.SOURCE_HINTS = {
   'source offline':'媒体库无法访问，暂时无法核对文件；恢复连接后重试',
   'source not mapped':'本机没有映射这个来源的盘符',
@@ -252,14 +244,12 @@ export function connectPhotoController(){
       restoreHomeContext:()=>writeShell({barsContext:{type:'home',filters:state}}),
       releaseBodyPreviews:()=>releaseHoverPreviews($('#index [data-entity-body]')),push:pushEntityPage,
       state:()=>({seed:String(state.seed||''),jav:state.jav==='1'}),
-      preferences:()=>({revision:entityState.entityPageRevision,feedRevision:feedState.feedRevision,
+      preferences:()=>({revision:entityState.entityPageRevision,
         photoSize:photoSize(),photoLayout:photoLayout(),photoLayouts:PHOTO_LAYOUTS,
-        followImagesOnly:!!preferencesState.appSettings.followImagesOnly,
         javLayout:javLayout(),javLayouts:JAV_LAYOUTS,states:catalogState.VIEW_PILLS,peopleLayout:indexState.peopleIndexLayout(),
         layout:catalogGridLayout(),selectMode,selected:new Set(selected),seekSeconds:preferencesState.appSettings.seekSeconds,
         groupCollapse:preferencesState.appSettings.groupCollapse,wireDrag,skeletonHtml:entityState.entityBodySkeleton,
-        canLoadMore:entityState.entityBodyCanLoadMore,
-        follow:{helpers:followState.followFeedHelpers,actions:entityState.entityFollowActions}}),
+        canLoadMore:entityState.entityBodyCanLoadMore}),
       changeFilter:commitContextFilter,rollSeed:()=>receiptsState.rollSeed(),
       writeSeed:seed=>{state.seed=seed;notifyShell()},
       setJavLayout,javLayout,setPhotoLayout:storePhotoLayout,syncPhotoWalls,openEntity,photoViewActive,
@@ -268,17 +258,17 @@ export function connectPhotoController(){
       releasePage:()=>releaseManagedRoute($('#index')),showMissing:showEntityMissing,dropBars,
     },
     loading:{
-      shapesReady:(kind,name)=>feedState.hasEntityShape(kind,name),waitShapes:waitEntityShapes,paintSkeleton:showEntityLoading,
+      shapesReady:(kind,name)=>entityShapesState.hasEntityShape(kind,name),waitShapes:waitEntityShapes,paintSkeleton:showEntityLoading,
       resetView:()=>{writeShell({detailReturnBarsContext:null});entityState.entityPageView='';entityState.entityPageWall=false},
       loadShapes:loadEntityShapes,syncParts:syncEntitySkeletonParts,
     },
     photos:{
-      preferences:()=>({size:photoSize(),layout:photoLayout(),imagesOnly:!!preferencesState.appSettings.followImagesOnly}),
-      walls:()=>document.querySelectorAll('.followphotowall'),pushEntity:pushEntityPage,pushFollow:pushFollowFeed,
+      preferences:()=>({size:photoSize(),layout:photoLayout(),imagesOnly:false}),
+      walls:()=>document.querySelectorAll('#index .peach-react [data-photo-wall]'),pushEntity:pushEntityPage,
       syncDensity:syncDensityControl,storeSize:storePhotoSize,
     },
     helpers:entityState.entityPageHelpers,
-    actions:{toggleTag,openFollowAuthor:openFollowAuthorFromIndex,javContext:on=>writeShell({entityJavLayout:!!on})},
+    actions:{toggleTag,javContext:on=>writeShell({entityJavLayout:!!on})},
     sortPreference:()=>({sort:preferencesState.appSettings.defaultSort,dir:preferencesState.appSettings.defaultSortDirection}),
   });
   entityState.photos=entityState.application.photos;

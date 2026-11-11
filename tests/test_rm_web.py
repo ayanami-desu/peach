@@ -38,23 +38,15 @@ class WebDataTests(unittest.TestCase):
         with closing(sqlite3.connect(self.db_path)) as connection:
             self.assertEqual(connection.execute('PRAGMA foreign_key_check').fetchall(), [])
 
-    def test_purge_preserves_follow_item_and_playback_without_a_dangling_asset(self):
-        media = Path(self.tmp.name).resolve() / 'purge-follow.mp4'
+    def test_purge_leaves_no_dangling_asset_reference(self):
+        media = Path(self.tmp.name).resolve() / 'purge-extra.mp4'
         media.write_bytes(b'temporary media')
         with self.contract.write_transaction() as connection:
             connection.execute('UPDATE asset SET path=? WHERE id=1', (str(media),))
-            connection.execute("INSERT INTO follow_source(id,provider,ref,label,url,created_at,updated_at) "
-                               "VALUES(901,'test','author','author','https://example.test/author','now','now')")
-            connection.execute("INSERT INTO follow_item(id,source_id,external_id,title,release_key,asset_id,"
-                               "first_seen_at,last_seen_at) VALUES(901,901,'item','item','item',1,'now','now')")
-            connection.execute("INSERT INTO follow_playback(follow_item_id,profile_id,play_count) "
-                               "VALUES(901,'local-default',3)")
         row = self.row(1)
         with self.contract.write_transaction() as connection:
             web_batch.purge_assets(connection, [row])
             self.assertIsNone(connection.execute('SELECT id FROM asset WHERE id=1').fetchone())
-            self.assertIsNone(connection.execute('SELECT asset_id FROM follow_item WHERE id=901').fetchone()[0])
-            self.assertEqual(connection.execute('SELECT play_count FROM follow_playback WHERE follow_item_id=901').fetchone()[0], 3)
             self.assertEqual(connection.execute('PRAGMA foreign_key_check').fetchall(), [])
 
     def test_release_year_filter_and_facets_share_scope_and_keep_other_year_options(self):
@@ -196,13 +188,10 @@ class WebDataTests(unittest.TestCase):
         self.assertEqual(rm_web.dispatch_api_get(self.contract, "/api/entity/latest", {})["items"], {})
 
     def test_search_recommendations_bundle_every_group_in_one_read(self):
-        """搜索推荐一个请求取齐五份：作品照 `/api/items` 的口径，关注那份不带推荐栏用不上的筛选项，
-        占位推荐词取自馆藏作品的番号与署名。"""
+        """搜索推荐一个请求取齐四份：作品照 `/api/items` 的口径，占位推荐词取自馆藏作品的番号与署名。"""
         bundle = rm_web.dispatch_api_get(self.contract, "/api/search/recommendations", {})
-        self.assertEqual(set(bundle), {"items", "jav", "follow", "feeds", "authors", "latest", "words"})
+        self.assertEqual(set(bundle), {"items", "jav", "latest", "words"})
         self.assertEqual({row["id"] for row in bundle["items"]["items"]}, {1, 2})
-        if bundle["follow"] is not None:
-            self.assertNotIn("facets", bundle["follow"])
         self.assertIn("ABC-001", bundle["words"])
         self.assertTrue(all(len(word) > 1 for word in bundle["words"]))
 
@@ -488,51 +477,6 @@ class WebDataTests(unittest.TestCase):
             con.execute("UPDATE asset SET name='must-not-write' WHERE id=1")
         con.close()
 
-    def test_people_index_subscription_uses_enabled_sources_bound_to_entity(self):
-        from peach import feeds
-        with closing(sqlite3.connect(self.db_path)) as con:
-            active = feeds.add_source(con, url='https://javdb.com/actors/Alice', entity_id=11)
-            paused = feeds.add_source(con, url='https://javdb.com/actors/AliceOld', entity_id=11)
-            feeds.set_enabled(con, paused, False)
-            feeds.add_source(con, url='https://javdb.com/actors/Other', name='Canonical Creator')
-            con.commit()
-        people = rm_web.q_index(self.contract, 'performers')['items']
-        self.assertTrue(next(row for row in people if row['entity_id'] == 11)['following'])
-        self.assertFalse(next(row for row in people if row['entity_id'] == 12)['following'])
-        filtered = rm_web.q_index(self.contract, 'performers', q='Alice', limit=1)['items']
-        self.assertEqual(len(filtered), 1)
-        self.assertTrue(filtered[0]['following'])
-        self.assertTrue(rm_web.q_index(self.contract, 'performers', limit=1, offset=1)['items'][0]['following'])
-        with closing(sqlite3.connect(self.db_path)) as con:
-            feeds.set_enabled(con, active, False)
-            con.commit()
-        self.assertFalse(rm_web.q_index(self.contract, 'performers', q='Alice')['items'][0]['following'])
-
-    def test_people_index_marks_enabled_follow_sources_by_confirmed_identity(self):
-        from peach.entity_classification import write_claim
-        with closing(sqlite3.connect(self.db_path)) as con:
-            con.execute("INSERT INTO follow_source(entity_id,provider,ref,label,url,created_at,updated_at) "
-                        "VALUES(12,'patreon','test','Canonical Creator','https://www.patreon.com/test',"
-                        "'2026-01-01','2026-01-01')")
-            con.commit()
-        rows = rm_web.q_index(self.contract, 'performers', q='Creator', limit=1)['items']
-        self.assertTrue(rows[0]['following'])
-        with closing(sqlite3.connect(self.db_path)) as con:
-            write_claim(con, entity_id=12, facet='account_role', value='seller',
-                        source='source:fc2', source_url='https://adult.contents.fc2.com/article/42/',
-                        evidence='seller account', status='observed', confidence=1)
-            con.commit()
-        rows = rm_web.q_index(self.contract, 'creators', q='Creator', limit=1)['items']
-        self.assertTrue(rows[0]['following'])
-        with closing(sqlite3.connect(self.db_path)) as con:
-            con.execute("UPDATE follow_source SET enabled=0")
-            con.commit()
-        self.assertFalse(rm_web.q_index(self.contract, 'creators')['items'][0]['following'])
-        with closing(sqlite3.connect(self.db_path)) as con:
-            con.execute("UPDATE follow_source SET enabled=1,entity_id=NULL")
-            con.commit()
-        self.assertFalse(rm_web.q_index(self.contract, 'creators')['items'][0]['following'])
-
     def test_seller_references_share_profile_work_portrait_and_trusted_role(self):
         from peach.entity_classification import write_claim
         with closing(sqlite3.connect(self.db_path)) as con:
@@ -653,23 +597,12 @@ class WebDataTests(unittest.TestCase):
             {"k": "720P", "n": 0}, {"k": "低画质", "n": 0}])
 
     def test_stats_play_activity_and_replays_count_each_work_once(self):
-        """在线追更那条关联的馆藏视频自己播过，就只按馆藏那一次算；没关联的照常算。"""
+        """播过的作品按馆藏那一次算：次数、时间与重播分布都来自同一份播放记录。"""
         late_monday = datetime(2026, 9, 21, 23, 30).timestamp()
         early_tuesday = datetime(2026, 9, 22, 0, 10).timestamp()
-        sunday = datetime(2026, 9, 20, 8, 5).timestamp()
         with closing(sqlite3.connect(self.db_path)) as connection:
             connection.execute("UPDATE asset SET play_count=3,last_played=? WHERE id=1", (str(late_monday),))
             connection.execute("UPDATE asset SET play_count=1,last_played=? WHERE id=2", (str(early_tuesday),))
-            connection.execute(
-                "INSERT INTO follow_source(id,provider,ref,label,url,created_at,updated_at) "
-                "VALUES(1,'x','ref','Source','https://example.test','2026-01-01','2026-01-01')")
-            connection.executemany(
-                "INSERT INTO follow_item(id,source_id,external_id,title,release_key,asset_id,"
-                "first_seen_at,last_seen_at) VALUES(?,1,?,?,?,?,'2026-01-01','2026-01-01')",
-                [(1, "saved", "Saved", "saved", 1), (2, "online", "Online", "online", None)])
-            connection.executemany(
-                "INSERT INTO follow_playback(follow_item_id,play_count,last_played) VALUES(?,?,?)",
-                [(1, 5, sunday), (2, 1, sunday)])
             connection.executemany(
                 "INSERT INTO asset_preference(profile_id,asset_id,liked,reason,updated_at) "
                 "VALUES('local-default',?,?,?,'2026-09-22')",
@@ -678,17 +611,15 @@ class WebDataTests(unittest.TestCase):
 
         stats = rm_web.q_stats(self.contract)
 
-        self.assertEqual(stats["consumption"]["played"], 3)
+        self.assertEqual(stats["consumption"]["played"], 2)
         self.assertEqual(stats["consumption"]["liked"], 1)
-        self.assertEqual(stats["replays"], [{"k": 1, "n": 2}, {"k": 3, "n": 1}])
+        self.assertEqual(stats["replays"], [{"k": 1, "n": 1}, {"k": 3, "n": 1}])
         activity = stats["play_activity"]
         self.assertRegex(activity["timezone"], r"^UTC[+-]\d{2}:\d{2}$")
         self.assertEqual(activity["days"], [
-            {"date": "2026-09-20", "count": 1}, {"date": "2026-09-21", "count": 1},
-            {"date": "2026-09-22", "count": 1}])
+            {"date": "2026-09-21", "count": 1}, {"date": "2026-09-22", "count": 1}])
         self.assertEqual(activity["hours"], [
-            {"weekday": 0, "hour": 23, "count": 1}, {"weekday": 1, "hour": 0, "count": 1},
-            {"weekday": 6, "hour": 8, "count": 1}])
+            {"weekday": 0, "hour": 23, "count": 1}, {"weekday": 1, "hour": 0, "count": 1}])
 
     def test_library_counts_follow_scan_roots_and_exclude_images(self):
         with closing(sqlite3.connect(self.db_path)) as connection:
@@ -1111,15 +1042,11 @@ class WebDataTests(unittest.TestCase):
         self.assertEqual(live["total"], 1)
         self.assertEqual(live["bytes"], 100, "体积口径必须跟着同一条筛选走")
 
-    def test_vanished_rows_stay_out_of_lists_search_stats_and_feed_landing(self):
-        """标「已消失」的行文件不在盘上：列表、搜索、补全、统计与 Feed 落地都不认它。"""
-        from peach import feeds
-
+    def test_vanished_rows_stay_out_of_lists_search_stats_and_facets(self):
+        """标「已消失」的行文件不在盘上：列表、搜索、补全、统计与分面都不认它。"""
         def seen():
             stats = rm_web.q_stats(self.contract)
             groups = rm_web.q_suggest(self.contract, "two")["groups"]
-            with self.contract.read_connection() as connection:
-                landed = feeds.in_library(connection, "XYZ-002")
             return {
                 "items": sorted(row["id"] for row in rm_web.q_items(self.contract, {"limit": "10"})["items"]),
                 "search": [row["id"] for row in rm_web.q_items(self.contract, {"q": "two", "limit": "10"})["items"]],
@@ -1127,7 +1054,6 @@ class WebDataTests(unittest.TestCase):
                 "videos": stats["attribution"]["videos"],
                 "by_loc": sorted(row["k"] for row in stats["by_loc"]),
                 "facet_creators": [row["n"] for row in rm_web.q_facets(self.contract)["creators"]],
-                "landed": landed,
             }
 
         with closing(sqlite3.connect(self.db_path)) as connection:
@@ -1135,14 +1061,14 @@ class WebDataTests(unittest.TestCase):
             connection.commit()
         before = seen()
         self.assertEqual((before["items"], before["search"], before["suggest"]), ([1, 2], [2], [2]))
-        self.assertEqual((before["videos"], before["by_loc"], before["landed"]), (2, ["115", "local"], True))
+        self.assertEqual((before["videos"], before["by_loc"]), (2, ["115", "local"]))
         with closing(sqlite3.connect(self.db_path)) as connection:
             connection.execute("UPDATE asset SET disposal='vanished' WHERE id=2")
             connection.commit()
         self.contract.cache_bust()
         after = seen()
         self.assertEqual((after["items"], after["search"], after["suggest"]), ([1], [], []))
-        self.assertEqual((after["videos"], after["by_loc"], after["landed"]), (1, ["local"], False))
+        self.assertEqual((after["videos"], after["by_loc"]), (1, ["local"]))
         self.assertEqual(sum(after["facet_creators"]), sum(before["facet_creators"]) - 1)
 
     def test_legacy_length_tags_are_hidden_in_favor_of_numeric_minutes(self):
@@ -1436,65 +1362,27 @@ class WebDataTests(unittest.TestCase):
 
     def test_contract_handler_registries_are_complete_and_unknown_routes_fail(self):
         self.assertEqual(set(rm_web.GET_HANDLERS), {
-            "/api/tag-management",
-            "/api/tasks",
-            "/api/library-processing",
-            "/api/library-processing/issues",
-            "/api/media-processing",
-            "/api/thumbnail-jobs", "/api/timeline",
-            "/api/scraping", "/api/scraping/cover", "/api/scraping/amane-bridge",
-            "/api/scraping/check-all",
-            "/api/items", "/api/item", "/api/entity", "/api/entity/shapes", "/api/entity/latest", "/api/photos", "/api/photo-set",
-            "/api/index", "/api/parts", "/api/editions", "/api/duplicates", "/api/quality-goals",
-            "/api/stats", "/api/tops", "/api/ads", "/api/related", "/api/facets",
-            "/api/suggest",
-            "/api/search-history", "/api/search/recommendations", "/api/review",
-            "/api/playlists", "/api/playlist",
-            "/api/post-setup-tutorial",
-            "/api/tutorial-progress", "/api/performer/delete-candidates", "/api/performer/delete-plan",
-            "/api/library-shortcuts", "/api/folders",
-            "/api/custom-metadata",
-            "/api/follow", "/api/follow/credentials", "/api/follow/schedule",
-            "/api/follow/check", "/api/follow/resolve", "/api/follow/suggest",
-            "/api/links/prune",
-            "/api/follow/tags", "/api/follow/authors",
-            "/api/settings", "/api/links", "/api/organize", "/api/organize/example", "/api/orphan-records",
-            "/api/feeds", "/api/feeds/check", "/api/feeds/discoveries", "/api/feeds/lookup",
-            "/api/feeds/schedule",
-            
-            "/api/wants",
-            "/api/jav/detail", "/api/jav/reviews", "/api/jav/resources", "/api/jav/discoveries", "/api/jav/releases",
-            "/api/jav/discoveries/metadata",
-            "/api/result-updates",
+            "/api/ads", "/api/custom-metadata", "/api/duplicates", "/api/editions", "/api/entity", "/api/entity/latest",
+            "/api/entity/shapes", "/api/facets", "/api/folders", "/api/index", "/api/item", "/api/items",
+            "/api/jav/detail", "/api/jav/discoveries", "/api/library-processing", "/api/library-processing/issues",
+            "/api/library-shortcuts", "/api/links", "/api/links/prune", "/api/media-processing", "/api/organize",
+            "/api/organize/example", "/api/orphan-records", "/api/parts", "/api/performer/delete-candidates",
+            "/api/performer/delete-plan", "/api/photo-set", "/api/photos", "/api/playlist", "/api/playlists",
+            "/api/post-setup-tutorial", "/api/quality-goals", "/api/related", "/api/result-updates", "/api/review",
+            "/api/scraping", "/api/scraping/amane-bridge", "/api/scraping/check-all", "/api/scraping/cover",
+            "/api/search-history", "/api/search/recommendations", "/api/settings", "/api/stats", "/api/suggest",
+            "/api/tag-management", "/api/tasks", "/api/thumbnail-jobs", "/api/timeline", "/api/tops", "/api/tutorial-progress",
         })
         self.assertEqual(set(rm_web.POST_HANDLERS), {
-            "/api/tag-management", "/api/tag-management/preview", "/api/follow/tag",
-            "/api/library-processing", "/api/thumbnail-jobs",
-            "/api/media-processing",
-            "/api/scraping/settings", "/api/scraping/check", "/api/scraping/check-all",
-            "/api/scraping/cover", "/api/jav/cover", "/api/jav/samples",
-            "/api/jav/discoveries/metadata", "/api/jav/releases/metadata",
-            "/api/scraping/amane-bridge/check", "/api/scraping/amane-bridge/rebuild",
-            "/api/activity", "/api/play", "/api/feedback", "/api/watch-later",
-            "/api/playlist",
-            "/api/tutorial-progress", "/api/performer/delete",
-            "/api/library-shortcuts", "/api/folders/preview", "/api/folders/rule",
-            "/api/custom-metadata",
-            "/api/preference", "/api/quality-goal", "/api/item-tag", "/api/batch",
-            "/api/search-history", "/api/trash/empty",
-            "/api/review/decision", "/api/review/genre",
-            "/api/links/check", "/api/links/prune",
-            "/api/follow/check", "/api/follow/status", "/api/follow/media/hide",
-            "/api/follow/image-dims", "/api/follow/save",
-            "/api/follow/play", "/api/follow/activity",
-            "/api/follow/source", "/api/follow/resolve", "/api/follow/credential",
-            "/api/follow/author-alias", "/api/follow/creator", "/api/follow/schedule",
-            "/api/follow/schedule/run", "/api/feeds/schedule/run",
-            "/api/settings",
-            "/api/entity-name", "/api/entity-alias",
-            "/api/organize/preview", "/api/organize/apply", "/api/organize/rollback",
-            "/api/feeds/check", "/api/feeds/source", "/api/feeds/discovery",
-            "/api/wants", "/api/face-models",
+            "/api/activity", "/api/batch", "/api/custom-metadata", "/api/entity-alias", "/api/entity-name",
+            "/api/face-models", "/api/feedback", "/api/folders/preview", "/api/folders/rule", "/api/item-tag",
+            "/api/jav/cover", "/api/jav/samples", "/api/library-processing", "/api/library-shortcuts", "/api/links/check",
+            "/api/links/prune", "/api/media-processing", "/api/organize/apply", "/api/organize/preview",
+            "/api/organize/rollback", "/api/performer/delete", "/api/play", "/api/playlist", "/api/preference",
+            "/api/quality-goal", "/api/review/decision", "/api/review/genre", "/api/scraping/amane-bridge/check",
+            "/api/scraping/amane-bridge/rebuild", "/api/scraping/check", "/api/scraping/check-all", "/api/scraping/cover",
+            "/api/scraping/settings", "/api/search-history", "/api/settings", "/api/tag-management", "/api/tag-management/preview",
+            "/api/thumbnail-jobs", "/api/trash/empty", "/api/tutorial-progress", "/api/watch-later",
         })
         with self.assertRaises(rm_web.ContractRouteNotFound):
             rm_web.dispatch_api_get(self.contract, "/api/typo", {})
@@ -2500,7 +2388,7 @@ class WebDataTests(unittest.TestCase):
         con.close()
 
     def test_post_setup_tutorial_only_carries_progress_counts(self):
-        """安装教程的聚合只带五个读数，不带馆藏明细、关注列表与候选全文。
+        """安装教程的聚合只带三个读数，不带馆藏明细与来源明细。
 
         首页右下角那张卡每次切路由都取一次；所有页面的完整载荷拼在一起，真实馆藏上要二十多秒、
         三百多 KB。这里钉住每一段的键集合，多出一个键就是明细搬进来了。
@@ -2508,28 +2396,16 @@ class WebDataTests(unittest.TestCase):
         root = Path(self.tmp.name).resolve()
         (root / "candidates").mkdir()
         (root / "secrets").mkdir()
-        con = sqlite3.connect(self.db_path)
-        con.execute(
-            "INSERT INTO follow_source(provider,ref,label,url,enabled,created_at,updated_at) "
-            "VALUES('kemono','a','A','https://kemono.su/a',1,'2026-01-01','2026-01-01'),"
-            "('rule34','b','B','https://rule34.xxx/b',0,'2026-01-01','2026-01-01')")
-        con.commit()
-        con.close()
         contract = rm_web.WebContract(
             Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-            candidate_root=root / "candidates", follow_secrets_root=root / "secrets")
+            candidate_root=root / "candidates", secrets_root=root / "secrets")
         payload = rm_web.dispatch_api_get(contract, "/api/post-setup-tutorial", {})
-        self.assertEqual(set(payload), {"library", "scraping", "follow", "credentials", "review"})
+        self.assertEqual(set(payload), {"library", "scraping", "review"})
         # 馆藏读数与首页列表同一条 WHERE：图片与回收站不算。
         self.assertEqual(payload["library"], {"total": 2})
-        self.assertEqual(payload["follow"], {"sources": [
-            {"provider": "kemono", "enabled": True}, {"provider": "rule34", "enabled": False}]})
         self.assertTrue(payload["scraping"]["sources"])
         for source in payload["scraping"]["sources"]:
             self.assertEqual(set(source), {"source", "accepts_cookie", "cookie_saved"})
-        self.assertTrue(payload["credentials"]["providers"])
-        for provider in payload["credentials"]["providers"]:
-            self.assertEqual(set(provider), {"provider", "requirement", "present", "missing"})
         self.assertEqual(set(payload["review"]), {"counts"})
         self.assertTrue(all(isinstance(value, int) for value in payload["review"]["counts"].values()))
         self.assertLess(len(json.dumps(payload, ensure_ascii=False)), 8_000)

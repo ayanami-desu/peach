@@ -28,7 +28,7 @@ class ScrapingAccessTests(unittest.TestCase):
     def test_independent_installations_never_share_session_or_proxy(self):
         peach_proxy.save(self.root, {"mode": "proxy", "proxy": "http://user:private-proxy@127.0.0.1:7890"})
         save(self.root, "javdb", {"cookie": "session=private-cookie", "network": "peach"})
-        public = q_scraping(SimpleNamespace(follow_secrets_root=self.root), {})
+        public = q_scraping(SimpleNamespace(secrets_root=self.root), {})
         self.assertEqual(next(item['label'] for item in public['sources'] if item['source'] == 'javdb'), 'JavDB')
         self.assertNotIn("private-cookie", json.dumps(public))
         self.assertNotIn("private-proxy", json.dumps(public))
@@ -95,7 +95,7 @@ class ScrapingAccessTests(unittest.TestCase):
             return client_for(root, source, transport=httpx.MockTransport(respond), **kwargs)
 
         with patch("peach.scraping_access.client_for", side_effect=client):
-            check = w_scraping_check(SimpleNamespace(follow_secrets_root=self.root), {"source": "javbus"})
+            check = w_scraping_check(SimpleNamespace(secrets_root=self.root), {"source": "javbus"})
             self.assertTrue(check["results"][0]["ok"])
             transport = SourceTransport(self.root)
             self.addCleanup(transport.close)
@@ -154,7 +154,7 @@ class ScrapingAccessTests(unittest.TestCase):
         self.assertEqual(source_for("https://awsimgsrc.dmm.com/x"), "dmm")
 
     def test_connections_do_not_claim_session_validity_or_echo_exception_urls(self):
-        contract = SimpleNamespace(follow_secrets_root=self.root)
+        contract = SimpleNamespace(secrets_root=self.root)
         with patch("peach.source_checks.SourceTransport") as factory:
             factory.return_value.side_effect = httpx.ConnectError("https://secret:password@example.org/")
             result = w_scraping_check(contract, {"source": "fc2cmadb"})
@@ -170,7 +170,7 @@ class ScrapingAccessTests(unittest.TestCase):
         报成登录墙：`docs/SOURCING.md` 记着那些 403 多半是出口 IP 被封，去官网登录
         白做一场，正确动作是等或换出口。措辞与元数据来源同源，页面不另写一份。
         """
-        contract = SimpleNamespace(follow_secrets_root=self.root)
+        contract = SimpleNamespace(secrets_root=self.root)
         login = "https://fc2cmadb.com/"
         cases = ((HttpResponse(403, {}, b"", login), "auth", False, "出口 IP", "请在官网"),
                  (HttpResponse(200, {}, b"<html>login</html>",
@@ -197,7 +197,7 @@ class ScrapingAccessTests(unittest.TestCase):
 
     def test_connection_checks_classify_failures_and_store_only_diagnostics(self):
         from peach.scraping_access import source_checks
-        contract = SimpleNamespace(follow_secrets_root=self.root)
+        contract = SimpleNamespace(secrets_root=self.root)
         cases = [
             (httpx.ProxyError("http://user:secret@proxy.invalid"), "proxy"),
             (httpx.ReadTimeout("secret"), "timeout"),
@@ -387,7 +387,7 @@ class ScrapingAccessTests(unittest.TestCase):
         transport.transports["javdb"] = lambda *args: HttpResponse(
             200, {}, "由於版權限制，本站禁止了你的網路所在國家的訪問。".encode("utf-8"))
         with patch("peach.source_checks.SourceTransport", return_value=transport):
-            result = w_scraping_check(SimpleNamespace(follow_secrets_root=self.root),
+            result = w_scraping_check(SimpleNamespace(secrets_root=self.root),
                                       {"source": "javdb"})["results"][0]
         self.assertFalse(result["ok"])
         self.assertEqual((result["kind"], result["reason"]), ("auth", "geo_restricted"))
@@ -449,7 +449,7 @@ class ScrapingAccessTests(unittest.TestCase):
         Image.new("RGB", (1600, 1000)).save(output, "JPEG")
         original = output.getvalue()
         contract = SimpleNamespace(cover_root=self.root / "covers", candidate_root=self.root,
-                                   follow_secrets_root=self.root / "secrets", follow_sources_root=self.root)
+                                   secrets_root=self.root / "secrets", sources_root=self.root)
         with patch("peach.jav_cover_fetch.best_cover", return_value=(
             Candidate("dmm", "https://pics.dmm.co.jp/fixture.jpg"), (1600, 1000), original,
         )) as fetch:
@@ -467,7 +467,7 @@ class ScrapingAccessTests(unittest.TestCase):
         Image.new("RGB", (2000, 1400)).save(target, "JPEG")
         original = target.read_bytes()
         contract = SimpleNamespace(cover_root=self.root, candidate_root=self.root,
-                                   follow_secrets_root=self.root / "secrets", follow_sources_root=self.root)
+                                   secrets_root=self.root / "secrets", sources_root=self.root)
         with patch("peach.jav_cover_fetch.best_cover", return_value=(
             Candidate("dmm", "https://pics.dmm.co.jp/fixture.jpg"), (800, 600), b"small",
         )):
@@ -496,8 +496,8 @@ class ScrapingAccessTests(unittest.TestCase):
         new = io.BytesIO()
         Image.new("RGB", (840, 472), "white").save(new, "JPEG")
         contract = SimpleNamespace(cover_root=self.root, candidate_root=self.root,
-                                   follow_secrets_root=self.root / "secrets",
-                                   follow_sources_root=self.root)
+                                   secrets_root=self.root / "secrets",
+                                   sources_root=self.root)
         with patch("peach.jav_cover_fetch.best_cover", return_value=(
             candidate_for(product), (840, 472), new.getvalue(),
         )), patch("peach.cover_artwork._sidecars", return_value={}):
@@ -510,7 +510,7 @@ class ScrapingAccessTests(unittest.TestCase):
         from peach.web_scraping import _fetch_cover
         from peach.jav_cover_fetch import Unavailable
         contract = SimpleNamespace(cover_root=self.root, candidate_root=self.root,
-                                   follow_secrets_root=self.root / "secrets", follow_sources_root=self.root)
+                                   secrets_root=self.root / "secrets", sources_root=self.root)
         cases = [(403, "access_denied"), (503, "source_error"), (404, "no_candidate"), (None, "network")]
         for status, reason in cases:
             def fetch(transport, *args, **kwargs):
@@ -537,7 +537,7 @@ class ScrapingAccessTests(unittest.TestCase):
         from peach.web_scraping import MOBILE_BROADBAND_HINT, _fetch_cover
         from peach.jav_cover_fetch import HOSTS_UNREACHABLE, CoverConnectError
         contract = SimpleNamespace(cover_root=self.root, candidate_root=self.root,
-                                   follow_secrets_root=self.root / "secrets", follow_sources_root=self.root)
+                                   secrets_root=self.root / "secrets", sources_root=self.root)
         with patch("peach.jav_cover_fetch.best_cover", side_effect=CoverConnectError(HOSTS_UNREACHABLE)), \
                 patch("peach.web_scraping.SourceTransport"):
             result = _fetch_cover(contract, "ABW-232")
@@ -546,7 +546,7 @@ class ScrapingAccessTests(unittest.TestCase):
         with patch("peach.source_checks.SourceTransport") as factory:
             factory.return_value.side_effect = httpx.ConnectError("EOF occurred in violation of protocol")
             checks = {item["label"]: item for item in
-                      w_scraping_check(SimpleNamespace(follow_secrets_root=self.root), {"source": "dmm"})["results"]}
+                      w_scraping_check(SimpleNamespace(secrets_root=self.root), {"source": "dmm"})["results"]}
         self.assertIn(MOBILE_BROADBAND_HINT, checks["高清图片 CDN"]["message"])
         self.assertNotIn(MOBILE_BROADBAND_HINT, checks["来源页面"]["message"])
 
@@ -611,7 +611,7 @@ class SourcePreflightTests(unittest.TestCase):
         from peach.source_preflight import default_sources
         from peach.web_scraping import w_scraping_check_all
         job =BackgroundJob('test-source-check', task_key='source-check')
-        contract = SimpleNamespace(follow_secrets_root=Path('/unused'), source_check_job=job)
+        contract = SimpleNamespace(secrets_root=Path('/unused'), source_check_job=job)
         def check(root, source, **options):
             return {'results': [{'label': '来源页面', 'ok': source == 'dmm',
                                  'reason': 'ok' if source == 'dmm' else 'timeout'}]}

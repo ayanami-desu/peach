@@ -2,14 +2,14 @@
 
 - 状态：Accepted
 - 日期：2026-10-01
-- 相关：ADR-0005、ADR-0052、ADR-0064、ADR-0067
+- 相关：ADR-0005、ADR-0052、ADR-0064、ADR-0067；关注与订阅的实体引用已由 [ADR-0158](0158-remove-follow-feeds-wants.md) 删除
 
 ## 背景
 
 `entities.merge_entity` 把 source 的作品、别名与引用搬到 target 后删掉 source。账本之外还有按实体
 id 记下的东西：头像文件 `<kind>-<id>.img`、复核 CSV 的 `entity_id` 列、页面与书签里的
 `/entity-image?id=`。source 一删，这些旧 id 什么都解析不到，孤立头像就是这个症状。账本内部也漏搬了
-三处：`follow_source.entity_id`、`feed_source.entity_id` 与 `feed_discovery_entity`。
+三处实体引用，那三张关注与订阅的表已随 [ADR-0158](0158-remove-follow-feeds-wants.md) 删除。
 
 SakuraMedia 在被并实体上留 `merged_into` 指针，旧 id 照样能找到新实体。
 
@@ -21,7 +21,7 @@ SakuraMedia 在被并实体上留 `merged_into` 指针，旧 id 照样能找到�
 条件。
 
 **二、`merge_entity` 仍然删行，墓碑在写入时压平。** 删 source 前把指向 source 的墓碑改指 target，
-再写 `source → target`，解析只查一跳。合并一并搬走关注、订阅与 Feed 发现的实体引用；并入自己或并入
+再写 `source → target`，解析只查一跳。合并一并搬走各表里指向 source 的实体引用；并入自己或并入
 不存在的目标直接拒绝。
 
 **三、解析先认活实体，再认墓碑**（`entities.resolve_entity_id`）。`entity.id` 没有 AUTOINCREMENT，
@@ -29,8 +29,8 @@ SakuraMedia 在被并实体上留 `merged_into` 指针，旧 id 照样能找到�
 指向它的墓碑。服务与脚本的连接不开外键，这两件事只能交给触发器。重建 `entity` 表的迁移要原样补回
 这两个触发器。
 
-**四、按旧 id 进来的入口跳到现在那一条。** `/entity-image` 回 307 到同一地址、只换 id；换头像、
-头像候选、Feed 关注与发现筛选、复核候选的规范名都按墓碑落到目标。实体页按名字路由，旧名已是目标的
+**四、按旧 id 进来的入口跳到现在那一条。** `/entity-image` 回 307 到同一地址、只换 id；换头像与头像候选、
+复核候选的规范名都按墓碑落到目标。实体页按名字路由，旧名已是目标的
 别名，不需要跳转。
 
 **五、ADR-0064 第四条的留痕多一行墓碑。** 自动合并照旧以 `merge:auto:performer-alias@<任务行 id>`

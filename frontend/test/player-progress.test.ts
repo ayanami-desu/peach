@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { playbackKey, playbackPosition, stopPlaybackPosition, trackPlaybackPosition } from '../src/player/progress';
 import { disposePlayer } from '../src/player/dispose';
-import { stopTelemetry, wireFollowTelemetry } from '../src/player/telemetry';
+import { stopTelemetry, wireTelemetry } from '../src/player/telemetry';
 import type { VjsPlayer } from '../src/player/types';
 import { mountDetailPlayer } from '../src/player/detail-player';
 import { configurePlayer } from '../src/player/host';
@@ -10,14 +10,14 @@ import { setDetailPlayer } from '../src/player/registry';
 import * as videojsLoader from '../src/player/videojs';
 
 const item = { id: 12, duration: 300, leave_ratio: .4 };
-const key = playbackKey('item', item);
+const key = playbackKey(item);
 let video: HTMLVideoElement;
 
 beforeEach(() => { localStorage.clear(); video = document.createElement('video') });
 afterEach(() => { stopPlaybackPosition(video); stopTelemetry(video); vi.useRealTimers(); vi.unstubAllGlobals() });
 
 describe('视频续播位置', () => {
-  it('关注片段的实际时长独立于帖子时长，恢复到该片段的保存位置', async () => {
+  it('深链带进来的时刻先于本地记录，挂上播放器就定位过去', async () => {
     configurePlayer({ settings: () => ({ ambientMode: false, theaterMode: false, seekSeconds: 10,
       miniplayer: true, detailAutoplay: false, javImage: 'cover' }), saveSettings: () => {}, toast: () => {},
       loadSourceStatus: async () => ({}), offlineReason: () => '', stage: () => null });
@@ -39,9 +39,8 @@ describe('视频续播位置', () => {
     vi.spyOn(videojsLoader, 'ensureVideojs').mockResolvedValue(() => player);
     try {
       await mountDetailPlayer({ id: 12, duration: 30 }, video, false,
-        { source: { src: '/follow-stream?id=12&media=2', type: 'video/mp4' }, resume: { time: 97, autoplay: false } });
-      await Promise.resolve();
-      expect(time).toBe(97);
+        { resume: { time: 97, autoplay: false } });
+      await vi.waitFor(() => expect(time).toBe(97));
     } finally { disposed = true; setDetailPlayer(null) }
   });
 
@@ -89,13 +88,6 @@ describe('视频续播位置', () => {
     expect(playbackPosition(key, item)).toBe(0);
   });
 
-  it('关注与本地身份互不覆盖，多视频按媒体序号分别记位置', () => {
-    expect(playbackKey('follow', item)).not.toBe(key);
-    expect(playbackKey('follow', item, 0)).not.toBe(playbackKey('follow', item, 1));
-    expect(playbackKey('item', { ...item, location: 'online', follow_item_id: 42 }))
-      .toBe(playbackKey('follow', { id: 42 }));
-  });
-
   it('损坏的存储与存储拒绝不会阻断播放器', () => {
     localStorage.setItem(`peach.playback-position.v1:${key}`, 'broken');
     expect(playbackPosition(key, item)).toBe(120);
@@ -107,10 +99,10 @@ describe('视频续播位置', () => {
   });
 });
 
-describe('关注视频关闭上报', () => {
+describe('观看上报', () => {
   it('暂停状态的恢复定位不累计观看时间', () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    wireFollowTelemetry(item, video);
+    wireTelemetry(item, video);
     video.currentTime = .7;
     video.ontimeupdate?.(new Event('timeupdate'));
     video.onpause?.(new Event('pause'));
@@ -125,7 +117,7 @@ describe('关注视频关闭上报', () => {
       return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
     }));
     Object.defineProperty(video, 'paused', { value: false });
-    wireFollowTelemetry(item, video);
+    wireTelemetry(item, video);
     video.onplay?.(new Event('play'));
     video.currentTime = 1;
     video.ontimeupdate?.(new Event('timeupdate'));
@@ -138,7 +130,7 @@ describe('关注视频关闭上报', () => {
     video.currentTime = 43;
     video.ontimeupdate?.(new Event('timeupdate'));
     video.onpause?.(new Event('pause'));
-    expect(JSON.parse(String(calls.at(-1)?.body))).toMatchObject({ item: 12, position: 43, delta: 1 });
+    expect(JSON.parse(String(calls.at(-1)?.body))).toMatchObject({ id: 12, position: 43, delta: 1 });
     expect(calls).toHaveLength(count + 1);
   });
 
@@ -151,14 +143,14 @@ describe('关注视频关闭上报', () => {
     }));
     const root = document.createElement('div'); root.append(video);
     Object.defineProperty(video, 'paused', { value: false });
-    wireFollowTelemetry(item, video);
+    wireTelemetry(item, video);
     video.onplay?.(new Event('play'));
     video.currentTime = 1;
     video.ontimeupdate?.(new Event('timeupdate'));
     video.currentTime = 42;
     video.dispatchEvent(new Event('seeking'));
     disposePlayer({ el: () => root, pause: () => {}, isDisposed: () => false, dispose: () => {} } as unknown as VjsPlayer);
-    expect(JSON.parse(String(calls.at(-1)?.body))).toMatchObject({ item: 12, position: 42, delta: 1 });
+    expect(JSON.parse(String(calls.at(-1)?.body))).toMatchObject({ id: 12, position: 42, delta: 1 });
     expect(calls.at(-1)?.keepalive).toBe(true);
     const count = calls.length;
     vi.advanceTimersByTime(60_000);

@@ -2,13 +2,13 @@
  * `IMMERSE_ROUTES`，只挂元素。
  *
  * `MANAGED_ROUTES` 是管理区那几页（画进 `#stats`），键是精确路径，每条带页面组按匹配挂上的元素；
- * `BROWSE_ROUTES` 是同样画进 `#stats` 的播放列表页与关注页；`INDEX_ROUTES` 是索引页、`ENTITY_ROUTES` 是资料页（都画进 `#index`），资料页按模式登记
+ * `BROWSE_ROUTES` 是同样画进 `#stats` 的播放列表页；`INDEX_ROUTES` 是索引页、`ENTITY_ROUTES` 是资料页（都画进 `#index`），资料页按模式登记
  * （`/performers/*`），种类与名字跟着打开走；`CATALOG_ROUTES` 是画进 `#grid` 的目录网格与垃圾队列，按页面
  * 分键；`SURFACE_ROUTES` 是页面里的页面内组件，`RESIDENT_ROUTES` 是不跟某一页走的常驻组件，都按名字登记，不是地址、
  * 不进 `<Routes>`。每次打开交进来的 `open`（管理区由页面元素算，其余由壳算）只带那一次才算得出的值（地址上的分类与页签、只读状态、引导标记、一次性预填、刷新代次），`#grid` 那两页
  * 与页面内组件是壳那一整份 props；回执与换到还归壳的那几屏走 `ShellActions`。
  * 管理区几页之间的跳转走 `go`：落在 `MANAGED_ROUTES` 上的交给 React Router 的 `navigate`，其余交壳。另外
- * 四张表的页面不走 `go`：它们在页内写地址一律由壳认领（`routeIndex`、资料页与关注页的 `actions.route`、
+ * 四张表的页面不走 `go`：它们在页内写地址一律由壳认领（`routeIndex`、资料页的 `actions.route`、
  * 目录的换筛选、垃圾队列的换分类），跨页也交壳，打开次数同壳自己打开。 */
 import type { ReactElement } from 'react';
 import { configurationSection, type ConfigurationPath } from '@peach/history';
@@ -29,11 +29,6 @@ import { prefetchEntityPage, type EntityPageProps } from '../entity-page/entity-
 import { EntityPage } from '../entity-page/entity-page-view';
 import { prefetchDuplicates } from '../duplicates/duplicates';
 import { prefetchDiagnostics } from '../diagnostics/diagnostics';
-import { prefetchFeedNew } from '../feed-new/feed-new';
-import { FeedNewPage } from '../feed-new/feed-new-page';
-import { prefetchFollowFeed } from '../follow-feed/follow-feed';
-import { FollowFeedPage } from '../follow-feed/follow-feed-page';
-import { prefetchFollowManage } from '../follow-manage/follow-manage';
 import { GlowPickerSurface } from '../glow-picker/glow-picker-island';
 import { ImmerseSurface } from '../immerse/immerse-island';
 import { prefetchIndex } from '../index/index-data';
@@ -55,7 +50,7 @@ import { SidebarSurface } from '../sidebar/sidebar-island';
 import { StageSurface } from '../stage/stage';
 import { prefetchStats } from '../stats/stats';
 import { CatalogMatch } from './pages/catalog';
-import { FollowMatch, PlaylistsMatch } from './pages/follow';
+import { PlaylistsMatch } from './pages/playlists';
 import { ImmerseMatch } from './pages/immerse';
 import { EntityMatch, IndexMatch } from './pages/index-entity';
 import { ManagedMatch } from './pages/managed';
@@ -80,7 +75,7 @@ type EntityRouteTable = { [Path in EntityRoutePath]: ManagedRoute<EntityPageProp
 type CatalogRouteTable = { [Path in CatalogPagePath]: ManagedRoute<CatalogOpenProps[Path]> };
 type SurfaceRouteTable = { [Name in SurfaceName]: ManagedRoute<SurfaceOpenProps[Name]> };
 type ResidentRouteTable = { [Name in ResidentName]: ManagedRoute<ResidentOpenProps[Name]> };
-/** 路由树画的全部页面与面：管理区那几页、播放列表页与关注页、索引页与资料页、目录网格，加上页面内组件与常驻组件的名字。 */
+/** 路由树画的全部页面与面：管理区那几页、播放列表页、索引页与资料页、目录网格，加上页面内组件与常驻组件的名字。 */
 export type RoutedPath =
   ManagedPath | BrowseRoutePath | IndexRoutePath | EntityRoutePath | CatalogPagePath | SurfaceName | ResidentName;
 
@@ -105,7 +100,6 @@ const configurationPage = routeChunk(async () => {
   return { ConfigurationPage, DiagnosticsPage };
 });
 const activityPage = routeChunk(() => import('../activity/activity-page'));
-const followManagePage = routeChunk(() => import('../follow-manage/follow-manage-page'));
 const playlistsPage = routeChunk(() => import('../playlists/playlists-page'));
 
 /* 数据管理页读数卡的去处里，只有重复文件不按管理区身份找：它报的是数据管理的身份。 */
@@ -231,17 +225,6 @@ export const MANAGED_ROUTES: ManagedRouteTable = {
       return <ActivityPage />;
     },
   },
-  /* 首屏只取来源清单与凭据状态，地址栏指着「订阅源」时连它一起取。检查更新与查找那两趟
-     后台任务的快照不在首屏里：它们常年躺着上一趟的回执，等它们只会让首屏多一个往返。 */
-  '/subscriptions': {
-    element: <ManagedMatch path="/subscriptions" />,
-    prefetch: (_open, signal) => withPage(followManagePage, prefetchFollowManage(signal)),
-    page: (open, actions) => {
-      const { FollowManagePage } = followManagePage.get();
-      return <FollowManagePage {...open} route={actions.routeFollowManage} savePreference={actions.saveFollowPreference}
-        toast={(message) => actions.receipt(message)} openFollow={actions.openFollow} />;
-    },
-  },
 };
 
 /** 管理区那几页之间的跳转判据：只认 `MANAGED_ROUTES` 的精确路径。索引页不算：它们换 search 要由壳
@@ -253,11 +236,9 @@ export const IMMERSE_ROUTES: Readonly<Record<string, { element: ReactElement }>>
   '/immerse': { element: <ImmerseMatch /> },
 };
 
-/* 两页都由元素按匹配打开（`pages/follow.tsx`）。播放列表页：首屏每次都向服务端重取（首页刚存的 Mix 进来就要
+/* 播放列表页由元素按匹配打开（`pages/playlists.tsx`）：首屏每次都向服务端重取（首页刚存的 Mix 进来就要
    看得到）。停在这一页时壳要求重读，元素经 `updateManagedRoute` 推一个新的 `revision`，页面只重取、不重挂。点开
-   一份进舞台、翻页门槛与回执都归壳。
-   关注页：首屏是列表第一页与凭据两趟并行，挂上就是最终样子；之后换筛选、换一批、选择模式与照片版式都由
-   壳经 `updateManagedRoute` 推进来，页面按新键只重取列表、不重挂。 */
+   一份进舞台、翻页门槛与回执都归壳。 */
 export const BROWSE_ROUTES: BrowseRouteTable = {
   '/playlists': {
     element: <PlaylistsMatch />,
@@ -267,11 +248,6 @@ export const BROWSE_ROUTES: BrowseRouteTable = {
       return <PlaylistsPage revision={open.revision} openPlaylist={actions.openPlaylist} openEntity={actions.openEntity}
         canFlip={actions.canFlip} toast={(message, { undo } = {}) => actions.receipt(message, undo ? { undo } : {})} />;
     },
-  },
-  '/follow': {
-    element: <FollowMatch />,
-    prefetch: (open, signal) => prefetchFollowFeed(open, signal),
-    page: (open) => <FollowFeedPage {...open} />,
   },
 };
 const isBrowsePath = (path: string): path is BrowseRoutePath => Object.hasOwn(BROWSE_ROUTES, path);
@@ -283,9 +259,8 @@ const indexRoute: ManagedRoute<IndexOpenProps> = {
   prefetch: (open, signal) => prefetchIndex(open, signal),
   page: (open, actions) => (
     <IndexPage {...open} route={actions.routeIndex} savePreference={actions.savePeopleLayout}
-      exitSelectMode={actions.exitSelectMode} personAvatar={actions.personAvatar} authorAvatar={actions.authorAvatar}
-      tagLabel={tagLabel} openEntity={actions.openEntity} showTags={actions.showIndexTags}
-      openFollowAuthor={actions.openFollowAuthor} openFollowTag={actions.openFollowTag} />
+      exitSelectMode={actions.exitSelectMode} personAvatar={actions.personAvatar}
+      tagLabel={tagLabel} openEntity={actions.openEntity} showTags={actions.showIndexTags} />
   ),
 };
 export const INDEX_ROUTES: IndexRouteTable = {
@@ -293,11 +268,11 @@ export const INDEX_ROUTES: IndexRouteTable = {
   '/series': indexRoute,
 };
 
-/* 资料页：资料卡、筛选浮层、新作那一行与正文是同一页的四块。框架由元素排好（`openManagedRoute` 的
+/* 资料页：资料卡、筛选浮层与正文是同一页的三块。框架由元素排好（`openManagedRoute` 的
    `place`），页面画进资料卡那一格，再经 portal 画进另外三块。身份资料先显示，作品、照片与新作各自加载；
    换头像的候选不在首屏里，资料页每进一次就打一遍图库的话，多数时候没人
    点开它。壳交进来的筛选、视图与展示设置之后经 `updateManagedRoute` 推进来，页面按新键重取、不重挂。卡片与
-   遗留层拼的 HTML（头像、新作那一行、源文件键）都是壳的那一份，跟着打开走。 */
+   遗留层拼的 HTML（头像、源文件键）都是壳的那一份，跟着打开走。 */
 const entityRoute: ManagedRoute<EntityPageProps> = {
   element: <EntityMatch />,
   prefetch: (open) => prefetchEntityPage(open),
@@ -339,15 +314,11 @@ const LibraryProcessing = (props: LibraryProcessingProps) => (
 
 /* 页面里的页面内组件，按名字登记：壳每次打开交进来整份 props，之后经 `updateManagedRoute` 推补丁，页面就地
    重渲染。首页筛选条与搜索下拉不在打开前等数据（筛选条的读数与头像由壳推进来，搜索下拉的记录与推荐聚焦
-   时才取）；首页新作条目先显示，封面各自加载；任务面先取一份进度快照。 */
+   时才取）；任务面先取一份进度快照。 */
 export const SURFACE_ROUTES: SurfaceRouteTable = {
   'catalog-filter': {
     prefetch: async () => {},
     page: (open) => <CatalogFilterPage {...open} />,
-  },
-  'feed-new': {
-    prefetch: (open) => prefetchFeedNew(open),
-    page: (open) => <FeedNewPage {...open} />,
   },
   'library-processing': {
     prefetch: (_open, signal) => prefetchLibraryProcessing(signal),

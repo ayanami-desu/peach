@@ -340,8 +340,7 @@ export function wireScrollers(root:ParentNode=document):void{
    点名的清单，漏登记就是「看得见、够不着」：一排分区在 390px 下溢出两百多像素，
    却既没有渐隐也不接滚轮。组件自己量溢出，不溢出的宽度上登记等于空转，所以按可能
    溢出的层登记，不按某一个断点登记。React 档的页面自己用 `overflow-x-auto`，不进这份清单。 */
-const BOARD_EDGE_SCROLLERS='.reviewtabs,.ftablewrap,.ui-board-local-nav,[data-manage-menu],'
-  +'.follow-workspace-switch,.fmanagenav';
+const BOARD_EDGE_SCROLLERS='.reviewtabs,.ftablewrap,.ui-board-local-nav,[data-manage-menu]';
 
 /** 按实际 overflow 接管滚动容器；横向手势导航保留现有渐隐反馈。 */
 export function wireOverlayScrollbars(root:ParentNode=document,subtree=true):void{

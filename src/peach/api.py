@@ -21,9 +21,8 @@
 import asyncio
 import logging
 import secrets
-import sqlite3
 import uuid
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
@@ -33,17 +32,13 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
-from . import __version__, feeds, ledger_backups, media_probe, record_rehome, wants, web_contract, web_feeds, web_follow
+from . import __version__, ledger_backups, media_probe, record_rehome, web_contract
 from . import routes_api, routes_auth, routes_configuration, routes_media, routes_pages
 from .config import PeachSettings
 from .drive_connections import DriveConnections
 from .drive_sync import DriveSync
 from .drive_stream import build as build_streamer
 from .ffmpeg import FFmpegResolver
-from .follow_covers import FollowCoverService
-from .follow_faces import FollowFaceIndex
-from .follow_scheduler import FEED_JOB_ID, FollowScheduleConfig, FollowUpdateScheduler
-from .follow_stream import FollowMediaResolver
 from .health import inspect_database
 from .http import HttpxTransport
 from .media import MediaEngine, MediaNotFound, MediaUnavailable
@@ -64,7 +59,7 @@ from .repository import LedgerDatabase, LedgerRepository
 from .scan import ScanService
 from .routes_auth import AssetLoginRequired, PageLoginRequired
 # 两档缓存时长的实现在 `routes_media`，这里再导出：它们是对外的缓存契约，
-# tests/test_follow_web.py 按 `api.MEDIA_CACHE_SECONDS` 断言两者的关系。
+# tests/test_fastapi_api.py 按 `api.MEDIA_CACHE_SECONDS` 断言两者的关系。
 from .routes_media import AVATAR_CACHE_SECONDS, MEDIA_CACHE_SECONDS  # noqa: F401
 from .sample_images import SampleCache
 from .sample_images import cache_root as sample_cache_root
@@ -147,14 +142,13 @@ def _restore_task_center(contract) -> None:
         LOGGER.info("task center requeued %s followup(s)", len(requeued))
 
 
-#: 开机在后台先算一遍的聚合：口味、复核、垃圾复核、关注的全部条目与筛选项各要几秒到
+#: 开机在后台先算一遍的聚合：口味、复核、垃圾复核与筛选项各要几秒到
 #: 十几秒，都按账本版本号缓存（`WebContract.cached_until_changed`），算好一次就一直用到
 #: 账本或文件真的变了。排在前面的是每页都碰到的几份：形状名单、作品分组快照（目录、
 #: 索引、筛选项都建在它上面）、统计与搜索推荐池，重启后第一个打开页面的人不再等它们一起冷算。
 WARM_AGGREGATES = (("/api/entity/shapes", {}), ("/api/items", {"limit": "60"}), ("/api/stats", {}),
                    ("/api/search/recommendations", {}),
-                   ("/api/review", {}), ("/api/ads", {}),
-                   ("/api/follow", {}))
+                   ("/api/review", {}), ("/api/ads", {}))
 
 
 def _start_ledger_services(settings: PeachSettings, contract, services) -> bool:
@@ -242,22 +236,13 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         poster_root=settings.poster_root,
         timeline_root=settings.timeline_root,
         photo_root=settings.photo_root,
-        follow_state_root=settings.follow_state_root,
+        state_root=settings.state_root,
         entry_links_root=settings.entry_links_root,
         database=database,
     )
     repository = LedgerRepository(database)
     resolver = FFmpegResolver(settings.ffmpeg_root)
     http_transport = HttpxTransport()
-    follow_media_resolver = FollowMediaResolver(http_transport, state_root=settings.follow_state_root).with_credential_loader(
-        lambda provider: web_follow._credential_store(contract).load(provider))
-    # 订阅检查、浏览与画面签名的取图共用这一份按站冷却：同一个站被限流，几处都得停。
-    contract.follow_media_resolver = follow_media_resolver
-    follow_cover_service = FollowCoverService(
-        resolver, follow_media_resolver, settings.poster_root / "follow")
-    contract.follow_faces = FollowFaceIndex(
-        settings.poster_root / "follow-faces", http_transport,
-        cover_root=settings.poster_root / "follow", gate=follow_media_resolver)
     # 网盘连接、取流与媒体装配：资产不再落到本地，播放要么 302 要么由这里转发 Range。
     drive = DriveConnections(settings, lambda: http_transport.client)
     # 整理那一片按来源问「接没接上」，走的是契约而不是请求对象。
@@ -269,9 +254,9 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     scan_service = ScanService(drive, repository)
 
     def after_scan(key: str, result) -> None:
-        """新登记的行要探时长、与「想要」对账、把消失作品的个人记录接回来。
+        """新登记的行要探时长，再把消失作品的个人记录接回来。
 
-        扫描只负责登记；这三件事都靠 `new_ids` 认对象，所以挂在同步之后一次做完。
+        扫描只负责登记；两件事都靠 `new_ids` 认对象，所以挂在同步之后一次做完。
         探测在前：接回的第二条判据要比时长。
         """
         ids = list(result.new_ids)
@@ -280,10 +265,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         choice = resolver.ffprobe()
         media_probe.probe_missing(database, media_engine, choice.path if choice else None,
                                   asset_ids=ids)
-        with closing(sqlite3.connect(database, timeout=30)) as connection:
-            connection.row_factory = sqlite3.Row
-            wants.reconcile(connection, ids)
-            connection.commit()
         record_rehome.reattach_in(database, ids)
 
     drive_sync = DriveSync(scan_service, after=after_scan)
@@ -303,35 +284,13 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
                                                     quality=COVER_SMALL_THUMB_QUALITY)
     providers = default_registry()
     opencode_go = OpenCodeGoClient(transport=http_transport)
-    follow_scheduler = FollowUpdateScheduler(
-        settings.follow_state_root,
-        lambda: web_follow.w_follow_check(contract, {"automatic": True}),
-        available=True,
-    )
-    contract.follow_scheduler = follow_scheduler
-    # 订阅源拉取（ADR-0042）用同一个调度实现，只换 job id、状态文件与默认间隔。
-    # 默认 6 小时：一位女优的 JavDB 演员页一天更新几条，比这更密只是把 JavDB 的配额
-    # 花在一张没变的页面上。6 小时是每个源的周期；调度每半小时看一次谁到期，各源按
-    # 自己的相位错开（ADR-0134）。
-    feed_scheduler = FollowUpdateScheduler(
-        settings.follow_state_root,
-        lambda: web_feeds.w_feed_check(contract, {"automatic": True}),
-        available=True,
-        job_id=FEED_JOB_ID,
-        filename="feed-schedule.json",
-        default=FollowScheduleConfig(enabled=True,
-                                     interval_minutes=feeds.DEFAULT_INTERVAL_MINUTES),
-        tick_minutes=feeds.TICK_MINUTES,
-        unavailable_message="订阅源拉取只在写入端可用",
-    )
-    contract.feed_scheduler = feed_scheduler
     from .web_job_recovery import RecoveryService
     recovery_service = RecoveryService(contract, available=True)
     contract.task_runs.enabled = contract.task_runs.available()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        services = (follow_scheduler, feed_scheduler, recovery_service)
+        services = (recovery_service,)
         activation = _LedgerActivation(_app, settings, contract, services)
         _app.state.ledger_activation = activation
         ledger_ready = await activation.start()
@@ -348,8 +307,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
             sync_stop.set()
             await sync_loop
             recovery_service.stop()
-            follow_scheduler.stop()
-            feed_scheduler.stop()
             # to_thread 的查询在线程内释放连接后才算结束。
             await aggregate_warmup
             # 死链检查和资源对账的后台线程是 daemon，本来挡不住进程退出；这里显式收
@@ -358,7 +315,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
             from . import face_models
             face_models.detach(contract.task_runs)
             http_transport.close()
-            follow_media_resolver.close()
 
     app = FastAPI(
         title="Peach API",
@@ -385,9 +341,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     app.state.providers = providers
     app.state.opencode_go = opencode_go
     app.state.http_transport = http_transport
-    app.state.follow_media_resolver = follow_media_resolver
-    app.state.follow_cover_service = follow_cover_service
-    app.state.follow_scheduler = follow_scheduler
     from .background_issues import IssueLog
     app.state.background_issues = IssueLog()
     app.state.external_playback_key = secrets.token_bytes(32)

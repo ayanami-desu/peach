@@ -26,9 +26,7 @@
 @import "./catalog-folders/catalog-folders.css";
 @import "./search/search.css";
 @import "./entity-body/entity-body.css";
-@import "./follow-feed/follow-feed.css";
 @import "./jav/jav.css";
-@import "./follow-detail/follow-detail.css";
 @import "./item-detail/item-detail.css";
 @import "./jav-detail/jav-detail.css";
 @import "./photo-lightbox/photo-lightbox.css";
@@ -619,16 +617,8 @@ html:has([data-selection-dock]) { scroll-padding-bottom: var(--selection-dock-sp
   scroll-margin-top: calc(var(--topH) + 124px);
 }
 
-.peach-react [data-source-divider] > * + * {
-  border-top: 1px solid var(--color-border-button-default);
-}
-
-.peach-react [data-follow-author-header][data-open] {
-  border-bottom: 1px solid var(--color-border-button-default);
-}
-
-/* 关注表格坐在关注列表的 secondary 外框里，自己的 primary 面负责浅色的白底与暗色的
- * 实体卡面；选中行回到 BoardUI Data Table 的 secondary 反馈。这里的边线取 button border，
+/* 表格坐在列表的 secondary 外框里，自己的 primary 面负责浅色的白底与暗色的卡面；
+ * 选中行回到 BoardUI Data Table 的 secondary 反馈。这里的边线取 button border，
  * 因为 Peach 暗色 primary 与 separator 同为 neutral-800，用 separator 会完全消失。 */
 .peach-react [data-board-data-table] {
   /* 隐藏列标题的绝对定位由表格外框承接，滚动内容不扩大页面。 */
@@ -650,38 +640,30 @@ html:has([data-selection-dock]) { scroll-padding-bottom: var(--selection-dock-sp
 
 /* 指着哪一行哪一行换底：整行都能点选之后，没有这层反馈就不知道点下去落在哪一行。
  * 取 BoardUI primary 面的 hover 档，只给没选中的行；选中行的底色在下面，压过这一条。 */
-.peach-react [data-board-data-table] .bui-table tbody tr:hover,
-.peach-react [data-source-divider] > :hover {
+.peach-react [data-board-data-table] .bui-table tbody tr:hover {
   background-color: var(--color-background-primary-hover);
 }
 
-.peach-react [data-board-data-table] .bui-table tbody tr[data-follow-selected],
 .peach-react [data-board-data-table] .bui-table tbody tr[data-board-selected] {
   background-color: var(--color-background-secondary-default);
 }
 
-/* 卡片视图里勾上的来源行走同一档反馈：两种视图共用一个勾选集合，只有表格给底色的话，
- * 换个视图同一批选中项就看不出来了。 */
-.peach-react [data-source-divider] > [data-selected] {
-  background-color: var(--color-background-secondary-default);
-}
-
-.peach-react [data-follow-table] [data-sort-indicator] {
+.peach-react [data-sort-table] [data-sort-indicator] {
   display: inline-flex;
   flex: none;
   color: var(--color-text-tertiary);
   transition: transform 150ms ease, color 150ms ease;
 }
 
-.peach-react [data-follow-table] [data-sort-indicator][data-direction] {
+.peach-react [data-sort-table] [data-sort-indicator][data-direction] {
   color: var(--color-text-secondary);
 }
 
-.peach-react [data-follow-table] [data-sort-indicator][data-direction='ascending'] {
+.peach-react [data-sort-table] [data-sort-indicator][data-direction='ascending'] {
   transform: rotate(180deg);
 }
 
-.peach-react [data-follow-table] [data-sort-indicator] svg {
+.peach-react [data-sort-table] [data-sort-indicator] svg {
   width: 24px;
   height: 24px;
 }

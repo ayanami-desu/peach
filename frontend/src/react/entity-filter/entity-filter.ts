@@ -5,7 +5,7 @@
  * 动作通过接口交回页面与控制器，本模块不拼请求。 */
 
 /** 这一页此刻摆的是哪一类东西。 */
-export type EntityView = 'people' | 'videos' | 'photos' | 'online';
+export type EntityView = 'people' | 'videos' | 'photos';
 
 /** 左端那一组视图键。只有一类东西时壳不给（`null`）：一枚孤零零的键没有可切的对象。 */
 export interface EntityViewKeys {
@@ -13,11 +13,9 @@ export interface EntityViewKeys {
   label: string;
   /** 名册键：事务所页是艺人，片商页是旗下厂牌。 */
   people: { label: string; count: number; icon: string } | null;
-  /** 本地一部视频都没有、只有关注来源时不出：那时作品视图里什么也没有，进页就落在在线。 */
+  /** 本地一部视频都没有时不出。 */
   videos: { count: number } | null;
   photos: { count: number } | null;
-  /** 关注里绑在这位创作者名下的更新（ADR-0096），`count` 同资料卡那一句「N 项更新」。 */
-  online: { count: number } | null;
 }
 
 /** 一枚标签胶囊。`label` 已按壳的 `tagLabel` 译好，`n` 是这一页里带这个标签的视频数。 */
@@ -64,24 +62,6 @@ export interface EntityPhotoHead {
   setId: number;
 }
 
-/** 在线视图的那几样，同关注页那条浮层：视频／图片两枚圆键、状态一排、来源站标与标签，下排换一批、
- *  图片墙的布局与「仅显示图片」、排序键。来源与标签只数这一位名下的条目（`author_facets`）。 */
-export interface EntityOnlineHead {
-  media: 'videos' | 'images';
-  /** 两档各有几组；一组图片都没有时不出这两枚键，同关注页。 */
-  mediaCounts: { videos: number; images: number } | null;
-  photoLayout: string;
-  photoLayouts: readonly SegmentOption[];
-  imagesOnly: boolean;
-  status: string;
-  statuses: readonly (readonly [key: string, label: string])[];
-  provider: string;
-  providers: readonly (readonly [key: string, label: string])[];
-  /** `cat` 是来源记的标签类型，药丸按它取类型色（`data-tag-cat`）。 */
-  tags: readonly { k: string; label: string; n: number; selected: boolean; cat: string }[];
-  sorts: EntitySortKey[];
-}
-
 export interface EntityFilterActions {
   /** 换视图（名册／视频／照片）。 */
   setView(view: EntityView): void;
@@ -99,14 +79,6 @@ export interface EntityFilterActions {
   setPhotoLayout(layout: string): void;
   /** 图集里的「全部照片」。 */
   photoBack(): void;
-  /** 在线视图：换媒体、换状态、按下或抬起一个来源、一枚标签，换排序、换一批，图片墙的两样偏好。 */
-  onlineMedia(media: 'videos' | 'images'): void;
-  onlineShuffle(): void;
-  onlineImagesOnly(on: boolean): void;
-  onlineStatus(status: string): void;
-  onlineProvider(provider: string): void;
-  onlineTag(tag: string): void;
-  onlineSort(key: string): void;
 }
 
 /** 仍由遗留层给的接线与 HTML。 */
@@ -136,7 +108,6 @@ export interface EntityFilterProps {
   busy: boolean;
   video: EntityVideoHead | null;
   photo: EntityPhotoHead | null;
-  online: EntityOnlineHead | null;
   actions: EntityFilterActions;
   helpers: EntityFilterHelpers;
 }

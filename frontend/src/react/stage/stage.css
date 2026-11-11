@@ -61,12 +61,11 @@
 [data-stage] [data-jav-video]{display:grid;place-items:center}
 [data-stage] [data-stage-scroll] :is([data-jav-video]>[class~="video-js"],[data-item-gallery]>[class~="video-js"]){width:min(100%,calc(var(--detail-gallery-height) * 16 / 9));height:auto;max-height:var(--detail-gallery-height);aspect-ratio:16/9}
 @media(max-width:1080px){
-  [data-stage][data-stage-kind="follow"]{--detail-media-height:min(56dvh,56.25vw)}
-  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]){--detail-media-height:min(56dvh,calc(56.25vw + 116px))}
-  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]):not([data-theater]) [data-stage-grid]{height:auto}
+  [data-stage]{--detail-media-height:min(56dvh,calc(56.25vw + 116px))}
+  [data-stage]:not([data-theater]) [data-stage-grid]{height:auto}
 }
 @media(max-width:760px){
-  [data-stage][data-stage-kind="item"],[data-stage][data-stage-kind="jav"]{height:calc(100dvh - env(safe-area-inset-top) - 16px)}
+  [data-stage]{height:calc(100dvh - env(safe-area-inset-top) - 16px)}
 }
 body[data-detail-open]{overflow:hidden;--glow-drift-play:paused}
 body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,paused,running}
@@ -168,7 +167,7 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
 [data-detail-continuation]>[data-mix-queue] [data-mix-item-text]{flex:1;min-width:0}
 [data-detail-continuation]>[data-mix-queue] [data-mix-item-text] b{font-size:var(--fs-sm)}
 [data-detail-continuation]>[data-mix-queue] [data-mix-item][data-media-kind="image"] [data-mix-item-pic] img{object-fit:cover}
-/* 两座详情岛（`item-detail`、`follow-detail`）的宿主 `[data-stage-scroll]` 里多一层 React 根：不占盒子，格子照旧是
+/* 两座详情岛（`item-detail`、`jav-detail`）的宿主 `[data-stage-scroll]` 里多一层 React 根：不占盒子，格子照旧是
    舞台这一层的直接排版对象；字体、行高与字色照舞台往下传，不换成 React 根的那一套，里面的
    骨架与队列是两座岛共用的遗留几何。 */
 [data-stage-scroll]>.peach-react{display:contents;font:inherit;color:inherit;-webkit-font-smoothing:inherit;

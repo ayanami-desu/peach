@@ -36,9 +36,6 @@ export interface MediaItem {
   cover_version?: string;
   has_thumb?: boolean;
   has_local_poster?: boolean;
-  follow_thumb_url?: string;
-  follow_item_id?: number | null;
-  follow_tags?: string[];
   tags?: string[];
   performers?: string[];
   performer_entities?: (MediaEntityRef | null)[];

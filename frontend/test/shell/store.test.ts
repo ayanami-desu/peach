@@ -1,5 +1,5 @@
 /* 壳的内存状态单例（`src/shell/`）：活绑定、整体换引用与原地改字段两种写法、`barsContext.filters` 与
- * `state` 的别名、两个常驻的选择集，以及订阅与版本号。每个用例拿一份新加载的模块，初值互不干扰。 */
+ * `state` 的别名、常驻的选择集，以及订阅与版本号。每个用例拿一份新加载的模块，初值互不干扰。 */
 import { beforeEach, expect, it, vi } from 'vitest';
 
 type Shell = typeof import('../../src/shell');
@@ -11,16 +11,16 @@ beforeEach(async () => {
 
 const home = (filters: Record<string, string>) => ({ type: 'home' as const, filters });
 
-it('初值与壳启动之前一致：口径还没写入，来处指向首页与关注页', () => {
+it('初值与壳启动之前一致：口径还没写入，来处指向首页', () => {
   expect(shell.state).toBeUndefined();
   expect(shell.barsContext).toBeUndefined();
   expect(shell.detailReturnBarsContext).toBeNull();
-  expect([shell.selectMode, shell.lastSelectedId, shell.followLastSelectedId, shell.selectSurface]).toEqual([false, null, null, '']);
-  expect([shell.detailReturnPath, shell.followDetailReturnPath]).toEqual(['/', '/follow']);
+  expect([shell.selectMode, shell.lastSelectedId, shell.selectSurface]).toEqual([false, null, '']);
+  expect(shell.detailReturnPath).toBe('/');
   expect([shell.detailOriginAnchor, shell.detailOriginAbove, shell.detailReturnNeedsRestore]).toEqual([null, false, false]);
   expect([shell.activeQueue, shell.pendingQueueRoute, shell.presentedItem]).toEqual([null, null, null]);
   expect([shell.configurationRequestedSection, shell.cameFromSetup]).toEqual(['', false]);
-  expect(shell.selected.size + shell.followSelected.size).toBe(0);
+  expect(shell.selected.size).toBe(0);
   expect(shell.shellVersion()).toBe(0);
 });
 
@@ -29,7 +29,6 @@ it('writeShell 只换补丁里出现的项，值是 undefined 也照写，每次
   shell.subscribeShell(() => heard.push(shell.shellVersion()));
   shell.writeShell({ detailReturnPath: '/stats', selectMode: true, selectSurface: 'catalog' });
   expect([shell.detailReturnPath, shell.selectMode, shell.selectSurface]).toEqual(['/stats', true, 'catalog']);
-  expect(shell.followDetailReturnPath).toBe('/follow');
   shell.writeShell({ state: { loc: 'local' } });
   shell.writeShell({ state: undefined });
   expect(shell.state).toBeUndefined();
@@ -75,18 +74,15 @@ it('打开详情时记下的首页语境关掉后原样还原，filters 仍是�
   expect(shell.barsContext!.filters).toBe(shell.state);
 });
 
-it('两个选择集是常驻实例：增删、清空都在同一个 Set 上', () => {
-  const { selected, followSelected } = shell;
+it('选择集是常驻实例：增删、清空都在同一个 Set 上', () => {
+  const { selected } = shell;
   selected.add(1);
   selected.add(2);
-  followSelected.add(9);
   shell.writeShell({ lastSelectedId: 2 });
   selected.clear();
-  followSelected.clear();
-  shell.writeShell({ lastSelectedId: null, followLastSelectedId: null });
+  shell.writeShell({ lastSelectedId: null });
   expect(shell.selected).toBe(selected);
-  expect(shell.followSelected).toBe(followSelected);
-  expect(selected.size + followSelected.size).toBe(0);
+  expect(selected.size).toBe(0);
   expect(shell.lastSelectedId).toBeNull();
 });
 

@@ -15,13 +15,11 @@ import { iconSwapHtml, setIconSwap } from '@peach/legacy/ui';
 import {
   attachPlayerChrome, cancelDetailStream, closePlayerMenu, configurePlayer, configurePlayerMenu, detailPlayer,
   disposePlayer, mountPlayer, preparePlayerFrame, resizeSoon, setDetailPlayer,
-  type PlayerHost, type PlayerItem, type PlayerMedia, type PlayerResume, type VjsPlayer,
+  type PlayerHost, type PlayerItem, type PlayerResume, type VjsPlayer,
 } from '../../player';
 
-export type StageKind = 'item' | 'follow';
-
-/** 舞台此刻画着的那一条：小窗的标题与来源、右键菜单复制网址用的种类都从这里取。 */
-export interface StageMeta { kind: StageKind; item: PlayerItem; title: string; sub: string }
+/** 舞台此刻画着的那一条：小窗的标题与来源从这里取。 */
+export interface StageMeta { kind: 'item'; item: PlayerItem; title: string; sub: string }
 
 /** 舞台与小窗向壳要的东西。播放器宿主里的舞台元素由舞台自己补上。 */
 export interface StagePlayerHost {
@@ -29,7 +27,7 @@ export interface StagePlayerHost {
   /** 这个来源此刻是不是脱盘。 */
   sourceOffline(location: string): boolean;
   /** 小窗里的「展开」：回到这一条的详情，壳负责地址与来处。 */
-  expand(kind: StageKind, id: number, mediaIndex: number | null): void;
+  expand(kind: 'item', id: number, mediaIndex: number | null): void;
   /** 小窗接不了的卡片照常打开详情。 */
   openItem(id: number): void;
 }
@@ -49,9 +47,7 @@ export interface MiniplayerDom {
 
 interface Slot {
   player: VjsPlayer;
-  kind: StageKind;
   item: PlayerItem;
-  mediaIndex: number | null;
   key: string;
 }
 
@@ -59,9 +55,7 @@ interface Held extends Slot { meta: StageMeta; off: (() => void)[]; pending: boo
 
 interface Attached {
   player: VjsPlayer | null;
-  kind: StageKind;
   item: PlayerItem;
-  mediaIndex: number | null;
   key: string;
 }
 
@@ -77,8 +71,7 @@ let token = 0;
 let requestClose: (() => void) | null = null;
 let stageOpen: () => boolean = () => false;
 
-export const playerKey = (kind: StageKind, id: number, mediaIndex: number | null): string =>
-  `${kind}:${id}:${mediaIndex ?? ''}`;
+export const playerKey = (id: number): string => `item:${id}`;
 
 export function configureStagePlayer(next: StagePlayerHost, stage: {
   isOpen(): boolean; requestClose(): void;
@@ -89,7 +82,6 @@ export function configureStagePlayer(next: StagePlayerHost, stage: {
   configurePlayer({ ...next.player, stage: () => document.getElementById('stage') });
   configurePlayerMenu({
     inMiniplayer: (player) => held?.player === player,
-    kind: (player) => (held?.player === player ? held.kind : attached?.kind ?? meta?.kind ?? 'item'),
     expand: () => expandMiniplayer(),
     toMiniplayer: () => toggleMiniplayer(),
   });
@@ -110,29 +102,27 @@ export const stageMeta = (): StageMeta | null => meta;
 /* ── 舞台媒体框 ── */
 
 export interface StagePlayerOptions {
-  kind: StageKind;
   item: PlayerItem;
-  media?: PlayerMedia | null | undefined;
   autoplay?: boolean | undefined;
   resume?: PlayerResume | null | undefined;
   /** `<video>` 的 id：作品详情那一枚是 `vid`，键盘与 e2e 按它找播放区。 */
   id?: string | undefined;
   poster?: string | undefined;
-  /** 原生 `<video>` 报错（关注条目据此说明片源失败）。 */
+  /** 原生 `<video>` 报错。 */
   onError?: (() => void) | undefined;
 }
 
 /** 给舞台里一块媒体框挂播放器，返回卸下它的函数。
  *
- *  小窗正放着同一条（同种类、同 id、同一份媒体）就把那一个实例认领回来：Video.js 的壳整块搬进
- *  这块框，读数重新接上，播放不断。否则新建一个 `<video>` 交给 `mountPlayer`。卸下时这个实例
- *  已经被小窗接走就只摘读数，没被接走就连流会话一起拆掉。 */
+ *  小窗正放着同一条就把那一个实例认领回来：Video.js 的壳整块搬进这块框，读数重新接上，播放
+ *  不断。否则新建一个 `<video>` 交给 `mountPlayer`。卸下时这个实例已经被小窗接走就只摘读数，
+ *  没被接走就连流会话一起拆掉。 */
 export function attachStagePlayer(frame: HTMLElement, options: StagePlayerOptions): () => void {
-  const { kind, item, media = null } = options;
-  const key = playerKey(kind, item.id, media?.index ?? null);
+  const { item } = options;
+  const key = playerKey(item.id);
   if (held && held.key === key) return claimHeld(frame, held);
   if (held) closeMiniplayer();
-  const slot: Attached = { player: null, kind, item, mediaIndex: media?.index ?? null, key };
+  const slot: Attached = { player: null, item, key };
   attached = slot;
   const video = document.createElement('video');
   if (options.id) video.id = options.id;
@@ -144,7 +134,7 @@ export function attachStagePlayer(frame: HTMLElement, options: StagePlayerOption
   if (options.onError) video.addEventListener('error', options.onError);
   frame.append(video);
   const release = mountPlayer(video, {
-    kind, item, media, autoplay: options.autoplay, resume: options.resume ?? null,
+    kind: 'item', item, autoplay: options.autoplay, resume: options.resume ?? null,
     onPlayer: (player) => { if (attached === slot) slot.player = player },
     handedOff: (player) => held?.player === player,
   });
@@ -173,7 +163,7 @@ export async function mountWallPlayer(summary: PlayerItem, frame: HTMLElement, s
   const metadata: StageMeta = { kind: 'item', item, title: String(item.title || item.name || ''),
     sub: String((item.performers as string[] | undefined)?.[0] || item.creator || '未归属') };
   setStageMeta(metadata);
-  const release = attachStagePlayer(frame, { kind: 'item', item, autoplay: true });
+  const release = attachStagePlayer(frame, { item, autoplay: true });
   let released = false;
   return (continuePlaying = false) => {
     if (released) return;
@@ -193,7 +183,7 @@ function claimHeld(frame: HTMLElement, from: Held): () => void {
   preparePlayerFrame(frame);
   frame.append(player.el());
   setDetailPlayer(player);
-  const slot: Attached = { player, kind: from.kind, item: from.item, mediaIndex: from.mediaIndex, key: from.key };
+  const slot: Attached = { player, item: from.item, key: from.key };
   attached = slot;
   const detachChrome = attachPlayerChrome(player, frame);
   resizeSoon(player);
@@ -227,15 +217,15 @@ export function handOffStage(allow: boolean): void {
   const settings = stageHost().player.settings();
   const eligible = wanted || (allow && settings.miniplayer && !player.paused() && !player.ended() && !player.error());
   if (!eligible) return;
-  enterMiniplayer({ player, kind: slot.kind, item: slot.item, mediaIndex: slot.mediaIndex, key: slot.key }, current);
+  enterMiniplayer({ player, item: slot.item, key: slot.key }, current);
 }
 
 /** 舞台打开这一条之前：小窗放着的不是它就先关掉，两个播放器不同时出声；是它就先藏起来，
  *  等媒体框画出来再认领。 */
-export function prepareStageFor(kind: StageKind, id: number): void {
+export function prepareStageFor(id: number): void {
   requested = false;
   if (!held) return;
-  if (held.kind === kind && held.item.id === id) {
+  if (held.item.id === id) {
     held.pending = true;
     hideMiniplayer();
     return;
@@ -373,8 +363,7 @@ export function closeMiniplayer(): void {
 
 export function expandMiniplayer(): void {
   if (!miniplayerActive() || !held) return;
-  const { kind, item, mediaIndex } = held;
-  stageHost().expand(kind, item.id, mediaIndex);
+  stageHost().expand('item', held.item.id, null);
 }
 
 /** i 键与 YouTube 同义：详情里进小窗，小窗里展开回详情。 */
@@ -399,14 +388,14 @@ export function seekMiniplayer(side: 1 | -1): void {
   player.currentTime(total ? Math.min(total, at) : at);
 }
 
-/** 小窗里能直接换的只有普通视频卡：分卷／版次组要先选卷，计费、脱盘和反查不到关注条目的在线
- *  资产都要先过详情里那道门。 */
+/** 小窗里能直接换的只有普通视频卡：分卷／版次组要先选卷，计费与脱盘的在线资产都要先过
+ *  详情里那道门。 */
 export function miniplayerTakesCard(item: PlayerItem | null | undefined): boolean {
   if (!miniplayerActive() || !item) return false;
   if (item.part_group || item.edition_group) return false;
   if (item.medium && item.medium !== 'video') return false;
   if (item.cost === 'metered' && item.location !== 'online') return false;
-  if (item.location === 'online' && !item.follow_item_id) return false;
+  if (item.location === 'online') return false;
   if (stageHost().sourceOffline(String(item.root_id || item.location || ''))) return false;
   return true;
 }
@@ -445,7 +434,7 @@ export async function miniplayerPlay(id: number): Promise<void> {
       }
       if (!player) { closeMiniplayer(); stageHost().openItem(id); return }
       player.el().classList.add('vjs-peach-mini');
-      const slot: Held = { player, kind: 'item', item, mediaIndex: null, key: playerKey('item', item.id, null),
+      const slot: Held = { player, item, key: playerKey(item.id),
         meta: nextMeta, off: [], pending: false };
       held = slot;
       bindHeld(slot);

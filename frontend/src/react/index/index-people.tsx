@@ -1,4 +1,4 @@
-/* 名册网格：艺人、创作者、厂牌、事务所、系列名册和在线来源创作者。
+/* 名册网格：艺人、创作者、厂牌、事务所、系列名册。
  *
  * 一格人：圆框或竖幅头像、名字、一个读数。四种实体同一副版式、同一条取图链，区别只在
  * 格宽与读数口径。圆框里那段 HTML 由 `card-art` 的 `avatarInner` 拼（有图走图、没图退首字母、
@@ -6,13 +6,10 @@
  * `web/css/01-base.css` 的 `[data-person-ring]`，量图的是 `installCardArt` 挂在文档上的 `load` 监听。
  * 格底、头像框、首字与读数的配色在同目录的 `index-people.css`。 */
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { Chip } from '@/components/base/badges/chip';
 import { entityDisplayName } from '../../core/entity-names';
 import { useEntityNames } from '../use-entity-names';
 
 import { cardClass } from '../components/card';
-import { spriteGlyph } from '../components/sprite-glyph';
-import type { OnlineAuthor } from '../follow/online-vocab';
 import { ENTITY_KINDS, isCompany, personReadout, type IndexKind, type IndexPerson, type IndexProps, type PeopleLayout } from './index-data';
 
 /* 平移挂在圆框上而不是 img 上：竖幅裁到 3:4 时几何居中会切掉脸，而 img 由遗留层拼，
@@ -34,11 +31,10 @@ function Ring({ html, face, company, big }: { html: string; face?: string; compa
 }
 
 const CELL = 'relative flex cursor-pointer flex-col gap-2 p-3 text-inherit';
-const Rss = spriteGlyph('rss');
 
 function Cell(
-  { name, readout, big, children, following, onPress, ...data }:
-  { name: string; readout: string; big: boolean; children: ReactNode; following?: boolean; onPress(): void }
+  { name, readout, big, children, onPress, ...data }:
+  { name: string; readout: string; big: boolean; children: ReactNode; onPress(): void }
     & Record<`data-${string}`, string>,
 ) {
   return (
@@ -48,9 +44,6 @@ function Cell(
         className: `${CELL} ${big ? 'items-stretch text-left' : 'items-center text-center'}`,
       })}>
       {children}
-      {following ? <span data-index-feed="" role="img" aria-label="已订阅新作" className="index-feed-mark absolute top-4 right-4 z-2 inline-flex">
-        <Chip variant="caption" color="soft"><Rss /></Chip>
-      </span> : null}
       <span data-index-name="" className="text-body-medium wrap-anywhere text-text-primary">{name}</span>
       <span data-index-readout="" className="text-caption-1-regular">{readout}</span>
     </button>
@@ -76,36 +69,11 @@ export function PeopleGrid(
         const avatar = props.personAvatar(item, entityKind, big);
         return (
           <Cell key={`${entityKind}:${item.entity_id || item.k}`} data-k={item.k} data-kind={entityKind} name={entityDisplayName(entityKind, item.k, item.entity_id)} readout={`${personReadout(kind, item)}${item.identity_labels?.length ? ' · ' + item.identity_labels.join(' / ') : ''}`}
-            big={big} following={item.following} onPress={() => props.openEntity(entityKind, item.k)}>
+            big={big} onPress={() => props.openEntity(entityKind, item.k)}>
             <Ring html={avatar.html} face={avatar.face} company={company} big={big} />
           </Cell>
         );
       })}
-    </div>
-  );
-}
-
-/** 在线那一档：关注来源里的创作者。建过档的点开去他的创作者资料页；还没建档的名下那批东西
- *  全在关注页上，点开等于「关注 · 这个人」；数据库里有同名创作者、等用户认的，读数带「待确认」，
- *  点开去那位的资料页，认人的按钮在那里。`data-follow-author` 挂的是关注页那套创作者键。 */
-export function OnlineAuthors(
-  { items, layout, props }: { items: OnlineAuthor[]; layout: PeopleLayout; props: IndexProps },
-) {
-  useEntityNames();
-  const big = layout === 'big';
-  return (
-    <div data-index-grid="" data-layout={layout} data-cells="people" className="index-grid-person gap-3">
-      {items.map((author) => (
-        <Cell key={author.key} data-follow-author={author.key} data-kind="performer" name={entityDisplayName('creator', author.k, author.entity_id)}
-          readout={`${author.n.toLocaleString()} 项更新${author.held_by ? ' · 待确认' : ''}`} big={big}
-          onPress={() => {
-            if (author.entity_id) props.openEntity('creator', author.k);
-            else if (author.held_by) props.openEntity('creator', author.held_by);
-            else props.openFollowAuthor(author.key);
-          }}>
-          <Ring html={props.authorAvatar(author)} company={false} big={big} />
-        </Cell>
-      ))}
     </div>
   );
 }

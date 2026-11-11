@@ -113,28 +113,6 @@ class LibraryShortcutsTests(unittest.TestCase):
             tag = self.write(action='favorite', entity_id=3, on=True)['favorites'][0]
         self.assertEqual(tag['image_url'], '/avatar?id=10')
 
-    def test_creator_favorite_projects_bound_official_and_archive_avatars(self):
-        from peach.web_catalog import entity_ref
-        with closing(sqlite3.connect(self.path)) as c, c:
-            c.executescript("""
-                INSERT INTO entity VALUES(4,'creator','创作者','创作者');
-                INSERT INTO entity VALUES(5,'creator','同名待确认','同名待确认');
-                CREATE TABLE follow_source(id INTEGER PRIMARY KEY,provider TEXT,ref TEXT,entity_id INTEGER,metadata_json TEXT);
-                INSERT INTO follow_source VALUES(1,'kemono','fanbox/123',4,'{}');
-                INSERT INTO follow_source VALUES(2,'pawchive','fanbox/123',4,'{}');
-                INSERT INTO follow_source VALUES(3,'f95zone','99',NULL,'{}');
-            """)
-        creator = self.write(action='favorite', entity_id=4, on=True)['favorites'][0]
-        self.assertEqual(creator['image_url'], '/follow-avatar?service=fanbox&id=123')
-        self.assertEqual(creator['image_fallbacks'], [
-            '/follow-avatar?provider=kemono&ref=fanbox%2F123',
-            '/follow-avatar?provider=pawchive&ref=fanbox%2F123'])
-        self.assertEqual(entity_ref(self.contract, 'creator', 4, '创作者')['source_avatar_url'], creator['image_url'])
-        unknown = self.write(action='favorite', entity_id=5, on=True)['favorites'][1]
-        self.assertEqual(unknown['image_url'], '')
-        with closing(sqlite3.connect(self.path)) as c:
-            stored = json.loads(c.execute('SELECT settings_json FROM profile').fetchone()[0])
-        self.assertNotIn('image_url', stored['libraryShortcuts']['favorites'][0])
 
     def test_bad_targets_are_rejected_without_writes(self):
         for href in ('https://evil.example/', '//evil.example/', '/configuration', '/?token=x', '/?seed=123'):

@@ -39,6 +39,31 @@ MARK = "mark"
 # 整块底图：完全不透明，底色是设计的一部分。照片也归这一类。
 TILE = "tile"
 
+# 图片文件的魔数。来源站给的内容类型不可信，按字节判定再决定能不能当图发给浏览器。
+_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"\x00\x00\x01\x00", "image/x-icon"),
+    (b"BM", "image/bmp"),
+)
+
+
+def sniff(data: bytes) -> str | None:
+    """字节 → 图片 MIME；认不出就是 None。"""
+    for magic, mime in _MAGIC:
+        if data.startswith(magic):
+            return mime
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[4:12] in (b"ftypavif", b"ftypavis"):
+        return "image/avif"
+    head = data[:2048].lstrip()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in head):
+        return "image/svg+xml"
+    return None
+
 # 烤白底时内容占方图边长的比例，四周各留约 12% 边距。
 PLATE_CONTENT_RATIO = 0.76
 PLATE_BACKGROUND = (255, 255, 255, 255)

@@ -189,7 +189,7 @@ export const hasResultProblems = (run: TaskRunPayload): boolean => run.result_su
 
 export interface TaskIssue { source: number; label: string; provider: string; kind: string; error: string }
 
-/** 问题明细绑定本轮快照，当前来源状态由对应管理页查看。 */
+/** 问题明细绑定本轮快照，当前状态由对应管理页查看。 */
 export function taskIssues(run: TaskRunPayload): TaskIssue[] {
   const issues = run.result_summary?.issues;
   return Array.isArray(issues) ? issues.filter((item): item is TaskIssue => !!item
@@ -208,9 +208,6 @@ export function problemDestination(run: TaskRunPayload, latest = true): { href: 
     'link-prune': ['/data-cleanup/links', '查看有问题的链接'],
     // 「需要处理」不收这里的可重试项：问题清单有几百项，先看清单再在那张卡上重试。
     'library-processing': ['/data-cleanup#libraryProcessing', '查看未完成项'],
-    'follow-check': ['/subscriptions', '查看关注来源'],
-    'feed-check': ['/subscriptions', '查看订阅源'],
-    'follow-resolve': ['/subscriptions?tab=add', '查看来源查找'],
   };
   const target = targets[run.task_key];
   return target ? { href: target[0], label: target[1] } : null;
@@ -282,7 +279,7 @@ export const isRoutine = (run: TaskRunPayload) => run.trigger === 'scheduled'
 export const isActive = (run: TaskRunPayload) => run.status === 'pending' || run.status === 'running';
 
 /** 后继那一行的说明：它在做哪一件（标签去掉与任务名重复的前缀）、做到第几项或结果如何。
- *  标题已经是任务名，这里再写一遍「新作资料采集：」读起来就是同一句话说了两次。 */
+ *  标题已经是任务名，这里再写一遍「资料采集：」读起来就是同一句话说了两次。 */
 export function followupDetail(row: TaskRunPayload): string {
   const prefix = `${row.task_label}：`;
   const label = row.progress_label || '';

@@ -590,21 +590,6 @@ it('换底图就换一张图，上一张的框一个数都不留', async () => {
   expect(buttonNamed('用这一块')?.getAttribute('disabled')).not.toBeNull();
 });
 
-it('在线作品可在封面与正文图片间选底图，裁切回递创作者和原始媒体序号', async () => {
-  const calls = server(listing([choice({ ref: 'follow:11:cover', source: 'online', label: '在线作品', crop: true,
-    bases: ['follow:11:cover', 'follow:11:image3'] })]));
-  await openPicker({ kind: 'creator', entityId: 8892, name: 'Online Author' });
-  await click(cells()[0]);
-  await settle();
-  const bases = [...document.querySelectorAll<HTMLElement>('[data-crop-base]')];
-  expect(bases.map((one) => one.textContent?.trim())).toEqual(['作品封面', '内容图片 4']);
-  await click(bases[1]);
-  await reportSize(800, 540);
-  await click(buttonNamed('用这一块'));
-  await settle();
-  expect(body(calls, 1)).toEqual({ kind: 'creator', id: 8892, ref: 'follow:11:image3',
-    crop: { x0: 130, y0: 0, x1: 670, y1: 540 }, version: '' });
-});
 
 it('框错了能返回备选图片，回去还是那一屏', async () => {
   const calls = server(listing([artwork()]));

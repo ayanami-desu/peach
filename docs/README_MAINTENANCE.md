@@ -29,7 +29,7 @@ README 的事实逐条对着源码与文档核，不写已经不在树里的东�
 | 前端工具与构建产物 | `frontend/package.json`、[前端](FRONTEND.md) |
 | 镜像、容器与发布范围 | `Dockerfile`、`compose.yaml`、`.github/workflows/docker.yml`、[部署与更新](DEPLOYMENT.md) |
 | 首次运行、设置文件与访问入口 | [运行与配置](OPERATIONS.md)、[Docker 部署](DOCKER.md) |
-| 网盘接入与数据边界 | [采集与资料](SOURCING.md)、[总体架构](ARCHITECTURE.md)、`src/peach/settings_file.py` |
+| 网盘接入与数据边界 | [采集与资料](METADATA.md)、[总体架构](ARCHITECTURE.md)、`src/peach/settings_file.py` |
 | 当前行为 | 实现与测试；`./scripts/test.sh checks`、[测试](TESTING.md) |
 
 README 不写本机 IP、端口归属、真实馆藏数字、访问口令或动态版本号。这些要么随环境变，要么本身就是隐私。
@@ -52,7 +52,7 @@ README 里的版本直链由 `scripts/version_bump.py` 改写，不手写：
 
 ## 截图与演示数据
 
-README 的五张截图（馆藏、人物、关注、统计、播放器）取官网已发布的电影演示库画面，放在官网静态资源上，仓库里不放：
+README 的四张截图（馆藏、人物、统计、播放器）取官网已发布的电影演示库画面，放在官网静态资源上，仓库里不放：
 
 - 地址形如 `https://peach.video/assets/screenshots/home-wide-20261025-2-1280.webp`，README 里 WebP 展示图链接的是同目录的无损 PNG 原图，这样点开不经过 Release 附件。
 - WebP 展示图控制在 4 MB 以内，PNG 原图保持 3840×2160；换图后要确认线上真的发布了，本地有文件不等于线上可访问。

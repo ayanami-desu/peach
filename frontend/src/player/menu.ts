@@ -13,8 +13,6 @@ import type { VjsPlayer } from './types';
 export interface PlayerMenuHooks {
   /** 这个播放器此刻在不在小窗里。 */
   inMiniplayer(player: VjsPlayer): boolean;
-  /** 这个播放器放的是作品还是关注条目：复制出来的地址按它走。 */
-  kind(player: VjsPlayer): 'item' | 'follow';
   /** 小窗里的「展开」。 */
   expand(): void;
   /** 详情里的「迷你播放器」：越过播放态判定，把正在放的这一条送进小窗。 */
@@ -69,10 +67,9 @@ interface MenuItem { icon: string; label: string; fill?: boolean; checked?: bool
 function playerMenuItems(player: VjsPlayer): MenuItem[] {
   const mini = !!hooks?.inMiniplayer(player);
   const item = player.peachItem;
-  const kind = hooks?.kind(player) ?? 'item';
   const url = (withTime: boolean) => {
-    const link = new URL(kind === 'follow' ? `/posts/${item?.id}` : `/assets/${item?.id}`, location.origin);
-    if (kind !== 'follow' && location.pathname === link.pathname) {
+    const link = new URL(`/assets/${item?.id}`, location.origin);
+    if (location.pathname === link.pathname) {
       const context = new URLSearchParams(location.search);
       for (const key of ['mix', 'parts', 'editions', 'playlist']) {
         const value = context.get(key);

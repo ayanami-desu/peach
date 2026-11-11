@@ -6,9 +6,9 @@ import {
 } from '../../src/react/catalog-grid/selection-controller';
 
 const emptyState = (): SelectionState => ({
-  selectMode: false, selectSurface: '', lastSelectedId: null, followLastSelectedId: null,
+  selectMode: false, selectSurface: '', lastSelectedId: null,
 });
-const sets = () => ({ selected: new Set<number>(), followSelected: new Set<number>() });
+const sets = () => ({ selected: new Set<number>() });
 
 describe('选择范围与批量计数', () => {
   it('Shift 连选依照可见目录顺序，保留屏幕外选择', () => {
@@ -32,27 +32,15 @@ describe('选择范围与批量计数', () => {
     expect(next.lastSelectedId).toBe(7);
   });
 
-  it('关注连选使用单独的选择集与起点', () => {
-    const picked = sets();
-    picked.selected.add(5);
-    let state = toggleSelection(picked, emptyState(), 'follow', [3, 5, 8], 8);
-    state = toggleSelection(picked, state, 'follow', [3, 5, 8], 3, true);
-    expect([...picked.followSelected]).toEqual([8, 3, 5]);
-    expect([...picked.selected]).toEqual([5]);
-    expect(state.followLastSelectedId).toBe(3);
-    expect(state.lastSelectedId).toBeNull();
-    expect(selectionDock(picked, '/follow', '', 'trash')).toEqual({ count: 3, context: 'follow', junkDismissed: false });
-  });
-
-  it('目录内部导航沿用选择，跨关注或垃圾文件范围清空常驻 Set', () => {
-    const picked = sets(), catalogSet = picked.selected, followSet = picked.followSelected;
-    picked.selected.add(1); picked.followSelected.add(2);
-    const state = { ...emptyState(), selectMode: true, selectSurface: 'catalog', lastSelectedId: 1, followLastSelectedId: 2 };
+  it('目录内部导航沿用选择，换到垃圾文件范围清空常驻 Set', () => {
+    const picked = sets(), catalogSet = picked.selected;
+    picked.selected.add(1);
+    const state = { ...emptyState(), selectMode: true, selectSurface: 'catalog', lastSelectedId: 1 };
     expect(syncSelectionSurface(picked, state, '/creators/abc', true)).toEqual(state);
     expect(syncSelectionSurface(picked, state, '/trash', true)).toEqual(state);
-    expect(syncSelectionSurface(picked, state, '/follow', true)).toEqual(emptyState());
-    expect(picked.selected).toBe(catalogSet); expect(picked.followSelected).toBe(followSet);
-    expect([...catalogSet, ...followSet]).toEqual([]);
+    expect(syncSelectionSurface(picked, state, '/junk-files', true)).toEqual(emptyState());
+    expect(picked.selected).toBe(catalogSet);
+    expect([...catalogSet]).toEqual([]);
     expect(selectionSurface('/junk-files')).toBe('junk');
   });
 

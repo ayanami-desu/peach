@@ -4,7 +4,7 @@ import { CLEANUP_HASH_REDIRECTS } from '../cleanup-routes';
 export function canonicalPath(path: string): string {
   const url = new URL(path, 'https://peach.invalid');
   const details: [RegExp, string][] = [[/^\/item\/(\d+)$/, '/assets/'],
-    [/^\/follow\/item\/(\d+)$/, '/posts/'], [/^\/jav\/movie\/([A-Za-z0-9_-]{2,64})$/, '/works/']];
+    [/^\/jav\/movie\/([A-Za-z0-9_-]{2,64})$/, '/works/']];
   for (const [pattern, prefix] of details) {
     const match = pattern.exec(url.pathname);
     if (match) { url.pathname = prefix + (prefix === '/works/' ? match[1]!.toUpperCase() : match[1]); break }
@@ -15,7 +15,7 @@ export function canonicalPath(path: string): string {
     url.searchParams.set(queue[1] === 'playlists' ? 'playlist' : queue[1]!, queue[2]!);
   }
   const pages: Record<string, string> = { '/activity': '/tasks', '/scraping': '/sources',
-    '/follow-manage': '/subscriptions', '/configuration': '/settings', '/diagnostics': '/settings/diagnostics' };
+    '/configuration': '/settings', '/diagnostics': '/settings/diagnostics' };
   url.pathname = pages[url.pathname] || url.pathname;
   const cleanup = url.pathname === '/data-cleanup' ? CLEANUP_HASH_REDIRECTS[url.hash] : undefined;
   if (cleanup) {

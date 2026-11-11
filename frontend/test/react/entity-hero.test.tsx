@@ -24,27 +24,24 @@ const performer = (extra: Partial<EntityHeroData> = {}): EntityHeroData => ({
   agency: { canonical_name: 'New Actor eXperience' },
   name_groups: { reading: 'あおいつかさ', shown: ['葵司'], total: 1, groups: [] },
   related_performers: [{ id: 1, k: '三上悠亜' }, { id: 2, k: '河北彩花' }],
-  feed: { following: false },
   ...extra,
 });
 
 function actions(patch: Partial<EntityHeroActions> = {}): EntityHeroActions {
   return {
-    openEntity: vi.fn(), chooseName: vi.fn(), addAlias: vi.fn(), follow: vi.fn(async () => {}),
-    refreshFeedAfterCheck: vi.fn(), feedAction: vi.fn(async () => {}), avatarPicked: vi.fn(),
-    openFollowAuthor: vi.fn(), confirmFollowAuthor: vi.fn(async () => {}), ...patch,
+    openEntity: vi.fn(), chooseName: vi.fn(), addAlias: vi.fn(), avatarPicked: vi.fn(), ...patch,
   };
 }
 
 function helpers(patch: Partial<EntityHeroHelpers> = {}): EntityHeroHelpers {
   return {
-    portraitImg: () => '', wireScroller: vi.fn(), wireFeedRow: vi.fn(), receipt: vi.fn(), ...patch,
+    portraitImg: () => '', wireScroller: vi.fn(), receipt: vi.fn(), ...patch,
   };
 }
 
 function props(patch: Partial<EntityHeroProps> = {}): EntityHeroProps {
   return {
-    kind: 'performer', name: '葵つかさ', entity: performer(), feedNew: null, feedHost: null, jav: true,
+    kind: 'performer', name: '葵つかさ', entity: performer(), jav: true,
     actions: actions(), helpers: helpers(), ...patch,
   };
 }
@@ -337,131 +334,6 @@ describe('点下去交给壳', () => {
     await click(host.querySelector('[data-namepick-toggle]'));
     await click(document.querySelector('[data-namepick-alias]'));
     expect(acts.addAlias).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('关注里的来源', () => {
-  const creator = (follow: EntityHeroData['follow']): EntityHeroData => ({
-    id: 51, canonical_name: 'Auxtasy', asset_count: 0, follow,
-  });
-  const held = { key: 'name:auxtasy', name: 'Auxtasy', providers: ['Kemono', 'Patreon'], n: 37, links: [] };
-
-  it('绑了来源的创作者写还没入库的更新数，点开交给壳去关注页筛这一位', async () => {
-    const acts = actions();
-    const host = await open(props({ kind: 'creator', name: 'Auxtasy', actions: acts, entity: creator({
-      key: 'entity:51', n: 12, providers: ['Kemono'], avatar: '', avatar_fallback: '', held: [] }) }));
-    const link = host.querySelector<HTMLAnchorElement>('[data-entity-follow] a')!;
-    expect(link.textContent).toBe('12 项更新');
-    await click(link);
-    expect(acts.openFollowAuthor).toHaveBeenCalledWith('entity:51');
-    expect(host.querySelector('[data-entity-held]')).toBeNull();
-  });
-
-  it('同名的那组只问不绑：按下「是同一个人」才交给壳，等的这一下键上是等待态', async () => {
-    let finish: () => void = () => {};
-    const acts = actions({ confirmFollowAuthor: vi.fn(() => new Promise<void>((resolve) => { finish = resolve })) });
-    const host = await open(props({ kind: 'creator', name: 'Auxtasy', actions: acts, entity: creator({
-      key: '', n: 0, providers: [], avatar: '', avatar_fallback: '', held: [held] }) }));
-    expect(host.querySelector('[data-entity-follow]')).toBeNull();
-    const note = host.querySelector('[data-entity-held]')!;
-    expect(note.textContent).toContain('关注里有同名作者 Auxtasy');
-    expect(note.textContent).toContain('Kemono · Patreon · 37 项更新');
-    const button = note.querySelector('button')!;
-    await click(button);
-    expect(acts.confirmFollowAuthor).toHaveBeenCalledWith('name:auxtasy', 'Auxtasy');
-    expect(button.getAttribute('aria-busy')).toBe('true');
-    await act(async () => { finish() });
-    expect(button.getAttribute('aria-busy')).toBeNull();
-  });
-});
-
-describe('订阅新作', () => {
-  const toggle = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[data-entity-feed]')!;
-
-  it('写回成功才拨过去，发带撤销的回执并等这一轮拉取；撤销是另一次写回', async () => {
-    const acts = actions();
-    const help = helpers();
-    const host = await open(props({ actions: acts, helpers: help }));
-    await click(toggle(host));
-    await settle();
-    expect(acts.follow).toHaveBeenCalledWith(true);
-    expect(toggle(host).checked).toBe(true);
-    expect(acts.refreshFeedAfterCheck).toHaveBeenCalledTimes(1);
-    const [message, options] = vi.mocked(help.receipt).mock.calls[0]!;
-    expect(message).toBe('已订阅新作');
-    await act(async () => { await options?.undo?.() });
-    expect(acts.follow).toHaveBeenLastCalledWith(false);
-    expect(toggle(host).checked).toBe(false);
-  });
-
-  it('写回失败时开关留在原位，不发回执', async () => {
-    const acts = actions({ follow: vi.fn(async () => { throw new Error('502') }) });
-    const help = helpers();
-    const host = await open(props({ actions: acts, helpers: help }));
-    await click(toggle(host));
-    await settle();
-    expect(toggle(host).checked).toBe(false);
-    expect(help.receipt).not.toHaveBeenCalled();
-    expect(acts.refreshFeedAfterCheck).not.toHaveBeenCalled();
-  });
-});
-
-describe('新作那一行', () => {
-  const row = '<div class="feednewrow">'
-    + '<div data-feed-id="11"><button data-feed-action="ignore">不想看</button></div>'
-    + '<div data-feed-id="12"><button data-feed-action="read">已看过</button></div></div>';
-
-  it('一条都没有就整块不出', async () => {
-    const feedHost = document.createElement('section');
-    document.body.append(feedHost);
-    await open(props({ feedHost, feedNew: { items: [], html: '' } }));
-    expect(feedHost.hidden).toBe(true);
-    expect(feedHost.querySelector('[data-feed-id]')).toBeNull();
-  });
-
-  it('忽略的当场消失，已看过的留在原位变淡，全部收完整块藏起', async () => {
-    const feedHost = document.createElement('section');
-    feedHost.hidden = true;
-    document.body.append(feedHost);
-    const acts = actions();
-    const help = helpers();
-    await open(props({ feedHost, actions: acts, helpers: help, feedNew: { items: [{ id: 11 }, { id: 12 }], html: row } }));
-    expect(feedHost.hidden).toBe(false);
-    expect(help.wireFeedRow).toHaveBeenCalledWith(feedHost.querySelector('.feednewrow'));
-    await click(feedHost.querySelector('[data-feed-action="read"]'));
-    await settle();
-    expect(acts.feedAction).toHaveBeenLastCalledWith(12, 'read');
-    expect(feedHost.querySelector('[data-feed-id="12"]')?.classList.contains('isread')).toBe(true);
-    await click(feedHost.querySelector('[data-feed-action="ignore"]'));
-    await settle();
-    expect(acts.feedAction).toHaveBeenLastCalledWith(11, 'ignore');
-    expect(feedHost.querySelector('[data-feed-id="11"]')).toBeNull();
-    expect(feedHost.hidden).toBe(false);
-    feedHost.querySelector<HTMLElement>('[data-feed-id="12"] button')!.dataset.feedAction = 'ignore';
-    await click(feedHost.querySelector('[data-feed-id="12"] button'));
-    await settle();
-    expect(feedHost.querySelector('[data-feed-id]')).toBeNull();
-    expect(feedHost.hidden).toBe(true);
-  });
-
-  it('想要是开关：同一颗键在想要与取消想要之间换，卡片不收也不变淡', async () => {
-    const feedHost = document.createElement('section');
-    document.body.append(feedHost);
-    const acts = actions();
-    const html = '<div class="feednewrow"><div data-feed-id="13">'
-      + '<button data-feed-action="want" aria-pressed="false" title="想要">想要</button></div></div>';
-    await open(props({ feedHost, actions: acts, feedNew: { items: [{ id: 13 }], html } }));
-    const key = () => feedHost.querySelector<HTMLElement>('[data-feed-id="13"] button')!;
-    await click(key());
-    await settle();
-    expect(acts.feedAction).toHaveBeenLastCalledWith(13, 'want');
-    expect([key().dataset.feedAction, key().getAttribute('aria-pressed'), key().title]).toEqual(['unwant', 'true', '取消想要']);
-    await click(key());
-    await settle();
-    expect(acts.feedAction).toHaveBeenLastCalledWith(13, 'unwant');
-    expect([key().dataset.feedAction, key().getAttribute('aria-pressed'), key().title]).toEqual(['want', 'false', '想要']);
-    expect(feedHost.querySelector('[data-feed-id="13"]')?.classList.contains('isread')).toBe(false);
-    expect(feedHost.hidden).toBe(false);
   });
 });
 

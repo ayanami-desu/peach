@@ -6,7 +6,7 @@
 .peach-react [data-policy-matrix] [data-policy-cell="on"] { color: var(--ink); }
 .peach-react [data-policy-matrix] [data-policy-cell="off"] { color: var(--muted); }
 .peach-react [data-policy-matrix] tr:last-child > * { border-bottom: 0; }
-/* 「媒体库与目录」按媒体库分组，照关注页「作者卡 → 来源行」的结构：一个媒体库一张白卡，标题行在上、
+/* 「媒体库与目录」按媒体库分组：一个媒体库一张白卡，标题行在上、
  * 下面一道分隔线；同一库的文件夹在卡里一行一行排，行与行之间是通栏细线，「添加文件夹」在最后一行。
  * 分隔线取 button border：Peach 暗色 primary 与 separator 同为 neutral-800，用 separator 会看不见。 */
 .peach-react [data-library-head] {

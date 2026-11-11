@@ -1376,15 +1376,12 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(SOURCE_INTERVALS, {'javdb.com': 3.0, 'jdbstatic.com': 3.0})
 
     def test_every_provider_waits_on_one_shared_host_interval(self):
-        """想要作品资料采集、新作资料采集与资料处理各起一个 provider；同时跑时问 javdb 也要排同一条队。"""
+        """资料处理每起一个 provider 都排同一条队，各干各的就会一起超配额。"""
         from peach.library_processing import SOURCE_LIMITER, LibraryMetadataProvider
-        from peach.web_feeds import _transport
         with tempfile.TemporaryDirectory() as root:
             first, second = LibraryMetadataProvider(root), LibraryMetadataProvider(root)
-            feed = _transport(SimpleNamespace(follow_secrets_root=Path(root)))
         self.assertIs(first.transport.limiter, SOURCE_LIMITER)
         self.assertIs(second.transport.limiter, SOURCE_LIMITER)
-        self.assertIs(feed.limiter, SOURCE_LIMITER)
 
     def test_community_sources_are_asked_once_per_code_and_say_why_they_failed(self):
         """资料和封面两步都要社区来源的结果，javdb 的配额经不起同一部片问两遍。"""
@@ -2388,18 +2385,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(provider.community.call_args.kwargs['route'], ('javdb',))
         self.assertTrue(_MissCache(misses_path(config)).fresh('javdb', 'DASS-468'))
 
-    def test_management_controls_keep_credentials_and_empty_sections_visible(self):
-        root = Path(__file__).resolve().parents[1]
-        # 关注管理那一屏在 React 里：能加来源的站才进候选，缺必填凭据的那一行默认展开，
-        # 一个站都没配也照样把整块列出来（空清单不等于这块不存在）。
-        follow = root / 'frontend/src/react/follow-manage'
-        add = (follow / 'add-source.tsx').read_text(encoding='utf-8')
-        creds = (follow / 'credentials.tsx').read_text(encoding='utf-8')
-        self.assertIn('const rows = (credentials.providers || []).filter((row) => row.followable);', add)
-        self.assertIn("defaultOpen={row.requirement === 'required' && !credentialDone(row)}>", creds)
-        self.assertIn('const rows = data.providers || [];', creds)
-        configuration = (root / 'frontend/src/react/settings/configuration-page.tsx').read_text(encoding='utf-8')
-        self.assertNotIn("'/api/library-processing'", configuration)
 
 
 class LibraryStatePersistenceTests(unittest.TestCase):

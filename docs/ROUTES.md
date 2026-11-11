@@ -45,11 +45,9 @@
 | --- | --- |
 | `/` | 全部馆藏 |
 | `/?browse=folders` | 按目录浏览，`folder` 指定目录，`folder_recursive=0` 只看当前层，见 [目录浏览](DIRECTORY_BROWSING.md) |
-| `/jav` | JAV 馆藏 |
+| `/jav` | JAV 馆藏，`tab=library` 与 `tab=explore` 两个页签 |
 | `/works/{code}` | 作品详情，`code` 先规范化再判重定向 |
 | `/assets/{id}` | 资产详情 |
-| `/posts/{id}` | 关注条目详情 |
-| `/follow` | 关注更新 |
 | `/performers`、`/creators`、`/studios`、`/agencies`、`/series`、`/tags` | 实体名册 |
 | `/performers/{name:path}` 等六条同名族 | 按姓名进入实体页 |
 | `/playlists` | 播放列表 |
@@ -57,8 +55,8 @@
 | `/wall`、`/immerse` | 播放墙与沉浸浏览 |
 | `/stats`、`/review`、`/quality-goals`、`/duplicates` | 统计、人工复核、高清目标、重复文件 |
 | `/data-cleanup`、`/data-cleanup/organize`、`/data-cleanup/orphan-records`、`/data-cleanup/links`、`/data-cleanup/batch-delete` | 数据管理与清理入口 |
-| `/tasks`、`/sources`、`/subscriptions` | 任务、来源、订阅 |
-| `/settings`、`/settings/{section}` | 设置分区；`section` 只认外观、播放、JAV、搜索、内容、媒体库、订阅、诊断，其余 404 |
+| `/tasks`、`/sources` | 任务记录与采集来源 |
+| `/settings`、`/settings/{section}` | 设置分区；`section` 只认外观、播放、JAV、搜索、内容、网盘、媒体库、访问、令牌、设备、速度、诊断，其余 404 |
 | `/login` | 登录页 |
 
 旧地址与别名都是 307 跳转，查询参数与会话照原样带过去：
@@ -67,12 +65,10 @@
 | --- | --- |
 | `/item/{id}` | `/assets/{id}` |
 | `/mix/{seed}/{id}`、`/parts/{seed}/{id}`、`/editions/{seed}/{id}`、`/playlists/{seed}/{id}` | `/assets/{id}`，并记下取景上下文（`mix`、`parts`、`editions`、`playlist`） |
-| `/follow/item/{id}` | `/posts/{id}` |
 | `/jav/movie/{code}` | `/works/{规范化后的番号}` |
 | `/activity` | `/tasks` |
 | `/scraping` | `/sources` |
-| `/configuration` | `/settings/library` |
-| `/follow-manage` | `/subscriptions` |
+| `/configuration` | `/settings/drives` |
 | `/diagnostics` | `/settings/diagnostics` |
 | `/performers/`、`/creators/`、`/studios/`、`/agencies/`、`/series/`、`/tags/` | 去掉尾斜杠的同一地址 |
 
@@ -119,12 +115,11 @@
 | `/cover-image?code=`、`/jav-image?code=&image=cover`、`/jav-preview/{code}/{ref}` | 采集到的封面、JAV 官方图与预览图 |
 | `/sample-thumb?code=&n=`、`/sample-image?code=&n=` | 官方样张与其缩略图 |
 | `/avatar?id=`、`/avatar-choice?kind=&id=`、`/entity-image?kind=&id=&thumb=` | 资产头像、实体图与派生缩略图 |
-| `/follow-avatar?service=&id=`、`/follow-image?id=&media=`、`/follow-cover?id=&media=` | 关注来源的头像、帖子图片与封面 |
 | `/work-icon?work=`、`/logo?studio=&variant=` | 作品与厂牌的标识 |
-| `/source-icon?provider=`、`/site-mark?source=`、`/link-mark?id=` | 来源图标与链接圆标 |
+| `/site-mark?source=`、`/link-mark?id=` | 来源标记与链接圆标 |
 | `/endcard-frame?id=&name=` | 片尾固定画面 |
 
-带写的几条：`POST /api/cover-crop` 只写封面旁的 `.poster.json`，`box` 是源图像素坐标（右下开区间），`null` 恢复默认裁切，不动图片字节；`POST /api/avatar-frame`、`POST /api/avatar-pick`、`POST /api/avatar-code-cover` 选头像取哪一帧或哪张图；`GET /api/avatar-choices` 列出可选图。`GET /api/follow-qualities` 列出某个关注条目可播的画质。
+带写的几条：`POST /api/cover-crop` 只写封面旁的 `.poster.json`，`box` 是源图像素坐标（右下开区间），`null` 恢复默认裁切，不动图片字节；`POST /api/avatar-frame`、`POST /api/avatar-pick`、`POST /api/avatar-code-cover` 选头像取哪一帧或哪张图；`GET /api/avatar-choices` 列出可选图。
 
 ## 网盘设置面
 
@@ -169,7 +164,7 @@
 
 ## JSON 契约出口
 
-`GET /api/{route:path}` 与 `POST /api/{route:path}` 把其余接口交给 `web_contract`：GET 查账本，POST 写账本。只因带请求体才用 POST、实际不写账本的接口单独列了一张清单（标签预览、媒体处理偏好、目录预览、自定义元数据、刮削设置与检查、关注解析与凭据、链接检查、整理预览、人脸模型），它们不受写锁保护。
+`GET /api/{route:path}` 与 `POST /api/{route:path}` 把其余接口交给 `web_contract`：GET 查账本，POST 写账本。只因带请求体才用 POST、实际不写账本的接口单独列了一张清单（标签预览、媒体处理偏好、目录预览、自定义元数据、刮削设置与检查、链接检查、整理预览、人脸模型），它们不受写锁保护。
 
 `web_router` 里另有几个具名端点：
 

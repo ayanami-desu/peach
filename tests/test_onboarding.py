@@ -744,7 +744,7 @@ class ConfigurationSurfaceTests(_Case):
         app = create_app(PeachSettings(
             configured=True, token=token,
             access_path=self.config.directory("secrets") / "access.json",
-            follow_state_root=self.root / "state",
+            state_root=self.root / "state",
             db_path=self.config.directory("database") / "ledger.db"))
         if scheme:
             @app.middleware("http")

@@ -26,16 +26,14 @@ import { JAV_LAYOUTS, cardRatio, gridLayout, javLayout } from './../appearance/l
 import { entityFaceImg, facePos, logoUrl } from './../card-art/markup';
 import { sidebarHasCatalogContent } from './../sidebar';
 import { rememberRepresentatives } from './../card-art/representatives';
-import { clearHomeFeed, isFeedNewPath, renderHomeFeed } from './feed.js';
 import { renderCatalogLoading } from './loading.js';
 import { releaseHoverPreviews } from './../card-art/hover';
-import { revealRoutedPage } from './follow.js';
 import { pageSkeletonHtml } from './../management-placeholder';
 import { catalogEmptyHtml } from './../catalog-onboarding';
 import { junkRoute } from './../junk-queue';
 import { wallAddress } from '../react/video-wall/wall-route';
 import { restoringPage } from '../history/page-navigation';
-export const catalogState = { homeHasFeed: undefined, barsRequestSeq: undefined, barsPendingSeq: undefined, barsRendered: undefined, catalogFilterProps: undefined, catalogFilterMounting: undefined, catalogTagRows: undefined, catalogTopsPages: undefined, initialParams: undefined, resolveSort: undefined, initialCatalogUrl: undefined, initialParam: undefined, HOME_QUERY_KEYS: undefined, searchValueSnapshot: undefined, cancelSearchDissolve: undefined, rememberSearchValue: undefined, clearSearchField: undefined, mixRelatedCache: undefined, reduceMotion: undefined, tagList: undefined, tagPressed: undefined, withTagToggled: undefined, gridHelpers: undefined, gridActions: undefined, topsQueryParams: undefined, facetCountsSeq: undefined, VIEW_PILLS: undefined, catalogViews: undefined, TAGS_FIRST: undefined, catalogOnScreen: undefined, COMBO_LABELS: undefined, hideCatalogCombo: undefined, junkQueueHelpers: undefined, junkQueueActions: undefined };
+export const catalogState = { barsRequestSeq: undefined, barsPendingSeq: undefined, barsRendered: undefined, catalogFilterProps: undefined, catalogFilterMounting: undefined, catalogTagRows: undefined, catalogTopsPages: undefined, initialParams: undefined, resolveSort: undefined, initialCatalogUrl: undefined, initialParam: undefined, HOME_QUERY_KEYS: undefined, searchValueSnapshot: undefined, cancelSearchDissolve: undefined, rememberSearchValue: undefined, clearSearchField: undefined, mixRelatedCache: undefined, reduceMotion: undefined, tagList: undefined, tagPressed: undefined, withTagToggled: undefined, gridHelpers: undefined, gridActions: undefined, topsQueryParams: undefined, facetCountsSeq: undefined, VIEW_PILLS: undefined, catalogViews: undefined, TAGS_FIRST: undefined, catalogOnScreen: undefined, COMBO_LABELS: undefined, hideCatalogCombo: undefined, junkQueueHelpers: undefined, junkQueueActions: undefined };
 
 export function dropOfflineFromDefaultLoc(){
   if(catalogState.initialParams.has('loc'))return;
@@ -394,9 +392,6 @@ export function renderCombo(){
 
 export async function loadCatalog(){
   const surface=navigationState.claimSurface(navigationState.surfacePath());
-  /* 新作那一行只在目录路径上出现：管理页、回收站这些页面回答的是别的问题，一行「外面出了
-     什么」摆在那里只是噪音。离开目录时要显式收起——它是 `#main` 的固定子节点，没人收就
-     一直挂在那儿。 */
   writeShell({barsContext:{type:'home',filters:state},detailReturnBarsContext:null});disposeStage(false);
   if(state.state==='ads')return loadJunk(surface);
   // 卸掉垃圾队列要赶在铺骨架之前：它的计数行也在 `#count` 里，先铺就把它挂着的那一格冲掉了。
@@ -404,9 +399,6 @@ export async function loadCatalog(){
   renderCatalogLoading();
   showHomeSurfaces();
   const painting=paintCatalogGrid(surface);
-  if(isFeedNewPath(location.pathname)&&state.browse!=='folders'){
-    renderHomeFeed();
-  }else clearHomeFeed();
   renderCombo();
   $('#count').classList.remove('manage-static','junkcount');
   return painting;
@@ -419,7 +411,7 @@ export function clearCatalogGrid() {
     catalogState.controller.clear();grid.innerHTML='';
   }
 
-export function paintCatalogGrid(surface){return paintGridPage('/',catalogGridProps,surface,{place:revealRoutedPage})}
+export function paintCatalogGrid(surface){return paintGridPage('/',catalogGridProps,surface)}
 
 export function paintJunkQueue(surface){return paintGridPage('/junk-files',junkQueueProps,surface)}
 

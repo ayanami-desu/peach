@@ -100,7 +100,7 @@ const item = (id: number) => ({ id, title: `作品 ${id}` }) as PlayerItem;
 /* 舞台打开一条再离开：舞台岛拆的顺序是先问要不要进小窗，再卸 React 树（媒体框的清理跟着跑）。 */
 function show(id: number, frame = document.body.appendChild(document.createElement('div'))) {
   stage.setStageMeta({ kind: 'item', item: item(id), title: `作品 ${id}`, sub: '' });
-  const detach = stage.attachStagePlayer(frame, { kind: 'item', item: item(id) });
+  const detach = stage.attachStagePlayer(frame, { item: item(id) });
   return {
     frame,
     leave(allow: boolean) { stage.handOffStage(allow); detach(); stage.setStageMeta(null) },
@@ -141,7 +141,7 @@ describe('播放墙的共享播放器', () => {
     release(true);
     expect(stage.miniplayerActive()).toBe(true);
     expect(player.isDisposed()).toBe(false);
-    stage.prepareStageFor('item', 1);
+    stage.prepareStageFor(1);
     const detail = show(1);
     expect(detail.frame.contains(player.el())).toBe(true);
     expect(player.currentTime()).toBe(43);
@@ -195,7 +195,7 @@ describe('舞台与小窗之间交接播放器', () => {
     expect(stage.miniplayerActive()).toBe(true);
     expect(player.el().classList.contains('vjs-peach-mini')).toBe(true);
 
-    stage.prepareStageFor('item', 1);
+    stage.prepareStageFor(1);
     const back = show(1);
     expect(fake.mounts).toHaveLength(1);
     expect(back.frame.contains(player.el())).toBe(true);
@@ -206,7 +206,7 @@ describe('舞台与小窗之间交接播放器', () => {
 
   it('小窗放着别的条目时打开另一条：先拆小窗里那一个，再挂新的', () => {
     show(1).leave(true);
-    stage.prepareStageFor('item', 2);
+    stage.prepareStageFor(2);
     expect(fake.mounts[0]!.player.isDisposed()).toBe(true);
     show(2);
     expect(fake.mounts).toHaveLength(2);

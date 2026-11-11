@@ -34,8 +34,6 @@ APP_QUERY = {"platform": "android", "app_channel": "official", "app_version": "o
              "app_version_number": "1.9.35", "system_version": "13", "device_model": "Pixel 6",
              "device_name": "Pixel", "device_uuid": "1d26b2df-f042-5138-90b3-28980fe1d98a"}
 APP_HEADERS = {"accept-language": "zh", "User-Agent": JAVDB_APP_USER_AGENT}
-PAGE_SIZE = 10
-MAX_REVIEW_PAGES = 8
 #: 资料请求的主机间隔，由用户 2026-11-05 定为 0.5 秒。同日实测：2 秒逐档降到 0.25 秒各 40 次，
 #: 再按 0.5 秒连发 600 次（5 分钟），全部 HTTP 200 且业务成功；更长时间的累计配额未测。
 #: 一个接口主机撞上 403/429 时冷却 15 分钟、换下一家，全部冷却才整源停（`_json`）。
@@ -129,13 +127,6 @@ def preview_video_url(movie: dict) -> str:
     except ValueError:
         return ""
     return value if allowed else ""
-
-
-def magnet_size(value: object) -> str:
-    """磁链区的体积是 MiB 整数，写成带单位的文字；其他形态原样保留。"""
-    if type(value) in (int, float) and value > 0:
-        return f"{value / 1024:.2f}GB" if value >= 1024 else f"{value:g}MB"
-    return str(value or "")
 
 
 class PublicSourceUnavailable(ValueError):
@@ -571,14 +562,6 @@ class PublicAPI:
             raise PublicSourceUnavailable('来源作品身份不匹配')
         return movie
 
-    def reviews(self, code: str, page: int, *, refresh=False, movie=None) -> list[dict]:
-        if not 1 <= page <= MAX_REVIEW_PAGES:
-            raise ValueError("评论页码必须在 1 至 8 之间")
-        movie = self._bound_movie(code, movie)
-        return self._cached(f"reviews:{movie['id']}:{page}", lambda:
-                            self._rows(f"/v1/movies/{movie['id']}/reviews", "reviews", {"page": page}),
-                            released=movie.get('release_date'), refresh=refresh)
-
     def media_movie(self, code: str, *, movie=None) -> dict:
         """未缓存媒体可补齐带查询参数的临时来源地址，公开编目仍按发行日期复用。"""
         movie = self._bound_movie(code, movie)
@@ -592,59 +575,6 @@ class PublicAPI:
                 isinstance(url, str) and '?' in url for url in urls):
             return self.movie(code, refresh=True, source_id=movie['id'])
         return movie
-
-    def magnets(self, code: str, *, refresh=False, movie=None) -> list[dict]:
-        movie = self._bound_movie(code, movie)
-        return self._cached("magnets:" + movie['id'], lambda:
-                            self._rows(f"/v1/movies/{movie['id']}/magnets", "magnets"),
-                            released=movie.get('release_date'), refresh=refresh)
-
-    def resources(self, code: str, *, refresh=False, review_pages=MAX_REVIEW_PAGES) -> dict:
-        """磁链区与评论正文的资源链接；一侧未取得只记警告，作品身份未取得直接抛出。"""
-        from .magnets import parse_magnet
-        from .sources.javdb import merge_resources, parse_comment_text
-
-        movie = self.movie(code, refresh=True) if refresh else self.movie(code)
-        source_url = "https://javdb.com/v/" + movie["id"]
-        warnings = []
-        items = {}
-        magnet_failed = comments_failed = False
-        try:
-            rows = self.magnets(code, refresh=refresh, movie=movie)
-        except PublicSourceUnavailable as error:
-            rows = []
-            magnet_failed = True
-            warnings.append("磁链区资源未取得：" + str(error))
-        for row in rows:
-            try:
-                magnet = parse_magnet(str(row.get("hash") or ""))
-            except ValueError:
-                continue
-            if magnet.info_hash in items:
-                continue
-            attributes = [label for key, label in (("cnsub", "中字"), ("hd", "高清")) if row.get(key)]
-            items[magnet.info_hash] = {"id": "magnet:" + magnet.info_hash, "protocol": "magnet",
-                "info_hash": magnet.info_hash, "uri": magnet.uri, "name": row.get("name") or code,
-                "size": magnet_size(row.get("size")), "files": str(row.get("files_count") or ""),
-                "date": str(row.get("created_at") or ""), "attributes": attributes,
-                "source": "JavDB", "source_url": source_url, "origins": ["JavDB"]}
-        comments = []
-        try:
-            for page in range(1, review_pages + 1):
-                reviews = self.reviews(code, page, refresh=refresh, movie=movie)
-                for review in reviews:
-                    origin = source_url + "#review-item-" + str(review.get("id") or "")
-                    comments.extend(parse_comment_text(str(review.get("content") or ""), origin,
-                                                       str(review.get("created_at") or "")))
-                if len(reviews) < PAGE_SIZE:
-                    break
-            else:
-                warnings.append(f"已查询前 {review_pages} 页评论资源。")
-        except PublicSourceUnavailable as error:
-            comments_failed = True
-            warnings.append("评论资源未取得：" + str(error))
-        return {"items": merge_resources([*items.values(), *comments]), "warnings": warnings,
-                "source_url": source_url, "magnet_failed": magnet_failed, "comments_failed": comments_failed}
 
     def official_preview(self, code, fetch, *, released=None, refresh=False, provider='prestige', source_id=None):
         """预告按来源独立保存；抓到的就留着，手动刷新或 `?refresh=1` 才再问。"""

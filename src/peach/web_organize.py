@@ -55,7 +55,7 @@ def _root_prefixes(contract, location: str) -> list[str]:
 
 def q_organize(contract, _args=None) -> dict:
     """整理这一块的当前状态：任务快照、可选来源、占位符说明与上一批。"""
-    # 任务快照摊在顶层：进度组件（`followJobProgress`）认的就是这个形状，
+    # 任务快照摊在顶层：前端进度组件认的就是这个形状，
     # 多包一层 `job` 就要在前端再写一遍拆包。
     state = contract.organize_job.snapshot() or {"status": "idle"}
     latest = organize.latest_batch(contract.candidate_root)

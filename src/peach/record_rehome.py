@@ -211,7 +211,6 @@ def move(connection, old_id: int, new_id: int, *, rule: str = "code") -> None:
         [(new_id, row["profile_id"]) for row in moved_goals])
     for column in ("current_asset_id", "source_seed_asset_id"):
         connection.execute(f"UPDATE playlist SET {column}=? WHERE {column}=?", (new_id, old_id))
-    connection.execute('UPDATE follow_item SET asset_id=? WHERE asset_id=?', (new_id, old_id))
     for table in ASSET_REFERENCE_TABLES:
         connection.execute(f"DELETE FROM {table} WHERE asset_id=?", (old_id,))
     connection.execute("DELETE FROM asset WHERE id=?", (old_id,))

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from peach import web_contract, web_tasks
 from peach.jobs import BackgroundJob, TaskRunConflict
-from peach.routes_api import api_get, api_post, task_run_detail, task_run_control
+from peach.routes_api import api_get, task_run_detail, task_run_control
 from peach.repository import LedgerDatabase
 from peach.task_runs import TaskRunStore
 from support.ledger import fresh_ledger
@@ -69,15 +69,6 @@ class BackgroundJobTaskRunTests(unittest.TestCase):
                 'empty': 8, 'unreadable': 1, 'cache': {'files': 9, 'bytes': 2048}}},
              {'missing': 5, 'purge': 3, 'vanish': 2, 'empty': 8, 'unreadable': 1,
               'cache_files': 9, 'cache_bytes': 2048}),
-            ('follow-check', {'results': [{'ok': True, 'added': 3, 'updated': 1},
-                                         {'ok': False, 'error': 'private'}]},
-             {'source_failed': 1, 'source_warning': 0, 'added': 3, 'updated': 1}),
-            ('feed-check', {'added': 7, 'results': [{'ok': False},
-                            {'ok': True, 'added': 2, 'backfill_error': 'private'}]},
-             {'source_failed': 1, 'source_warning': 1, 'added': 7}),
-            ('follow-resolve', {'results': [{'kind': 'error'},
-                {'kind': 'term', 'candidates': [1, 2], 'failures': ['private']}]},
-             {'resolve_failed': 1, 'sources_found': 2, 'source_failed': 1}),
             ('taste-refresh', {'warnings': ['private'], 'refresh': [{}, {}]},
              {'warning_count': 1, 'profiles_checked': 2}),
             ('resource-apply', {'cache_blocked': ['private'], 'blocked_count': 2},
@@ -114,24 +105,6 @@ class BackgroundJobTaskRunTests(unittest.TestCase):
         release.set()
         job.thread.join(5)
 
-    def test_source_issues_keep_the_round_identity_and_readable_reason(self):
-        job = self.job('follow-check')
-        job.start(lambda job_id: job.update(job_id, status='complete'), initial={
-            'results': [
-                {'source': 17, 'label': '示例作者', 'provider_label': '示例站点',
-                 'ok': False, 'error': 'HTTP 403', 'url': 'private'},
-                {'source': 18, 'label': '另一来源', 'ok': True, 'backfill_error': '连接超时'},
-            ],
-        })
-        job.thread.join(5)
-        summary = self.store.query(task_key='follow-check')[0].result_summary
-        self.assertEqual(summary['source_failed'], 1)
-        self.assertEqual(summary['source_warning'], 1)
-        self.assertEqual(summary['issues'], [
-            {'source': 17, 'label': '示例作者', 'provider': '示例站点', 'kind': '检查失败', 'error': 'HTTP 403'},
-            {'source': 18, 'label': '另一来源', 'provider': '', 'kind': '补查失败', 'error': '连接超时'},
-        ])
-        self.assertNotIn('private', json.dumps(summary))
 
     def test_a_locked_ledger_during_progress_does_not_fail_the_round(self):
         """进度写不进去只丢这一次进度：这一轮照常跑完，结算照常落地。"""
@@ -345,7 +318,6 @@ class TasksEndpointTests(unittest.TestCase):
             connection.execute("INSERT INTO asset(path,name,location,medium) VALUES('A:/one.mp4','one.mp4','local','video')")
         committed = web_tasks.q_tasks(self.contract, {})['result_versions']
         self.assertNotEqual(committed['catalog'], before['catalog'])
-        self.assertEqual(committed['follow'], before['follow'])
         (self.contract.candidate_root / 'sample.csv').write_text('item_key\nasset:1:title\n', encoding='utf-8')
         self.assertNotEqual(web_tasks.q_tasks(self.contract, {})['result_versions']['review'], committed['review'])
 
@@ -398,15 +370,6 @@ class TasksEndpointTests(unittest.TestCase):
             self.assertNotEqual(web_tasks.q_result_updates(self.contract, {})['result_versions']['catalog'],
                                 mine['catalog'])
 
-    def test_a_refresh_landing_only_moves_the_keys_whose_tables_it_read(self):
-        """写回一份只读关注表的结果，不让馆藏那一组页面也跟着重取。"""
-        before = web_tasks.q_result_updates(self.contract, {})['result_versions']
-        with self.contract.cache_lock:
-            self.contract.cache_landed['follow_item'] = 1
-        after = web_tasks.q_result_updates(self.contract, {})['result_versions']
-        self.assertNotEqual(after['follow'], before['follow'])
-        self.assertEqual(after['catalog'], before['catalog'])
-        self.assertEqual(after['discoveries'], before['discoveries'])
 
     def test_finished_runs_are_listed_without_a_query_per_row(self):
         """最近完成那一页两百来条大多早已结束：控制状态与资源占用只问还有活动的那几条，连接数不随页长增长。"""
@@ -653,16 +616,6 @@ class ConflictStatusTests(unittest.TestCase):
         self.contract = web_contract.WebContract(self.db)
         self.request = _request(self.contract)
 
-    def test_a_manual_post_onto_a_running_round_returns_409(self):
-        blocking = self.contract.task_runs.start(
-            "follow-check", trigger="cli", mutex_key="follow-check")
-        response = api_post(self.request, "follow/check", {}, {})
-        self.assertEqual(response.status_code, 409)
-        body = response.body.decode("utf-8")
-        self.assertIn(f'"blocking_run_id":{blocking.id}', body)
-        self.assertIn("follow-check", body)
-        # 机器读的是 `error` 与 `task_key`，人读的是 `message`：后者里不留英文任务键。
-        self.assertIn("追更检查已有一轮在进行", json.loads(body)["message"])
 
     def test_a_get_that_conflicts_returns_409_too(self):
         error = TaskRunConflict("demo", 7)

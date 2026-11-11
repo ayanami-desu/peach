@@ -1,8 +1,8 @@
-"""顶栏搜索空着时那一栏推荐：五份本机读接口在服务端一次取齐。
+"""顶栏搜索空着时那一栏推荐：几份本机读接口在服务端一次取齐。
 
-页面挂上之后空闲时就要预取这一栏。分五个请求去打 `/api/items`、`/api/follow` 这些共用接口的话，
-每开一页都多出一串和这一页无关的请求，和首页、标签页、关注页自己的取数挤在一起；合成一个
-请求，预取只占一条，`/api/follow` 那份几百 KB、这一栏用不上的筛选项也不必下发。
+页面挂上之后空闲时就要预取这一栏。分几个请求去打 `/api/items` 这些共用接口的话，
+每开一页都多出一串和这一页无关的请求，和首页、标签页自己的取数挤在一起；合成一个
+请求，预取只占一条。
 
 每份照各自接口的口径原样取，前端照常拼成各组。某一份取不到只缺那一组，不拖垮整栏。
 """
@@ -11,17 +11,13 @@ from __future__ import annotations
 import logging
 import random
 
-from . import web_entity, web_feeds, web_follow, web_jav_discovery
+from . import web_entity, web_jav_discovery
 from .web_catalog import q_items
 
 LOGGER = logging.getLogger(__name__)
 
 #: 每组一次取一池，「换一批」在池里翻页。取二十条与取五条耗时相当。
 POOL = 20
-#: 作者名册有缓存，多取几位不加成本。
-AUTHOR_POOL = 24
-#: 关注页这一份里推荐栏用不上的键：筛选项与别名建议只有关注页自己画。
-FOLLOW_UNUSED = ("facets", "author_facets", "suggestions", "alias_suggestions", "counts")
 #: 推荐池复用多久（秒）。
 RECOMMENDATION_TTL = 300
 
@@ -35,8 +31,8 @@ def _part(name, read):
 
 
 def _words(items: list[dict], jav: list[dict]) -> list[str]:
-    """占位里轮换的推荐词：番号、女优与创作者名，都是馆藏搜索认得的词。关注作者的名字不在馆藏
-    搜索里，不收。聚焦时页面另按当前筛选取一份核过命中的词池，这一份只管还没聚焦的那段时间。"""
+    """占位里轮换的推荐词：番号、女优与创作者名，都是馆藏搜索认得的词。聚焦时页面另按当前
+    筛选取一份核过命中的词池，这一份只管还没聚焦的那段时间。"""
     seen: list[str] = []
     for row in items:
         performers = row.get("performers") or []
@@ -67,7 +63,7 @@ def q_search_recommendations(contract, args) -> dict:
 def _shuffled(pool: dict) -> dict:
     """同一池换个顺序：「换一批」在池里翻页，打开时看到的第一页每次不同。缓存里那份不动。"""
     bundle = dict(pool)
-    for key in ("items", "jav", "follow", "feeds", "authors"):
+    for key in ("items", "jav"):
         part = bundle.get(key)
         if isinstance(part, dict) and isinstance(part.get("items"), list):
             bundle[key] = {**part, "items": random.sample(part["items"], len(part["items"]))}
@@ -79,13 +75,7 @@ def _bundle(contract, library: str) -> dict:
     items_args = {"sort": "rand", "limit": str(POOL), **({"library": library} if library else {})}
     items = _part("作品推荐", lambda: q_items(contract, items_args))
     jav = _part("JAV 推荐", lambda: web_jav_discovery.q_jav_discoveries(
-        contract, {"scope": "library", "limit": str(POOL)}))
-    follow = _part("关注作品", lambda: web_follow.q_follow(
-        contract, {"limit": str(POOL), "sort": "rand", "seed": str(random.getrandbits(31))}))
-    if follow:
-        follow = {key: value for key, value in follow.items() if key not in FOLLOW_UNUSED}
-    feeds = _part("订阅新作", lambda: web_feeds.q_feed_discoveries(contract, {"limit": str(POOL)}))
-    authors = _part("关注作者", lambda: web_follow.q_follow_authors(contract, {"limit": str(AUTHOR_POOL)}))
+        contract, {"limit": str(POOL)}))
     ids = []
     for row in (jav or {}).get("items") or []:
         for ref in row.get("performer_refs") or []:
@@ -93,6 +83,6 @@ def _bundle(contract, library: str) -> dict:
                 ids.append(ref["id"])
     latest = _part("最新作", lambda: web_entity.q_entity_latest(
         contract, {"ids": ",".join(str(value) for value in ids)}))
-    return {"items": items, "jav": jav, "follow": follow, "feeds": feeds, "authors": authors,
+    return {"items": items, "jav": jav,
             "latest": (latest or {}).get("items") or {},
             "words": _words((items or {}).get("items") or [], (jav or {}).get("items") or [])}

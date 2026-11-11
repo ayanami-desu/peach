@@ -19,7 +19,7 @@ export interface TrashCount {
 }
 
 export interface ManageHeaderProps {
-  /** 当前管理区；空串时整块页头不画（首页、目录、关注页这些）。 */
+  /** 当前管理区；空串时整块页头不画（首页、目录这些）。 */
   section: string;
   /** 解码过的 `location.pathname`。 */
   path: string;

@@ -91,8 +91,8 @@ class LedgerCase(unittest.TestCase):
         self.covers.mkdir()
         self.busted = []
         self.contract = SimpleNamespace(
-            database=self.database, candidate_root=self.generated, follow_sources_root=self.sources,
-            follow_secrets_root=self.root / "secrets", cache_bust=lambda: self.busted.append(1),
+            database=self.database, candidate_root=self.generated, sources_root=self.sources,
+            secrets_root=self.root / "secrets", cache_bust=lambda: self.busted.append(1),
             has_cover=lambda key: (self.covers / f"{key}.jpg").is_file())
 
     def work(self, asset_id: int, code: str, *, cover: bool = True, trash: bool = False) -> None:

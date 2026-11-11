@@ -74,9 +74,7 @@ it('页面打开序号只在没人认领的变化上递增：壳认领的写地�
   expect(seen.map((n) => n.openEpoch - start)).toEqual([0, 0, 1, 2, 3]);
 });
 
-it('顶栏换一批的行为登记在路由元数据上：关注页与关注管理页跳过、播放列表页与配置页重开、统计页不登记', () => {
-  expect(routeMetaOf('/follow')?.refresh).toBe('skip');
-  expect(routeMetaOf('/subscriptions')?.refresh).toBe('skip');
+it('顶栏换一批的行为登记在路由元数据上：播放列表页与配置页重开、外观页跳过、统计页不登记', () => {
   expect(routeMetaOf('/playlists')?.refresh).toBe('reopen');
   expect(routeMetaOf('/settings/drives')?.refresh).toBe('reopen');
   expect(routeMetaOf('/settings/appearance')?.refresh).toBe('skip');

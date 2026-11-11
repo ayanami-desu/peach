@@ -7,9 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EntityFilterPage } from '../../src/react/entity-filter/entity-filter-page';
 import {
-  videoOnly, type EntityFilterActions, type EntityFilterHelpers, type EntityFilterProps, type EntityOnlineHead,
+  videoOnly, type EntityFilterActions, type EntityFilterHelpers, type EntityFilterProps,
 } from '../../src/react/entity-filter/entity-filter';
-import { FOLLOW_FILTERS } from '../../src/react/follow-feed/follow-feed';
 import { click, mount, settle } from './render';
 
 const STATES = [{ k: '', label: '全部' }, { k: 'fresh', label: '没看过' }, { k: 'later', label: '稍后看' }, { k: 'flagged', label: '已标记' }];
@@ -19,8 +18,7 @@ function actions(patch: Partial<EntityFilterActions> = {}): EntityFilterActions 
   return {
     setView: vi.fn(), setState: vi.fn(), toggleTag: vi.fn(), clearFilter: vi.fn(), clearAll: vi.fn(),
     setSort: vi.fn(), reshuffle: vi.fn(async () => {}), setJavLayout: vi.fn(), setPhotoLayout: vi.fn(),
-    photoBack: vi.fn(), onlineMedia: vi.fn(), onlineShuffle: vi.fn(), onlineImagesOnly: vi.fn(), onlineStatus: vi.fn(),
-    onlineProvider: vi.fn(), onlineTag: vi.fn(), onlineSort: vi.fn(), ...patch,
+    photoBack: vi.fn(), ...patch,
   };
 }
 
@@ -31,7 +29,7 @@ function helpers(patch: Partial<EntityFilterHelpers> = {}): EntityFilterHelpers 
 function props(patch: Partial<EntityFilterProps> = {}): EntityFilterProps {
   return {
     kind: 'performer', name: '篠田ゆう', view: 'videos',
-    views: { label: '媒体类型', people: null, videos: { count: 24 }, photos: { count: 18 }, online: null },
+    views: { label: '媒体类型', people: null, videos: { count: 24 }, photos: { count: 18 } },
     state: '', states: STATES,
     tags: [{ k: '巨乳', label: '巨乳', n: 1200, selected: false }, { k: '中出', label: '中出', n: 36, selected: true }],
     combo: [{ kind: 'untag', key: '中出', label: '中出' }, { kind: 'clear', key: 'studio', label: '厂牌 S1' }],
@@ -43,7 +41,7 @@ function props(patch: Partial<EntityFilterProps> = {}): EntityFilterProps {
       ],
       jav: { layout: 'big', options: LAYOUTS },
     },
-    photo: null, online: null, actions: actions(), helpers: helpers(), ...patch,
+    photo: null, actions: actions(), helpers: helpers(), ...patch,
   };
 }
 
@@ -174,7 +172,7 @@ describe('照片与名册视图', () => {
     const shell = actions();
     const host = await mount(<EntityFilterPage {...props({
       kind: 'agency', view: 'people', readout: '艺人 · 3', video: null, actions: shell,
-      views: { label: '页面视图', people: { label: '艺人', count: 3, icon: 'user-round' }, videos: { count: 24 }, photos: null, online: null },
+      views: { label: '页面视图', people: { label: '艺人', count: 3, icon: 'user-round' }, videos: { count: 24 }, photos: null },
     })} />);
     expect($$(host, '[data-media-view]').map((key) => key.dataset.mediaView)).toEqual(['people', 'videos']);
     expect($(host, '[data-media-view="people"]')?.getAttribute('aria-pressed')).toBe('true');
@@ -183,66 +181,5 @@ describe('照片与名册视图', () => {
     expect($(host, '[data-filter-row="bottom"] [aria-label="我的收藏"]')).not.toBeNull();
     await click($(host, '[data-media-view="videos"]')!);
     expect(shell.setView).toHaveBeenCalledWith('videos');
-  });
-});
-
-describe('在线视图', () => {
-  const head = (patch: Partial<EntityOnlineHead> = {}): EntityOnlineHead => ({
-    media: 'videos', mediaCounts: { videos: 4, images: 9 }, photoLayout: 'masonry',
-    photoLayouts: [['fixed', '固定比例', 'layout-grid'], ['masonry', '瀑布流', 'columns-2']], imagesOnly: false,
-    status: '', statuses: FOLLOW_FILTERS, provider: '', providers: [['rule34video', 'Rule34Video']],
-    tags: [{ k: 'cum', label: 'cum', n: 3, selected: true, cat: 'general' }],
-    sorts: [{ key: 'new', label: '更新时间', pressed: true, dir: 'desc', ariaLabel: '更新时间' }], ...patch,
-  });
-  const online = (patch: Partial<EntityFilterProps> = {}) => props({
-    kind: 'creator', name: 'Jul3D', view: 'online', readout: '在线 · 13 项更新', video: null, tags: [], combo: [],
-    views: { label: '媒体类型', people: null, videos: { count: 2 }, photos: null, online: { count: 13 } }, ...patch,
-  });
-
-  it('在线键排在最末；状态换成关注的四档，来源与标签是这一位自己的，媒体与排序各自一组', async () => {
-    const host = await mount(<EntityFilterPage {...online({ online: head() })} />);
-    expect($$(host, '[data-entity-media]:not([data-online-media]) > [data-media-view]')
-      .map((key) => key.dataset.mediaView)).toEqual(['videos', 'online']);
-    expect($$(host, '[data-entity-state]').map((key) => key.dataset.entityState)).toEqual(['', 'new', 'saved', 'ignored']);
-    expect($(host, '[data-entity-states]')?.hidden).toBe(false);
-    expect($(host, '[data-follow-provider="rule34video"]')).not.toBeNull();
-    expect($(host, '[data-follow-tag="cum"]')?.getAttribute('aria-pressed')).toBe('true');
-    expect($$(host, '[data-online-media] > [data-media-view]').map((key) => key.dataset.mediaView)).toEqual(['videos', 'images']);
-    expect($(host, '[data-follow-images-only]'), '视频那一档没有照片墙的控件').toBeNull();
-    expect($(host, '[data-entity-layout][aria-label="图片布局"]')).toBeNull();
-  });
-
-  it('点下去回调各自的在线动作，不走作品视图那一套', async () => {
-    const shell = actions();
-    const host = await mount(<EntityFilterPage {...online({ actions: shell, online: head() })} />);
-    await click($(host, '[data-entity-state="new"]')!);
-    await click($(host, '[data-follow-provider="rule34video"]')!);
-    await click($(host, '[data-follow-tag="cum"]')!);
-    await click($(host, '[data-online-media] [data-media-view="images"]')!);
-    await click($(host, '[data-entity-sort="new"]')!);
-    expect(shell.onlineStatus).toHaveBeenCalledWith('new');
-    expect(shell.onlineProvider).toHaveBeenCalledWith('rule34video');
-    expect(shell.onlineTag).toHaveBeenCalledWith('cum');
-    expect(shell.onlineMedia).toHaveBeenCalledWith('images');
-    expect(shell.onlineSort).toHaveBeenCalledWith('new');
-    expect([shell.setState, shell.toggleTag, shell.setSort].every((fn) => vi.mocked(fn).mock.calls.length === 0)).toBe(true);
-  });
-
-  it('图片那一档带上图片布局与仅显示图片，和关注页的照片墙同一组', async () => {
-    const shell = actions();
-    const host = await mount(<EntityFilterPage {...online({ actions: shell, online: head({ media: 'images', imagesOnly: true }) })} />);
-    expect($(host, '[data-entity-layout][aria-label="图片布局"]')).not.toBeNull();
-    expect($(host, '[data-follow-images-only]')?.getAttribute('aria-pressed')).toBe('true');
-    await click($(host, '[data-follow-images-only]')!);
-    expect(shell.onlineImagesOnly).toHaveBeenCalledWith(false);
-  });
-
-  it('只有照片、没有别的视图键时上排整行不出', async () => {
-    const host = await mount(<EntityFilterPage {...props({
-      view: 'photos', views: null, readout: '照片 · 18 张', video: null,
-      photo: { back: false, shuffle: true, layout: 'masonry', layouts: [['masonry', '瀑布流', 'columns-2']], setId: 0 },
-    })} />);
-    expect($(host, '[data-filter-row="top"]')).toBeNull();
-    expect($(host, '[data-filter-row="bottom"]')).not.toBeNull();
   });
 });

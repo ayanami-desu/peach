@@ -83,7 +83,7 @@ type RequestActions = StageItemRequest['actions'];
 function actions(): { [K in keyof RequestActions]: Mock<RequestActions[K]> } {
   return {
     close: vi.fn(), present: vi.fn(), redirect: vi.fn(), openQueueItem: vi.fn(), reopen: vi.fn(),
-    checkSource: vi.fn(async () => false), openSavedFollow: vi.fn(), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
+    checkSource: vi.fn(async () => false), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
     openTag: vi.fn(), addToPlaylist: vi.fn(), saveMix: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
     reveal: vi.fn(async () => ''), sync: vi.fn(async () => ({ text: '', removed: [] })), trashChanged: vi.fn(async () => {}),
     toast: vi.fn(), failure: vi.fn(), rematch: vi.fn(async () => {}),
@@ -120,12 +120,12 @@ type Loaded = Awaited<ReturnType<typeof load>>;
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''), receipt: vi.fn(), toast: vi.fn(),
     failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
-    routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
+    srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
-    authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
+    showIndexTags: vi.fn(), 
     openPlaylist: vi.fn(), canFlip: vi.fn(() => true),
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };

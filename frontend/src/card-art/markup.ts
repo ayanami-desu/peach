@@ -280,17 +280,11 @@ export function javArtwork(item: CoverItem, layout: 'big' | 'small', eager: bool
   };
 }
 
-/** 一张作品卡的封面。番号作品走上面那条；关注来源的条目用来源自己的缩略图；其余取本地
- *  预览格。`size` 是这一屏的大图／小图，只施加给番号作品。 */
-export function cardArtwork(item: CoverItem & { follow_thumb_url?: string | null }, size: 'big' | 'small',
+/** 一张作品卡的封面。番号作品走上面那条；其余取本地预览格。`size` 是这一屏的大图／小图，
+ *  只施加给番号作品。 */
+export function cardArtwork(item: CoverItem, size: 'big' | 'small',
   eager: boolean, javImage: unknown): Artwork {
   if (item.is_jav) return javArtwork(item, size, eager, javImage);
-  if (item.follow_thumb_url) {
-    return {
-      kind: 'thumb',
-      html: `<img class="poster" src="${esc(item.follow_thumb_url)}" width="640" height="360" alt="" loading="${eager ? 'eager' : 'lazy'}" decoding="async" referrerpolicy="no-referrer">`,
-    };
-  }
   return mixFace(item, size, eager, javImage);
 }
 

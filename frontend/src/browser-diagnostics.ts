@@ -5,7 +5,7 @@ const codecs = {
   vp9: 'video/webm; codecs="vp9"', aac: 'audio/mp4; codecs="mp4a.40.2"',
   ac3: 'audio/mp4; codecs="ac-3"', opus: 'audio/webm; codecs="opus"',
 };
-const routes = /^\/(?:stream(?:\/hls\/\d+\/(?:index\.m3u8|\d+\.ts))?|follow-stream|preview-stream|strm-resource\/\d+\/[a-f0-9]+)$/;
+const routes = /^\/(?:stream(?:\/hls\/\d+\/(?:index\.m3u8|\d+\.ts))?|preview-stream|strm-resource\/\d+\/[a-f0-9]+)$/;
 const attempt = <T>(read: () => T): T | null => { try { return read() } catch { return null } };
 const number = (value: number): number | null => Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
 let graphics: { status: string; vendor?: string; renderer?: string } | undefined;

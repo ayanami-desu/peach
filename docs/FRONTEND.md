@@ -13,7 +13,7 @@
 
 | 路径 | 内容 |
 | --- | --- |
-| `frontend/src/application/` | 控制器安装顺序与各功能模块：初始化、目录、筛选、媒体、关注、导航、偏好、回执、搜索、教程 |
+| `frontend/src/application/` | 控制器安装顺序与各功能模块：初始化、目录、筛选、媒体、导航、偏好、回执、搜索、教程 |
 | `frontend/src/core/` | 不依赖 DOM 的共用函数：接口地址、实体地址、站点名与站点标识、语言判定、随机 id、请求错误文案 |
 | `frontend/src/react/` | React 子树：`boardui/` 是逐字复制的 BoardUI 源码，`components/` 是 Peach 组合出来的控件，其余按功能分目录 |
 | `frontend/src/history/` | 全站唯一浏览器历史，以及地址规范化、页面标题、路由元信息 |
@@ -96,7 +96,7 @@
 | 表 | 内容 |
 | --- | --- |
 | `MANAGED_ROUTES` | 管理区页面，精确路径，画进 `#stats` |
-| `BROWSE_ROUTES` | 播放列表与关注页，画进 `#stats` |
+| `BROWSE_ROUTES` | 播放列表页，画进 `#stats` |
 | `INDEX_ROUTES` | 索引页，画进 `#index` |
 | `ENTITY_ROUTES` | 资料页，按模式登记并在打开时给出种类与名字 |
 | `CATALOG_ROUTES` | 目录网格与垃圾队列，画进 `#grid` |
@@ -180,7 +180,6 @@
 | 地址 | 交付 |
 | --- | --- |
 | `/site-mark?source=` | `resources/site-marks/<来源>.png`；来源不在采集来源表里则 404，表里没有图片的来源由服务端现生成 |
-| `/source-icon?provider=` | 关注与订阅来源的方形图标（`fanbox`、`patreon`、`iwara` 一类）：随包有原图就直接发，没有就按表里的地址取一次并缓存；来源不在表里、或图标还没取到时返回 404 加 `resources/site-marks/globe.svg` |
 | `/site-icon/<名字>` | 五个随包发送的站点图标（`javten`、`fc2ppvdb`、`avwikidb`、`minnano-av`、`github`） |
 | `/link-mark?id=` | 按实体链接记录里存的地址取标识，记录失效则 404 |
 

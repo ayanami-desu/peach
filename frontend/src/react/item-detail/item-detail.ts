@@ -1,7 +1,7 @@
 /* 作品详情 `/assets/:id` 与四种队列（Mix、分卷、版本、播放列表）的数据与判定（ADR-0031）。
  *
- * 这一块是舞台岛（`../stage/`）树里的子组件，舞台本身、进出场、小窗与 Video.js 归舞台岛，
- * 关注详情也在用同一套。条目归这里：`/api/items` 的卡片没有 `entity_refs`、标签也只是
+ * 这一块是舞台岛（`../stage/`）树里的子组件，舞台本身、进出场、小窗与 Video.js 归舞台岛。
+ * 条目归这里：`/api/items` 的卡片没有 `entity_refs`、标签也只是
  * 字符串，拿来当详情只会让身份区与标签区先画一版再跳，所以一律单条取 `GET /api/item?id=`。
  *
  * 队列也归岛，按 `{kind, seedId|playlistId}` 取、键里带上它们：同一个队列里换一条走缓存，
@@ -181,8 +181,8 @@ export function nextPart(queue: DetailQueue | null, id: number): QueueItem | nul
 }
 
 /** 首屏：先定队列（这一下要不要重取由壳说），再定停在哪一条，最后取那一条。要转走的几种情形
- *  （在线作品转关注详情、队列取不到退回普通详情、播放列表空了回列表页、条目已不在）交给壳，
- *  壳一换舞台，这一次挂载就作废，不会画出来。 */
+ *  （队列取不到退回普通详情、播放列表空了回列表页、条目已不在）交给壳，壳一换舞台，这一次挂载就作废，
+ *  不会画出来。 */
 export async function prefetchItemDetail(props: ItemDetailProps, signal: AbortSignal): Promise<void> {
   const { queue: ref, actions } = props;
   let queue: DetailQueue | null = null;
@@ -217,7 +217,6 @@ export async function prefetchItemDetail(props: ItemDetailProps, signal: AbortSi
     if (error instanceof ItemGone) { actions.redirect({ kind: 'gone' }); return }
     throw error;
   }
-  if (!signal.aborted && item.location === 'online' && item.follow_item_id) actions.redirect({ kind: 'follow', id: Number(item.follow_item_id) });
 }
 
 /* ── 壳递进来的那几样 ── */
@@ -259,7 +258,6 @@ export interface ItemDetailHelpers {
 
 /** 壳要转走的几种情形。 */
 export type ItemDetailRedirect =
-  | { kind: 'follow'; id: number }
   | { kind: 'item'; id: number }
   | { kind: 'playlists' }
   | { kind: 'gone' };
@@ -274,16 +272,13 @@ export interface ItemDetailActions {
   /** 队列里点另一条：舞台上的播放器要先拆、地址要换，经壳重挂。`push` 为假时不推地址。 */
   openQueueItem(queue: QueueRef, id: number, push?: boolean): void;
   /** 把媒体框交给舞台挂播放器：`<video>` 由舞台建在框里、交给 Video.js，不进这棵 React 树——
-   *  从小窗展开回来时同一个实例要整块搬进这块框。返回的清理在这块媒体区卸下时调。签名与关注
-   *  详情同一个：作品详情没有「第几份媒体」，`media` 传 null；`autoplay` 不给就按设置，计费
-   *  拦截点开的那一下给 true。 */
-  mountPlayer(frame: HTMLElement, item: DetailItem, media: null, options?: { autoplay?: boolean }): () => void;
+   *  从小窗展开回来时同一个实例要整块搬进这块框。返回的清理在这块媒体区卸下时调；`autoplay`
+   *  不给就按设置，计费拦截点开的那一下给 true。 */
+  mountPlayer(frame: HTMLElement, item: DetailItem, options?: { autoplay?: boolean }): () => void;
   /** 盘回来了：按正常路径重开这一条，不在半路挂播放器。 */
   reopen(): void;
   /** 重新检测一个来源挂没挂上。 */
   checkSource(location: string): Promise<boolean>;
-  /** 在线作品反查不到关注条目时的出口：打开关注页「已保存」那一档。 */
-  openSavedFollow(): void;
   openEntity(kind: string, name: string): void;
   openUnowned(): void;
   openRegion(region: string): void;
@@ -466,13 +461,13 @@ export const sameOrder = (a: readonly number[], b: readonly number[]) =>
 
 export type MediaGate = 'offline' | 'online' | 'metered' | 'disc' | '';
 
-/** 播放区此刻挡在视频前面的是哪一种说明：来源没挂载、在线作品反查不到关注条目、计费来源要
- *  点一下才拉流。保存过的在线作品照常播（壳在取数时已经把它转去关注详情）。 */
+/** 播放区此刻挡在视频前面的是哪一种说明：来源没挂载、在线作品没有本地媒体、计费来源要
+ *  点一下才拉流。 */
 export function mediaGate(item: DetailItem, offline: boolean): MediaGate {
   if (offline) return 'offline';
   if (String(item.name || '').toLowerCase().endsWith('.iso')) return 'disc';
-  if (item.location === 'online' && !item.follow_item_id) return 'online';
-  if (item.cost === 'metered' && item.location !== 'online') return 'metered';
+  if (item.location === 'online') return 'online';
+  if (item.cost === 'metered') return 'metered';
   return '';
 }
 

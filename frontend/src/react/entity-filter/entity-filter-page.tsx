@@ -21,9 +21,8 @@ import { IconSwap } from '../components/icon-swap';
 import { useViewGlide } from '../components/use-view-glide';
 import { useCatalogView } from '../catalog-grid/catalog-view';
 import { CatalogViewToggle } from '../catalog-grid/catalog-view-toggle';
-import { sourceIcon } from '../follow-feed/follow-marks';
 import {
-  videoOnly, type EntityComboItem, type EntityFilterActions, type EntityFilterHelpers, type EntityFilterProps, type EntityOnlineHead,
+  videoOnly, type EntityComboItem, type EntityFilterActions, type EntityFilterHelpers, type EntityFilterProps,
   type EntityPhotoHead, type EntitySortKey, type EntityVideoHead, type EntityView, type EntityViewKeys, type SegmentOption,
 } from './entity-filter';
 
@@ -34,11 +33,6 @@ const SortUpIcon = spriteGlyph('arrow-up'), SortDownIcon = spriteGlyph('arrow-do
 export function EntityFilterPage(props: EntityFilterProps) {
   const { view, views, state, states, tags, combo, actions, helpers } = props;
   const onVideos = videoOnly(view);
-  /* 在线视图也有自己的状态、来源与标签（关注页那一套），只是数的是关注里的条目。 */
-  const online = view === 'online' ? props.online : null;
-  const filtered = onVideos || !!online;
-  const stateNow = online ? online.status : state;
-  const stateOptions = online ? online.statuses.map(([k, label]) => ({ k, label })) : states;
   const statePane = useRef<HTMLSpanElement>(null);
   const mediaPane = useRef<HTMLSpanElement>(null);
   const stateRow = useRef<HTMLDivElement>(null);
@@ -46,13 +40,8 @@ export function EntityFilterPage(props: EntityFilterProps) {
   const scroll = useRef<HTMLDivElement>(null);
   const tagRow = useRef<HTMLDivElement>(null);
   const bottomRow = useRef<HTMLDivElement>(null);
-  const stateGlide = useViewGlide(statePane, stateRow, '[data-entity-state][aria-pressed="true"]', `${view}:${stateNow}`);
+  const stateGlide = useViewGlide(statePane, stateRow, '[data-entity-state][aria-pressed="true"]', `${view}:${state}`);
   const mediaGlide = useViewGlide(mediaPane, mediaRow, '[data-media-view][aria-pressed="true"]', `${view}:${!!views}`);
-  const onlinePane = useRef<HTMLSpanElement>(null);
-  const onlineRow = useRef<HTMLDivElement>(null);
-  const onlineMedia = online?.mediaCounts ? online : null;
-  const onlineGlide = useViewGlide(onlinePane, onlineRow, '[data-media-view][aria-pressed="true"]',
-    `${view}:${online?.media}:${!!onlineMedia}`);
 
   /* 标签那一格是 `overflow-x:auto` 加隐藏滚动条：能滚，但鼠标没有一个够得着的入口，所以登记全站
      横向行那套拖动加滚轮映射。窄屏下滚的是外面那层（观看状态跟着一起走），两层都登记：登记在
@@ -73,35 +62,28 @@ export function EntityFilterPage(props: EntityFilterProps) {
         panes={<>
           <span ref={statePane} data-view-glide="" aria-hidden="true" />
           <span ref={mediaPane} data-view-glide="round" aria-hidden="true" />
-          <span ref={onlinePane} data-view-glide="round" aria-hidden="true" />
         </>}
-        top={!views && !filtered ? null : <>
+        top={!views && !onVideos ? null : <>
           {views ? (
             <>
               <ViewKeys keys={views} view={view} row={mediaRow} glide={mediaGlide} onView={actions.setView} />
-              {filtered ? <Sep /> : null}
-            </>
-          ) : null}
-          {onlineMedia ? (
-            <>
-              <OnlineMediaKeys head={onlineMedia} row={onlineRow} glide={onlineGlide} onMedia={actions.onlineMedia} />
-              <Sep />
+              {onVideos ? <Sep /> : null}
             </>
           ) : null}
           <div ref={scroll} data-entity-scroll="">
-            <div ref={stateRow} role="group" aria-label={online ? '状态' : '观看状态'} data-entity-states=""
-              hidden={!filtered} onPointerLeave={stateGlide.leave}>
-              {stateOptions.map((option) => (
+            <div ref={stateRow} role="group" aria-label="观看状态" data-entity-states=""
+              hidden={!onVideos} onPointerLeave={stateGlide.leave}>
+              {states.map((option) => (
                 <button key={option.k} type="button" data-entity-state={option.k} data-entity-press=""
-                  aria-pressed={stateNow === option.k} onPointerEnter={stateGlide.hover}
+                  aria-pressed={state === option.k} onPointerEnter={stateGlide.hover}
                   onClick={() => {
-                    if (stateNow === option.k) return;
-                    if (online) actions.onlineStatus(option.k); else actions.setState(option.k);
+                    if (state === option.k) return;
+                    actions.setState(option.k);
                   }}>
                   {option.label}
                 </button>
               ))}
-              {!online || online.providers.length || online.tags.length ? <Sep /> : null}
+              <Sep />
             </div>
             {/* 标签只在作品视图出：计数数的是作品，摆到名册或照片上对不上号，点一下还会把视图拨回作品。 */}
             <div ref={tagRow} data-entity-tags="">
@@ -110,7 +92,7 @@ export function EntityFilterPage(props: EntityFilterProps) {
                   onPress={() => actions.toggleTag(tag.k)}>
                   {tag.label}<span data-count-badge={tag.k}>{tag.n.toLocaleString()}</span>
                 </FilterPill>
-              )) : online ? <OnlineFilters head={online} actions={actions} /> : null}
+              )) : null}
             </div>
           </div>
         </>}
@@ -120,52 +102,7 @@ export function EntityFilterPage(props: EntityFilterProps) {
   );
 }
 
-const ONLINE_MEDIA = [['videos', '视频', 'play', 'video'], ['images', '图片', 'pics', 'image']] as const;
-
-/** 在线视图左端那两枚圆键，同关注页：这一屏摆视频还是图片。 */
-function OnlineMediaKeys({ head, row, glide, onMedia }: {
-  head: EntityOnlineHead;
-  row: RefObject<HTMLDivElement | null>;
-  glide: ReturnType<typeof useViewGlide>;
-  onMedia(media: 'videos' | 'images'): void;
-}) {
-  return (
-    <div ref={row} role="group" aria-label="在线媒体类型" data-entity-media="" data-online-media=""
-      onPointerLeave={glide.leave}>
-      {ONLINE_MEDIA.map(([value, text, symbol, kind]) => {
-        const title = `${text} ${Math.max(0, head.mediaCounts?.[value] || 0).toLocaleString()}`;
-        return (
-          <button key={value} type="button" data-media-view={value} data-media-icon={kind}
-            aria-pressed={head.media === value} aria-label={title} title={title} onPointerEnter={glide.hover}
-            onClick={() => { if (head.media !== value) onMedia(value) }} dangerouslySetInnerHTML={{ __html: icon(symbol) }} />
-        );
-      })}
-    </div>
-  );
-}
-
-/** 在线视图的来源站标与标签药丸，同关注页那条浮层：站标按下是只看这个来源，标签是交集。 */
-function OnlineFilters({ head, actions }: { head: EntityOnlineHead; actions: EntityFilterActions }) {
-  return (
-    <>
-      {head.providers.map(([key, label]) => (
-        <button key={key} type="button" data-follow-provider={key} data-entity-press=""
-          aria-pressed={head.provider === key} title={label} aria-label={`来源：${label}`}
-          onClick={() => actions.onlineProvider(key)} dangerouslySetInnerHTML={{ __html: sourceIcon(key) }} />
-      ))}
-      {head.providers.length && head.tags.length ? <Sep /> : null}
-      {head.tags.map((tag) => (
-        <FilterPill key={tag.k} data-follow-tag={tag.k} data-entity-press="" data-tag-cat={`r34-${tag.cat}`}
-          pressed={tag.selected} onPress={() => actions.onlineTag(tag.k)}>
-          {tag.label}{tag.n ? <span data-count-badge={tag.k}>{tag.n.toLocaleString()}</span> : null}
-        </FilterPill>
-      ))}
-    </>
-  );
-}
-
-/** 名册、视频、照片与在线是互斥视图，共用一组圆键：它们回答的是同一个问题。键名带上数目，悬停读得到。
- *  前三样是本地数据库里的东西，在线是关注里还没入库的更新，所以排在最末。 */
+/** 名册、视频与照片是互斥视图，共用一组圆键：它们回答的是同一个问题。键名带上数目，悬停读得到。 */
 function ViewKeys({ keys, view, row, glide, onView }: {
   keys: EntityViewKeys;
   view: EntityView;
@@ -177,7 +114,6 @@ function ViewKeys({ keys, view, row, glide, onView }: {
   if (keys.people) buttons.push({ value: 'people', text: keys.people.label, count: keys.people.count, symbol: keys.people.icon, kind: 'people' });
   if (keys.videos) buttons.push({ value: 'videos', text: '视频', count: keys.videos.count, symbol: 'play', kind: 'video' });
   if (keys.photos) buttons.push({ value: 'photos', text: '照片', count: keys.photos.count, symbol: 'pics', kind: 'image' });
-  if (keys.online) buttons.push({ value: 'online', text: '在线', count: keys.online.count, symbol: 'rss', kind: 'online' });
   return (
     <div ref={row} role="group" aria-label={keys.label} data-entity-media="" onPointerLeave={glide.leave}>
       {buttons.map(({ value, text, count, symbol, kind }) => {
@@ -231,7 +167,6 @@ function Head(props: EntityFilterProps) {
       <LibraryShortcuts currentHref={() => location.pathname + location.search} />
       {view === 'videos' && video ? <VideoControls head={video} actions={actions} /> : null}
       {view === 'photos' && photo ? <PhotoControls head={photo} actions={actions} helpers={helpers} /> : null}
-      {view === 'online' && props.online ? <OnlineControls head={props.online} actions={actions} /> : null}
     </>
   );
 }
@@ -302,26 +237,6 @@ export function SortKeys({ sorts, onSort }: { sorts: readonly EntitySortKey[]; o
         );
       })}
     </>
-  );
-}
-
-/** 在线视图的下排，同关注页：换一批，图片墙上多图片布局与「仅显示图片」，排序键排在最末。 */
-function OnlineControls({ head, actions }: { head: EntityOnlineHead; actions: EntityFilterActions }) {
-  return (
-    <span data-entity-sorts="">
-      <Shuffle onPress={actions.onlineShuffle} />
-      {head.media === 'images' ? (
-        <>
-          <Segments label="图片布局" value={head.photoLayout} options={head.photoLayouts} onChange={actions.setPhotoLayout} />
-          <button type="button" data-follow-images-only="" aria-pressed={head.imagesOnly} title="仅显示图片"
-            aria-label="仅显示图片" onClick={() => actions.onlineImagesOnly(!head.imagesOnly)}>
-            {head.imagesOnly ? <span data-view-glide="" aria-hidden="true" /> : null}
-            <span className="contents" dangerouslySetInnerHTML={{ __html: icon('captions-off') }} />
-          </button>
-        </>
-      ) : null}
-      <SortKeys sorts={head.sorts} onSort={actions.onlineSort} />
-    </span>
   );
 }
 

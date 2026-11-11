@@ -237,7 +237,7 @@ def _land_mark(contract, entity_id: int, name: str, batch: str) -> dict:
     with contract.database.read_connection() as connection:
         entries = studio_icons.entity_links(connection, entity_id, name)
     candidate_dir = contract.candidate_root / "provider-cache" / "studio-icons"
-    client = http_client(root=contract.follow_secrets_root, follow_redirects=True)
+    client = http_client(root=contract.secrets_root, follow_redirects=True)
     try:
         landed = studio_icons.land_one(
             name, entries, contract.logo_root, candidate_dir,

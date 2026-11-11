@@ -39,12 +39,12 @@ afterEach(async () => {
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''),
     receipt: vi.fn(), toast: vi.fn(), failure: vi.fn(), revealSource: vi.fn(async () => ''),
-    routeReview: vi.fn(), routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '',
+    routeReview: vi.fn(), srcBadge: () => '',
     routeIndex: vi.fn(), savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(),
-    personAvatar: vi.fn(() => ({ html: '', face: '' })), authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(),
-    openFollowAuthor: vi.fn(), openFollowTag: vi.fn(), openPlaylist: vi.fn(), canFlip: () => true,
+    personAvatar: vi.fn(() => ({ html: '', face: '' })), showIndexTags: vi.fn(),
+    openPlaylist: vi.fn(), canFlip: () => true,
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };
 }
@@ -63,7 +63,7 @@ async function boot(r: Loaded, actions = shellActions()) {
 function surface(r: Loaded, path: string) {
   const stats = document.createElement('section');
   stats.id = 'stats';
-  stats.innerHTML = r.managementSkeletonHtml(path, { followLayout: 'default', followSort: '', followDir: '' });
+  stats.innerHTML = r.managementSkeletonHtml(path);
   document.body.append(stats);
   return { stats, skeleton: stats.firstElementChild! };
 }
@@ -229,18 +229,6 @@ it('等 `/healthz` 期间走开：读请求中止，这一页不再打开', asyn
   api.resolve();
   await settle();
   expect(api.fetched.mock.calls.map(([input]) => input.split('?')[0])).toEqual(['/healthz']);
-});
-
-it('关注管理的旧 `tab=source` 入口改成采集页，替换历史条目而不是多一条', async () => {
-  const r = await load('/subscriptions?tab=source');
-  surface(r, '/subscriptions');
-  serve({ '/healthz': {}, '/api/configuration': configuration });
-  const length = window.history.length;
-  const { actions } = await boot(r);
-  await until(() => vi.mocked(actions.surfaceChanged).mock.calls.some(([, path]) => path === '/sources'), '目标正文打开');
-  expect(location.pathname).toBe('/sources');
-  expect(window.history.length).toBe(length);
-  expect(r.peachHistory.navigation.claimed).toBe(false);
 });
 
 it('诊断页的标题、管理区身份与换一批由路由元数据登记', async () => {

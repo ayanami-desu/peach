@@ -1,4 +1,4 @@
-/* 覆盖组的元素（ADR-0031「详情条目记下压在哪一页上」）：作品详情、四种队列与关注详情各一条路径
+/* 覆盖组的元素（ADR-0031「详情条目记下压在哪一页上」）：作品详情与四种队列各一条路径
  * （`OVERLAY_PATHS`），覆盖组按真实地址匹配，挂上就把那一条送进舞台，卸下去处不是覆盖地址就收起舞台。
  *
  * 什么时候打开：
@@ -11,7 +11,7 @@
  * 打开与收起都交壳（`ShellActions.openOverlay`、`closeStage`）：取数、来处与舞台句柄都还在壳里。
  *
  * 页面组那一侧（`router.tsx`）：有背景时按背景匹配，背景页不重挂；没有背景的覆盖地址也挂一格，作品与队列补画
- * 目录网格（目录元素），关注详情只让出 `#stats`（`FollowDetailGround`），不画列表。
+ * 目录网格（目录元素）。
  *
  * 打开、收起与让位都排进微任务：路由根在历史变化的同一次调用里同步提交，壳打开舞台要同步画，在提交阶段里画会
  * 出 flushSync 告警。历史通知同步更新壳的标题与侧栏，页面取数随后领取当前代次。 */
@@ -101,16 +101,4 @@ export function OverlayMatch({ path }: { path: OverlayPath }): ReactNode {
     held.current.settings = false; held.current.navigationSeq = seq;
   } else if (held.current.navigationSeq !== seq) held.current = { identity, seq, navigationSeq: seq, settings: false };
   return <OverlayOpen key={`${path} ${held.current.seq}`} />;
-}
-
-/* 页面组里没有背景的关注详情（深链、刷新与没记背景的条目）：不画列表，只让出 `#stats`；列表等关掉详情才打开。 */
-function FollowGroundOpen() {
-  const actions = useContext(ShellActionsContext);
-  useRouteOpen(() => { actions?.follow?.ground() });
-  return null;
-}
-
-/** 页面组 `/posts/:id` 的元素，按页面打开序号挂 key。 */
-export function FollowDetailGround(): ReactNode {
-  return <FollowGroundOpen key={useOpenEpoch()} />;
 }

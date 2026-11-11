@@ -39,12 +39,12 @@ afterEach(async () => {
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''), receipt: vi.fn(), toast: vi.fn(),
     failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
-    routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
+    srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
-    authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
+    showIndexTags: vi.fn(), 
     openPlaylist: vi.fn(), canFlip: vi.fn(() => true),
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };

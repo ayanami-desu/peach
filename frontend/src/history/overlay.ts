@@ -15,18 +15,17 @@ import { isPreferencePath } from './settings-route';
 /** 覆盖在页面上的那几种地址。不进 `isRoutedPath`：页面宿主不画它们。 */
 export const OVERLAY_PATHS = [
   '/assets/:id',
-  '/posts/:id',
   '/works/:code',
 ] as const;
 
 export type OverlayPath = typeof OVERLAY_PATHS[number];
 
-export type OverlayKind = 'item' | 'follow' | 'jav';
+export type OverlayKind = 'item' | 'jav';
 
-/** 一条覆盖地址要打开的那一条：作品详情、关注详情，或四种队列里的一条（`key` 是种子或播放列表）。 */
+/** 一条覆盖地址要打开的那一条：作品详情，或四种队列里的一条（`key` 是种子或播放列表）。 */
 export type OverlayTarget =
   | { kind: 'jav'; code: string }
-  | { kind: 'item' | 'follow'; id: number }
+  | { kind: 'item'; id: number }
   | { kind: 'queue'; queue: 'mix' | 'parts' | 'editions' | 'playlist'; key: number; item: number };
 
 const QUEUES = ['mix', 'parts', 'editions', 'playlist'] as const;
@@ -58,7 +57,7 @@ export function overlayMatch(pathname: string, search = ''): { path: OverlayPath
         }
       }
     }
-    return { path, target: { kind: path === '/assets/:id' ? 'item' : 'follow', id: first } };
+    return { path, target: { kind: 'item', id: first } };
   }
   return null;
 }

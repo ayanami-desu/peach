@@ -111,7 +111,6 @@ async function stage({ pool = ['剧情'], loadPool = async () => pool,
     openItem: vi.fn<SearchProps['actions']['openItem']>(),
     openEntity: vi.fn<SearchProps['actions']['openEntity']>(),
     openPath: vi.fn<NonNullable<SearchProps['actions']['openPath']>>(),
-    openFollow: vi.fn<NonNullable<SearchProps['actions']['openFollow']>>(),
   };
   const out: Stage = {
     input, menu, actions, posts, api: null,
@@ -142,22 +141,6 @@ async function stage({ pool = ['剧情'], loadPool = async () => pool,
 const debounce = () => act(async () => { vi.advanceTimersByTime(SUGGEST_DEBOUNCE) });
 
 describe('输入框上的时序', () => {
-  it('空搜索推荐显示封面，键盘选择新作打开作品详情', async () => {
-    const s = await stage({ recommendations: async () => [{ kind: 'release', label: '订阅新作',
-      items: [{ value: 'ABW-101', href: '/works/ABW-101', card: { id: 88, code: 'ABW-101' } }],
-      href: '/subscriptions', action: '管理订阅',
-    }] });
-    await act(async () => s.input.focus());
-    await settle();
-    expect(s.menu.querySelector('[data-search-option="work"] img')).not.toBeNull();
-    expect(s.menu.querySelector('h3 a')?.getAttribute('href')).toBe('/subscriptions');
-    await s.key('ArrowDown');
-    await s.key('Enter');
-    expect(s.actions.openPath).toHaveBeenCalledWith('/works/ABW-101');
-    expect(s.actions.openItem).not.toHaveBeenCalled();
-    expect(s.actions.search).not.toHaveBeenCalled();
-  });
-
   it('推荐没回来先照最终版式占位；开着时取到的下一批留到下次打开再换', async () => {
     const answers = [pending<SuggestGroup[]>(), pending<SuggestGroup[]>()];
     const idle: (() => void)[] = [];
@@ -325,19 +308,6 @@ describe('输入框上的时序', () => {
     await settle();
     expect(s.menu.hidden).toBe(false);
   });
-  it('选择关注图片以指定附件进入图片详情', async () => {
-    const s = await stage({ recommendations: async () => [{ kind: 'photo', label: '关注图片',
-      items: [{ value: '图片作品', id: 88, href: '/posts/88', followMedia: 'images', mediaIndex: 2,
-        card: { id: 88, thumb_url: '/image-thumb' } }],
-    }] });
-    await act(async () => s.input.focus());
-    await settle();
-    await s.key('ArrowDown');
-    await s.key('Enter');
-    expect(s.actions.openFollow).toHaveBeenCalledWith(88, 'images', 2);
-    expect(s.actions.openPath).not.toHaveBeenCalled();
-  });
-
   it('单类视频预览请求二十条，完整结果入口用当前搜索词', async () => {
     vi.useFakeTimers();
     const s = await stage({ suggest: async (q) => ({ q, groups: [{ ...asset, total: 53 }] }) });

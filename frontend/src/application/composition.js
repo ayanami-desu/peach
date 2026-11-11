@@ -1,16 +1,15 @@
 /* composition 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
 import { loadingState, renderInitialSurfaceLoading } from './loading.js';
-import { clearHomeFeed, feedState, installEntityShapeBootstrap, isFeedNewPath, loadEntityShapes, prepareHomeFeed } from './feed.js';
+import { entityShapesState, installEntityShapeBootstrap, loadEntityShapes } from './entity-shapes.js';
 import { buildManageBar, closeStats, enterManagementSurface, loadSyncedSettings, mountManageHeader, mountSidebar, openManage, openSettings, paintCatalogPageTitle, paintListTitle, scheduleStickySurfaces, showHomeSurfaces, showManagementBody, syncHeaderActions } from './layout.js';
 import { disposeStage, mediaState, openItem, openJavMovie, openPlaylist, openQueue, openTok } from './media.js';
 import { currentBarsContext, entityState, openEntity, revealForIsland, routeEntityPage, showEntityMissing } from './entity.js';
 import { applyFilterStateInPlace, buildBars, catalogState, clearCatalogGrid, gridTaken, loadCatalog, paintCatalogGrid, refreshFacetCounts, syncCatalogFilterScreen, toggleTag } from './catalog.js';
 import { openTasteSignal, routeReview } from './playlists.js';
 import { navigationState, requestOverlay, syncNavigation, syncRouteChrome } from './navigation.js';
-import { enterFollow, followState, openFollowDetail } from './follow.js';
 import { receiptsState } from './receipts.js';
 import { selectMode, state, writeShell } from './../shell/index';
-import { indexPath, indexState, onlineAuthorRingHtml, openFollowAuthorFromIndex, openFollowTagFromIndex, routeFollowManage, showIndexContainer, showIndexTags } from './index.js';
+import { indexPath, indexState, showIndexContainer, showIndexTags } from './index.js';
 import { censorOn, loadSourceStatus, preferencesState, wireAllDrag } from './preferences.js';
 import { mountBatchDock, setSelectMode } from './selection.js';
 import { releaseHoverPreviews } from './../card-art/hover';
@@ -31,7 +30,6 @@ const effects=applicationEffects;
 const openOverlayTarget=target=>{
   if(target.kind==='item')void openItem(target.id,false);
   else if(target.kind==='jav')void openJavMovie(target.code,false);
-  else if(target.kind==='follow')void openFollowDetail(target.id,false);
   else void openQueue(target.queue,target.key,target.item,false);
 };
 installEntityShapeBootstrap();
@@ -44,8 +42,6 @@ if(location.pathname==='/'){
     $('#catalogPageHeading').hidden=false;paintCatalogPageTitle($('#catalogPageHeading'),query.get('q'));
   }
 }
-/* 新作那一行按本机记着的结论随首屏一起铺骨架，卡片与列表两种显示方式都一样。 */
-if(isFeedNewPath(decodeURIComponent(location.pathname)))prepareHomeFeed($('#feedNew'));
 mountSidebar();
 compositionState.shellActions = {
   openSettings:section=>openSettings(section,true),
@@ -68,28 +64,18 @@ compositionState.shellActions = {
   },
   openManage,
   managePath:section=>navigationState.routePathOf('section',section)||'',
-  openFollow:()=>enterFollow(),
   receipt:(message,options)=>receiptsState.actionReceipt(message,options),
   toast:(message,options)=>receiptsState.toast(message,options),
   failure:receiptsState.actionFailure,
   revealSource:revealForIsland,
   routeReview,
-  routeFollowManage,
-  saveFollowPreference:patch=>{
-    if(patch.pageSize!==undefined)preferencesState.appSettings.followPageSize=patch.pageSize;
-    if(patch.layout!==undefined)preferencesState.appSettings.followLayout=patch.layout;
-    preferencesState.saveSettings();
-  },
   srcBadge:(location,cost)=>preferencesState.srcBadge(location,cost),
   /* 索引页：同一页换 search 由壳认领、不重挂；后退前进到另一份 search 时路由树的索引元素按地址重开。 */
   routeIndex:(next,{replace=false}={})=>navigationState.route(indexPath(next),replace),
   savePeopleLayout:({layout})=>{preferencesState.appSettings.peopleLayout=layout;preferencesState.saveSettings()},
   exitSelectMode:()=>setSelectMode(false,false),
   personAvatar:(item,entityKind,big)=>indexState.personAvatar(item,entityKind,big),
-  authorAvatar:author=>onlineAuthorRingHtml(author),
   showIndexTags,
-  openFollowAuthor:openFollowAuthorFromIndex,
-  openFollowTag:openFollowTagFromIndex,
   openPlaylist:(id,resume)=>void openPlaylist(id,resume,true),
   canFlip:()=>!selectMode&&!censorOn()&&!window.__scrolling&&!catalogState.reduceMotion(),
   /* 页面元素挂上、开始取数之前报一次：收起上一页留下的面，再铺开这一页那一侧。 */
@@ -117,7 +103,7 @@ compositionState.shellActions = {
     const open=navigationState.requestedQueue;navigationState.requestedQueue=null;
     if(open)void open();
   },
-  /* 覆盖地址要打开的那一条（作品详情、关注详情、四种队列），地址栏已经是它。 */
+  /* 覆盖地址要打开的那一条（作品详情与四种队列），地址栏已经是它。 */
   openOverlay:target=>{
     const requested=navigationState.requestedOverlay;
     navigationState.requestedOverlay=null;
@@ -140,7 +126,7 @@ compositionState.shellActions = {
        就先画，名单到了再补那两块。名单每进一页重取一遍，下一页用的就是服务端的现状。 */
     loading:(kind,name,current)=>entityState.application.loading(kind,name,current),
     props:(kind,name,search)=>{
-      writeShell({entityJavLayout:['performer','studio'].includes(kind)&&feedState.hasEntityPart(kind,name,'jav')});
+      writeShell({entityJavLayout:['performer','studio'].includes(kind)&&entityShapesState.hasEntityPart(kind,name,'jav')});
       return entityState.application.addressProps(kind,name,search);
     },
     /* 后退前进落在同一位的另一份筛选上：这一页还画着就只把地址上的新筛选推过去。 */
@@ -152,9 +138,6 @@ compositionState.shellActions = {
       applyFilterStateInPlace(filters);refreshFacetCounts(currentBarsContext());return true;
     },
   },
-
-  // 关注与播放列表用。
-  follow:followState.followFeedShell,
 
   // 目录用。
   catalog:{
@@ -181,8 +164,8 @@ compositionState.shellActions = {
       const count=$('#count');count.removeAttribute('aria-busy');count.removeAttribute('aria-label');
       void paintCatalogGrid(navigationState.surfaceToken(navigationState.surfacePath()));
     },
-    /* 离开目录：收起网格与首页新作行。 */
-    release:()=>{clearCatalogGrid();clearHomeFeed()},
+    /* 离开目录：收起网格。 */
+    release:clearCatalogGrid,
   },
 };
 compositionState.routing = false;
@@ -205,7 +188,7 @@ Promise.all([loadSourceStatus(),loadSyncedSettings()])
   .then(()=>{
     if(!effects.isActive)return;
     /* 顶部两排与筛选栏的两个聚合自带骨架、取回后自己落位，页面打开不等它们：作品列表与它们同时去取。 */
-    if(loadingState.wantsDiscoveryBars())buildBars().catch(error=>console.error('首页横条装载失败',error));
+    if(loadingState.discoveryBarsVisible())buildBars().catch(error=>console.error('首页横条装载失败',error));
     syncNavigation();wireAllDrag();
     // 路由树里按匹配打开的页面等这一下才开始打开：壳的状态到这时才齐。
     compositionState.routing=true;writeShell({pageOpens:1});syncRouteChrome();

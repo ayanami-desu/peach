@@ -142,7 +142,7 @@ def trigger_label(trigger: str) -> str:
 
 
 def stamp(moment: datetime | None = None) -> str:
-    """ISO-8601 UTC 文本，与 `entity`、`follow_schedule` 同一种写法。"""
+    """ISO-8601 UTC 文本，与 `entity` 表同一种写法。"""
     return (moment or datetime.now(timezone.utc)).astimezone(
         timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 

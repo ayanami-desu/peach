@@ -3,8 +3,6 @@
  * - `['settings']`：跟数据库走、所有访问端同一份的那几项（`/api/settings`，`src/peach/web_settings.py`）。
  *   面板每次打开都重取一次，取回来交给壳对账（`host.syncRemote`）：界面偏好的真相仍是壳里那一份
  *   `appSettings`，这个键只是数据库那边的快照。写入同样走这个端点，成功后回来的整份写回这个键。
- * - `['follow-schedule']`：这台机器上关注自动更新的档位与上次运行状态。
- * - `['feed-schedule']`：订阅源定时拉取的档位与上次运行状态，形状同上，只读。
  * - `['thumbnail-jobs']`：视频缩略图采集的档位与状态。档位跟着机器走，不存在浏览器里。
  * - `['media-processing']`：这台机器生成预览的开关与抽帧、转码的编解码方式。配置页「视频预览」与
  *   「视频播放」两张卡读写同一份。
@@ -18,13 +16,9 @@ import { queryClient } from '../query';
 import type { NavigationOrders } from '../../navigation-order';
 
 export const SETTINGS_URL = '/api/settings';
-export const FOLLOW_SCHEDULE_URL = '/api/follow/schedule';
-export const FEED_SCHEDULE_URL = '/api/feeds/schedule';
 export const THUMBNAIL_JOBS_URL = '/api/thumbnail-jobs';
 
 export const SETTINGS_KEY = ['settings'] as const;
-export const FOLLOW_SCHEDULE_KEY = ['follow-schedule'] as const;
-export const FEED_SCHEDULE_KEY = ['feed-schedule'] as const;
 export const THUMBNAIL_JOBS_KEY = ['thumbnail-jobs'] as const;
 export const MEDIA_PROCESSING_URL = '/api/media-processing';
 export const MEDIA_PROCESSING_KEY = ['media-processing'] as const;
@@ -47,28 +41,11 @@ export interface SyncedSettings {
   manageOrder?: string[];
   navigationOrders?: NavigationOrders;
   libraryOrder?: string[];
-  followInitialDays?: number;
   postSetupTutorialDone?: boolean;
-  feedHideGroupCompilations?: boolean;
-  feedHideSoloCompilations?: boolean;
-  feedHideExcerpts?: boolean;
   /** 数据库里还没存过时是 null：这台设备本地那个数替所有访问端先定下来。 */
   searchHistoryLimit?: number | null;
   /** 番号识别规则，一条一个正则。 */
   codePatterns?: string[];
-}
-
-export interface FollowScheduleStatus {
-  available: boolean;
-  enabled: boolean;
-  interval_minutes: number;
-  running?: boolean;
-  last_error?: string | null;
-  last_finished_at?: string | null;
-  last_added?: number | null;
-  next_run_at?: string | null;
-  /** 连续失败的轮数；从第二次起下一轮按倍数推后。 */
-  consecutive_failures?: number;
 }
 
 export interface ThumbnailJobStatus {
@@ -78,10 +55,6 @@ export interface ThumbnailJobStatus {
 }
 
 export const fetchSettings = (signal?: AbortSignal) => apiGet<SyncedSettings>(SETTINGS_URL, signal);
-export const fetchFollowSchedule = (signal?: AbortSignal) =>
-  apiGet<FollowScheduleStatus>(FOLLOW_SCHEDULE_URL, signal);
-export const fetchFeedSchedule = (signal?: AbortSignal) =>
-  apiGet<FollowScheduleStatus>(FEED_SCHEDULE_URL, signal);
 export const fetchThumbnailJobs = (signal?: AbortSignal) =>
   apiGet<ThumbnailJobStatus>(THUMBNAIL_JOBS_URL, signal);
 
@@ -100,31 +73,6 @@ export function useSaveSettings(scope?: string) {
     onSuccess: (saved) => queryClient.setQueryData(SETTINGS_KEY, saved),
   }, queryClient);
 }
-
-export function useSaveFollowSchedule() {
-  return useMutation({
-    mutationFn: (minutes: number) => apiSend<FollowScheduleStatus>(FOLLOW_SCHEDULE_URL,
-      { enabled: minutes > 0, interval_minutes: minutes || 60 }),
-    onSuccess: (status) => queryClient.setQueryData(FOLLOW_SCHEDULE_KEY, status),
-  });
-}
-
-/** 两个调度各自的「立即重跑」：服务端把下一轮提前到此刻，回来的状态已标成运行中。 */
-export const SCHEDULE_RUNS = {
-  follow: { url: `${FOLLOW_SCHEDULE_URL}/run`, key: FOLLOW_SCHEDULE_KEY },
-  feed: { url: `${FEED_SCHEDULE_URL}/run`, key: FEED_SCHEDULE_KEY },
-} as const;
-
-export function useRunSchedule(kind: keyof typeof SCHEDULE_RUNS) {
-  const { url, key } = SCHEDULE_RUNS[kind];
-  return useMutation({
-    mutationFn: () => apiSend<FollowScheduleStatus>(url, {}),
-    onSuccess: (status) => queryClient.setQueryData(key, status),
-  });
-}
-
-/** 调度正在跑时三秒重取一次，跑完就停，失败原因随之出现或消失。 */
-export const schedulePollInterval = (data: FollowScheduleStatus | undefined) => data?.running ? 3_000 : false;
 
 export function useSaveThumbnailMode() {
   return useMutation({

@@ -81,7 +81,7 @@ class Case(unittest.TestCase):
         self.busted = []
         self.contract = SimpleNamespace(
             database=self.database, candidate_root=self.generated,
-            follow_secrets_root=self.cooldown, cache_bust=lambda: self.busted.append(1))
+            secrets_root=self.cooldown, cache_bust=lambda: self.busted.append(1))
         self.transport = Transport({})
         self.next_asset = 1
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass
-from datetime import date, datetime
 import hashlib
 import json
 import math
@@ -20,20 +19,10 @@ DAY = 86400
 MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 
 
-def cache_fresh(saved: float, released: str | None, now: float | None = None) -> bool:
-    """成功抓到的资料一直有效；只有发行日之前抓到的会在发行之后再补一次。
-
-    盘上没有这一条、手动重试、`?refresh=1` 才重新问来源，所以这里不再按天数失效。
-    """
+def cache_fresh(saved: float, released: str | None = None, now: float | None = None) -> bool:
+    """成功抓到的资料一直有效；只有时间戳本身不可信时才不予复用。"""
     now = time.time() if now is None else now
-    if type(saved) not in (int, float) or not math.isfinite(saved) or saved < 0 or saved > now:
-        return False
-    try:
-        issued = date.fromisoformat((released or '')[:10])
-        taken = datetime.fromtimestamp(saved).date()
-    except (ValueError, TypeError, OverflowError, OSError):
-        return True
-    return taken >= issued
+    return type(saved) in (int, float) and math.isfinite(saved) and 0 <= saved <= now
 
 
 @dataclass(frozen=True)

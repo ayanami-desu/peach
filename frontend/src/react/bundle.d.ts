@@ -6,10 +6,8 @@ import type { IndexProps } from './index/index-data';
 import type { CatalogGridProps } from './catalog-grid/types';
 import type { JunkQueueProps } from './junk-queue/junk-queue';
 import type { EntityPageProps } from './entity-page/entity-page';
-import type { FeedNewProps } from './feed-new/feed-new';
 import type { CatalogFilterProps, CatalogView } from './catalog-filter/catalog-filter';
 import type { SearchProps } from './search/search';
-import type { FollowDetailProps } from './follow-detail/follow-detail';
 import type { ItemDetailProps } from './item-detail/item-detail';
 import type { StageApi, StageHost } from './stage/stage-api';
 import type { SettingsPanelApi, SettingsPanelHost } from './settings-panel/settings-panel-api';
@@ -24,10 +22,8 @@ export type { IndexProps };
 export type { CatalogGridProps };
 export type { JunkQueueProps };
 export type { EntityPageProps };
-export type { FeedNewProps };
 export type { CatalogFilterProps, CatalogView };
 export type { SearchProps };
-export type { FollowDetailProps };
 export type { ItemDetailProps };
 
 export interface AccessState { mode: 'open' | 'password' | 'legacy' | 'locked'; revision: string }
@@ -298,35 +294,6 @@ export interface TasteProps {
 export interface ScrapingProps {
   /** 写操作在服务端落地之后的过去时回执。 */
   toast(message: string): void;
-}
-
-/** 关注管理页。
- *
- *  地址栏与个人偏好在这里分成两组：`tab`／`page`／`sort`／`dir` 外面链接得过来，跟着地址
- *  走；`pageSize`／`layout` 是这台浏览器的习惯，跟着 `appSettings` 走。两组都由壳持有存储、
- *  React 持有实时状态，各只有一份。 */
-export interface FollowManageProps {
-  /** 地址栏此刻带着的页签（`list`／`add`／`feeds`）。 */
-  tab: string;
-  page: number;
-  sort: string;
-  dir: string;
-  /** 把这四项写回地址栏。空串表示这一项此刻就是默认值，壳不写进去。 */
-  route(params: { tab: string; page: number; sort: string; dir: string }): void;
-  /** 这台浏览器的偏好当前值。 */
-  pageSize: number;
-  layout: string;
-  /** 偏好改了：存储归壳（`appSettings`），页面不自己写一份。 */
-  savePreference(patch: { pageSize?: number; layout?: string }): void;
-  /** 写操作在服务端落地之后的过去时回执。 */
-  toast(message: string): void;
-  /** 去「看更新」那一页（`/follow`）。整页换成哪一屏仍归遗留壳。 */
-  openFollow(): void;
-  /** 数据库只读：这台机器只能浏览，写操作全部不给点。 */
-  readOnly: boolean;
-  readOnlyMessage: string;
-  /** 写入端上这一页的地址。取不到时门禁里不给去处。 */
-  writerUrl: string;
 }
 
 /** 人工复核页。

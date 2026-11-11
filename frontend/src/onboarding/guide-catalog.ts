@@ -32,21 +32,15 @@ export const INTERFACE_CHAPTERS: GuideChapter[] = [
     page('queue', '从列表开始播放', '选择一张播放列表卡片进入队列，查看和调整播放顺序。没有列表时先创建，再加入作品。', '/playlists', '[data-playlist-card]'),
   ] },
   { id: 'entities', kind: 'interface', title: '按人物与主题浏览', summary: '从人物、厂牌和标签继续发现相关馆藏。', steps: [
-    page('people', '艺人与创作者', '选择人物卡片进入资料页，查看相关作品、照片与已连接的来源。上方可以切换艺人、卖家与在线人物。', '/performers', '[data-index-body] [data-index-cell], [data-index-body] [data-empty-state]'),
+    page('people', '艺人与创作者', '选择人物卡片进入资料页，查看相关作品、照片与已连接的来源。上方可以切换艺人与卖家。', '/performers', '[data-index-body] [data-index-cell], [data-index-body] [data-empty-state]'),
     page('studios', '厂牌', '选择厂牌卡片集中查看作品。资料页中的作品仍会受到当前媒体库范围影响。', '/studios', '[data-index-body] [data-index-cell], [data-index-body] [data-empty-state]'),
-    page('tags', '标签与主题', '选择标签继续浏览相关馆藏；本地与在线使用不同的标签词表。', '/tags', '[data-index-body] [data-alpha-tag], [data-index-body] [data-tag-chip], [data-index-body] [data-empty-state]'),
+    page('tags', '标签与主题', '选择标签继续浏览相关馆藏；标签来自已入库作品，可在标签管理里整理。', '/tags', '[data-index-body] [data-alpha-tag], [data-index-body] [data-tag-chip], [data-index-body] [data-empty-state]'),
     page('manage-tags', '管理标签', '铅笔按钮打开标签管理，用于整理标签名称和关系；再次点击返回浏览。', '/tags', '[data-tag-mode]'),
   ] },
-  { id: 'jav', kind: 'interface', title: 'JAV 与追新', summary: '馆藏、新作与想要清单。', steps: [
+  { id: 'jav', kind: 'interface', title: 'JAV 馆藏', summary: '馆藏与馆藏探索两个分区。', steps: [
     page('library', 'JAV 馆藏', '按番号、出演者和厂牌查找已入库的作品，可以选择官方封面或预览图。', javPath('library') as GuideRoute, '[data-catalog-frame]'),
-    page('new', '发现推荐', '发现页列出符合筛选的新作。在这里切换馆藏、发现与想要，并按标签筛选。', javPath('discover') as GuideRoute, '[data-jav-filter] [data-catalog-views]'),
-    page('wants', '查看想要清单', '外部作品可以加入想要清单；在这里查看它们在库里有没有对应文件。', javPath('discover') as GuideRoute, '[aria-label="JAV 分区"]'),
+    page('explore', '馆藏探索', '探索分区从馆藏里挑出值得看的作品，可按标签与排序收窄；筛选推荐框在页头右侧。', javPath('explore') as GuideRoute, '[data-index-search] input, [data-filter-glass]'),
     page('quality', '高清版', '待升级卡片列出当前版本信息和判定原因；没有目标时这里显示空状态。', '/quality-goals', '[data-goal-id], #main [data-empty-state]'),
-  ] },
-  { id: 'follow', kind: 'interface', title: '关注创作者', summary: '多来源更新、同作品合并和来源状态。', steps: [
-    page('feed', '集中看关注更新', '来自不同来源的创作者更新汇集在这里，选择一项更新查看内容；尚未关注来源时，按空状态中的入口添加。', '/follow', '[data-follow-item], [data-follow-empty] [data-empty-state]'),
-    page('sources', '管理关注来源', '从列表查看启用状态、采集结果和失败原因；切换到添加区域，添加创作者或订阅来源。', '/subscriptions', '[aria-label="关注管理区域"]'),
-    page('credentials', '按需配置凭据', '部分来源需要登录凭据；先确认要启用的来源，再展开对应站点，填写其要求的信息。', '/sources', '[data-guide-target="sources"]'),
   ] },
   { id: 'viewing', kind: 'interface', title: '专注观看', summary: '播放墙、沉浸模式与详情小窗。', steps: [
     page('wall', '播放墙', '播放墙提供多画面观看入口。结束导览后点击进入，再选择要播放的内容。', '/', '#wallBtn'),
@@ -88,11 +82,9 @@ export const SETTING_CHAPTERS: GuideChapter[] = [
     ['miniplayer', '离开详情后小窗播放', '离开详情时用小窗继续观看；需要专注浏览时关闭。', '#miniplayerSetting'],
     ['seek', '快进 / 快退', '设置每次跳转的秒数，按自己的观看习惯调整。', '#seekSecondsSetting'],
   ]) },
-  { id: 'jav-settings', kind: 'settings', title: PREFERENCE_SECTIONS.jav, summary: '封面与新作筛选。', steps: fields('jav', [
+  { id: 'jav-settings', kind: 'settings', title: PREFERENCE_SECTIONS.jav, summary: '封面与名称语言。', steps: fields('jav', [
     ['names', '女优名称', '选择中文或日文名称。', '#performerNameLanguageSetting', shared],
     ['image', '默认图片', '选择官方封面或预览图作为卡片的默认图像。', '#javImageSetting'],
-    ['limit', '新作显示数量', '控制新作区域一次展示的数量。', '#feedLimitSetting'],
-    ['scroll', '自动滚动', '控制新作区域是否自动滚动。', '#feedAutoScrollSetting'],
   ]) },
   { id: 'search-settings', kind: 'settings', title: PREFERENCE_SECTIONS.search, summary: '搜索记录与相关推荐数量。', steps: fields('search', [
     ['history', '搜索记录', '设置保留的搜索记录上限，0 表示不记录。', '#searchHistoryLimitSetting', shared],
@@ -182,12 +174,12 @@ export const GUIDE_CHAPTERS = [...INTERFACE_CHAPTERS, ...SETTING_CHAPTERS];
 export interface GuideTopic { id: string; kind: GuideChapter['kind']; title: string; summary: string; chapters: string[] }
 /** 目录按使用意图组织；小章节可单独阅读，设置步骤对应实际设置分区。 */
 export const GUIDE_TOPICS: GuideTopic[] = [
-  { id: 'browse', kind: 'interface', title: '查找与发现', summary: '搜索播放、人物标签、JAV 追新', chapters: ['find-play', 'entities', 'jav'] },
-  { id: 'collect', kind: 'interface', title: '收藏与关注', summary: '标记列表、创作者更新、统计', chapters: ['save', 'follow', 'insights'] },
+  { id: 'browse', kind: 'interface', title: '查找与发现', summary: '搜索播放、人物标签、JAV 馆藏', chapters: ['find-play', 'entities', 'jav'] },
+  { id: 'collect', kind: 'interface', title: '收藏与统计', summary: '标记列表与馆藏统计', chapters: ['save', 'insights'] },
   { id: 'watch', kind: 'interface', title: '专注观看', summary: '播放墙、沉浸观看与详情小窗', chapters: ['viewing'] },
   { id: 'manage', kind: 'interface', title: '整理与维护', summary: '同步补资料、人工复核、文件整理', chapters: ['maintenance'] },
   { id: 'experience', kind: 'settings', title: '外观与播放', summary: '界面样式、播放行为、内容显示', chapters: ['appearance', 'browsing', 'content'] },
-  { id: 'discovery', kind: 'settings', title: '搜索与偏好', summary: '搜索记录、新作与封面', chapters: ['search-settings', 'jav-settings'] },
+  { id: 'discovery', kind: 'settings', title: '搜索与偏好', summary: '搜索记录与封面', chapters: ['search-settings', 'jav-settings'] },
   { id: 'connection', kind: 'settings', title: '接入与访问', summary: '网盘、访问密码、令牌与设备', chapters: ['drives', 'access', 'token', 'devices'] },
   { id: 'system', kind: 'settings', title: '任务与诊断', summary: '处理速度、系统检查与诊断报告', chapters: ['speed', 'diagnostics'] },
 ];

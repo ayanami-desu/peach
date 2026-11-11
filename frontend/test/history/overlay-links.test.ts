@@ -19,7 +19,7 @@ function clickPath(href: string, init: MouseEventInit = {}, attributes: Record<s
 }
 
 it.each(['/assets/11', '/assets/21?parts=21&t=30', '/assets/31?editions=31', '/assets/11?mix=11',
-  '/assets/11?playlist=2', '/posts/3?t=20', '/works/ABP-968#comments'])(
+  '/assets/11?playlist=2', '/works/ABP-968#comments'])(
   '站内详情链接进入覆盖导航：%s', path => {
     expect(clickPath(path)).toBe(path);
     expect(clickPath(new URL(path, window.location.href).href, {}, { target: '_self' })).toBe(path);
@@ -39,7 +39,7 @@ it('浏览器修饰键、其它按钮、已处理的链接与其它窗口不进�
   expect(clickPath('/assets/11', {}, { target: '_self' })).toBe('/assets/11');
 });
 
-it.each(['/', '/subscriptions?tab=add', '/settings', '/settings/access', '/follow?status=new', '/tags?scope=online&view=alphabet',
+it.each(['/', '/settings', '/settings/access', '/tags?scope=local&view=alphabet',
   '/data-cleanup', '/junk-files?phase=pending', '/jav?tab=discover'])(
   '已登记页面由客户端导航接管：%s', path => { expect(clickPath(path)).toBe(path) },
 );

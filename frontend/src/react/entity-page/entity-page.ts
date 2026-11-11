@@ -1,21 +1,19 @@
 /* 实体资料页（路由树画进 `#index`，见 `router/managed-routes.tsx` 的 `ENTITY_ROUTES`）：数据形状、
  * 查询键与首屏取数。
  *
- * 资料卡、筛选浮层、新作那一行与正文是同一页的四块，读的是同一份页内状态（这一页的筛选、当前
- * 视图、照片墙翻到哪儿），所以是同一个组件；四块各自的宿主由壳在 `#index` 里排好，页面画进资料卡
- * 那一格，再用 portal 画进另外三块。取数全在这里：`/api/entity`、新作、作品与照片由页面按查询键取，
+ * 资料卡、筛选浮层与正文是同一页的三块，读的是同一份页内状态（这一页的筛选、当前视图、照片墙
+ * 翻到哪儿），所以是同一个组件；三块各自的宿主由壳在 `#index` 里排好，页面画进资料卡那一格，
+ * 再用 portal 画进另外两块。作品与照片由页面按查询键取，
  * 地址栏是筛选与视图的唯一真相源、归壳写——页面改筛选只调 `actions.route`，壳写好地址再经
  * `updateManagedRoute` 把新的 `filters`／`media` 推回来，页面按新键重取。
  *
- * 首屏由壳铺骨架，身份资料就绪后挂载页面；作品、照片与新作各自替换对应区域的骨架。 */
+ * 首屏由壳铺骨架，身份资料就绪后挂载页面；作品、照片各自替换对应区域的骨架。 */
 import { api } from '@peach/legacy/core';
 
 import type { CatalogGridProps, MediaPage } from '../catalog-grid/types';
 import type { EntityBodyActions, EntityBodyHelpers, EntityCodeSet, EntityLocalPhoto, PhotoLayout, PhotoSize } from '../entity-body/entity-body';
 import type { EntityComboItem, EntitySortKey, EntityView, SegmentOption } from '../entity-filter/entity-filter';
-import type { FollowFeedActions, FollowFeedHelpers } from '../follow-feed/follow-feed';
 import type { EntityHeroData, HeroCostar } from '../entity-hero/entity-hero';
-import { feedNewKey, feedNewOptions, type FeedRowHtml } from '../feed-new/feed-new';
 import type { IndexPerson, PeopleLayout } from '../index/index-data';
 import { queryClient } from '../query';
 import { pendingRefetch } from '../components/pending-work';
@@ -24,8 +22,8 @@ import { pendingRefetch } from '../components/pending-work';
 export const ENTITY_FILTER_KEYS = ['loc', 'creator', 'tag', 'state', 'dur_min', 'dur_max', 'orient', 'year', 'sort', 'dir', 'browse', 'folder', 'folder_recursive'] as const;
 export type EntityFilters = Readonly<Record<string, string>>;
 
-/** 地址栏上的媒体视图：`media=photos`、`media=online` 与目录图集 `set=<id>`。名册不进地址栏，见 `rosterView`。 */
-export interface EntityMedia { media: 'videos' | 'photos' | 'online'; set: number }
+/** 地址栏上的媒体视图：`media=photos` 与目录图集 `set=<id>`。名册不进地址栏，见 `rosterView`。 */
+export interface EntityMedia { media: 'videos' | 'photos'; set: number }
 export const EMPTY_MEDIA: EntityMedia = { media: 'videos', set: 0 };
 
 /** `/api/entity` 里这一页读到的字段：资料卡那份，外加标签计数与名册。名字对不上时回 `{error}`。 */
@@ -77,15 +75,12 @@ export interface EntityPageActions {
   openEntity(kind: string, name: string, replace?: boolean): void;
   /** 这一页是不是 JAV 语境（按第一页作品的 `is_jav` 推）：壳的排序项、侧栏取数与卡片版式都读它。 */
   javContext(on: boolean): void;
-  /** 换了视图或换了一批内容：壳重算吸顶，顶栏的大小图键按是不是照片墙（`wall`：照片视图，或在线
-   *  视图摆着图片）换成对应的那一组。 */
+  /** 换了视图或换了一批内容：壳重算吸顶，顶栏的大小图键按是不是照片墙（`wall`：照片视图）换成对应的那一组。 */
   painted(view: EntityView, wall: boolean): void;
   /** 名字对不上任何一位（`/api/entity` 回 `{error}`）：壳把整块换成空态。 */
   missing(): void;
   /** 换过头像：壳丢掉自己缓存着的那几排头像（顶部三条），下次画时按新版本号重取。 */
   avatarChanged(): void;
-  /** 去关注页，只看这一位名下来源的更新（名册在线档那一格点开的同一个入口）。 */
-  openFollowAuthor(key: string): void;
 }
 
 /** 仍由遗留层拼的 HTML 与接线。 */
@@ -96,10 +91,6 @@ export interface EntityPageHelpers {
   wireDrag(row: Element | null): void;
   /** 只接滚轮与两端渐隐（`wireHorizontalScroller`）。 */
   wireScroller(row: Element | null): void;
-  /** 新作那一行：拖动、滚轮，按设置接自动滚动。 */
-  wireFeedRow(row: Element | null): void;
-  /** 新作那一行的整段 HTML：连不上图片主机时的 Note 与一排卡（`feedNewCardHtml`）。 */
-  feedRowHtml: FeedRowHtml;
   /** 操作回执（`actionReceipt`），给了 `undo` 就带一颗撤销键。 */
   receipt(message: string, options?: { undo?: () => Promise<void> }): void;
   /** 失败回执（`actionFailure`）。 */
@@ -120,9 +111,9 @@ type SharedGridProps = Pick<CatalogGridProps,
   'layout' | 'selectMode' | 'selected' | 'seekSeconds' | 'wireDrag' | 'skeletonHtml'
   | 'groupCollapse' | 'canLoadMore'>;
 
-/** 壳在 `#index` 里排好的四块宿主（页面画进资料卡那一格）。筛选浮层与正文各带一层
- *  `.peach-react`，新作那一行是遗留层的卡片，宿主不在 React 子树的样式范围里。 */
-export interface EntityPageHosts { filter: Element; feed: HTMLElement; body: Element }
+/** 壳在 `#index` 里排好的三块宿主（页面画进资料卡那一格）。筛选浮层与正文各带一层
+ *  `.peach-react`。 */
+export interface EntityPageHosts { filter: Element; body: Element }
 
 export interface EntityPageProps extends SharedGridProps {
   kind: string;
@@ -138,12 +129,8 @@ export interface EntityPageProps extends SharedGridProps {
   seed: string;
   /** 批量操作后要求重读作品的代次：加一就换键重取。 */
   revision: number;
-  /** 合集开关改了要求重取新作的代次。 */
-  feedRevision: number;
   photoSize: PhotoSize;
   photoLayout: PhotoLayout;
-  /** 关注图片墙的「仅显示图片」（`followImagesOnly`），在线视图与关注页共用这一个设置。 */
-  followImagesOnly: boolean;
   /** JAV 卡片版式的现值与可选项。 */
   javLayout: string;
   javLayouts: readonly SegmentOption[];
@@ -155,9 +142,6 @@ export interface EntityPageProps extends SharedGridProps {
   hosts: EntityPageHosts;
   /** 卡片上的助手与动作就是目录那一份；照片墙多一枚定位源文件。 */
   card: { helpers: EntityBodyHelpers; actions: Omit<EntityBodyActions, 'loadMorePhotos'> };
-  /** 在线视图里的关注卡：骨架、拖动与进度同关注页那一份；动作是资料页语境的一份，换筛选、侧栏、
-   *  多选与图片偏好都不接（这一页不画关注页的侧栏，多选认的是本地作品）。 */
-  follow: { helpers: FollowFeedHelpers; actions: FollowFeedActions };
   helpers: EntityPageHelpers;
   actions: EntityPageActions;
 }
@@ -264,7 +248,7 @@ export const photosOptions = (kind: string, name: string, set: number, seed: str
 export const codeSetsOf = (page: PhotoPage | null | undefined): EntityCodeSet[] =>
   page && !page.error ? (page.sets || []).filter((set) => set.kind === 'code') : [];
 
-/** 身份资料就绪后显示页头，作品、照片与新作独立预取；历史返回复用原查询。 */
+/** 身份资料就绪后显示页头，作品与照片独立预取；历史返回复用原查询。 */
 export async function prefetchEntityPage(props: EntityPageProps): Promise<void> {
   const { kind, name } = props;
   if (!props.restoreNavigation) for (const head of ['entity', 'entity-items', 'entity-photos'] as const) {
@@ -276,8 +260,5 @@ export async function prefetchEntityPage(props: EntityPageProps): Promise<void> 
   if (props.media.media === 'photos' && props.media.set) {
     void queryClient.prefetchInfiniteQuery(photosOptions(kind, name, props.media.set, ''));
   }
-  const entity = await queryClient.fetchQuery(entityOptions(kind, name));
-  if (!entity || entity.error || !entity.id) return;
-  if (!props.restoreNavigation) queryClient.removeQueries({ queryKey: feedNewKey(Number(entity.id)) });
-  void queryClient.prefetchQuery(feedNewOptions(Number(entity.id), props.helpers.feedRowHtml));
+  await queryClient.fetchQuery(entityOptions(kind, name));
 }

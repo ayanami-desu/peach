@@ -235,9 +235,7 @@
       "role": "报告与证据型页面的版式、层级、语言和数据表达参考；Peach 仅复用可迁移原则。",
       "consumers": [
         "web/css/",
-        "frontend/src/react/taste/taste-page.tsx",
-        "frontend/src/react/follow-manage/follow-manage-page.tsx",
-        "tests/test_follow_web.py"
+        "frontend/src/react/taste/taste-page.tsx"
       ]
     },
     {
@@ -299,16 +297,8 @@
       "snapshot": "docs/reference-snapshots/rule34-follow-tags-and-collections.md",
       "checked_on": "2026-09-08",
       "sha256": "b301be02d6c547866363128f48345d5721b809b4ea64de171926802c3df9fc63",
-      "role": "关注页标签类型配色、Rule34Video 内容标签补全与跨作者合集排除证据。",
-      "consumers": [
-        "src/peach/follow_sources.py",
-        "src/peach/web_follow.py",
-        "web/css/",
-        "frontend/src/react/follow-feed/follow-feed-page.tsx",
-        "frontend/src/react/follow-detail/follow-detail-page.tsx",
-        "tests/test_follow_sources.py",
-        "tests/test_follow_web.py"
-      ]
+      "role": "Rule34Video 内容标签补全与跨作者合集排除证据。关注页的标签类型配色已随关注功能删除（ADR-0158），快照只留档。",
+      "consumers": []
     },
     {
       "id": "f95-masked-gofile-media",
@@ -320,11 +310,7 @@
       "sha256": "0bcd972cb7c89880151d84d976c4c29ffaa5b5b8122c8aa6ac41111afdc37911",
       "role": "F95 Cookie 解掩码、文件站目标校验、Gofile 文件列表未取得说明与 Mix 计数边界。",
       "consumers": [
-        "src/peach/follow_sources.py",
-        "frontend/src/react/follow-feed/follow-feed-page.tsx",
-        "frontend/src/react/components/mix-card.tsx",
-        "tests/test_follow_sources.py",
-        "tests/test_follow_web.py"
+        "frontend/src/react/components/mix-card.tsx"
       ]
     },
     {
@@ -336,17 +322,8 @@
       "snapshot": "docs/reference-snapshots/follow-fanbox-gofile-paheal.md",
       "checked_on": "2026-08-28",
       "sha256": "a1e2d6d66b7acab8d4b13639fb38ed37764a24ae4f60ff36e84adfa50abc611a",
-      "role": "FANBOX 多图顺序、Gofile Bearer 文件列表、Paheal 标签订阅和出处去重证据。",
-      "consumers": [
-        "src/peach/follow_sources.py",
-        "src/peach/follow_stream.py",
-        "src/peach/web_follow.py",
-        "frontend/src/react/follow-detail/follow-detail-page.tsx",
-        "tests/test_follow_sources.py",
-        "tests/test_follow_store.py",
-        "tests/test_follow_stream.py",
-        "tests/test_follow_web.py"
-      ]
+      "role": "FANBOX 多图顺序、Gofile Bearer 文件列表与出处去重证据。这些取证服务的是关注与订阅（ADR-0158 已删除），快照只留档。",
+      "consumers": []
     },
     {
       "id": "fanbox-browser-transport",
@@ -366,9 +343,7 @@
       "consumers": [
         "pyproject.toml",
         "src/peach/http.py",
-        "src/peach/follow_sources.py",
-        "tests/test_http.py",
-        "tests/test_follow_sources.py"
+        "tests/test_http.py"
       ]
     },
     {
@@ -380,14 +355,12 @@
       "snapshot": "docs/reference-snapshots/beeg-profile-layout.md",
       "checked_on": "2026-08-30",
       "sha256": "324fd6f91be176898d8564ca807fcc326bbe04730f4eae6a6941a5b69edb2135",
-      "role": "女优、厂牌与关注页的无标题信息轨道参考；资料页以单个 32px PicsIcon 在标签左侧切换视频与照片，合集详情按 Peach 现有详情结构适配。",
+      "role": "女优、厂牌资料页的无标题信息轨道参考；资料页以单个 32px PicsIcon 在标签左侧切换视频与照片，合集详情按 Peach 现有详情结构适配。",
       "consumers": [
         "web/css/",
         "frontend/src/react/entity-page/entity-page-view.tsx",
-        "frontend/src/react/follow-feed/follow-feed-page.tsx",
         "frontend/src/application/entity.js",
         "web/index.html",
-        "tests/test_follow_web.py",
         "tests/test_web_ui.py"
       ]
     },
@@ -423,7 +396,6 @@
         "frontend/src/react/settings-panel/settings-panel.tsx",
         "frontend/src/react/search/search-page.tsx",
         "frontend/src/application/receipts.js",
-        "tests/test_follow_web.py",
         "tests/test_web_ui.py"
       ]
     },
@@ -459,7 +431,6 @@
         "frontend/src/player/menu.ts",
         "frontend/src/application/media.js",
         "web/index.html",
-        "tests/test_follow_web.py",
         "tests/test_web_ui.py"
       ]
     },
@@ -585,7 +556,7 @@
       "sha256": "6c5dcf85978dc319551d0efad8d8282d5269f765e01d49c85efef3b3b8d1678a",
       "role": "输入框焦点口径：field 基类是 ring-2 ring-inset ring-transparent，悬停 border-button-hover、聚焦 border-button-active 且聚焦压过悬停，无外发光，transition 明确列了 box-shadow；Peach 输入面板按用户的决定保留白底与静止那条边，环画在边的内侧。",
       "consumers": [
-        "web/css/22-followmanage.css",
+        "web/css/22-feedback.css",
         "web/css/01-base.css",
         "web/css/02-topbar.css",
         "web/css/15-detail.css",
@@ -604,7 +575,7 @@
       "role": "border-button-active 的取值出处（浅色 neutral-400、深色 neutral-600）；Peach 只取该档，不搬全量变量表。",
       "consumers": [
         "web/board.css",
-        "web/css/22-followmanage.css",
+        "web/css/22-feedback.css",
         "web/css/01-base.css",
         "web/css/02-topbar.css",
         "web/css/15-detail.css"
@@ -621,7 +592,7 @@
       "role": "同底色下的嵌套卡层次：一条发丝边加 shadow-xs（0 1px 2px 0 rgb(0 0 0 / 0.18)），shadow-sm 与它同批取自上游的主题 token；xs 是在 auth-card 的 24px 大圆角上成立的，Peach 这两处是 10px 小圆角，贴地细影只剩一条硬边读成环，所以改用 sm 的两档扩散，圆角沿用本站 token。",
       "consumers": [
         "web/board.css",
-        "web/css/22-followmanage.css",
+        "web/css/22-feedback.css",
         "tests/test_web_ui.py"
       ]
     },
@@ -643,7 +614,7 @@
         "src/peach/metadata_routes.py",
         "src/peach/library_processing.py",
         "src/peach/community_catalog.py",
-        "docs/SOURCING.md",
+        "docs/METADATA.md",
         "tests/test_metadata_routes.py"
       ]
     },
@@ -796,11 +767,10 @@
         "ref": "refs/heads/main",
         "revision": "9fac51c272f4cdfb8086569fd7cb69708b29bc6a"
       },
-      "role": "SakuraMedia 后端（GPL-3.0）只作行为与算法边界证据，不引入代码：字幕同目录纯番号配对、封套左右分割点的对称判据（Peach 不采用对称判据，见 jav_poster_crop）、「想要」与关注分开、记录比文件重要、被并实体留指针，以及推荐权重、Torznab 客户端、自动下载判据、时刻合集、遥测与图片打包。",
+      "role": "SakuraMedia 后端（GPL-3.0）只作行为与算法边界证据，不引入代码：字幕同目录纯番号配对、封套左右分割点的对称判据（Peach 不采用对称判据，见 jav_poster_crop）、记录比文件重要、被并实体留指针，以及推荐权重、Torznab 客户端、自动下载判据、时刻合集、遥测与图片打包。",
       "consumers": [
         "docs/REUSE.md",
-        "src/peach/jav_poster_crop.py",
-        "src/peach/wants.py"
+        "src/peach/jav_poster_crop.py"
       ]
     },
     {

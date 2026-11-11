@@ -550,7 +550,6 @@ def q_items(contract: WebContract, args):
                                   sources.get(r["id"], ()))
         r.pop("snapshot_path", None)
         r.pop("path", None)                     # 路径不外发，串流走 id
-    attach_saved_follow_cards(contract, rows)
     shown = orientation_member(args)
     attach_multipart_groups(contract, rows, shown)
     attach_edition_groups(contract, rows, shown)
@@ -611,12 +610,6 @@ def entity_ref(contract: WebContract, kind: str, entity_id, name: str) -> dict:
     if has_image:
         ref["image_version"] = contract.entity_image_version(kind, entity_id)
         ref["avatar_focus"] = contract.avatar_focus(kind, entity_id)
-    if kind == 'creator':
-        from .follow_identity import creator_avatar_refs
-        urls = creator_avatar_refs(contract).get(entity_id, [])
-        if urls:
-            ref['source_avatar_url'] = urls[0]
-            ref['source_avatar_fallbacks'] = urls[1:]
     return ref
 
 
@@ -661,7 +654,6 @@ def attach_card_performers(contract: WebContract, rows):
     """给各类视频卡片补同一份表演者资料，避免首页/相关/复核卡片各说各话。"""
     if not rows:
         return
-    attach_saved_follow_cards(contract, rows)
     ids = [row["id"] for row in rows]
     qm = ",".join("?" * len(ids))
     names: dict[int, list[str]] = {}
@@ -710,32 +702,6 @@ def attach_creator_reference_details(contract: WebContract, refs):
             ref.update(rep=portrait['rep'], has_avatar=True)
             if portrait.get('avatar_stand_in'):
                 ref['avatar_stand_in'] = True
-
-
-def attach_saved_follow_cards(contract: WebContract, rows):
-    """已保存在线卡片使用关注来源的封面与内容标签。"""
-    from .follow_store import FollowStore
-    from .web_follow import _item_tags, _thumb_url
-
-    ids = [row["id"] for row in rows if row.get("location") == "online"]
-    if not ids:
-        return
-    marks = ",".join("?" * len(ids))
-    with contract.read_connection() as connection:
-        linked = connection.execute(
-            FollowStore._SELECT + f" WHERE i.asset_id IN ({marks}) ORDER BY i.id", ids,
-        ).fetchall()
-    by_asset = {}
-    for record in linked:
-        item = FollowStore._row(record)
-        by_asset.setdefault(item.asset_id, item)
-    for row in rows:
-        item = by_asset.get(row["id"])
-        if item is None or row.get("location") != "online":
-            continue
-        row["follow_item_id"] = item.id
-        row["follow_thumb_url"] = _thumb_url(item)
-        row["follow_tags"] = _item_tags(item)
 
 
 #: 版次的展示次序：正片在前，处理过的在后。这不是偏好排序，只是要一个稳定的
@@ -1114,14 +1080,6 @@ def q_item(contract: WebContract, aid):
         # 被自动写入者改，`mutation_revision` 则是编辑时回传的乐观并发凭据。
         d["field_owners"] = parse_owners(d.get("field_owners"))
         d["mutation_revision"] = int(d.get("mutation_revision") or 0)
-        # 在线资产的 `path` 是来源作品页，不是可播地址；能播的那条代理在
-        # `/follow-stream?id=<follow_item>`。保存时写的是 `follow_item.asset_id`，
-        # 反查一次就能让馆藏详情自己播，不必先跳回关注页。
-        if d.get("location") == "online":
-            row = c.execute(
-                "SELECT id FROM follow_item WHERE asset_id=? ORDER BY id LIMIT 1", (aid,),
-            ).fetchone()
-            d["follow_item_id"] = int(row[0]) if row else None
         legacy_rows = list(c.execute(
             "SELECT t.tag,t.source FROM asset_tag t WHERE t.asset_id=? AND "
             + tag_not_hidden("t.asset_id", "peach_normalize(t.tag)")
@@ -1506,10 +1464,9 @@ def q_tops(contract: WebContract, n=28, jav=False, seed="", state="", page=0, fi
 
 
 #: 筛选项读到的账本表（不含实体范围与搜索词那几条分支，它们不走按版本的缓存）：
-#: 作品与实体、标签隐藏偏好与标签实体的别名（`tag_not_hidden`）、「已标记」「稍后看」两种
-#: 状态，以及在线卡片的关注标签。
+#: 作品与实体、标签隐藏偏好与标签实体的别名（`tag_not_hidden`）、「已标记」「稍后看」两种状态。
 FACETS_TABLES = GROUP_TABLES + ("entity_alias", "asset_tag_preference", "asset_preference",
-                                "watch_queue", "follow_item", "follow_source")
+                                "watch_queue")
 
 
 def _release_year_facets(contract, connection, scope, values, state, filters, asset_id):
@@ -1617,16 +1574,6 @@ def q_facets(
             "FROM asset a WHERE a.medium='video' AND a.disposal IS NULL "
             + scope, scope_params).fetchone()
         out["stats"] = dict(st)
-        saved = [dict(row) for row in c.execute(
-            "SELECT a.id,a.location FROM asset a WHERE a.medium='video' "
-            "AND a.location='online' " + scope, scope_params)]
-    attach_saved_follow_cards(contract, saved)
-    follow_counts: dict[str, int] = {}
-    for item in saved:
-        for tag in set(item.get("follow_tags", [])):
-            follow_counts[tag] = follow_counts.get(tag, 0) + 1
-    out["follow_tags"] = [{"k": tag, "n": count} for tag, count in
-                          sorted(follow_counts.items(), key=lambda row: (-row[1], row[0]))[:30]]
     return out
 
 # ────────────────────────────── 写入 ──────────────────────────────

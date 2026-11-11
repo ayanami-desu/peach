@@ -102,29 +102,18 @@ def _bands(c, column: str, order: tuple[str, ...]) -> list[dict[str, object]]:
     return [{"k": key, "n": counts.get(key, 0)} for key in (*order, *extra)]
 
 
-#: 在线追更的一条播放不算进来的条件：它关联的馆藏视频自己已经有这一项。和 `online_played`
-#: 同一个去重，一个作品在两边都播过只算一次。
-_ONLINE_ONLY = ("(fi.asset_id IS NULL OR NOT EXISTS(SELECT 1 FROM asset a "
-                "WHERE a.id=fi.asset_id AND {}))")
-
-
 def _utc_offset(moment: datetime) -> str:
     offset = moment.strftime("%z") or "+0000"
     return f"UTC{offset[:3]}:{offset[3:]}"
 
 
-def _play_activity(c, has_follow: bool) -> dict[str, object]:
+def _play_activity(c) -> dict[str, object]:
     """每个作品最近一次播放落在哪一天、星期几的哪个钟点，按本机时区算。
 
     形状同观看页热力卡（`days`、`hours`、`timezone`）。
     账本每个作品只记最近一次播放的时间，所以一个作品只占一格。"""
     stamps = [row[0] for row in c.execute(
         "SELECT CAST(last_played AS REAL) FROM asset WHERE last_played IS NOT NULL")]
-    if has_follow:
-        stamps += [row[0] for row in c.execute(
-            "SELECT CAST(fp.last_played AS REAL) FROM follow_playback fp "
-            "JOIN follow_item fi ON fi.id=fp.follow_item_id WHERE fp.last_played IS NOT NULL AND "
-            + _ONLINE_ONLY.format("a.last_played IS NOT NULL"))]
     days: dict[str, int] = {}
     hours: dict[tuple[int, int], int] = {}
     for stamp in stamps:
@@ -146,24 +135,19 @@ def _play_activity(c, has_follow: bool) -> dict[str, object]:
     }
 
 
-def _replays(c, has_follow: bool) -> list[dict[str, int]]:
+def _replays(c) -> list[dict[str, int]]:
     """播放次数的分布：播过 k 次的作品有几个。合计与 `consumption.played` 相同。"""
     counts: dict[int, int] = {}
     rows = list(c.execute("SELECT play_count,count(*) FROM asset WHERE play_count>0 GROUP BY play_count"))
-    if has_follow:
-        rows += c.execute(
-            "SELECT fp.play_count,count(*) FROM follow_playback fp JOIN follow_item fi "
-            "ON fi.id=fp.follow_item_id WHERE fp.play_count>0 AND "
-            + _ONLINE_ONLY.format("a.play_count>0") + " GROUP BY fp.play_count").fetchall()
     for plays, n in rows:
         counts[int(plays)] = counts.get(int(plays), 0) + n
     return [{"k": plays, "n": n} for plays, n in sorted(counts.items())]
 
 
 #: 统计页账本那一段读到的表。`tag_not_hidden` 读标签偏好与标签实体的别名，
-#: `tag_is_not_a_performer_name` 读实体，在线播放读关注三张表。
+#: `tag_is_not_a_performer_name` 读实体。
 STATS_TABLES = ("asset", "asset_entity", "entity", "entity_alias", "asset_tag", "asset_tag_preference",
-                "asset_preference", "follow_playback", "follow_item", "follow_source")
+                "asset_preference")
 
 
 def q_stats(contract: WebContract):
@@ -241,27 +225,9 @@ def _ledger_stats(contract: WebContract, libraries) -> dict:
         tables = {row[0] for row in c.execute(
             "SELECT name FROM sqlite_schema WHERE type='table'"
         )}
-        library_played = one("SELECT count(*) FROM asset WHERE play_count>0")
-        library_seconds = one("SELECT COALESCE(sum(play_seconds),0) FROM asset")
-        online_played = 0
-        online_seconds = 0
-        has_follow = "follow_playback" in tables
-        if has_follow:
-            online_played = one(
-                "SELECT count(*) FROM follow_playback fp JOIN follow_item fi "
-                "ON fi.id=fp.follow_item_id WHERE fp.play_count>0 AND "
-                + _ONLINE_ONLY.format("a.play_count>0")
-            )
-            online_seconds = one(
-                "SELECT COALESCE(sum(play_seconds),0) FROM follow_playback"
-            )
         out["consumption"] = {
-            "played": library_played + online_played,
-            "library_played": library_played,
-            "online_played": online_played,
-            "play_seconds": library_seconds + online_seconds,
-            "library_play_seconds": library_seconds,
-            "online_play_seconds": online_seconds,
+            "played": one("SELECT count(*) FROM asset WHERE play_count>0"),
+            "play_seconds": one("SELECT COALESCE(sum(play_seconds),0) FROM asset"),
             "o_total": one("SELECT COALESCE(sum(o_count),0) FROM asset"),
             "liked": one("SELECT count(*) FROM asset_preference WHERE profile_id=? AND liked=1",
                          DEFAULT_PROFILE_ID) if "asset_preference" in tables else 0,
@@ -271,23 +237,12 @@ def _ledger_stats(contract: WebContract, libraries) -> dict:
             "skimmed": one("SELECT count(*) FROM asset WHERE duration>0 AND play_seconds>0 "
                            "AND max_reached>0.6 AND play_seconds/duration < max_reached-0.25"),
         }
-        recent = [dict(r, kind="library") for r in c.execute(
+        out["recent"] = [dict(r) for r in c.execute(
             "SELECT id,name,creator,play_seconds,duration,max_reached,leave_ratio,o_count,"
             "CAST(last_played AS REAL) last_played FROM asset WHERE last_played IS NOT NULL "
             "ORDER BY CAST(last_played AS REAL) DESC LIMIT 12")]
-        if "follow_playback" in tables:
-            recent.extend(dict(r, kind="online", leave_ratio=None, o_count=0) for r in c.execute(
-                "SELECT fi.id,fi.title name,fs.label creator,fp.play_seconds,fi.duration,"
-                "fp.max_reached,fp.last_played FROM follow_playback fp "
-                "JOIN follow_item fi ON fi.id=fp.follow_item_id "
-                "JOIN follow_source fs ON fs.id=fi.source_id WHERE fp.last_played IS NOT NULL "
-                "ORDER BY fp.last_played DESC LIMIT 12"
-            ))
-        out["recent"] = sorted(
-            recent, key=lambda row: float(row.get("last_played") or 0), reverse=True,
-        )[:12]
-        out["play_activity"] = _play_activity(c, has_follow)
-        out["replays"] = _replays(c, has_follow)
+        out["play_activity"] = _play_activity(c)
+        out["replays"] = _replays(c)
     return out
 
 

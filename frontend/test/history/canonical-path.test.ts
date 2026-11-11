@@ -3,9 +3,8 @@ import { canonicalPath } from '../../src/history/canonical-path';
 import { overlayTarget } from '../../src/history/overlay';
 import { entityLinkId, entityLinkName, registerResponseEntities } from '../../src/core/entity-links';
 
-it('三类对象与队列兼容地址保留筛选和播放位置', () => {
+it('两类对象与队列兼容地址保留筛选和播放位置', () => {
   expect(canonicalPath('/item/12?t=93')).toBe('/assets/12?t=93');
-  expect(canonicalPath('/follow/item/7?media=images')).toBe('/posts/7?media=images');
   expect(canonicalPath('/jav/movie/abp-968?q=x')).toBe('/works/ABP-968?q=x');
   for (const [source, key] of [['mix', 'mix'], ['parts', 'parts'], ['editions', 'editions'], ['playlists', 'playlist']]) {
     expect(canonicalPath(`/${source}/21/22?t=42`)).toBe(`/assets/22?t=42&${key}=21`);
@@ -15,7 +14,7 @@ it('三类对象与队列兼容地址保留筛选和播放位置', () => {
   expect(canonicalPath('/data-cleanup?edit#link-manager')).toBe('/data-cleanup/links?edit');
   expect(canonicalPath('/data-cleanup#libraryProcessing')).toBe('/data-cleanup#libraryProcessing');
   for (const [source, target] of [['activity', 'tasks'], ['scraping', 'sources'],
-    ['follow-manage', 'subscriptions'], ['configuration', 'settings'], ['diagnostics', 'settings/diagnostics']]) {
+    ['configuration', 'settings'], ['diagnostics', 'settings/diagnostics']]) {
     expect(canonicalPath(`/${source}?tab=x`)).toBe(`/${target}?tab=x`);
   }
 });

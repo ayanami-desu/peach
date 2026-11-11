@@ -21,10 +21,10 @@ SETTINGS = FRONTEND_SRC / "history" / "settings-route.ts"
 #: 以字面量写出的页面路径；`STATE_ROUTES` 那一组筛选态（三个筛选态与垃圾文件）不在此列。资料页由路由树按模式
 #: （`TREE_PATTERNS`）登记，同样不在此列。
 FROZEN_ROUTES = frozenset({
-    "/", "/trash", "/playlists", "/assets/:id", "/posts/:id",
+    "/", "/trash", "/playlists", "/assets/:id",
     "/performers", "/creators", "/studios", "/agencies", "/series", "/tags", "/stats",
     "/review", "/data-cleanup", "/duplicates", "/quality-goals",
-    "/sources", "/follow", "/subscriptions", "/tasks", "/immerse", "/wall",
+    "/sources", "/tasks", "/immerse", "/wall",
     "/settings/diagnostics", "/jav", "/works/:code", "/settings", "/settings/appearance",
     "/settings/browsing", "/settings/jav", "/settings/search", "/settings/content",
     "/settings/drives", "/settings/libraries", "/settings/access", "/settings/token", "/settings/devices",

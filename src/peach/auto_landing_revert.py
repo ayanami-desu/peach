@@ -26,9 +26,6 @@
 已消失作品的个人记录接到新文件（ADR-0087）不可撤回：`record_rehome` 不再存旧行快照，搬运只
 留下一条日志。要回到搬运前，只能回到账本备份。
 
-「想要」清单的入库对账记在 `want_item.acquired_source` 与 `acquired_batch`（批次号
-`auto:want-acquired@<登记时刻>`）。撤回把那几条改回待找，查找计数原样留着。
-
 核查差异按确定判据结算的两条（ADR-0139）按规则名撤：`adr-0139-official-replaces-verified`
 按 note 的 `previous` 把旧值与旧归属还原，之后被别人改过的资产不动；`adr-0139-verified-tags-union`
 删掉那一行补进的标签。两条都删掉决定，`batch` 给 note 里记的批次号。先改判据再撤。
@@ -37,15 +34,12 @@
 西方发行方的无番号作品封面（`ASSET-ID-<id>.jpg`）在 `.scraping.json` 边车里记 `source` 与 `batch`
 （`auto:western-artwork@<时间>`）。撤回删掉封面与同组边车，作品回到没有封面的样子。
 
-关注作者建档（ADR-0096）建下的创作者在 `entity.metadata_json` 里记 `source` 与 `batch`。撤回先删
-这一批的链接与别名，再解绑关注来源；实体还被别的行引用（人挂上的作品、链接）就留着，没有才删。
-
 升级补修解除的乱码人物关联（#478）按 `upgrade:garbled-performers` 认，批次是那份升级回执的 id。
 回执 `garbled_people` 存着删掉的关联、`演员:` 标签与实体子表行的原样快照，撤回把账本里还没有的
 那几行插回；实体的 id 或名字已被占用时整批拒绝。
 
 升级补修记下的 JavDB 演员页有码／无码（#271）按 `upgrade:javdb-actor-records` 认，批次是回执行的 id。
-撤回去掉还原样在账本里的那几项类型，重新启用补修停掉的订阅。
+撤回去掉还原样在账本里的那几项类型。
 
 `plan` 只读，`apply` 只写账本、在调用方的事务里跑，`remove_files` 等事务提交之后再删盘上文件。
 """
@@ -54,8 +48,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from . import (company_profiles, fc2_sellers, follow_creators, jav_poster_crop, metadata_text_repair,
-               sample_images, seed_pack, wants, western_artwork)
+from . import (company_profiles, fc2_sellers, jav_poster_crop, metadata_text_repair,
+               sample_images, seed_pack, western_artwork)
 from .metadata_auto_apply import UNION_TAGS_SOURCE, planned_verified_revert, revert_verified
 
 SIDECARS = (".ct", ".provenance.json")
@@ -266,7 +260,6 @@ def plan(connection, source: str, batch: str = "", *, logo_root: Path, cover_roo
         "claims": planned_claims(connection, source, batch),
         "companies": company_profiles.planned_revert(connection, source, batch),
         "sellers": fc2_sellers.planned_revert(connection, source, batch),
-        "creators": follow_creators.planned_revert(connection, source, batch),
         "refs": planned_refs(connection, source, batch),
         "memberships": planned_memberships(connection, source, batch),
         "makers": planned_makers(connection, source, batch),
@@ -275,7 +268,6 @@ def plan(connection, source: str, batch: str = "", *, logo_root: Path, cover_roo
         "samples": sample_images.planned_revert(connection, source, batch),
         "rejections": planned_rejections(connection, source, batch),
         "tags": planned_tags(connection, source, batch),
-        "acquired": wants.planned_revert(connection, source, batch),
         "verified": planned_verified_revert(connection, source, batch, item_keys),
         "garbled": metadata_text_repair.planned_revert(connection, source, batch),
     }
@@ -286,12 +278,11 @@ def counts(planned: dict) -> dict:
     return {"链接": len(planned["links"]), "别名": len(planned["aliases"]),
             "资料": len(planned["profiles"]), "断言": len(planned["claims"]),
             "公司资料": len(planned["companies"]), "卖家": len(planned["sellers"]),
-            "关注建档": len(planned["creators"]), "编号": len(planned["refs"]),
+            "编号": len(planned["refs"]),
             "归属": len(planned["memberships"]), "片商": len(planned["makers"]),
             "标识文件": len(planned["files"]), "封面": len(planned["covers"]),
             "样张": sum(sample["count"] for sample in planned["samples"]),
             "否决": len(planned["rejections"]), "标签": len(planned["tags"]),
-            "想要入库": len(planned["acquired"]),
             "中文名": len(planned["names"]), "核查结算": len(planned["verified"]),
             "乱码人物": len(planned["garbled"])}
 
@@ -337,18 +328,15 @@ def apply(connection, planned: dict) -> dict:
         "DELETE FROM asset_tag WHERE asset_id=? AND tag=? AND source=?",
         (tag["asset_id"], tag["tag"], tag["source"])).rowcount or 0 for tag in tags)
     reopened = reopen_extended_decisions(connection, {tag["item_key"] for tag in tags})
-    reopened_wants = wants.revert(connection, source, batch)
     removed_seller_relations = fc2_sellers.revert(connection, planned["sellers"])
     # 链接与别名已在上面按批次删掉，剩下没有别的引用的实体才删得掉。
-    creator_revert = follow_creators.revert(connection, planned["creators"])
     verified_revert = revert_verified(connection, planned["verified"])
     restored_garbled = metadata_text_repair.revert(connection, planned.get("garbled", []))
     return {"删除链接": len(links), "删除别名": len(aliases), "删除资料": len(profiles),
             "删除断言": len(claims), "删除编号": len(refs), "删除归属": len(memberships),
             "删除片商": len(makers), "删除样张": removed_samples, "删除否决": len(rejections),
             "删除标签": len(tags), "删除扁平标签": removed_tag_rows, "重开决定": reopened,
-            "想要回到待找": reopened_wants, "卖家关系": removed_seller_relations,
-            "解绑关注来源": creator_revert["unbound"], "删除建档实体": creator_revert["removed"],
+            "卖家关系": removed_seller_relations,
             "还原中文名": restored_names, "还原核查覆盖": verified_revert["restored"],
             "删除核查并集标签": verified_revert["removed_tags"],
             "删除核查决定": verified_revert["decisions"], "插回乱码人物行": restored_garbled}

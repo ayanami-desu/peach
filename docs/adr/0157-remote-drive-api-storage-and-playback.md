@@ -49,7 +49,7 @@
 
 保留并改造：`platform`（盘符↔挂载点翻译改 provider 路径渲染）、`media_configuration`、`media_folders`、`media_libraries`、`junk`、`storage_budget`、`data_storage`、`access`。
 
-保留不动：人脸与头像、时间轴抽帧、刮削采集、关注追更、`auto_landing_revert` 撤回机制、`support_bundle`、`error_reporting`、`endcard` 首尾帧证据、`external_playback` 限时票据，以及四个只在 `scripts/` 手工脚本里用的单点修复。
+保留不动：人脸与头像、时间轴抽帧、刮削采集、`auto_landing_revert` 撤回机制、`support_bundle`、`error_reporting`、`endcard` 首尾帧证据、`external_playback` 限时票据，以及四个只在 `scripts/` 手工脚本里用的单点修复。
 
 ## 后果
 

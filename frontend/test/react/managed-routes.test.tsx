@@ -11,7 +11,7 @@ import type { NavigateFunction } from 'react-router';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 
 import type {
-  ConfigurationProps, DataCleanupProps, DuplicatesProps, FollowManageProps, QualityGoalsProps, ReviewProps,
+  ConfigurationProps, DataCleanupProps, DuplicatesProps, QualityGoalsProps, ReviewProps,
   ScrapingProps, StatsProps,
 } from '../../src/react/bundle';
 import type { ShellActions } from '../../src/react/router/shell-actions';
@@ -51,12 +51,12 @@ function shellActions(): ShellActions {
   const sections: Record<string, string> = { review: '/review', quality: '/quality-goals', trash: '/trash' };
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn((section: string) => sections[section] ?? ''), openFollow: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn((section: string) => sections[section] ?? ''),
     receipt: vi.fn(), toast: vi.fn(), failure: vi.fn(), revealSource: vi.fn(async () => ''),
-    routeReview: vi.fn(), routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '',
+    routeReview: vi.fn(), srcBadge: () => '',
     routeIndex: vi.fn(), savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(),
-    personAvatar: vi.fn(() => ({ html: '', face: '' })), authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(),
-    openFollowAuthor: vi.fn(), openFollowTag: vi.fn(), openPlaylist: vi.fn(), canFlip: () => true,
+    personAvatar: vi.fn(() => ({ html: '', face: '' })), showIndexTags: vi.fn(),
+    openPlaylist: vi.fn(), canFlip: () => true,
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };
 }
@@ -394,18 +394,13 @@ it('数据管理页：复核、高清版与重复文件走 go，垃圾文件与�
   expect(vi.mocked(actions.receipt).mock.calls).toEqual([['做完了']]);
 });
 
-it('复核页与关注管理页把地址写回壳，不重开', async () => {
+it('复核页把地址写回壳，不重开', async () => {
   const r = await load();
   const actions = shellActions();
   const go = vi.fn();
   const review = element<ReviewProps>('/review', r,
     { category: 'name', readOnly: true, readOnlyMessage: '只读', writerUrl: '' }, actions, go);
   expect([review.route, review.category, review.readOnly]).toEqual([actions.routeReview, 'name', true]);
-  const follow = element<FollowManageProps>('/subscriptions', r, {
-    tab: 'list', page: 2, sort: '', dir: '', pageSize: 20, layout: 'default', readOnly: false, readOnlyMessage: '', writerUrl: '',
-  }, actions, go);
-  expect([follow.route, follow.savePreference, follow.openFollow, follow.page])
-    .toEqual([actions.routeFollowManage, actions.saveFollowPreference, actions.openFollow, 2]);
 });
 
 it('回执、打开作品与资料页都交回壳：都走过去时回执', async () => {
@@ -430,15 +425,12 @@ it('回执、打开作品与资料页都交回壳：都走过去时回执', asyn
   review.openEntity('performer', '某人');
   review.toast('已判定');
   expect(review.revealSource).toBe(actions.revealSource);
-  element<FollowManageProps>('/subscriptions', r, {
-    tab: 'list', page: 1, sort: '', dir: '', pageSize: 20, layout: 'default', readOnly: false, readOnlyMessage: '', writerUrl: '',
-  }, actions, vi.fn()).toast('已添加 1 个关注来源');
   expect(vi.mocked(actions.openItem).mock.calls).toEqual([[3]]);
   expect(vi.mocked(actions.openEntity).mock.calls).toEqual([['performer', '某人']]);
   expect(vi.mocked(actions.failure).mock.calls).toEqual([['删除', 'boom']]);
   expect(actions.toast).not.toHaveBeenCalled();
   expect(vi.mocked(actions.receipt).mock.calls).toEqual([
-    ['已删除', { undo }], ['已保留', {}], ['已保存配置'], ['已判定'], ['已添加 1 个关注来源'],
+    ['已删除', { undo }], ['已保留', {}], ['已保存配置'], ['已判定'],
   ]);
 });
 
@@ -576,10 +568,10 @@ it('索引页：页内写地址、存版式、头像与去处都接到壳的那�
   const actions = shellActions();
   const props = (r.INDEX_ROUTES['/performers'].page(
     { ...tagsOpen(), kind: 'performers' } as never, actions, vi.fn()) as ReactElement<Record<string, unknown>>).props;
-  expect([props.route, props.savePreference, props.exitSelectMode, props.personAvatar, props.authorAvatar,
-    props.openEntity, props.showTags, props.openFollowAuthor, props.openFollowTag]).toEqual([
-    actions.routeIndex, actions.savePeopleLayout, actions.exitSelectMode, actions.personAvatar, actions.authorAvatar,
-    actions.openEntity, actions.showIndexTags, actions.openFollowAuthor, actions.openFollowTag]);
+  expect([props.route, props.savePreference, props.exitSelectMode, props.personAvatar,
+    props.openEntity, props.showTags]).toEqual([
+    actions.routeIndex, actions.savePeopleLayout, actions.exitSelectMode, actions.personAvatar,
+    actions.openEntity, actions.showIndexTags]);
   expect([props.kind, props.layout, props.selectMode]).toEqual(['performers', 'big', false]);
   expect((props.tagLabel as (tag: string) => string)('JK制服')).toBe('JK制服');
 });

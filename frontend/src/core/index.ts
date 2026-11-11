@@ -101,7 +101,7 @@ const siteName=(url:unknown)=>{
    做不了就把原图按 32 px 转出来。放服务端有三个理由：它要读别人站点的图、要缓存，
    而且这样浏览器不再直接向对方站点发请求（也就不泄露正在看谁的资料页）。
 
-   传的是链接 id 而不是地址。跟 `/follow-stream` 同一条规矩：服务端只取数据库里已有的
+   传的是链接 id 而不是地址。跟 `/stream` 同一条规矩：服务端只取数据库里已有的
    地址，绝不去取前端递过来的任意 URL——那等于开一个任意地址抓取的口子。 */
 const linkMarkUrl=(link:{link_id?:number|null})=>`/link-mark?id=${encodeURIComponent(link.link_id ?? '')}`;
 /* 采集来源的圆标，同一条规矩的另一个入口：递的是服务端已经知道的采集来源键，不是地址。 */

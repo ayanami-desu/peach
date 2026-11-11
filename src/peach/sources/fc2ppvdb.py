@@ -1,6 +1,6 @@
 """fc2ppv-db.com（FC2PPV Database）的作品页：FC2 商品的元数据库，女优、卖家与「流出」标记由站方用户维护。
 
-旧域名 fc2ppvdb.com 已关（`docs/SOURCING.md`），这一站是新起的 Next.js 应用，作品页 `/ja/videos/<video_id>`
+旧域名 fc2ppvdb.com 已关（`docs/METADATA.md`），这一站是新起的 Next.js 应用，作品页 `/ja/videos/<video_id>`
 服务端渲染，不需要跑脚本：`<h1>` 是 `FC2-PPV-<id> 标题`，「動画詳細情報」那块给動画ID、販売日、流出あり／なし、
 モザイクあり／なし、出演女優（链到 `/ja/actresses/<uuid>`）、販売者（链到 `/ja/sellers/<slug>`）与タグ；
 `<meta name="description">` 末尾另有 `販売者: X / 公開日: 2026年9月21日 / 再生時間: 53:52`，时长只在这里有。

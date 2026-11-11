@@ -96,10 +96,6 @@ def _face_models(_state, contract, _config) -> list[Issue]:
 Provider = Callable[[Any, Any, Any], Iterable[Issue]]
 
 PROVIDERS: tuple[Provider, ...] = (
-    _scheduler("follow_scheduler", "follow-schedule", "关注自动检查失败",
-               "/settings/subscriptions#followScheduleSetting", "打开关注调度", "/api/follow/schedule/run"),
-    _scheduler("feed_scheduler", "feed-schedule", "订阅源自动拉取失败",
-               "/settings/subscriptions#feedScheduleSetting", "打开订阅源调度", "/api/feeds/schedule/run"),
     _amane_bridge,
     _face_models,
 )

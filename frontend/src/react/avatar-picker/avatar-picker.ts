@@ -169,10 +169,6 @@ const SOURCE_LABELS: Record<string, string> = {
 
 /** 底图那一排每一格的名字：封面一格，九宫格九格按位置数。 */
 export function baseLabel(ref: string): string {
-  if (ref.startsWith('follow:')) {
-    const what = ref.split(':')[2];
-    return what === 'cover' ? '作品封面' : `内容图片 ${Number(what.replace('image', '') || 0) + 1}`;
-  }
   if (ref.startsWith('cover:')) return '封面';
   const what = ref.split(':')[2] || '';
   if (what === 'cover') return '封面';

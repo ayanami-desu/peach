@@ -83,8 +83,7 @@ h2[data-page-title]{margin:0;font:var(--board-title);letter-spacing:0}
      变都与真实渲染一致。卡高随列宽在 270～590px 之间变（JAV 大图一档最高），整张卡
      跳过就只能给一个固定占位，对不上所有版式，没渲染过的卡越多滚动条漂得越远。
    - 元信息区高度不随列宽变，由它自己的排版 token 推出，见 `--card-meta-block`：两行标题
-     （`.meta .t` 的 2.7em）、一行归属（1lh）、`.mtext` 的 3px 行距。密集一档的高度是
-     `.mtext` 固定的三行，同一个变量。
+     （`.meta .t` 的 2.7em）加一行归属（1lh）。密集一档的高度另按三行算，同一个变量。
    叠层纸边画在 `.pic` 外面，不在裁切范围里。
    跳过渲染连带 paint containment，裁切边是元信息区的 padding box：贴着左缘的头像悬停
    描边、头像与标签的 2px 焦点环都画在内容盒外面。所以元信息区四周垫 8px 内边距、再用
@@ -93,9 +92,7 @@ h2[data-page-title]{margin:0;font:var(--board-title);letter-spacing:0}
    卡片盒外面，元信息区自己因此不接指针，只有它的子元素接：卡片的悬停面、点击区和悬停
    预览的触发范围仍是卡片盒本身。元信息区没有背景，垫出来的一圈不画任何东西。
    图片墙不在其内：它的封面没有固定比例，高度取自图片本身，跳过渲染时会按零高排版。
-   资料页的照片墙与名册（`entity-body` 岛）同理不在其内，它们也不是 `.card`。资料页
-   新作那一行（`.feednew`）只有一行、往横向排，屏外的卡不改变整页高度，标题字号也不是
-   `--fs-md`（`.feednewcard .meta .t` 是 `--fs-sm`），不套这份估计。 */
+   资料页的照片墙与名册（`entity-body` 岛）同理不在其内，它们也不是 `.card`。 */
 .meta{--card-meta-block:calc(var(--fs-md)*2.7 + 3px + 1lh)}
 #grid .card :is(.pic,.meta){content-visibility:auto}
 /* `flex-shrink:0`：跳过渲染时元信息区的内容不参与最小尺寸，卡里有别的子元素要抢空间时它会
@@ -136,17 +133,7 @@ body .card:hover{background:var(--hover);box-shadow:0 0 0 8px var(--hover)}
 body .card:hover .pic{filter:saturate(.9) brightness(.94)}
 body .card:focus-within{background:var(--hover);box-shadow:0 0 0 8px var(--hover)}
 .select-mode .card{cursor:default}
-.select-mode .hovertools{pointer-events:none!important}
 .card.selected .pic,.card.selected:hover .pic{box-shadow:inset 0 0 0 2px var(--on-media)}
-.hovertools{position:absolute;z-index:4;display:flex;align-items:center;gap:14px;
-  opacity:0;transition:opacity .15s;pointer-events:none}
-.hovertools button{pointer-events:none;width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.12);
-  background:rgba(0,0,0,.24);color:#fff;backdrop-filter:saturate(180%) blur(12px);
-  -webkit-backdrop-filter:saturate(180%) blur(12px);display:flex;align-items:center;
-  justify-content:center;cursor:pointer;position:relative;transition:transform .15s ease,background .15s ease}
-.hovertools button svg{width:25px;height:25px;stroke:currentColor;fill:none;stroke-width:2;
-  stroke-linecap:round;stroke-linejoin:round}
-.hovertools button:hover{transform:scale(1.12);background:rgba(0,0,0,.34)}
 .nopic{font-size:var(--fs-xs);letter-spacing:.12em;color:var(--ink-2);text-transform:uppercase}
 .junkcount{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px}
 /* 复核那条分类切换在 10 个互不相同的候选数据集之间切（真 tablist）。
@@ -199,7 +186,6 @@ body .card:focus-within{background:var(--hover);box-shadow:0 0 0 8px var(--hover
 .mavstack .mav:nth-child(5){z-index:1}
 .mavstack .mav:nth-child(n+6){display:none}
 .mavstack .mav:is(:hover,:focus-visible){z-index:6;box-shadow:0 0 0 2px var(--ink-2)}
-.mtext{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
 /* 高度另用 max-height 封在两行：标题里的番号块是 inline-flex，WebKit 的 line-clamp 遇到非行内的
    子元素就不截，iOS 上长标题会整段摊开，把「接着看」那一排撑得老高。 */
 .meta .t{font-size:var(--fs-md);line-height:1.35;min-height:2.7em;max-height:2.7em;overflow:hidden;display:-webkit-box;
@@ -223,111 +209,15 @@ body .card:focus-within{background:var(--hover);box-shadow:0 0 0 8px var(--hover
 .meta span.who{color:var(--ink-2);cursor:default}
 /* 顶栏的密集模式固定为标题、身份、标签三行。缺少标签时第三行仍保留，
    同一网格不会再被大小、观看次数或长身份撑成四行。分卷卡已有 7px 叠层空间，
-   密集网格的普通卡也保留同一高度，避免每行是否出现分卷卡决定整行高度。
-   三行由 `.mtext` 裁住，四周垫 4px 再用 -4px 抵消、自己不接指针，标签的
-   焦点环不被这一层裁掉。子元素把指针接回来；资料页新作那一行
-   的卡整块放行指针（见 `.feednewcard`），不接回来。 */
+   密集网格的普通卡也保留同一高度，避免每行是否出现分卷卡决定整行高度。 */
 body[data-density="dense"] .grid>.card{padding-top:7px}
-body[data-density="dense"] .card:not(.feednewcard) .meta{--card-meta-block:calc(2.7em + 36px)}
-body[data-density="dense"] .card:not(.feednewcard) .mtext{display:grid;grid-template-rows:1.35em 1.35em 30px;
-  gap:3px;margin:-4px;padding:4px;height:calc(var(--card-meta-block) + 8px);overflow:hidden;pointer-events:none}
-body[data-density="dense"] .card:not(.feednewcard) .mtext>*{pointer-events:auto}
-body[data-density="dense"] .card:not(.feednewcard) .meta .t{display:block;max-width:100%;min-height:1.35em;overflow:hidden;
+body[data-density="dense"] .card .meta{--card-meta-block:calc(2.7em + 36px)}
+body[data-density="dense"] .card .meta .t{display:block;max-width:100%;min-height:1.35em;overflow:hidden;
   -webkit-line-clamp:unset;white-space:nowrap;text-overflow:ellipsis}
-body[data-density="dense"] .card:not(.feednewcard) .meta .s{height:1.35em;min-height:0;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
-body[data-density="dense"] .card:not(.feednewcard) .meta .who{flex:0 1 auto}
-body[data-density="dense"] .card:not(.feednewcard) .meta .size{flex:none;white-space:nowrap}
+body[data-density="dense"] .card .meta .s{height:1.35em;min-height:0;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+body[data-density="dense"] .card .meta .who{flex:0 1 auto}
+body[data-density="dense"] .card .meta .size{flex:none;white-space:nowrap}
 
 .srow{display:flex;gap:13px;overflow-x:auto;padding-bottom:7px}
 
-/* 订阅源发现的新作（ADR-0041）。横排复用 `.srow`，卡片复用 `.card` 的封套与元数据；
- * 这里只定宽度、淡出已读那一档，以及那两颗悬浮动作键——其余形态跟着资产卡走，
- * 两种卡长得不一样的地方只应该是它们真的不一样的地方。 */
-.feednew{margin:0 0 18px}
-/* RSS 自己的橙：只给人物页「订阅新作」开关订上时用。新作卡等封面时的微光与全站等待态
-   同一种灰，骨架不另起一种颜色。 */
-:root{--feed-mark:#F78422}
-/* 卡片悬停时底色向四周多铺 8px（`box-shadow` 的 spread），而横滚容器把纵向溢出一并
-   裁掉：四边各留 8px 内边距，再用同样的负外边距收回来，卡片落点不动。 */
-.feednewrow{padding:8px;margin:-8px -8px 0}
-/* 往右翻时卡片从侧栏底下穿过去，和首页那几排头像（`catalog-filter.css` 的 `[data-catalog-tier]`）同一个
-   理由、同一种写法：让出轨道宽度加 `main` 的 16px 内边距，再原样加回内边距，第一张
-   仍站在这一屏的左对齐线上。首页与人物页的这一行都直接住在 `main` 里，所以让出的是
-   同一个数；窄屏的抽屉盖在内容上面，没有这条常驻的边，那一档不让。 */
-@media(min-width:761px){
-  .feednewrow{margin-left:calc(-1 * (var(--railW) + 16px));padding-left:calc(var(--railW) + 16px)}
-}
-/* 连不上图片主机那条 Note 与下面一行隔 12px：横排自己往上收了 8px，这里先垫回来。 */
-.feednetwork{margin-bottom:20px}
-/* 这一行的一键插队（提示条或进度条）同理；没有排队的就整块不占位。 */
-[data-feed-cover-queue]:not(:empty){margin-bottom:20px}
-.feednewcard{flex:none;width:168px}
-/* 横排新作固定为窄卡，头像占位与 React 窄卡使用同一紧叠尺寸。 */
-.feednewcard .mavstack{--media-avatar-gaps:max(1,calc(var(--media-avatar-count) - 1));
-  position:relative;display:block;width:calc(var(--media-avatar-tight) + 7px + var(--media-avatar-tight-step) * (var(--media-avatar-count) - 1));
-  max-width:min(var(--media-avatar-tight-max),max(45px,24%));height:38px;margin:-4px -2px -2px;padding:0}
-.feednewcard .mavstack .mav{position:absolute;top:6px;width:var(--media-avatar-tight);height:var(--media-avatar-tight);margin:0;
-  left:calc(5px + (100% - var(--media-avatar-tight) - 7px) / var(--media-avatar-gaps) * var(--media-avatar-index))}
-.feednewcard .mavstack .mav+.mav{margin-left:0}
-/* 首页那一行行尾的「查看全部新作」：和卡同宽、只占封面那一格的高，底色与圆角同旁边新作卡的封面格，
-   一排看下来是同一种格子；字和箭头排成一行，与分页「下一页」那颗键同一个写法。悬停换到同一组令牌的
-   悬停档。 */
-.feednewall{flex:none;align-self:flex-start;width:168px;aspect-ratio:var(--card-ratio);display:flex;
-  align-items:center;justify-content:center;gap:4px;border-radius:var(--surface-radius);background:var(--color-background-tertiary-default);
-  color:var(--ink-2);font-size:var(--fs-sm);font-weight:500;text-decoration:none;transition:background-color .2s ease-out,color .2s ease-out}
-.feednewall:hover{background:var(--color-background-tertiary-hover);color:var(--ink)}
-.feednewall:focus-visible{outline:2px solid var(--tungsten);outline-offset:2px}
-.feednewall svg{width:var(--icon-inline);height:var(--icon-inline);stroke:currentColor;fill:none;stroke-width:2}
-/* 已看过的不移走，只退到背景里：已读是标记，不是关掉。 */
-.feednewcard.isread{opacity:.55}
-/* 通向作品页的点击区，铺满整张卡，是一条外链。
-   资产卡的 `.pic` 与 `.meta` 压在点击区上面（z-index 2），那边的点击由卡片自己的脚本
-   接；这张卡只有这条外链，所以两块放行指针，落到下面的链接上，悬浮键自己再收回来。 */
-.feednewopen{position:absolute;inset:0;z-index:1;border-radius:inherit}
-.feednewcard>.pic,.feednewcard>.meta{pointer-events:none}
-/* 头像不论认没认出都收回指针：叠放头像的抬起与让位靠 `:hover`，没认出的那枚放行了指针就抬不起来，
-   整组的动画在它那里断掉。没认出的不是链接，点它不打开作品，名字在悬停说明里。 */
-.feednewcard .meta .mav{pointer-events:auto}
-.feednewcard .meta span.mav{cursor:default}
-/* 还没有封面的那一格（`coverStateHtml`）：状态字、一两行原因、一颗当场取的键。原因多了截在三行，
-   全文在悬停说明里。封面格放行了指针，这颗键自己收回来。 */
-.feedcoverstate{display:flex;flex-direction:column;align-items:center;gap:6px;max-width:100%;padding:0 12px;text-align:center}
-.feedcoverreason{font-size:var(--fs-xs);line-height:1.45;color:var(--muted);display:-webkit-box;-webkit-box-orient:vertical;
-  -webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
-.feedcoverstate button{pointer-events:auto;margin-top:4px}
-/* 正在取那一枚不定进度圆环摆在状态字上面，不带横幅里那份右侧间距。 */
-.feedcoverstate>[role="progressbar"]{margin:0}
-.feednewopen:focus-visible{outline:2px solid var(--tungsten);outline-offset:2px}
-/* 三颗动作键沿用 `.hovertools` 的磨砂圆底，只换尺寸和落点。`.hovertools` 默认
-   `pointer-events:none`——那是为了让指针落到底下的预览上，而这三颗是这张卡唯一能按的
-   东西，所以在显形的同时把点击收回来。 */
-.feednewtools{inset:auto 7px 7px auto;gap:6px}
-.feednewcard:hover .feednewtools,.feednewcard:focus-within .feednewtools{opacity:1}
-.feednewcard:hover .feednewtools button,.feednewcard:focus-within .feednewtools button{pointer-events:auto}
-.feednewtools button{width:32px;height:32px}
-.feednewtools button svg{width:17px;height:17px}
-@media(hover:none),(pointer:coarse){
-  .feednewcard .feednewtools{opacity:1}
-  .feednewcard .feednewtools button{pointer-events:auto}
-}
-/* 「想要」按下时星形填实：同一颗键既是开关也是读数。 */
-.feednewtools button[aria-pressed="true"] svg{fill:currentColor}
-.feednewcard .meta .t{font-size:var(--fs-sm)}
-/* 番号整段不折行；比卡还宽的长串在卡边收成省略号，不被标题块的溢出裁成半个字。 */
-/* 出演名单与完整日期分行，窄卡中的姓名仍有自己的宽度。 */
-.feednewcard .meta .s{display:grid;grid-auto-rows:minmax(1.35em,auto);gap:2px;
-  line-height:1.35;white-space:nowrap;min-height:calc(2lh + 2px)}
-.feednewcard .meta .s>span{min-width:0}
-.feednewcard .meta .s>.feednewperformers{overflow:hidden;text-overflow:ellipsis}
-/* 占位卡直接套真卡的 `.t` 与 `.s`：标题块是两行 2.7em，下面那行放一个零宽字符，行高
-   跟真卡那行字同一套规则，到货那一下整行不跳。 */
-.feednewskeleton{pointer-events:none}
-/* 没有图的封面格用 BoardUI 的三级底：浅色主题里 `--hover`、`--surface` 都只比页面白一点点，
-   「抓取中」「排队中」「无封面」那几格看不出格子。 */
-.feednewcard:not(.feednewskeleton) .pic{background-color:var(--color-background-tertiary-default);color:var(--muted)}
-.feednewskeleton .pic{background:var(--hover)}
-.feednewskeleton .t>.skeleton{height:2.7em}
-.feednewskeleton .s>.skeleton{width:72%;height:auto}
-/* 占位卡不是在等哪一张图，它本身就是等待态：微光和骨架同一帧出现。`.imgwait` 那 180ms
-   的淡入门槛是给本地图的，套在这里，那 180ms 里露出来的是 `.pic` 的黑底。 */
-.feednewskeleton .pic.imgwait::after{transition:none}
+

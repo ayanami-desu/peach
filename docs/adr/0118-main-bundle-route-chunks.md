@@ -6,13 +6,13 @@
 
 ## 背景
 
-主界面 `web/dist/peach-app.js` 是一份 3.8 MB（gzip 约 1 MB）的单文件，统计与口味页的图表引擎、配置页、数据管理、复核、关注管理等低频页面都在首屏解析执行。首页冷加载的第一个长任务 0.75–1.31 s，其中相当一部分是这些用不上的代码。
+主界面 `web/dist/peach-app.js` 是一份 3.8 MB（gzip 约 1 MB）的单文件，统计与口味页的图表引擎、配置页、数据管理、复核等低频页面都在首屏解析执行。首页冷加载的第一个长任务 0.75–1.31 s，其中相当一部分是这些用不上的代码。
 
 固定文件名不带哈希的理由出自 ADR-0022：引用产物的 `web/app.js` 不经过构建，改不了那里的路径。主界面已经由 React Application 启动，`web/index.html` 只引用入口 `peach-app.js` 一个文件，这条理由只约束入口，不约束入口自己动态导入的文件。产物进 Git、运行时不需要 Node、`/dist/` 要会话三条照旧成立。
 
 ## 决策
 
-**一、入口固定名，低频页拆成带内容哈希的 chunk。** 入口仍是 `peach-app.js`，服务端 ETag 复验。路由表里的低频页面（JAV、统计、口味、复核、数据管理、重复文件、高清版、采集来源、配置与诊断、任务、关注管理、播放列表）由 `frontend/src/react/router/route-chunk.ts` 的 `routeChunk(() => import(...))` 动态导入，产物名 `peach-app.<名字>-<哈希>.js`，平铺在 `web/dist/`。首页目录、资料页、索引页、详情舞台、侧栏与设置面板等首屏和常驻部分留在入口。
+**一、入口固定名，低频页拆成带内容哈希的 chunk。** 入口仍是 `peach-app.js`，服务端 ETag 复验。路由表里的低频页面（JAV、统计、口味、复核、数据管理、重复文件、高清版、采集来源、配置与诊断、任务、播放列表）由 `frontend/src/react/router/route-chunk.ts` 的 `routeChunk(() => import(...))` 动态导入，产物名 `peach-app.<名字>-<哈希>.js`，平铺在 `web/dist/`。首页目录、资料页、索引页、详情舞台、侧栏与设置面板等首屏和常驻部分留在入口。
 
 **二、首屏用得到的模块留在入口。** 库模式默认 `preserveEntrySignatures: 'strict'`，入口不许多出导出，入口与 chunk 共用的模块会被拆成几十份公共 chunk，首屏变成一串瀑布请求。构建放开为 `allow-extension`，并用 `codeSplitting.groups` 把 `$initial`（入口静态可达）的模块收回入口：入口没有任何静态导入，chunk 从 `./peach-app.js` 导入共用模块，React、Query、历史与控件各只有一份实例。入口给 chunk 的导出保留源码名（`minifyInternalExports: false`，入口多 6.9 KB）：压成单字母时入口任何改动都会让导出名整体错位，全部 chunk 跟着换哈希。
 

@@ -231,8 +231,8 @@ class TestPlanningTests(unittest.TestCase):
                 else:
                     yield case.id()
         # 使用实际域注册验证交集和补充用例，不执行其中的测试。
-        serial = list(ids(runner.build_suite('follow', 'tooling')))
-        shards = [list(ids(runner.build_suite('follow', 'tooling', shard_index=i, shard_count=2)))
+        serial = list(ids(runner.build_suite('catalog', 'tooling')))
+        shards = [list(ids(runner.build_suite('catalog', 'tooling', shard_index=i, shard_count=2)))
                   for i in range(2)]
         self.assertEqual(len(serial), len(set(serial)))
         self.assertFalse(set(shards[0]) & set(shards[1]))
@@ -241,7 +241,7 @@ class TestPlanningTests(unittest.TestCase):
     def test_modules_without_a_namesake_test_run_where_their_importers_are_tested(self):
         """按名字推不出测试的模块，跟着直接导入它的测试与源码文件选域；推不出时仍是 full。"""
         index = (
-            {'test_follow_web.py': frozenset({'hub', 'ring_b'})},
+            {'test_fastapi_api.py': frozenset({'hub', 'ring_b'})},
             {'src/peach/hub.py': frozenset(), 'src/peach/web_reader.py': frozenset({'hub'}),
              'src/peach/lonely.py': frozenset(), 'src/peach/orphan_user.py': frozenset({'lonely'}),
              'src/peach/ring_a.py': frozenset({'ring_b'}), 'src/peach/ring_b.py': frozenset({'ring_a'}),
@@ -252,13 +252,13 @@ class TestPlanningTests(unittest.TestCase):
         def scopes(path):
             return runner.scopes_for_changes([path])[0]
         with patch.object(runner, '_import_index', return_value=index):
-            # 测试 test_follow_web（follow、web）直接导入；源码 web_reader 按前缀归 catalog。
-            self.assertEqual(scopes('src/peach/hub.py'), ('follow', 'catalog', 'web'))
+            # 测试 test_fastapi_api（catalog、media、web）直接导入；源码 web_reader 按前缀归 catalog。
+            self.assertEqual(scopes('src/peach/hub.py'), ('catalog', 'media', 'web'))
             # 唯一的导入者自己也推不出域：未知面。
             self.assertEqual(scopes('src/peach/lonely.py'), ('full',))
             # 互相导入的一组合起来算：ring_b 的测试与 ring_a 的外部导入者都算进来。
-            self.assertEqual(scopes('src/peach/ring_a.py'), ('follow', 'catalog', 'web'))
-            self.assertEqual(scopes('src/peach/ring_b.py'), ('follow', 'catalog', 'web'))
+            self.assertEqual(scopes('src/peach/ring_a.py'), ('catalog', 'media', 'web'))
+            self.assertEqual(scopes('src/peach/ring_b.py'), ('catalog', 'media', 'web'))
             # 共享测试设施导入的模块影响所有用例。
             self.assertEqual(scopes('src/peach/shared.py'), ('full',))
         self.assertEqual(scopes('tests/test_ledger_revision.py'), ('core',))
@@ -319,7 +319,7 @@ class TestPlanningTests(unittest.TestCase):
                     yield from ids(case)
                 else:
                     yield case.id()
-        scopes = ('follow', 'tooling')
+        scopes = ('catalog', 'tooling')
         serial = list(ids(runner.build_suite(*scopes)))
         names = {path.name for scope in scopes for path in runner.selected_files(scope)}
         plan = runner.shard_plan(names, 3, {'test_scripts': 500.0})
@@ -332,17 +332,17 @@ class TestPlanningTests(unittest.TestCase):
     def test_a_planned_shard_runs_the_files_its_parent_assigned(self):
         with tempfile.TemporaryDirectory() as directory:
             plan = Path(directory) / 'plan.json'
-            plan.write_text(json.dumps([['test_scripts.py'], ['test_http.py', 'test_follow_web.py']]),
+            plan.write_text(json.dumps([['test_scripts.py'], ['test_http.py', 'test_migrations.py']]),
                             encoding='utf-8')
             report = Path(directory) / 'shard.json'
             suite = unittest.TestSuite([unittest.FunctionTestCase(lambda: None)])
             with patch.object(runner, 'build_suite', return_value=suite) as build, \
                  contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.main(['--scope', 'follow', '--scope', 'tooling',
+                self.assertEqual(runner.main(['--scope', 'catalog', '--scope', 'tooling',
                                               '--shard-index', '1', '--shard-count', '2',
                                               '--timings', str(report), '--shard-plan', str(plan)]), 0)
-            build.assert_called_once_with('follow', 'tooling', shard_index=1, shard_count=2,
-                                          assigned_names=['test_http.py', 'test_follow_web.py'])
+            build.assert_called_once_with('catalog', 'tooling', shard_index=1, shard_count=2,
+                                          assigned_names=['test_http.py', 'test_migrations.py'])
 
     def test_parallel_shards_hand_every_child_the_same_plan_in_dispatch_order(self):
         class Done:
@@ -381,10 +381,10 @@ class TestPlanningTests(unittest.TestCase):
             with patch.object(runner, 'build_suite', return_value=suite) as build, \
                  patch.object(runner.test_evidence, 'inputs', side_effect=AssertionError('分片不能签发证据')), \
                  contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(runner.main(['--scope', 'follow', '--scope', 'tooling',
+                self.assertEqual(runner.main(['--scope', 'catalog', '--scope', 'tooling',
                                               '--shard-index', '1', '--shard-count', '2',
                                               '--timings', str(report)]), 0)
-            build.assert_called_once_with('follow', 'tooling', shard_index=1, shard_count=2)
+            build.assert_called_once_with('catalog', 'tooling', shard_index=1, shard_count=2)
             payload = json.loads(report.read_text(encoding='utf-8'))
             self.assertTrue(payload['success'])
             self.assertEqual(payload['count'], 1)
@@ -418,7 +418,7 @@ class TestPlanningTests(unittest.TestCase):
         launched, spawn = launcher(failing=None)
         measured = {}
         with contextlib.redirect_stdout(io.StringIO()) as output:
-            passed, count, timings = runner.run_shards(('follow', 'tooling'), jobs=2, shard_count=3,
+            passed, count, timings = runner.run_shards(('catalog', 'tooling'), jobs=2, shard_count=3,
                                                        spawn=spawn, measured=measured)
         self.assertTrue(passed)
         self.assertEqual(measured, {'test_0': 1.0, 'test_1': 2.0, 'test_2': 3.0})
@@ -427,7 +427,7 @@ class TestPlanningTests(unittest.TestCase):
         self.assertEqual(sorted(int(c[c.index('--shard-index') + 1]) for c in launched), [0, 1, 2])
         for command in launched:
             self.assertEqual(command[:2], [sys.executable, str(runner.ROOT / 'scripts' / 'test_runner.py')])
-            self.assertEqual(command[2:6], ['--scope', 'follow', '--scope', 'tooling'])
+            self.assertEqual(command[2:6], ['--scope', 'catalog', '--scope', 'tooling'])
             self.assertEqual(command[command.index('--shard-count') + 1], '3')
         for index in range(3):
             self.assertIn(f'分片 {index} 的输出', output.getvalue())
@@ -494,9 +494,9 @@ class TestPlanningTests(unittest.TestCase):
     def test_a_test_reading_a_repository_file_runs_when_that_file_changes(self):
         """读了仓库里某个文件的测试，必须登记在改那个文件会选到的域里。
 
-        域表是人手维护的，漏登记不会报错，只会在 CI 上红：`tests/test_follow_web.py` 读
-        `web/app.js`，却只登记在 follow 域，于是改了 `web/app.js` 跑 `auto` 时它根本不在
-        选中的文件里。这一条按测试源码里真实存在的路径拼接反查，把漏登记变成本地就红。
+        域表是人手维护的，漏登记不会报错，只会在 CI 上红：`tests/test_metadata_library.py` 读
+        `web/app.js`，只登记在 web 域，于是改了 `src/peach/metadata.py` 跑 `auto` 时它根本
+        不在选中的文件里。这一条按测试源码里真实存在的路径拼接反查，把漏登记变成本地就红。
 
         判据覆盖整棵树。同一个漏洞在 `scripts/` 与 `docs/` 上一样成立：`test_babepedia_match.py`
         读 `scripts/match_babepedia_creators.py` 却只登记在 metadata 域，改那个脚本时 `auto`
@@ -539,13 +539,13 @@ class GateAndFlakyRerunTests(unittest.TestCase):
     def test_failed_rows_name_the_files_to_rerun_and_refuse_what_cannot_be_isolated(self):
         rows = [self.fail('test_frontend_build.VitestTests.test_the_island_suite_passes'),
                 self.fail('vitest:test/folder-layout.test.ts > 目录 > 滚到底'),
-                self.fail('vitest:test/react/follow-feed.test.tsx > 页面 > 加载更多'),
+                self.fail('vitest:test/react/library-completion.test.tsx > 页面 > 加载更多'),
                 self.fail(runner.VITEST_CONTAINER),
-                self.fail('test_feeds_web.FeedsWebTests.test_second_round'),
+                self.fail('test_task_runs.TaskRunStoreTests.test_payload_reports_elapsed_time_and_a_readable_task_name'),
                 {'id': 'test_ok.Case.test_pass', 'outcome': 'pass', 'seconds': 0.1}]
         self.assertEqual(runner.rerun_selectors(rows), [
-            'test_feeds_web.FeedsWebTests.test_second_round', 'frontend/test/folder-layout.test.ts',
-            'frontend/test/react/follow-feed.test.tsx'])
+            'test_task_runs.TaskRunStoreTests.test_payload_reports_elapsed_time_and_a_readable_task_name',
+            'frontend/test/react/library-completion.test.tsx'])
         self.assertEqual(runner.rerun_selectors([self.fail('setUpClass (test_frontend_build.VitestTests)')]),
                          ['test_frontend_build'], '类级准备失败选择所属模块')
         self.assertIsNone(runner.rerun_selectors([self.fail(

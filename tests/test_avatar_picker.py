@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import importlib.util
-import hashlib
 import io
 import json
 import os
@@ -18,7 +17,7 @@ from unittest import mock
 
 from PIL import Image, ImageDraw
 
-from peach import avatar_online, avatar_picker, gfriends, http as peach_http, jav_poster_crop
+from peach import avatar_picker, gfriends, http as peach_http, jav_poster_crop
 from peach.avatar_face import sidecar_path
 from peach.avatar_provider import AvatarCandidateCache, inspect_avatar, provenance_now
 from peach.http import HttpResponse
@@ -441,57 +440,6 @@ class PickerFixture(unittest.TestCase):
     def listed(self) -> dict:
         return avatar_picker.choices(self.connection, self.providers,
                                      self.avatars, "performer", 7792)
-
-
-class CachedSocialAvatarTests(PickerFixture):
-    def test_only_the_same_entity_and_x_account_can_reuse_a_social_avatar(self):
-        body = picture(colour="blue")
-        url = "https://pbs.twimg.com/profile_images/1/avatar.jpg"
-        self.remember(body, external_id="x:Example", url=url, cache_name="social")
-        params = {"service": "profile", "id": "twitter:example"}
-        cached = avatar_online.cached_profile_avatar(self.providers, 7792, params)
-        self.assertEqual(cached[0], body)
-        self.assertEqual(cached[1]["upstream_url"], url)
-        self.assertTrue(cached[1]["cached_at"])
-        self.assertIsNone(avatar_online.cached_profile_avatar(self.providers, 7793, params))
-        self.assertIsNone(avatar_online.cached_profile_avatar(
-            self.providers, 7792, {"service": "profile", "id": "twitter:Other"}))
-
-    def test_a_litlink_image_cannot_fill_an_x_avatar(self):
-        self.remember(picture(), external_id="x:Example",
-                      url="https://prd.storage.lit.link/images/creator/example/avatar.jpeg", cache_name="social")
-        self.assertIsNone(avatar_online.cached_profile_avatar(
-            self.providers, 7792, {"service": "profile", "id": "twitter:Example"}))
-
-    def test_a_changed_url_snapshot_does_not_relabel_a_different_image(self):
-        url = "https://pbs.twimg.com/profile_images/1/avatar.jpg"
-        self.remember(picture(colour="blue"), external_id="x:Example", url=url, cache_name="social")
-        replacement = picture(colour="green")
-        AvatarCandidateCache(self.providers / "social").store(url, replacement, inspect_avatar(replacement))
-        self.assertIsNone(avatar_online.cached_profile_avatar(
-            self.providers, 7792, {"service": "profile", "id": "twitter:Example"}))
-
-    def test_selecting_a_cached_x_image_keeps_the_original_capture_date(self):
-        body = picture(colour="blue")
-        url = "https://pbs.twimg.com/profile_images/1/avatar.jpg"
-        digest = self.remember(body, external_id="x:Example", url=url, cache_name="social")
-        evidence = self.providers / "social/evidence" / f"performer-7792-{digest}.json"
-        original = json.loads(evidence.read_text(encoding="utf-8"))
-        original["cached_at"] = "2026-09-05T18:14:39+00:00"
-        evidence.write_text(json.dumps(original), encoding="utf-8")
-        avatar_picker.keep(self.providers, 7792, body, original)
-        selected = self.providers / "social-web/evidence" / f"performer-7792-{digest}.json"
-        self.assertNotEqual(json.loads(selected.read_text(encoding="utf-8"))["cached_at"], original["cached_at"])
-        cached = avatar_online.cached_profile_avatar(
-            self.providers, 7792, {"service": "profile", "id": "twitter:Example"})
-        self.assertEqual(cached[0], body)
-        self.assertEqual(cached[1]["cached_at"], original["cached_at"])
-
-    def test_a_user_selection_alone_is_not_capture_evidence(self):
-        self.remember(picture(), external_id="x:Example",
-                      url="https://pbs.twimg.com/profile_images/1/avatar.jpg")
-        self.assertIsNone(avatar_online.cached_profile_avatar(
-            self.providers, 7792, {"service": "profile", "id": "twitter:Example"}))
 
 
 class HistorySourceTests(PickerFixture):
@@ -1299,177 +1247,6 @@ class AvatarPickerRouteTests(unittest.TestCase):
         self.assertTrue(out["index_stale"])
         self.assertIn(LIBRARY_REF, [one["ref"] for one in out["choices"]])
         queued.assert_called_once_with()
-
-    def _online_creator(self):
-        from peach.follow_sources import FollowCandidate, SourceFetch
-        from peach.follow_store import FollowStore
-        with self.app.state.database.write_transaction() as connection:
-            connection.execute(
-                "INSERT INTO entity(id,kind,canonical_name,normalized_name,created_at,updated_at)"
-                " VALUES(8892,'creator','Online Author','online author','t','t')")
-            connection.execute(
-                "INSERT INTO entity_link(entity_id,link_kind,label,url,created_at,updated_at)"
-                " VALUES(8892,'social','X','https://x.com/OnlineAuthor','t','t')")
-            store = FollowStore(lambda: connection)
-            source = store.register(provider="fanbox", ref="online", label="Online Author",
-                                    url="https://online.fanbox.cc/", entity_id=8892)
-            store.record(source, SourceFetch(provider="fanbox", ref="online", request_url="https://online.fanbox.cc/",
-                semantics="work", candidates=(FollowCandidate(provider="fanbox", external_id="post1", title="Online work",
-                    thumb_url="https://example.com/cover.jpg", extra={"media_kind": "image", "media_items": [
-                        {"id": "one", "media_kind": "image", "url": "https://example.com/full.jpg"},
-                        {"id": "two", "media_kind": "image", "url": "https://example.com/hidden.jpg"}]}),)))
-            item_id = store.items(source_id=source)[0].id
-            connection.execute("UPDATE follow_item SET hidden_media_json='[\"two\"]' WHERE id=?", (item_id,))
-        return item_id
-
-    def test_online_choices_include_social_cover_and_visible_content_with_private_refs(self):
-        item = self._online_creator()
-        listing = self.client.get('/api/avatar-choices?kind=creator&id=8892&t=secret').json()
-        online = next(choice for choice in listing['choices'] if choice['source'] == 'online')
-        self.assertEqual(online['bases'], [f'follow:{item}:cover', f'follow:{item}:image0'])
-        self.assertTrue(any(choice['source'] == 'social' for choice in listing['choices']))
-        self.assertNotIn('https://example.com', json.dumps(listing))
-
-    def test_performer_choices_include_bound_social_avatars_without_fetching(self):
-        with self.app.state.database.write_transaction() as connection:
-            connection.execute(
-                "INSERT INTO entity_link(entity_id,link_kind,label,url,created_at,updated_at)"
-                " VALUES(7792,'social','lit.link','https://lit.link/example','t','t')")
-        with mock.patch("peach.follow_avatar.profile_avatar_tiers") as fetch:
-            listing = self.client.get('/api/avatar-choices?kind=performer&id=7792&t=secret').json()
-        social = next(choice for choice in listing["choices"] if choice["source"] == "social")
-        self.assertTrue(social["ref"].startswith("follow-link:"))
-        self.assertEqual(social["label"], "lit.link")
-        fetch.assert_not_called()
-
-    def test_bound_litlink_preview_uses_the_shared_avatar_service_and_cache(self):
-        with self.app.state.database.write_transaction() as connection:
-            connection.execute(
-                "INSERT INTO entity_link(entity_id,link_kind,label,url,created_at,updated_at)"
-                " VALUES(7792,'social','lit.link','https://lit.link/example','t','t')")
-        listing = self.client.get('/api/avatar-choices?kind=performer&id=7792&t=secret').json()
-        ref = next(choice["ref"] for choice in listing["choices"] if choice["source"] == "social")
-        from fastapi.responses import FileResponse
-        path = self.folder / "social-avatar.jpg"
-        path.write_bytes(self.picture)
-        with mock.patch("peach.routes_media.follow_avatar", return_value=FileResponse(path)) as fetch:
-            params = {"kind": "performer", "id": 7792, "ref": ref, "t": "secret"}
-            self.assertEqual(self.client.get('/avatar-choice', params=params).status_code, 200)
-            self.assertEqual(self.client.get('/avatar-choice', params=params).status_code, 200)
-        self.assertEqual(fetch.call_count, 1)
-        self.assertEqual(fetch.call_args.kwargs["service"], "profile")
-        self.assertEqual(fetch.call_args.kwargs["id"], "litlink:example")
-
-    def test_cached_x_avatar_preserves_its_source_and_date_without_fetching(self):
-        from peach.routes_media import _picker_online
-        with self.app.state.database.write_transaction() as connection:
-            cursor = connection.execute(
-                "INSERT INTO entity_link(entity_id,link_kind,label,url,created_at,updated_at)"
-                " VALUES(7792,'social','X','https://x.com/Example','t','t')")
-            ref = f"follow-link:{cursor.lastrowid}"
-        record = {"provider": "social-web", "source_kind": "official_profile", "external_id": "x:Example",
-                  "sha256": hashlib.sha256(self.picture).hexdigest(),
-                  "upstream_url": "https://pbs.twimg.com/profile_images/1/avatar.jpg",
-                  "cached_at": "2026-09-05T18:14:39+00:00"}
-        with mock.patch("peach.avatar_online.cached_profile_avatar", return_value=(self.picture, record)), \
-                mock.patch("peach.routes_media.follow_avatar") as fetch, \
-                self.app.state.database.read_connection() as connection:
-            for _ in range(2):
-                body, origin = _picker_online(mock.Mock(app=self.app), connection, 7792)(ref)
-                self.assertEqual(body, self.picture)
-                self.assertEqual(origin["upstream_url"], record["upstream_url"])
-                self.assertEqual(origin["cached_at"], record["cached_at"])
-            listing = self.client.get('/api/avatar-choices?kind=performer&id=7792&t=secret').json()
-        social = next(choice for choice in listing["choices"] if choice["source"] == "social")
-        self.assertEqual(social["detail"], "已缓存的社交头像 · 2026-09-05")
-        fetch.assert_not_called()
-
-    def test_online_avatar_preserves_a_source_error(self):
-        from fastapi.responses import JSONResponse
-        from peach.routes_media import _picker_online
-        with self.app.state.database.write_transaction() as connection:
-            cursor = connection.execute(
-                "INSERT INTO entity_link(entity_id,link_kind,label,url,created_at,updated_at)"
-                " VALUES(7792,'social','X','https://x.com/Example','t','t')")
-            ref = f"follow-link:{cursor.lastrowid}"
-        with mock.patch("peach.routes_media.follow_avatar", return_value=JSONResponse(
-                {"error": "X 资料页没有本人头像"}, status_code=404)), \
-                self.app.state.database.read_connection() as connection, \
-                self.assertRaisesRegex(avatar_picker.PickerError, "X 资料页没有本人头像"):
-            _picker_online(mock.Mock(app=self.app), connection, 7792)(ref)
-
-    def test_online_domain_uses_the_injected_visible_media_and_cover(self):
-        item_id = self._online_creator()
-        project = mock.Mock(return_value=avatar_online.MediaChoices(
-            cover="https://example.com/policy-cover.jpg", images=(0,)))
-        image, avatar, media = mock.Mock(return_value=self.picture), mock.Mock(), mock.Mock()
-        with self.app.state.database.read_connection() as connection:
-            listed = avatar_online.choices(connection, 8892, project=project)
-            online = next(choice for choice in listed if choice.source == "online")
-            self.assertEqual(online.bases, (f"follow:{item_id}:cover", f"follow:{item_id}:image0"))
-            body, origin = avatar_online.resolve(f"follow:{item_id}:cover", connection, 8892,
-                project=project, image=image, avatar=avatar, media=media)
-        self.assertEqual(body, self.picture)
-        self.assertEqual(origin["external_id"], f"follow:{item_id}:cover")
-        self.assertEqual(image.call_args.args[0].id, item_id)
-        self.assertEqual(image.call_args.args[1], "https://example.com/policy-cover.jpg")
-        self.assertTrue(all(call.args[0].id == item_id for call in project.call_args_list))
-        avatar.assert_not_called()
-        media.assert_not_called()
-
-    def test_missing_online_images_and_oversized_images_have_different_errors(self):
-        item_id = self._online_creator()
-        project = mock.Mock(return_value=avatar_online.MediaChoices(cover="https://example.com/image.jpg", images=()))
-        for payload, message in ((None, "未取得"), (b"12345", "大小上限")):
-            with self.subTest(payload=payload), mock.patch("peach.avatar_online.MAX_IMAGE_BYTES", 4), \
-                    self.app.state.database.read_connection() as connection, \
-                    self.assertRaisesRegex(avatar_picker.PickerError, message):
-                avatar_online.resolve(f"follow:{item_id}:cover", connection, 8892, project=project,
-                                      image=mock.Mock(return_value=payload), avatar=mock.Mock(), media=mock.Mock())
-
-    def test_online_domain_rechecks_visibility_before_fetching_a_listed_candidate(self):
-        item_id = self._online_creator()
-        project = mock.Mock(return_value=avatar_online.MediaChoices(cover=None, images=(0,)))
-        fetch = mock.Mock(return_value=self.picture)
-        with self.app.state.database.read_connection() as connection:
-            online = next(choice for choice in avatar_online.choices(connection, 8892, project=project)
-                          if choice.source == "online")
-            self.assertEqual(online.ref, f"follow:{item_id}:image0")
-            project.return_value = avatar_online.MediaChoices(cover=None, images=())
-            with self.assertRaises(avatar_picker.PickerError):
-                avatar_online.resolve(online.ref, connection, 8892,
-                    project=project, image=fetch, avatar=fetch, media=fetch)
-        fetch.assert_not_called()
-
-    def test_single_online_image_lists_its_original_content_alongside_the_cover(self):
-        item = self._online_creator()
-        with self.app.state.database.write_transaction() as connection:
-            connection.execute("UPDATE follow_item SET metadata_json='{\"media_kind\":\"image\"}',"
-                               " media_url='https://example.com/full.jpg',hidden_media_json='[]' WHERE id=?", (item,))
-        listing = self.client.get('/api/avatar-choices?kind=creator&id=8892&t=secret').json()
-        online = next(choice for choice in listing['choices'] if choice['source'] == 'online')
-        self.assertEqual(online['bases'], [f'follow:{item}:cover', f'follow:{item}:image'])
-
-    def test_online_cover_is_cached_and_crop_installs_only_on_the_creator(self):
-        item = self._online_creator()
-        calls = []
-        self.app.state.http_transport = transport_of(self.picture, calls=calls)
-        ref = f'follow:{item}:cover'
-        with mock.patch('peach.avatar_picker.allowed_source', return_value=True):
-            preview = self.client.get('/avatar-choice', params={'kind': 'creator', 'id': 8892, 'ref': ref, 't': 'secret'})
-            self.assertEqual(preview.status_code, 200)
-            framed = self.client.post('/api/avatar-frame?t=secret', json={'kind': 'creator', 'id': 8892, 'ref': ref})
-            self.assertEqual(framed.status_code, 200)
-            self.assertEqual(framed.json()['bases'], [ref, f'follow:{item}:image0'])
-            picked = self.client.post('/api/avatar-pick?t=secret', json={'kind': 'creator', 'id': 8892,
-                'ref': ref, 'crop': {'x0': 0, 'y0': 0, 'x1': 40, 'y1': 40}})
-        self.assertEqual(picked.status_code, 200)
-        self.assertEqual(len(calls), 1)
-        self.assertTrue((self.avatars / 'creator-8892.img').exists())
-        for entity_id, forbidden in ((7792, ref), (8892, f'follow:{item}:image1')):
-            response = self.client.get('/avatar-choice', params={'kind': 'creator', 'id': entity_id,
-                                                               'ref': forbidden, 't': 'secret'})
-            self.assertEqual(response.status_code, 404)
 
     def test_a_preview_serves_the_picture_and_a_bad_reference_404s(self):
         response = self.client.get(

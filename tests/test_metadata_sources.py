@@ -86,26 +86,6 @@ class JavDBResourceTests(unittest.TestCase):
         with self.assertRaises(SourceFailure):
             JavDBSource().parse(page, "ABW-221")
 
-    def test_resource_area_and_comment_links_share_identity(self):
-        from peach.sources.javdb import parse_comment_text, merge_resources
-        digest = 'a' * 40
-        file_hash = 'b' * 32
-        magnet = {'id': 'magnet:' + digest, 'protocol': 'magnet', 'info_hash': digest,
-                  'uri': f'magnet:?xt=urn:btih:{digest}', 'name': '演示', 'size': '4.00GB', 'files': '2',
-                  'date': '2026-10-01', 'attributes': ['中字'], 'source': 'JavDB',
-                  'source_url': 'https://javdb.com/v/demo', 'origins': ['JavDB']}
-        text = (f'magnet:?xt=urn:btih:{digest.upper()} ed2k://|file|another-name|123456|{file_hash}|/\n'
-                f'ed2k://|file|demo%20file.mkv|123456|{file_hash.upper()}|/\n'
-                'https://EXAMPLE.test/file?q=1 https://example.test/file?q=1 javascript:alert(1)')
-        comments = parse_comment_text(text, 'https://javdb.com/v/demo#review-item-1', '2026-10-02')
-        items = merge_resources([magnet, *comments])
-        self.assertEqual([item['protocol'] for item in items], ['magnet', 'ed2k', 'url'])
-        self.assertEqual(items[0]['size'], '4.00GB')
-        self.assertEqual(items[0]['attributes'], ['中字'])
-        self.assertEqual(len(items[0]['origins']), 2)
-        self.assertEqual(items[1]['name'], 'another-name')
-        self.assertEqual(items[1]['size'], '123,456 B')
-        self.assertEqual(items[2]['uri'], 'https://example.test/file?q=1')
 
 
 class DemoSource(SiteSource):

@@ -9,11 +9,10 @@ import { queryClient } from '../query';
 import { showToast } from '../toaster';
 
 export type TagId = number | string;
-export type TagScope = 'local' | 'online';
 export interface ManagedTag { entity_id?: number; id?: string; k: string; n: number; hidden: boolean; blocked?: boolean; aliases: string[]; cat?: string; favorite?: boolean }
 export const managedTagId = (tag: ManagedTag): TagId => tag.id ?? tag.entity_id!;
 export type Operation = 'rename' | 'merge' | 'hide' | 'restore' | 'repair' | 'block' | 'unblock';
-export interface Command { operation: Operation; ids: TagId[]; name?: string; target_id?: TagId; scope?: TagScope }
+export interface Command { operation: Operation; ids: TagId[]; name?: string; target_id?: TagId }
 interface Plan { token: string; name?: string; assets: number; overlap: number; tags: ManagedTag[] }
 export const TAG_ACTION_LABELS: Record<Operation, string> = {
   rename: '重命名标签', merge: '合并标签', hide: '隐藏标签', restore: '恢复标签', repair: '整理重复标签',
@@ -41,10 +40,10 @@ export async function confirmTagOperation(command: Command, plan: Plan, signal?:
 }
 
 type FormDialog = ReturnType<typeof formModal>;
-export function TagEditor({ operation, selected, close, done, scope = 'local' }: {
-  operation: 'rename' | 'merge'; selected: ManagedTag[]; close(): void; done(): void; scope?: TagScope;
+export function TagEditor({ operation, selected, close, done }: {
+  operation: 'rename' | 'merge'; selected: ManagedTag[]; close(): void; done(): void;
 }) {
-  const initial = useRef({ operation, selected, close, done, scope });
+  const initial = useRef({ operation, selected, close, done });
   const draft = useRef({ name: selected[0]?.k || '', target_id: selected[0] ? managedTagId(selected[0]) : 0 });
   const [view, setView] = useState<{ host: Element; dialog: FormDialog } | null>(null);
   useEffect(() => {
@@ -53,7 +52,7 @@ export function TagEditor({ operation, selected, close, done, scope = 'local' }:
     const dialog = formModal({ title: TAG_ACTION_LABELS[given.operation], confirmLabel: '预览影响范围', confirmDisabled: true,
       body: '<div class="peach-react" data-tag-editor-fields></div>',
       onConfirm: async () => {
-        const command: Command = { operation: given.operation, ids: given.selected.map(managedTagId), ...(given.scope === 'online' ? { scope: given.scope } : {}),
+        const command: Command = { operation: given.operation, ids: given.selected.map(managedTagId),
           ...(given.operation === 'rename' ? { name: draft.current.name.trim() } : { target_id: draft.current.target_id }) };
         const plan = await previewTagOperation(command, controller.signal);
         return { command, plan };

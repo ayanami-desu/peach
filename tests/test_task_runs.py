@@ -380,9 +380,9 @@ class TaskRunStoreTests(unittest.TestCase):
         self.assertEqual(len(self.store.query(status="running")), 1)
 
     def test_payload_reports_elapsed_time_and_a_readable_task_name(self):
-        run = self.store.start("follow-check", trigger="scheduled")
+        run = self.store.start("library-processing", trigger="scheduled")
         payload = self.store.get(run.id).payload()
-        self.assertEqual(payload["task_label"], "追更检查")
+        self.assertEqual(payload["task_label"], "扫描与采集")
         self.assertGreaterEqual(payload["elapsed_seconds"], 0)
         self.assertEqual(task_label("nothing-registered"), "nothing-registered")
 

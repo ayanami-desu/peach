@@ -84,7 +84,7 @@ def _fetch_cover(contract, code):
                 key: installed[key] for key in ("width", "height", "raw_sha256")}}
     except (OSError, ValueError, KeyError, TypeError):
         installed = None
-    raw = SourceTransport(contract.follow_secrets_root, max_requests=80,
+    raw = SourceTransport(contract.secrets_root, max_requests=80,
                           max_bytes=32 * 1024 * 1024, max_seconds=180)
     transport = HostLimitedTransport(raw, 1.5)
     statuses = set()
@@ -108,7 +108,7 @@ def _fetch_cover(contract, code):
         prior = tuple(item for item in (fc2, previous[0] if previous else None) if item)
         candidate, size, data = best_cover(observed, code, 0, diagnostics=diagnostics,
                                           prior_candidates=prior,
-                                          metadata_root=contract.follow_sources_root / "metadata" / "javinizer-go")
+                                          metadata_root=contract.sources_root / "metadata" / "javinizer-go")
         kept_size = _kept_cover_size(target, candidate, size, installed, previous)
         if kept_size is not None:
             suffix = "部分来源连接失败，未能完成全部来源比较。" if network_failed or any(s >= 400 and s != 404 for s in statuses) else "没有找到更大或更合适的封面。"
@@ -145,17 +145,17 @@ def _fetch_cover(contract, code):
 
 
 def q_scraping(contract, _args):
-    return {"sources": [describe(contract.follow_secrets_root, source) for source in SOURCES
+    return {"sources": [describe(contract.secrets_root, source) for source in SOURCES
                         if source != "instagram"],
             "instagram_status": "Instagram 自动头像定位尚待独立登录会话验证"}
 
 
 def w_scraping_settings(contract, body):
-    return {"ok": True, "saved": save(contract.follow_secrets_root, str(body.get("source", "")), body)}
+    return {"ok": True, "saved": save(contract.secrets_root, str(body.get("source", "")), body)}
 
 
 def w_scraping_check(contract, body):
-    return check_source(contract.follow_secrets_root, str(body.get("source", "")))
+    return check_source(contract.secrets_root, str(body.get("source", "")))
 
 
 def w_scraping_check_all(contract, _body):
@@ -172,7 +172,7 @@ def w_scraping_check_all(contract, _body):
                     state["results"].append(row)
                     state["checked"] += 1
                     state["current"] = {"label": row["label"]}
-        result = check_sources(contract.follow_secrets_root, sources, on_result=done)
+        result = check_sources(contract.secrets_root, sources, on_result=done)
         targets = [target for row in result["sources"] for target in row["results"]]
         job.update(job_id, status="complete", ok=result["ok"], results=result["sources"],
                    failed=sum(target["outcome"] not in ("ok", "skipped") for target in targets),
@@ -190,7 +190,7 @@ def q_scraping_amane_bridge(contract, args):
 def w_scraping_amane_check(contract, body):
     """只读 GitHub API 问上游最新 release。取不到就是「未取得」；升不升级由人读 diff 决定。"""
     from . import metadata_amane, peach_proxy
-    latest = metadata_amane.latest_upstream_tag(peach_proxy.client_options(contract.follow_secrets_root))
+    latest = metadata_amane.latest_upstream_tag(peach_proxy.client_options(contract.secrets_root))
     return {"ok": True, "latest": latest, "checked_at": time.time()}
 
 

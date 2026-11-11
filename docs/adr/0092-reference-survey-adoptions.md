@@ -2,7 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-10-02
-- 相关：ADR-0018、ADR-0025、ADR-0065、ADR-0087、ADR-0088、ADR-0089、ADR-0090
+- 相关：ADR-0018、ADR-0025、ADR-0065、ADR-0087、ADR-0088、ADR-0089；「想要」清单一条已由 [ADR-0158](0158-remove-follow-feeds-wants.md) 删除
 
 ## 背景
 
@@ -23,7 +23,6 @@ javranking、Cuelume 等 16 个项目的最新版做了一轮调研，最新代�
 | 文件消失时保留个人记录，新版本入库时接回 | SakuraMedia | ADR-0087 |
 | 实体合并留转址（墓碑） | SakuraMedia | ADR-0088 |
 | 115／PikPak 离线下载 | JavBoss | ADR-0089 |
-| 「想要」清单，入库按番号自动对账 | SakuraMedia、OpenAver | ADR-0090 |
 | 隐私模式 | Javdex | 设置页的 SFW 模式覆盖图片与视频遮挡，并停止悬停预览；`settings-panel.tsx`、`web/app.js` 与 `card-art/hover.ts` |
 
 ### 进待办
@@ -66,12 +65,12 @@ javranking、Cuelume 等 16 个项目的最新版做了一轮调研，最新代�
 | 按演员归档的目录模板变量 | NeoAVDC | 待办 9 的子项 |
 | 推荐时刻每片至多 3 条 | SakuraMedia | 待办 47 与 28 的子项 |
 | 四种 NFO 样例核对读取覆盖面 | Javdex | 补进 `library_nfo` 的测试，不另开号 |
-| 广告片识别作对照 | javm | `scripts/find_ads.py` 已登记在 [docs/SOURCING.md](../SOURCING.md) |
+| 广告片识别作对照 | javm | `scripts/find_ads.py` 已登记在 [docs/METADATA.md](../METADATA.md) |
 
 ### 记为来源候选
 
 xcity → 维基 → graphis 的女优资料备援（OpenAver），以及 sokmil、kingdom.vc、km-produce、fantia、jav321、
-javlibrary 六站，写在 [docs/SOURCING.md](../SOURCING.md) 的 minnano 一节与来源链一节，接入前逐站取证。
+javlibrary 六站，写在 [docs/METADATA.md](../METADATA.md) 的 minnano 一节与来源链一节，接入前逐站取证。
 
 ### 调研建议不采纳，用户 2026-10-01 定为改造后接受
 
@@ -89,7 +88,7 @@ javlibrary 六站，写在 [docs/SOURCING.md](../SOURCING.md) 的 minnano 一节
 | --- | --- | --- |
 | 外部来源值与本地覆盖值分两列 | SakuraMedia | Peach 已有 `field_owners` 的字段归属与覆盖规则（ADR-0018、ADR-0025） |
 | 媒体「复活」 | SakuraMedia | ADR-0087 的接回已覆盖 |
-| 书签满 14 天、30 天提醒 | OpenAver | 想要清单在页签里看，不推提醒；出现需求再议 |
+| 书签满 14 天、30 天提醒 | OpenAver | 想要清单在页签里看，不推提醒；出现需求再议（「想要」清单已随 [ADR-0158](0158-remove-follow-feeds-wants.md) 删除） |
 | 外部网页清单导入与消歧 | Javdex | 没有批量导入需求 |
 | 片库分析联动 | OpenAver | 口味页已覆盖 |
 | 自动下载闭环 | SakuraMedia、NASSAV | 默认不动用户文件；可控的形态只有用户自己给磁力的网盘离线（ADR-0089） |

@@ -4,12 +4,12 @@
  * 选中态时把计数与语境推进来；这一面只负责画底部那块浮条（共用的 `SelectionDock`）。点下去回到壳的
  * `run`：确认弹层、写接口、回执与撤销是壳里按分组分派的那几条流程，忙态挂在传回去的那颗键上。 */
 
-/** 目录（含资料页与标签页）、回收站、垃圾文件、关注页。 */
-export type BatchContext = 'catalog' | 'trash' | 'junk' | 'follow';
+/** 目录（含资料页与标签页）、回收站、垃圾文件。 */
+export type BatchContext = 'catalog' | 'trash' | 'junk';
 
-/** 一颗键回到壳的哪条流程：`batch` 走 `/api/batch`，`region` 是判定产地的弹层，`follow` 写关注条目，
+/** 一颗键回到壳的哪条流程：`batch` 走 `/api/batch`，`region` 是判定产地的弹层，
  *  `junk` 是垃圾文件的判定，`clear` 退出多选。 */
-export type BatchGroup = 'batch' | 'region' | 'follow' | 'junk' | 'clear';
+export type BatchGroup = 'batch' | 'region' | 'junk' | 'clear';
 
 export interface BatchAction {
   group: BatchGroup;
@@ -54,13 +54,6 @@ export function batchActions(context: BatchContext, junkDismissed = false): Batc
           ? { group: 'junk', operation: 'reconsider-junk', label: '重新判断', glyph: 'rotate-ccw' }
           : { group: 'junk', operation: 'dismiss-junk', label: '不是垃圾', glyph: 'check' },
         { group: 'junk', operation: 'dispose', label: '移入回收站', glyph: 'trash', danger: true },
-        CLEAR,
-      ];
-    case 'follow':
-      return [
-        { group: 'follow', operation: 'save', label: '保存到数据库', glyph: 'bookmark-plus' },
-        { group: 'follow', operation: 'seen', label: '标记已看', glyph: 'eye' },
-        { group: 'follow', operation: 'ignored', label: '忽略', glyph: 'eye-off' },
         CLEAR,
       ];
     default:

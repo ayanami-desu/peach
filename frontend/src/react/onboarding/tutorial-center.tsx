@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button } from '@/components/base/buttons/button';
-import { RiFolderLine, RiListCheck3, RiPlayCircleLine, RiRocketLine, RiRssLine, RiSmartphoneLine, RiCheckboxCircleLine } from '@remixicon/react';
+import { RiFolderLine, RiListCheck3, RiPlayCircleLine, RiRocketLine, RiSmartphoneLine, RiCheckboxCircleLine } from '@remixicon/react';
 import { Radio } from 'react-aria-components';
 import { toast } from 'sonner';
 import { SEGMENT, SEGMENTED_TRACK, SegmentedRadioGroup } from '../components/segmented';
@@ -22,8 +22,6 @@ import { stageApi } from '../application-residents';
 
 interface ProgressCounts {
   library: { total: number };
-  follow: { sources: { provider: string; enabled: boolean }[] };
-  credentials: { providers: { provider: string; requirement: string; present: boolean; missing?: string[] }[] };
   review: { counts: Record<string, number> };
 }
 function GettingStarted({ go }: { go(path: string): void }) {
@@ -37,9 +35,6 @@ function GettingStarted({ go }: { go(path: string): void }) {
       .catch(() => { if (!controller.signal.aborted) setError('未取得安装状态。可以重试，或直接打开对应页面。') });
     return () => controller.abort();
   }, [attempt]);
-  const sources = data?.follow.sources.filter(row => row.enabled !== false) || [];
-  const required = data?.credentials.providers.filter(row => row.requirement === 'required' && sources.some(source => source.provider === row.provider)) || [];
-  const ready = sources.length > 0 && required.every(row => row.present && !row.missing?.length);
   const reviews = Object.values(data?.review.counts || {}).reduce((total, value) => total + Number(value || 0), 0);
   return <div className="flex flex-col gap-4">
     <GuideBanner icon={RiRocketLine} title="从第一份收藏开始" description="连接网盘，查看入库结果，再打开馆藏。">
@@ -54,7 +49,6 @@ function GettingStarted({ go }: { go(path: string): void }) {
     <Disclosure summary="更多接入方式">
     <div className="peach-guide-routes">
       {[
-        { title: '关注创作者', description: ready ? '当前启用来源的必要凭据已具备。' : sources.length ? '已有关注来源，请检查必要凭据。' : '添加想持续追踪的创作者与来源。', path: '/subscriptions', icon: RiRssLine },
         { title: '手机访问', description: '查看访问范围、地址与密码。', path: settingsPath('访问与安全'), icon: RiSmartphoneLine },
         ...(reviews ? [{ title: '人工复核', description: `当前有 ${reviews.toLocaleString()} 条待复核资料。`, path: '/review', icon: RiCheckboxCircleLine }] : []),
       ].map(({title, description, path, icon: Icon}) => <div key={title}><span className="peach-guide-topic-icon"><Icon aria-hidden className="size-5" /></span><div className="min-w-0 flex-1"><strong>{title}</strong><p>{description}</p></div><Button variant="ghost" size="small" aria-label={`查看${title}`} onClick={() => go(path)}>查看</Button></div>)}

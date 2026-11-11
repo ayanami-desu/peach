@@ -65,7 +65,7 @@ class StudioFollowupCase(unittest.TestCase):
         self.contract = SimpleNamespace(
             database=self.database, logo_root=self.logos,
             candidate_root=self.root / "generated",
-            follow_secrets_root=self.root / "secrets",
+            secrets_root=self.root / "secrets",
             cache_bust=lambda: self.busted.append(1))
 
     def entity(self, kind: str, name: str) -> int:

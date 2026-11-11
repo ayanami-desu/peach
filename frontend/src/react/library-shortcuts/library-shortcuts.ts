@@ -18,19 +18,12 @@ export function useShortcutWrite() {
     mutationFn: (body: Record<string, unknown>) => apiSend<Shortcuts>(URL, body),
     onSuccess: (data, body) => {
       queryClient.setQueryData(SHORTCUTS_KEY, data);
-      if (body.action === 'favorite' && body.scope === 'online') {
-        void queryClient.invalidateQueries({ queryKey: ['follow', 'tags'] });
-        void queryClient.invalidateQueries({ queryKey: ['tag-management'] });
-      }
     },
   });
 }
 export function isFavorite(rows: Favorite[], item: Favorite): boolean {
-  return rows.some((row) => item.scope === 'online'
-    ? row.scope === 'online' && row.tag_id === item.tag_id
-    : row.scope !== 'online' && (item.entity_id ? row.entity_id === item.entity_id : row.kind === item.kind && row.name === item.name));
+  return rows.some((row) => item.entity_id ? row.entity_id === item.entity_id : row.kind === item.kind && row.name === item.name);
 }
 export function favoriteHref(item: Favorite): string {
-  if (item.scope === 'online') return `/follow?${new URLSearchParams({ tag: item.name })}`;
   return entityPath(item.kind, item.name, item.entity_id);
 }

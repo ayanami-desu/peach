@@ -312,11 +312,6 @@ describe('javArtwork：番号作品两种来源都挂在元素上', () => {
 });
 
 describe('cardArtwork 与队列小图', () => {
-  it('关注来源用来源自己的缩略图，地址转义、不带来源页', () => {
-    const img = parse(cardArtwork({ id: 1, follow_thumb_url: 'https://x/a?b=1&c="2"' }, 'big', false, 'cover').html)!;
-    expect(img.getAttribute('src')).toBe('https://x/a?b=1&c="2"');
-    expect(img.getAttribute('referrerpolicy')).toBe('no-referrer');
-  });
 
   it('其余取本地预览格；没有就是空的', () => {
     const img = parse(cardArtwork({ id: 1, has_local_poster: true }, 'big', false, 'cover').html)!;

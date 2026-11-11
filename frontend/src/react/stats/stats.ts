@@ -35,7 +35,7 @@ export interface TagSource { k: string; n: number; assets: number }
 export interface TopTag { k: string; n: number; cat: string }
 
 export interface Consumption {
-  played: Count; library_played: Count; online_played: Count; play_seconds: Count;
+  played: Count; play_seconds: Count;
   o_total: Count; liked: Count; dislike: Count; seen: Count; trash: Count; skimmed: Count;
 }
 
@@ -48,10 +48,10 @@ export interface BandCount { k: string; n: number }
 /** 播放过 `k` 次的作品有 `n` 个。 */
 export interface ReplayCount { k: number; n: number }
 
-/** 最近一条播放记录。馆藏与在线追更两条来源合并后按时间排，`kind` 决定点进去去哪。 */
+/** 最近一条播放记录，按时间排，点进去是那条作品。 */
 export interface RecentPlay {
   id: number; name: string; creator: string | null; play_seconds: number;
-  duration: number | null; max_reached: number | null; o_count: number; kind: string;
+  duration: number | null; max_reached: number | null; o_count: number;
 }
 
 /** 一个存储卷。取不到容量时 `total` 是 null，此时不画使用率。 */
@@ -134,14 +134,12 @@ export const reachedShare = (row: RecentPlay): number => (row.max_reached || 0) 
  * 真实看过的比例比到达位置低一大截，说明中间大段是拖过去的——那和从头看到尾是两回事，
  * 一行里只显示一个百分比的话读者分不出来。 */
 export const watchNote = (row: RecentPlay): string => {
-  if (row.kind === 'online') return '在线直接观看';
   if (watchedShare(row) < reachedShare(row) - 25) return '快进扫过';
   return row.o_count ? `高潮 ${row.o_count}` : '正常观看';
 };
 
-/** 点进去的去处。在线追更的条目不在馆藏里，走它自己那条详情路由。 */
-export const playedItemUrl = (row: RecentPlay): string =>
-  `${row.kind === 'online' ? '/posts/' : '/assets/'}${row.id}`;
+/** 点进去的去处。 */
+export const playedItemUrl = (row: RecentPlay): string => `/assets/${row.id}`;
 
 /** 径向图里的一段。`bytes` 是这一段占的体积，图例格子里读成它的大小。 */
 export interface RadialSlice { name: string; value: number; bytes?: number; mark?: string }

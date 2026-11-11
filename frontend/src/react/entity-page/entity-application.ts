@@ -10,7 +10,7 @@ export interface EntityApplicationPorts {
   loading: EntityLoadingPorts;
   photos: PhotoSurfacePorts;
   helpers: Omit<EntityPageHelpers, 'portraitImg'>;
-  actions: Pick<EntityPageActions, 'toggleTag' | 'openFollowAuthor' | 'javContext'>;
+  actions: Pick<EntityPageActions, 'toggleTag' | 'javContext'>;
   sortPreference(): { sort: string; dir: string };
 }
 

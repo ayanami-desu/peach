@@ -95,7 +95,7 @@ python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/
 
 - **FFmpeg**：`ffmpeg` 与 `ffprobe` 在 `PATH` 上，用于读时长、抽帧与生成接触印相，不做转码。
 - **人脸模型**：`/app/tools/face-models` 下的 `face_detection_yunet_2023mar.onnx` 与 `face_recognition_sface_2021dec.onnx`，路径由 `PEACH_FACE_MODELS` 指定，构建时校验 sha256。
-- **amane 运行时**：构建阶段生成的 `/app/amane-runtime`，路径由 `PEACH_AMANE_RUNTIME` 指定，刮削侧经 amane 桥调用的站点见[采集与资料](SOURCING.md#资料源与解析器)。
+- **amane 运行时**：构建阶段生成的 `/app/amane-runtime`，路径由 `PEACH_AMANE_RUNTIME` 指定，刮削侧经 amane 桥调用的站点见[采集与资料](METADATA.md#资料源与解析器)。
 
 镜像里已经设好的环境变量不用再传：`PEACH_DATA_ROOT=/data`、`PEACH_DISTRIBUTION=docker`、`PEACH_FACE_MODELS`、`PEACH_AMANE_RUNTIME`、`PYTHONUNBUFFERED=1`、`PYTHONIOENCODING=utf-8`、`PYTHONUTF8=1`。
 

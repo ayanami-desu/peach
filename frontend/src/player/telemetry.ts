@@ -1,5 +1,4 @@
-/* 观看上报：作品走 `/api/activity`，关注条目走 `/api/follow/activity`，都是十秒一次加暂停、结束
- * 与换源时各冲一次。 */
+/* 观看上报：作品走 `/api/activity`，十秒一次加暂停、结束与换源时各冲一次。 */
 import { api, realDuration } from '@peach/legacy/core';
 
 import type { PlayerItem } from './types';
@@ -93,31 +92,3 @@ export function wireTelemetry(item: PlayerItem, video: HTMLVideoElement | null, 
   paint();
 }
 
-/** 关注条目的观看上报；第一次开播另记一次播放，状态随回执改写在条目上。 */
-export function wireFollowTelemetry(item: PlayerItem & { status?: string | undefined }, video: HTMLVideoElement): void {
-  let last = 0, acc = 0, started = false, timer: ReturnType<typeof setInterval> | null = null;
-  const flush = (ended: boolean) => {
-    const duration = realDuration(item.duration) || realDuration(video.duration);
-    if (!acc && !ended) return;
-    (api('/api/follow/activity', { method: 'POST', keepalive: true, body: JSON.stringify({
-      item: item.id, position: video.currentTime, duration, delta: acc, ended: !!ended,
-    }) }) as Promise<unknown>).catch(() => {});
-    acc = 0;
-  };
-  const stop = () => { if (timer) clearInterval(timer); timer = null };
-  video.onplay = () => {
-    if (!started) {
-      started = true;
-      (api('/api/follow/play', { method: 'POST', body: JSON.stringify({ item: item.id }) }) as Promise<{ status?: string } | null>)
-        .then((result) => { item.status = result?.status || item.status }).catch(() => {});
-    }
-    last = video.currentTime;
-    stop(); timer = setInterval(() => flush(false), 10000);
-  };
-  video.ontimeupdate = () => {
-    const delta = video.currentTime - last; if (!video.paused && !video.seeking && delta > 0 && delta < 2) acc += delta; last = video.currentTime;
-  };
-  video.onpause = () => { stop(); flush(false) };
-  video.onended = () => { stop(); flush(true) };
-  lifecycle(video, flush, stop, () => {});
-}

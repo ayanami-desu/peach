@@ -1,5 +1,5 @@
 /* 侧栏：骨架与路由树的换手、导航顺序跟 store 走、拖动排序写回、筛选键的按下态与计数、分组开合、
- * 「展开全部」、关注标签与时长两端，以及它作为常驻组件（`RESIDENT_ROUTES.sidebar`）在路由树里的行为：
+ * 「展开全部」与时长两端，以及它作为常驻组件（`RESIDENT_ROUTES.sidebar`）在路由树里的行为：
  * 宿主就是 `#drawerScroll`、骨架在首帧的同一个任务里换掉、`attached` 在首帧之后调一次、句柄同步画完、
  * 壳挪进标题行的节点经重画仍在、抛错只卸组件。
  *
@@ -70,12 +70,11 @@ afterEach(async () => {
 function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
-    openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
+    openManage: vi.fn(), managePath: vi.fn(() => ''), receipt: vi.fn(), toast: vi.fn(),
     failure: vi.fn(), revealSource: vi.fn(async () => ''),
-    routeReview: vi.fn(),
-    routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
+    routeReview: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
-    authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
+    showIndexTags: vi.fn(),
     openPlaylist: vi.fn(), canFlip: vi.fn(() => true),
     surfaceChanged: vi.fn(), clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(), grid: {} as ShellActions['grid'],
   };
@@ -92,19 +91,19 @@ async function connect(r: Loaded) {
   await act(async () => { r.connectManagedRoutes(Promise.resolve(r.prefetchManagedRoute)) });
 }
 
-const CATALOG = [['', '首页', 'home'], ['unseen', '未看', 'eye'], ['follow', '关注', 'rss'], ['stats', '统计', 'chart']] as const;
+const CATALOG = [['', '首页', 'home'], ['unseen', '未看', 'eye'], ['stats', '统计', 'chart']] as const;
 
 const chip = (value: string, n: number | null = 1, extra: Partial<SidebarChip> = {}): SidebarChip =>
   ({ value, label: value.toUpperCase(), n, ...extra });
 
 const facets = (patch: Partial<SidebarFacets> = {}): SidebarFacets => ({
   locations: [chip('local', 3), chip('115', 2, { offline: '这块盘没挂上' })],
-  regions: [], orientations: [], creators: [], tags: [chip('a', 5), chip('b', 4)], tech: [], followTags: [],
+  regions: [], orientations: [], creators: [], tags: [chip('a', 5), chip('b', 4)], tech: [],
   duration: false, ...patch,
 });
 
 /** 壳 `index.html` 里的抽屉与滚动层，壳启动时同步写进导航骨架；`attached` 由用例按需换成壳的挪动。 */
-function sidebarHost(order = ['', 'unseen', 'follow'], current = '', attached: () => void = () => {}) {
+function sidebarHost(order = ['', 'unseen'], current = '', attached: () => void = () => {}) {
   const drawer = document.createElement('aside');
   drawer.setAttribute('data-sidebar-drawer', '');
   const scroll = document.createElement('div');
@@ -116,8 +115,7 @@ function sidebarHost(order = ['', 'unseen', 'follow'], current = '', attached: (
   const host: SidebarHost = {
     scroll, store, navCatalog: CATALOG,
     navOn: (key) => key === pressed,
-    navTo: vi.fn(), navToTop: vi.fn(), toggleChip: vi.fn(), setDuration: vi.fn(), openFollowTag: vi.fn(), selectFollowTag: vi.fn(),
-    selectFollowProvider: vi.fn(), setFollowDuration: vi.fn(),
+    navTo: vi.fn(), navToTop: vi.fn(), toggleChip: vi.fn(), setDuration: vi.fn(),
     attached: vi.fn(attached),
   };
   scroll.innerHTML = sidebarSkeletonHtml(order, CATALOG, host.navOn);
@@ -203,7 +201,7 @@ describe('换手', () => {
     expect(done).toBe(true);
     expect(seen).not.toContain('empty');
     expect(seen.at(-1)).toBe('sidebar');
-    expect(navKeys(scroll)).toEqual(['', 'unseen', 'follow']);
+    expect(navKeys(scroll)).toEqual(['', 'unseen']);
     expect(scroll.querySelector(':scope > .peach-react')).toBeNull();
     expect(scroll.firstElementChild?.hasAttribute('data-sidebar-head')).toBe(true);
   });
@@ -222,10 +220,10 @@ describe('换手', () => {
     const skeletonNav = shell.scroll.querySelector('[data-nav]');
     let api!: SidebarApi;
     await act(async () => { api = await r.islands.loadSidebar(shell.host) });
-    expect(seen).toEqual([{ skeleton: false, nav: ['', 'unseen', 'follow'], head: true, api: null }]);
+    expect(seen).toEqual([{ skeleton: false, nav: ['', 'unseen'], head: true, api: null }]);
     act(() => { api.render({ content: { kind: 'catalog', key: '1', facets: facets() }, filters: {}, latest: null }) });
     act(() => { api.navChanged() });
-    act(() => { shell.store.value.sidebarOrder = ['follow', '']; shell.store.save() });
+    act(() => { shell.store.value.sidebarOrder = ['unseen', '']; shell.store.save() });
     expect(shell.host.attached).toHaveBeenCalledTimes(1);
   });
 
@@ -238,7 +236,7 @@ describe('换手', () => {
 });
 
 describe('导航', () => {
-  it('完整词表按持久偏好画默认导航，沉浸模式可在关注后启用', async () => {
+  it('完整词表按持久偏好画默认导航，沉浸模式可在首页后启用', async () => {
     const r = await load();
     await mountRouter(r);
     await connect(r);
@@ -249,17 +247,17 @@ describe('导航', () => {
     expect(navKeys(scroll)).toEqual(DEFAULT_SIDEBAR_ORDER);
     expect(scroll.querySelector('[data-nav="immerse"]')).toBeNull();
     await act(async () => {
-      store.value.sidebarOrder = ['follow', 'immerse', ...DEFAULT_SIDEBAR_ORDER.filter((key) => key !== 'follow')];
+      store.value.sidebarOrder = ['', 'immerse', ...DEFAULT_SIDEBAR_ORDER.filter((key) => key !== '')];
       store.save();
     });
-    expect(navKeys(scroll).slice(0, 2)).toEqual(['follow', 'immerse']);
+    expect(navKeys(scroll).slice(0, 2)).toEqual(['', 'immerse']);
     expect(scroll.querySelector('[data-nav="immerse"]')?.textContent).toContain('沉浸模式');
   });
 
   it('store 里的顺序一变（设置面板或另一台机器同步回来），这一列当场重排', async () => {
     const { scroll, store } = await setup();
-    act(() => { store.value.sidebarOrder = ['follow', '', 'stats']; store.save() });
-    expect(navKeys(scroll)).toEqual(['follow', '', 'stats']);
+    act(() => { store.value.sidebarOrder = ['unseen', '', 'stats']; store.save() });
+    expect(navKeys(scroll)).toEqual(['unseen', '', 'stats']);
   });
 
   it('点一项交给壳的 navTo；按下态由壳说重读时才换', async () => {
@@ -279,18 +277,18 @@ describe('导航', () => {
   });
 
   it('键盘下移一项：先落本地 store，再写 /api/settings', async () => {
-    const fetcher = fetchMock(200, { sidebarOrder: ['unseen', '', 'follow'] });
+    const fetcher = fetchMock(200, { sidebarOrder: ['unseen', ''] });
     vi.stubGlobal('fetch', fetcher);
     const { scroll, store } = await setup();
     act(() => { scroll.querySelector('[data-nav=""]')!.dispatchEvent(new KeyboardEvent('keydown',
       { key: 'ArrowDown', altKey: true, bubbles: true, cancelable: true })) });
     await settle();
-    expect(store.value.sidebarOrder).toEqual(['unseen', '', 'follow']);
-    expect(JSON.parse(localStorage.getItem('peach.settings.v1')!).sidebarOrder).toEqual(['unseen', '', 'follow']);
-    expect(navKeys(scroll)).toEqual(['unseen', '', 'follow']);
+    expect(store.value.sidebarOrder).toEqual(['unseen', '']);
+    expect(JSON.parse(localStorage.getItem('peach.settings.v1')!).sidebarOrder).toEqual(['unseen', '']);
+    expect(navKeys(scroll)).toEqual(['unseen', '']);
     expect(scroll.querySelector('[data-dragging],[data-drop]')).toBeNull();
     expect(fetcher.mock.calls[0]?.[0]).toBe('/api/settings');
-    expect(sentBody(fetcher)).toEqual({ sidebarOrder: ['unseen', '', 'follow'] });
+    expect(sentBody(fetcher)).toEqual({ sidebarOrder: ['unseen', ''] });
   });
 
   it('挪不了的情形不产生新顺序', async () => {
@@ -317,12 +315,10 @@ describe('筛选分组', async () => {
     expect(offline.title).toBe('这块盘没挂上');
   });
 
-  it('名字放不下被省略时悬停读得到全名：普通条目与关注标签都带 title', async () => {
+  it('名字放不下被省略时悬停读得到全名', async () => {
     const { scroll, render } = await setup();
-    render({ content: { kind: 'catalog', key: '1', facets: facets({ followTags: [chip('the_legend_of_zelda:_tears_of_the_kingdom', 2)] }) } });
+    render({ content: { kind: 'catalog', key: '1', facets: facets() } });
     expect(chipOf(scroll, 'tag', 'a')!.title).toBe(chipOf(scroll, 'tag', 'a')!.querySelector('[data-sidebar-chip-label]')!.textContent);
-    expect(scroll.querySelector<HTMLElement>('[data-follow-drawer-tag="the_legend_of_zelda:_tears_of_the_kingdom"]')!.title)
-      .toBe(scroll.querySelector('[data-follow-drawer-tag="the_legend_of_zelda:_tears_of_the_kingdom"] [data-sidebar-chip-label]')!.textContent);
   });
 
   it('就地刷新的计数只改数字：名单里有、新聚合里没有的记 0', async () => {
@@ -388,50 +384,6 @@ describe('筛选分组', async () => {
     expect(popped).toEqual(['tag:pb']);
   });
 
-  it('目录页的关注标签去关注页，关注页的内容标签换成只按这一枚筛', async () => {
-    const { scroll, host, render } = await setup();
-    render({ content: { kind: 'catalog', key: '1', facets: facets({ followTags: [chip('x', 2)] }) } });
-    await click(scroll.querySelector('[data-follow-drawer-tag="x"]'));
-    expect(host.openFollowTag).toHaveBeenCalledWith('x');
-    render({ content: { kind: 'follow', tags: [chip('y', 3), chip('z', 1)], selected: ['z'] } });
-    expect(group(scroll, '来源')).toBeNull();
-    const z = scroll.querySelector('[data-follow-drawer-tag="z"]')!;
-    expect(z.getAttribute('aria-pressed')).toBe('true');
-    expect(z.querySelector('[data-sidebar-count]')!.textContent).toBe('1');
-    await click(scroll.querySelector('[data-follow-drawer-tag="y"]'));
-    expect(host.selectFollowTag).toHaveBeenCalledWith('y');
-  });
-
-  it('关注页的来源与时长回关注筛选，不回目录筛选；详情只给标签时只有内容标签一组', async () => {
-    const { scroll, host, render } = await setup();
-    const kemono = chip('kemono', null, { dot: { kind: 'image', src: '/source-icon?provider=kemono' } });
-    render({
-      content: { kind: 'follow', tags: [chip('y', 3)], selected: [], providers: [kemono, chip('fanbox', null)], duration: true },
-      filters: { provider: 'fanbox', dur_min: 600, dur_max: '' },
-    });
-    expect([...scroll.querySelectorAll('[data-sidebar-group]')].map((node) => node.getAttribute('data-sidebar-group')))
-      .toEqual(['来源', '时长', '内容标签']);
-    expect(chipOf(scroll, 'provider', 'fanbox')!.getAttribute('aria-pressed')).toBe('true');
-    expect(chipOf(scroll, 'provider', 'kemono')!.querySelector('[data-sidebar-count]')).toBeNull();
-    expect(chipOf(scroll, 'provider', 'kemono')!.querySelector('img')!.getAttribute('src')).toBe('/source-icon?provider=kemono');
-    expect(scroll.querySelector(`[data-range-end="min"]`)!.textContent).toBe('10 分钟');
-    await click(chipOf(scroll, 'provider', 'kemono'));
-    expect(host.selectFollowProvider).toHaveBeenCalledWith('kemono');
-    expect(host.toggleChip).not.toHaveBeenCalled();
-    const max = scroll.querySelector<HTMLInputElement>('#durMax')!;
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(max, '60');
-      max.dispatchEvent(new Event('input', { bubbles: true }));
-      max.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    expect(host.setFollowDuration).toHaveBeenCalledWith(10, 60);
-    expect(host.setDuration).not.toHaveBeenCalled();
-
-    render({ content: { kind: 'follow', tags: [chip('y', 1)], selected: [] } });
-    expect([...scroll.querySelectorAll('[data-sidebar-group]')].map((node) => node.getAttribute('data-sidebar-group')))
-      .toEqual(['内容标签']);
-  });
-
   it('时长两端各有一枚读数，右端拉到头是「不限」；松手才提交', async () => {
     const { scroll, host, render } = await setup();
     render({ content: { kind: 'catalog', key: '1', facets: facets({ duration: true }) }, filters: { dur_min: '1200' } });
@@ -454,7 +406,7 @@ describe('筛选分组', async () => {
     render({ content: { kind: 'catalog', key: '1', facets: facets() } });
     render({ content: null });
     expect(scroll.querySelector('[data-sidebar-group]')).toBeNull();
-    expect(navKeys(scroll)).toEqual(['', 'unseen', 'follow']);
+    expect(navKeys(scroll)).toEqual(['', 'unseen']);
   });
 });
 
@@ -478,10 +430,10 @@ describe('常驻组件', () => {
     const head = scroll.querySelector(':scope > [data-sidebar-head]')!;
     expect([...head.children]).toEqual([brand, toggle]);
     render({ content: { kind: 'catalog', key: '1', facets: facets() }, filters: { tag: 'a' } });
-    render({ content: { kind: 'follow', tags: [chip('y', 3)], selected: [] } });
+    render({ content: { kind: 'catalog', key: '3', facets: facets() } });
     press('unseen');
     act(() => { api.navChanged() });
-    act(() => { store.value.sidebarOrder = ['follow', 'unseen', '']; store.save() });
+    act(() => { store.value.sidebarOrder = ['unseen', '']; store.save() });
     render({ content: null });
     expect(scroll.querySelector(':scope > [data-sidebar-head]')).toBe(head);
     expect([...head.children]).toEqual([brand, toggle]);

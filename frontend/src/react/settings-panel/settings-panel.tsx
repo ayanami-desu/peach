@@ -21,7 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { VisuallyHidden } from 'react-aria-components';
 import {
   attachOverlayScrollbar, closeAnchoredMenu, iconSwapHtml, moveGlidePane, revealTexts,
-  setActionBusy, setIconSwap, wireHorizontalScroller,
+  setIconSwap, wireHorizontalScroller,
 } from '@peach/legacy/ui';
 
 import { isInterfaceLanguageChoice, t, type InterfaceLanguageChoice } from '../../i18n';
@@ -45,7 +45,7 @@ import { SettingsDialogClose } from '../components/settings-dialog-close';
 const SECTIONS = [
   { id: 'appearance', title: '外观与导航', icon: 'ri-palette-line' },
   { id: 'browsing', title: '浏览与播放', icon: 'ri-play-circle-line' },
-  { id: 'jav', title: 'JAV 与新作', icon: 'jav' },
+  { id: 'jav', title: 'JAV', icon: 'jav' },
   { id: 'search', title: '搜索与推荐', icon: 'ri-search-line' },
   { id: 'content', title: '内容显示', icon: 'ri-shield-check-line' },
 ] as const;
@@ -56,14 +56,6 @@ const SORT_OPTIONS: readonly Choice[] = [
 ];
 const DIRECTION_OPTIONS: readonly Choice[] = [['desc', '降序'], ['asc', '升序']];
 const JAV_IMAGE_OPTIONS: readonly Choice[] = [['cover', '官方封面', ''], ['thumbnail', '预览图', '']];
-/* 新作那一行收不收合集由服务端按数据库里的设置筛，这里的开关只是镜像：真相在 `/api/settings`。 */
-const FEED_COMPILATIONS = [
-  ['feedHideGroupSetting', 'feedHideGroupCompilations', '大合集', '隐藏大合集'],
-  ['feedHideSoloSetting', 'feedHideSoloCompilations', '单人合集', '隐藏单人合集'],
-  ['feedHideExcerptSetting', 'feedHideExcerpts', '切片', '隐藏切片'],
-] as const;
-type CompilationKey = typeof FEED_COMPILATIONS[number][1];
-
 const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),textarea:not([disabled]),a[href]';
 
 interface View { open: boolean; closing: boolean; epoch: number; tab: number }
@@ -494,18 +486,6 @@ function JavGroup({ host: current, tab, epoch }: GroupProps) {
           value={settings.javImage} attr="data-jav-image-choice" variant="javimageswitch" text epoch={epoch}
           onChoose={(choice) => { settings.javImage = normalizeJavImage(choice); save(); current.changed('javImage') }} />
       </Row>
-      <h4 data-settings-subheading="">新作显示</h4>
-      <Row title="显示数量">
-        <div id="feedLimitSetting">
-          <NumberSetting key={epoch} id="feedLimitSetting" label="新作显示数量" value={settings.feedLimit}
-            onApply={(value) => { settings.feedLimit = boundedPreference(value, 1, 100, 12); save(); current.changed('feedLimit') }} />
-        </div>
-      </Row>
-      <ToggleRow id="feedAutoScrollSetting" title="自动滚动" checked={settings.feedAutoScroll}
-        onToggle={(on) => { settings.feedAutoScroll = on; save(); current.changed('feedAutoScroll') }} />
-      {FEED_COMPILATIONS.map(([id, key, label, title]) => (
-        <CompilationToggle key={id} host={current} id={id} settingKey={key} label={label} title={title} />
-      ))}
     </Group>
   );
 }
@@ -564,38 +544,6 @@ function NameLanguageSetting({ host: current, epoch }: { host: SettingsPanelHost
     {query.isError ? <Note tone="error">未取得数据库中的名称偏好，请重新打开设置。</Note> : null}
   </>;
 }
-/* 合集开关由服务端判，列表、未读数和补封面排队都跟着它，所以先存到服务端再重画；往返期间开关
-   停在新位置、挂忙态，失败退回原位。 */
-function CompilationToggle({ host: current, id, settingKey, label, title }: {
-  host: SettingsPanelHost; id: string; settingKey: CompilationKey; label: string; title: string;
-}) {
-  const save = useSaveSettings();
-  const [pending, setPending] = useState<boolean | null>(null);
-  const box = useRef<HTMLInputElement | null>(null);
-  const settings: PanelSettings = current.store.value;
-  const toggle = (on: boolean) => {
-    setPending(on);
-    setActionBusy(box.current);
-    save.mutate({ [settingKey]: on }, {
-      onSuccess: (saved) => {
-        settings[settingKey] = saved[settingKey] === true;
-        current.store.save();
-        current.changed('feedCompilations');
-        current.receipt(on ? `新作已收起${label}` : `新作已列出${label}`);
-      },
-      onError: (error) => current.failure(`保存${label}开关`, error),
-      onSettled: () => { setPending(null); setActionBusy(box.current, false) },
-    });
-  };
-  return (
-    <label data-setting-row="">
-      <span><b>{title}</b></span>
-      <input data-toggle="" type="checkbox" id={id} role="switch" ref={box}
-        checked={pending ?? settings[settingKey]} onChange={(event) => toggle(event.target.checked)} />
-    </label>
-  );
-}
-
 function PlaybackRows({ host: current, epoch }: Omit<GroupProps, 'tab'>) {
   const settings = current.store.value;
   const save = () => current.store.save();

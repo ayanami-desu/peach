@@ -238,7 +238,7 @@ function VideoCard({ item, variant, layout, selected, selectMode, seekSeconds, h
   const watched = !parts && Number(item.play_seconds) > 0 && Number(item.duration) > 0
     ? Math.min(Number(item.play_seconds) / Number(item.duration), 1) : 0;
   const { avatar, who } = identityParts(item);
-  const tags = (item.follow_tags || item.tags || []).slice(0, 3);
+  const tags = (item.tags || []).slice(0, 3);
 
   const click = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;

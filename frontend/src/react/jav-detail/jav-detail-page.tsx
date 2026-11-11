@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { RiChat3Line, RiExternalLinkLine } from '@remixicon/react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { RiExternalLinkLine } from '@remixicon/react';
 import { entityPath, icon } from '@peach/legacy/core';
 import { tagLabel } from '@peach/legacy/tags';
 import { mountPreviewPlayer } from '../../player';
@@ -16,13 +16,9 @@ import { MediaCarousel } from '../components/media-carousel';
 import { RatingStars } from '../components/rating-stars';
 import { CollapseChevron } from '../components/collapse-region';
 import { useFoldedTitle } from '../components/folded-title';
-import { busyProps, useAction } from '../settings/use-action';
-import { Disclosure } from '../settings/section';
-import { addWant, invalidateWants, removeWants } from '../wants/wants';
-import { WantMagnets } from '../wants/want-magnets';
+import { busyProps } from '../settings/use-action';
 import { queryClient } from '../query';
-import { fetchJavDetail, fetchJavReviews, javDetailKey, nextReviewPage, type JavDetail, type JavDetailProps, type JavEntityRef, type JavReviews } from './jav-detail';
-import { cachedReviews, rememberReviews, reviewsFresh } from './review-cache';
+import { fetchJavDetail, javDetailKey, type JavDetail, type JavDetailProps, type JavEntityRef } from './jav-detail';
 
 export function JavDetailPage(props: JavDetailProps) {
   const refresh = useRef(false);
@@ -45,23 +41,10 @@ const Close = ({ close }: { close(): void }) => <button type="button" data-stage
 
 function Work({ code, item, actions, readOnly, retry, retrying }: JavDetailProps & { item: JavDetail; retry(): void; retrying: boolean }) {
   useEffect(() => { actions.canonicalCode?.(item.code) }, [actions, item.code]);
-  useEffect(() => { if (item.state === 'ready') void queryClient.invalidateQueries({ queryKey: ['jav-discoveries', 'external'] }) }, [item.code, item.state]);
+  useEffect(() => { if (item.state === 'ready') void queryClient.invalidateQueries({ queryKey: ['jav-discoveries'] }) }, [item.code, item.state]);
   const [preview, setPreview] = useState(-1);
   const media = [{ index: -1, label: '封面' }, ...Array.from({ length: item.preview_count }, (_, index) => ({ index, label: `预览 ${index + 1}` })),
     ...(item.preview_video_url ? [{ index: -2, label: '视频预览', video: true }] : [])];
-  const [wantId, setWantId] = useState(item.want_id);
-  const want = useAction();
-  const toggleWant = () => { void want.run('want', async signal => {
-    if (wantId) { await removeWants([wantId], signal); return null }
-    return (await addWant({ code: item.code }, signal)).want.id;
-  }, id => {
-    setWantId(id);
-    queryClient.setQueryData<JavDetail>(javDetailKey(code), current => current ? { ...current, wanted: !!id, want_id: id } : current);
-    actions.receipt(id ? '已加入想要' : '已取消想要');
-    void invalidateWants();
-    void queryClient.invalidateQueries({ queryKey: ['feed-new'] });
-    void queryClient.invalidateQueries({ queryKey: ['jav-discoveries'] });
-  }) };
   return <>
     <div data-stage-media="" data-jav-art="" data-jav-playing={preview === -2 ? '' : undefined}>
       <Close close={actions.close} />
@@ -92,11 +75,7 @@ function Work({ code, item, actions, readOnly, retry, retrying }: JavDetailProps
       <div data-jav-actions="">
         {item.source_url ? <ButtonLink data-button-link="" variant="secondary" trailingIcon={RiExternalLinkLine}
           href={item.source_url} target="_blank" rel="noopener noreferrer">作品来源</ButtonLink> : null}
-        <Button variant="secondary" disabled={readOnly} aria-pressed={!!wantId} {...busyProps(!!want.busy)} onClick={toggleWant}>{wantId ? '取消想要' : '想要'}</Button>
       </div>
-      {want.error ? <Note tone="error">{want.error}</Note> : null}
-      <Reviews code={item.code} count={item.comments_count} released={item.release_date} />
-      <Resources item={item} actions={actions} />
     </div></aside>
   </>;
 }
@@ -115,8 +94,8 @@ function JavTitle({ item }: { item: JavDetail }) {
   </div>;
 }
 
-function SourceRating({ score, review = false }: { score: number; review?: boolean }) {
-  return <div data-item-rating="" data-jav-rating="" data-review-rating={review ? '' : undefined} role="img" aria-label={`${review ? '评论' : 'JavDB'}评分 ${score} / 5`}>
+function SourceRating({ score }: { score: number }) {
+  return <div data-item-rating="" data-jav-rating="" role="img" aria-label={`JavDB 评分 ${score} / 5`}>
     <RatingStars value={score} />
     <span data-rating-value="">{score.toFixed(1)} / 5</span>
   </div>;
@@ -152,62 +131,4 @@ function PreviewVideo({ src }: { src: string }) {
     return mountPreviewPlayer(video, { src, type: /\.m3u8(?:\?|$)/i.test(src) ? 'application/x-mpegURL' : 'video/mp4' }, () => setFailed(true));
   }, [src, failed]);
   return <div ref={frame} data-jav-video="">{failed ? <Note tone="neutral" action={<Button variant="secondary" onClick={() => setFailed(false)}>立即重试</Button>}>视频预览未取得</Note> : null}</div>;
-}
-
-function Reviews({ code, count, released }: { code: string; count: number; released?: string }) {
-  const client = useQueryClient();
-  const [opened, setOpened] = useState(false);
-  const cached = useMemo(() => cachedReviews(code, released), [code, released]);
-  const refresh = useRef(false);
-  const result = useInfiniteQuery({ queryKey: ['jav-reviews', code], enabled: opened, initialPageParam: 1,
-    initialData: cached ? { pages: cached.pages, pageParams: cached.pageParams } : undefined,
-    initialDataUpdatedAt: cached?.saved,
-    staleTime: state => reviewsFresh(state.state.data?.pages || [], state.state.dataUpdatedAt, released) ? Infinity : 0,
-    gcTime: 86_400_000, refetchOnWindowFocus: false,
-    queryFn: async ({ signal, pageParam }) => {
-      const page = await fetchJavReviews(code, pageParam, signal, refresh.current);
-      rememberReviews(code, page);
-      if (!page.ok || page.cache_stale) {
-        const previous = client.getQueryData<InfiniteData<JavReviews>>(['jav-reviews', code])?.pages.find(row => row.page === pageParam);
-        if (previous?.ok) return { ...previous, cache_stale: true, message: page.message || '评论未取得，请稍后重试' };
-      }
-      return page;
-    }, getNextPageParam: nextReviewPage });
-  useEffect(() => { if (!result.isFetching) refresh.current = false }, [result.isFetching]);
-  const pages = result.data?.pages || [];
-  const items = [...new Map(pages.flatMap(page => page.items).map(item => [item.id, item])).values()];
-  const failure = result.error ? errorMessage(result.error) : pages.find(page => !page.ok || page.cache_stale)?.message;
-  return <section data-jav-reviews="">
-    <Disclosure trailing summary={<><RiChat3Line aria-hidden />评论{count > 0 ? ` · ${count}` : ''}</>}
-      onOpenChange={setOpened}>
-    {opened && result.isPending ? <div data-skeleton="reviews" role="status" aria-label="正在读取评论" className="flex flex-col gap-4 py-3">
-      {[0, 1, 2].map(row => <div key={row} data-jav-review-skeleton="" aria-hidden="true" className="flex flex-col gap-3 py-2">
-        <div className="flex items-center gap-3"><span className="relative block h-4 w-20 rounded-md skeleton-sheen" /><span className="relative block h-3 w-24 rounded-md skeleton-sheen" /></div>
-        <div className="flex flex-col gap-2"><span className="relative block h-3 w-full rounded-md skeleton-sheen" /><span className="relative block h-3 w-full rounded-md skeleton-sheen" /><span className="relative block h-3 w-3/4 rounded-md skeleton-sheen" /></div>
-      </div>)}
-    </div> : null}
-    {opened || result.data ? <>
-      {items.map(item => <article key={item.id} data-jav-review=""><div data-jav-review-meta=""><b>{item.username}</b>
-        {Number(item.score) > 0 ? <SourceRating score={Number(item.score)} review /> : null}
-        <time dateTime={item.created_at} title={item.created_at}>{item.created_at.slice(0, 10)}</time></div><p data-long-text="" lang={textLang(item.content)}>{item.content}</p></article>)}
-      {failure ? <Note tone="neutral" action={<Button variant="secondary" {...busyProps(result.isFetching)} onClick={() => { refresh.current = true; void result.refetch() }}>立即重试</Button>}>{failure}</Note>
-        : !result.isPending && !items.length ? <Note tone="neutral">暂无评论</Note> : null}
-      {!failure && pages.length ? <Button variant="secondary" {...busyProps(result.isFetching)}
-        onClick={() => { refresh.current = true; void result.refetch() }}>刷新评论</Button> : null}
-      {result.hasNextPage ? <Button variant="secondary" {...busyProps(result.isFetchingNextPage)} onClick={() => { if (!result.isFetchingNextPage) void result.fetchNextPage() }}>更多评论</Button> : null}
-      {!failure && pages.at(-1)?.page === 8 && count > items.length ? <Note tone="neutral">已显示 {items.length} 条评论，其余评论可在 JavDB 查看。</Note> : null}
-    </> : null}
-    </Disclosure>
-  </section>;
-}
-
-function Resources({ item, actions }: { item: JavDetail; actions: JavDetailProps['actions'] }) {
-  const [loaded, setLoaded] = useState(false);
-  return <section data-jav-resources="">
-    <Disclosure trailing summary={<><Glyph name="link" />资源</>} onOpenChange={value => { if (value) setLoaded(true) }}>
-    {loaded ? <WantMagnets want={{ id: 0, code: item.code, title: item.title, release_date: item.release_date || null }}
-      queryUrl={`/api/jav/resources?code=${encodeURIComponent(item.code)}`} toast={actions.receipt} />
-      : null}
-    </Disclosure>
-  </section>;
 }

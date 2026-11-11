@@ -1,11 +1,9 @@
 import { selectionSurface, selectionDock, setSelectionMode, toggleSelection as toggleSelected } from '../react/catalog-grid/selection-controller';
-import { JAV_SELECTION_EVENT, javCardPage } from '../jav-controls';
 import { selectSurface } from '../shell';
 /* selection 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
 import { loadCatalog, pushGridPage } from './catalog.js';
-import { followLastSelectedId, followSelected, lastSelectedId, pageOpens, selectMode, selected, state, writeShell } from './../shell/index';
+import { lastSelectedId, selectMode, selected, state, writeShell } from './../shell/index';
 import { photoViewActive, pushEntityPage, setPhotoSize } from './entity.js';
-import { pushFollowFeed } from './follow.js';
 import { batchDockApi, loadBatchDock } from '../react/application-residents';
 import { censorOn, preferencesState } from './preferences.js';
 import { configureHoverPreview, releaseHoverPreviews } from './../card-art/hover';
@@ -21,10 +19,9 @@ import { installCardArt, refitNativeImages, upgradeCover } from './../card-art/f
 export const selectionState = { batchDockProps: undefined, trashCount: undefined, currentSelectSurface: undefined, REGION_CHOICES: undefined, BATCH_RUNNERS: undefined, coverRecheck: undefined };
 
 export function paintSelection(){
-  // 卡片网格、垃圾队列与关注页的选中态归 React：每次推一份新的集合，卡片按引用比较才看得出变了。
+  // 卡片网格与垃圾队列的选中态归 React：每次推一份新的集合，卡片按引用比较才看得出变了。
   pushGridPage({selected:new Set(selected),selectMode});
   pushEntityPage({selected:new Set(selected),selectMode});
-  pushFollowFeed({selected:new Set(followSelected),selectMode});
   /* 底部浮条归常驻组件 `batch-dock`（`react/batch-dock/`）：壳推计数与语境，每种语境列哪几颗键由它按语境定。 */
   selectionState.batchDockProps=selectionDockProps();
   /* 浮条宿主在 `#main` 外面，玻璃贴图的观察器看不到它长出来，画完补扫一遍。 */
@@ -32,7 +29,7 @@ export function paintSelection(){
 }
 
 export function setSelectMode(on,clear=false) {
-    writeShell(setSelectionMode({selected,followSelected},selectionSnapshot(),selectionSurface(location.pathname),!!on,clear));
+    writeShell(setSelectionMode({selected},selectionSnapshot(),selectionSurface(location.pathname),!!on,clear));
     document.body.classList.toggle('select-mode',selectMode);
     if(selectMode)releaseHoverPreviews();
     $('#selectMode').setAttribute('aria-pressed',String(selectMode));paintSelection();
@@ -41,15 +38,7 @@ export function setSelectMode(on,clear=false) {
 export function visibleCardIds(){return [...loadingState.gridCards()].map(card=>+card.dataset.id)}
 
 export function toggleSelection(id,range=false) {
-    writeShell(toggleSelected({selected,followSelected},selectionSnapshot(),selectionSurface(location.pathname),visibleCardIds(),id,range));
-    setSelectMode(true);
-  }
-
-export function visibleFollowIds(){return [...document.querySelectorAll('[data-follow-list] > [data-follow-item]')]
-  .map(card=>+card.dataset.followItem)}
-
-export function toggleFollowSelection(id,range=false) {
-    writeShell(toggleSelected({selected,followSelected},selectionSnapshot(),'follow',visibleFollowIds(),id,range));
+    writeShell(toggleSelected({selected},selectionSnapshot(),selectionSurface(location.pathname),visibleCardIds(),id,range));
     setSelectMode(true);
   }
 
@@ -107,24 +96,6 @@ export async function pickBatchRegion(){
     ? `已撤回 ${ids.length} 项的产地判定` : `已判为${result.label}：${ids.length} 项`);
 }
 
-export async function runFollowBatch(action,button){
-  const items=[...followSelected];if(!items.length)return;
-  const labels={save:'保存到数据库',seen:'标记已看',ignored:'忽略'};
-  const titles={save:'保存所选作品',seen:'标记为已看',ignored:'忽略所选作品'};
-  return confirmModal({title:titles[action],body:`将处理选中的 ${items.length} 项关注作品。`,confirmLabel:titles[action],danger:false,onConfirm:async()=>{
-  setActionBusy(button);
-  try{
-    const path=action==='save'?'/api/follow/save':'/api/follow/status';
-    const body=action==='save'?{items}:{items,to:action};
-    await api(path,{method:'POST',body:JSON.stringify(body)});
-    // 标记完按地址重读这一页：路由树的关注元素推一个新代次，列表重取、不重挂。
-    setSelectMode(false,true);if(location.pathname==='/follow')writeShell({pageOpens:pageOpens+1});
-    receiptsState.actionReceipt(`已${labels[action]} ${items.length} 项`);
-  }catch(error){setActionBusy(button,false);throw error}
-  finally{setActionBusy(button,false);paintSelection()}
-  }});
-}
-
 export async function runJunkBatch(operation,button){
   const ids=[...selected];if(!ids.length)return;
   const labels={'dismiss-junk':'不是垃圾','reconsider-junk':'重新判断',dispose:'移入回收站'};
@@ -156,12 +127,11 @@ selectionState.batchDockProps = {count:0,context:'catalog',junkDismissed:false};
 selectionState.trashCount = null;
 selectionState.currentSelectSurface = ()=>selectionSurface(location.pathname);
 applicationEffects.handler($('#selectMode'), 'onclick', ()=>{
-  if(javCardPage(location.pathname,location.search)){window.dispatchEvent(new Event(JAV_SELECTION_EVENT));return}
   setSelectMode(!selectMode,!selectMode?false:true)
 });
 selectionState.REGION_CHOICES = [['jp','日本'],['kr','韩国'],['cn','国产'],['west','欧美'],
   ['other','其他'],['none','撤回判定']];
-selectionState.BATCH_RUNNERS = {batch:runCatalogBatch,region:pickBatchRegion,follow:runFollowBatch,junk:runJunkBatch,
+selectionState.BATCH_RUNNERS = {batch:runCatalogBatch,region:pickBatchRegion,junk:runJunkBatch,
   clear:()=>setSelectMode(false,true)};
 applicationEffects.handler($('#density'), 'onclick', ()=>{if(photoViewActive()){
     setPhotoSize(photoSize()==='big'?'small':'big');return}
@@ -186,5 +156,5 @@ applicationEffects.listen(window, 'resize', ()=>{
 }, {passive:true});
 }
 
-function selectionSnapshot(){return {selectMode,selectSurface,lastSelectedId,followLastSelectedId}}
-export function selectionDockProps(){return selectionDock({selected,followSelected},location.pathname,location.search,state.state)}
+function selectionSnapshot(){return {selectMode,selectSurface,lastSelectedId}}
+export function selectionDockProps(){return selectionDock({selected},location.pathname,location.search,state.state)}

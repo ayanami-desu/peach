@@ -1,10 +1,10 @@
 /* 索引页：艺人、创作者、厂牌、事务所、系列名册和标签词表。
  *
- * 地址栏是唯一真相。壳从地址读出 kind／q／scope／view／category 作初值挂上来，页面换档
- * （厂牌↔事务所、本地↔在线、类型、视图、过滤词）只改自己的状态并经 `route` 写回地址，
+ * 地址栏是唯一真相。壳从地址读出 kind／q／view／category 作初值挂上来，页面换档
+ * （厂牌↔系列↔事务所、类型、视图、过滤词）只改自己的状态并经 `route` 写回地址，
  * 不重挂：重挂会让页头连同过滤框里正在打的字一起被换掉，Tabs 那条蓝线从头起跑。
  *
- * 页头只有标题、读数、版式切换和过滤框；页面级的切换（厂牌／事务所、本地／在线）是页头
+ * 页头只有标题、读数、版式切换和过滤框；页面级的切换（厂牌／系列／事务所）是页头
  * 下面那排 Tabs。标签页的读数住在浮层下排，页头不再重复一遍。 */
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -24,7 +24,6 @@ import { IDENTITY_ROW_CLASS } from '../../identity-filter';
 import { DRIVE_SETTINGS_PATH } from '../../history';
 
 import { BoardTabs, type BoardTab } from '../components/board-tabs';
-import { SortableBoardTabs } from '../components/navigation-order';
 import { EmptyState } from '../components/empty-state';
 import { LibraryShortcuts } from '../library-shortcuts/shortcut-controls';
 import { AsyncText } from '../components/async-text';
@@ -32,13 +31,12 @@ import { SkeletonContent } from '../components/skeleton-content';
 import { pageNavigationReady } from '../../history/page-navigation';
 import { SEGMENTED_TRACK, SEGMENT_ICON, SegmentedRadioGroup as RadioGroup } from '../components/segmented';
 import { spriteGlyph } from '../components/sprite-glyph';
-import type { OnlineAuthor, OnlineTag } from '../follow/online-vocab';
 import {
-  INDEX_TITLES, IDENTITY_CATEGORIES, ONLINE_TAG_CATEGORIES, TAG_CATEGORIES, countText, flatItems, indexQuery, indexRoute, indexSource, isCompany,
+  INDEX_TITLES, IDENTITY_CATEGORIES, TAG_CATEGORIES, countText, flatItems, indexQuery, indexRoute, indexSource, isCompany,
   isPeople, tagGroups, type IndexKind, type IndexPage as Page, type IndexPerson, type IndexProps,
-  type IndexRoute, type IndexScope, type IndexTag, type PeopleLayout,
+  type IndexRoute, type IndexTag, type PeopleLayout,
 } from './index-data';
-import { OnlineAuthors, PeopleGrid } from './index-people';
+import { PeopleGrid } from './index-people';
 import { TagAlphabet, TagCloud, TagDock, TagFilters, type TagEntry } from './index-tags';
 import { TagManager } from './tag-manager';
 
@@ -48,16 +46,6 @@ const MAKER_TABS: BoardTab<'studios' | 'agencies' | 'series'>[] = [
   { value: 'studios', label: '厂牌', symbol: 'clapperboard' },
   { value: 'series', label: '系列', symbol: 'list' },
   { value: 'agencies', label: '事务所', symbol: 'briefcase' },
-];
-/* 本地与在线是两套词表：计数口径、类别划分和点开去哪儿都不同，所以也是页面级的 Tabs。 */
-const SCOPE_TABS: BoardTab<IndexScope>[] = [
-  { value: 'local', label: '本地', symbol: 'hard-drive' },
-  { value: 'online', label: '在线', symbol: 'rss' },
-];
-const PEOPLE_TABS: BoardTab<'performers' | 'creators' | 'online'>[] = [
-  { value: 'performers', label: '艺人', symbol: 'user-round' },
-  { value: 'creators', label: '卖家', symbol: 'user-round' },
-  { value: 'online', label: '在线', symbol: 'rss' },
 ];
 
 /* 公司那一格摆的是标识而不是脸，沿用艺人那套词就是提示说着「竖幅头像」、屏幕上摆着方标识。
@@ -87,14 +75,14 @@ function LayoutSwitch(
   );
 }
 
-type Item = IndexPerson | IndexTag | OnlineAuthor | OnlineTag;
+type Item = IndexPerson | IndexTag;
 
 export function IndexPage(props: IndexProps) {
   const [managing, setManaging] = useState(false);
   const [route, setRoute] = useState<IndexRoute>(() => indexRoute(
-    { kind: props.kind, q: props.q, scope: props.scope, view: props.view, category: props.category },
+    { kind: props.kind, q: props.q, view: props.view, category: props.category },
   ));
-  const incoming = JSON.stringify([props.kind, props.q, props.scope, props.view, props.category]);
+  const incoming = JSON.stringify([props.kind, props.q, props.view, props.category]);
   const [previousIncoming, setPreviousIncoming] = useState(incoming);
   if (incoming !== previousIncoming) {
     setPreviousIncoming(incoming);
@@ -104,17 +92,15 @@ export function IndexPage(props: IndexProps) {
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [match, setMatch] = useState<'any' | 'all'>('any');
   const root = useRef<HTMLDivElement>(null);
-  const { kind, q, scope, view, category } = route;
+  const { kind, q, view, category } = route;
   const title = INDEX_TITLES[kind];
-  const onlineTags = kind === 'tags' && scope === 'online';
-  const onlineAuthors = kind === 'performers' && scope === 'online';
 
   /* 地址给的那一份被规范过（旧链接换了名册、认不出的分类回到全部）：用 replace 改写地址，
      标题、侧栏和历史记录都跟页面上真正显示的那一份走，后退也不会再落回旧地址。
      写地址排到微任务里：壳写地址会同步画侧栏、路由根也同步提交，两处都用 `flushSync`，在提交阶段里画不出来。
      这一页已卸下就不写。 */
   useEffect(() => {
-    if (route.kind === props.kind && route.scope === props.scope && route.category === props.category) return;
+    if (route.kind === props.kind && route.category === props.category) return;
     let live = true;
     queueMicrotask(() => { if (live) props.route(route, { replace: true }) });
     return () => { live = false };
@@ -125,7 +111,6 @@ export function IndexPage(props: IndexProps) {
 
   /* 换筛选、词表或类型时保留控件，只在结果区显示等待态。 */
   const go = (patch: Partial<IndexRoute>, replace = false) => {
-    if (patch.scope !== undefined) setManaging(false);
     const next = { ...route, ...patch };
     setRoute(next);
     props.route(next, { replace });
@@ -158,7 +143,7 @@ export function IndexPage(props: IndexProps) {
   /* 分类计数只随名册、词表和过滤词变，与选中哪一类无关。换分类时新一页还没到，沿用同一份
      名册上一次拿到的计数：分类按钮行不先塌成「全部」加当前项、等数据回来再弹开。头一回
      还没有计数时整排都摆出来，同壳铺的骨架那一排，计数到了再收掉空的那几类。 */
-  const countsKey = `${kind}:${scope}:${q}`;
+  const countsKey = `${kind}:${q}`;
   const lastCounts = useRef<{ key: string; counts: Record<string, number> } | null>(null);
   const pageCounts = result.data?.pages[0]?.categories;
   if (pageCounts && !result.isPlaceholderData) lastCounts.current = { key: countsKey, counts: pageCounts };
@@ -171,25 +156,18 @@ export function IndexPage(props: IndexProps) {
   useLayoutEffect(() => { if (root.current) refitNativeImages(root.current) }, [layout]);
 
   const tags = useMemo<TagEntry[]>(() => kind === 'tags'
-    ? (items as IndexTag[]).map((tag) => ({ ...tag, label: onlineTags ? tag.k : props.tagLabel(tag.k) })) : [], [items, kind, onlineTags]);
+    ? (items as IndexTag[]).map((tag) => ({ ...tag, label: props.tagLabel(tag.k) })) : [], [items, kind]);
   const groups = useMemo(() => kind === 'tags' && view === 'alphabet'
-    ? tagGroups(tags, (tag) => onlineTags ? tag : props.tagLabel(tag)) : [], [tags, view, kind, onlineTags]);
+    ? tagGroups(tags, (tag) => props.tagLabel(tag)) : [], [tags, view, kind]);
 
   const changeLayout = (next: PeopleLayout) => { setLayout(next); props.savePreference({ layout: next }) };
 
-  const tabs = kind === 'tags'
-    ? <SortableBoardTabs group="tags" tabs={SCOPE_TABS} value={scope} label="词表" onChange={(next) => {
-      setPicked(new Set());
-      // 在线标签全是英文，字母表才是它的形态；切过去时顺手换上，不必再点一次。
-      go({ scope: next, category: 'all', view: next === 'online' ? 'alphabet' : view });
-    }} />
-    : isCompany(kind) || kind === 'series'
-        ? <BoardTabs tabs={MAKER_TABS} value={kind as 'studios' | 'agencies' | 'series'} label="资料类型"
-          onChange={(next) => go({ kind: next })} />
-        : null;
+  const tabs = isCompany(kind) || kind === 'series'
+    ? <BoardTabs tabs={MAKER_TABS} value={kind as 'studios' | 'agencies' | 'series'} label="资料类型"
+      onChange={(next) => go({ kind: next })} />
+    : null;
 
   const pressTag = (tag: string) => {
-    if (onlineTags) { props.openFollowTag(tag); return }
     if (!props.selectMode) {
       const identity = tags.find(item => item.k === tag);
       if (identity?.entity_id) props.openEntity('tag', tag);
@@ -203,7 +181,7 @@ export function IndexPage(props: IndexProps) {
     });
   };
 
-  const categories = (onlineTags ? ONLINE_TAG_CATEGORIES : TAG_CATEGORIES).filter(hasEntries);
+  const categories = TAG_CATEGORIES.filter(hasEntries);
 
   const body = () => {
     if (pending) {
@@ -218,10 +196,9 @@ export function IndexPage(props: IndexProps) {
       );
     }
     if (!items.length) return <IndexEmpty kind={kind} filtered={!!q || category !== 'all'}
-      online={onlineTags || onlineAuthors} onClear={() => go({ q: '', category: 'all' })} />;
-    if (onlineAuthors) return <OnlineAuthors items={items as OnlineAuthor[]} layout={layout} props={props} />;
+      onClear={() => go({ q: '', category: 'all' })} />;
     if (isPeople(kind)) return <PeopleGrid kind={kind} items={items as IndexPerson[]} layout={layout} props={props} />;
-    const actions = { online: onlineTags, picked, press: pressTag };
+    const actions = { picked, press: pressTag };
     return view === 'alphabet' ? <TagAlphabet groups={groups} actions={actions} /> : <TagCloud tags={tags} actions={actions} />;
   };
 
@@ -245,19 +222,11 @@ export function IndexPage(props: IndexProps) {
           onClick={() => { props.exitSelectMode(); setPicked(new Set()); setManaging(!managing) }} /> : null}
         <IndexSearch label={`过滤${title}`} value={q} onQuery={(next) => { if (next !== q) go({ q: next }, !!next) }} />
       </div>
-      {kind === 'performers' || kind === 'creators' ? (
-        <BoardTabs tabs={PEOPLE_TABS} value={onlineAuthors ? 'online' : kind} label="人物名册"
-          onChange={(next) => {
-            if (next === 'online') props.exitSelectMode();
-            go({ kind: next === 'online' ? 'performers' : next,
-              scope: next === 'online' ? 'online' : 'local', category: 'all' });
-          }} />
-      ) : null}
       {tabs}
-      {managing && kind === 'tags' ? <TagManager key={scope} scope={scope} search={q} category={category} view={view}
+      {managing && kind === 'tags' ? <TagManager search={q} category={category} view={view}
         onCategory={next => go({ category: next })} onView={next => go({ view: next })}
         onJump={at => root.current?.querySelector(`[data-alpha-group="${at}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })} /> : <>
-      {kind === 'performers' && scope === 'local' ? (
+      {kind === 'performers' ? (
         <div aria-label="身份分类" className={IDENTITY_ROW_CLASS}>
           {IDENTITY_CATEGORIES.filter((entry) => entry[0] === category || hasEntries(entry)).map(([key, label]) => (
             <Button key={key} variant={category === key ? 'primary' : 'secondary'} size="small"
@@ -266,7 +235,7 @@ export function IndexPage(props: IndexProps) {
         </div>
       ) : null}
       {kind === 'tags' ? (
-        <TagFilters categories={categories} category={category} online={onlineTags} readout={readout}
+        <TagFilters categories={categories} category={category} readout={readout}
           letters={groups.map(([letter]) => letter)} view={view}
           onCategory={(next) => go({ category: next })}
           onView={(next) => go({ view: next })}
@@ -293,7 +262,7 @@ export function IndexPage(props: IndexProps) {
           </Button>
         </div>
       ) : null}
-      {kind === 'tags' && !onlineTags && props.selectMode ? (
+      {kind === 'tags' && props.selectMode ? (
         <TagDock count={picked.size} match={match} onMatch={setMatch}
           onClear={() => setPicked(new Set())}
           onApply={() => { const chosen = [...picked]; setPicked(new Set()); props.showTags(chosen, match) }} />
@@ -307,10 +276,10 @@ const LABELS: Record<IndexKind, string> = {
   tags: '标签', performers: '艺人', creators: '卖家', studios: '厂牌', agencies: '事务所', series: '系列',
 };
 
-/** 空馆藏、筛选无结果与在线来源还没有内容分别给出可执行的去处。文案同目录页的空态
+/** 空馆藏与筛选无结果分别给出可执行的去处。文案同目录页的空态
  *  （`frontend/src/catalog-onboarding.ts` 的 `catalogEmptyHtml`）。 */
 function IndexEmpty(
-  { kind, filtered, online, onClear }: { kind: IndexKind; filtered: boolean; online: boolean; onClear(): void },
+  { kind, filtered, onClear }: { kind: IndexKind; filtered: boolean; onClear(): void },
 ) {
   if (filtered) {
     return (
@@ -320,18 +289,10 @@ function IndexEmpty(
       </EmptyState>
     );
   }
-  // 在线那一档数的是来源上的东西，名字也跟着来源的说法：艺人页在线摆的是关注来源里的创作者。
-  const label = online && kind === 'performers' ? '创作者' : LABELS[kind];
-  const follow = (
-    <ButtonLink size="small" variant={online ? 'primary' : 'secondary'} href="/subscriptions?tab=add">添加关注</ButtonLink>
-  );
   return (
-    <EmptyState icon={spriteGlyph(kind === 'tags' ? 'tags' : 'user-round')} title={`还没有${label}`}
-      actions={online ? follow : <>
-        <ButtonLink size="small" href={DRIVE_SETTINGS_PATH}>添加媒体</ButtonLink>
-        {follow}
-      </>}>
-      {online ? `添加关注来源并获取内容后，这里会显示来源上的${label}。` : '添加内容并补充资料后，这里会显示对应信息。'}
+    <EmptyState icon={spriteGlyph(kind === 'tags' ? 'tags' : 'user-round')} title={`还没有${LABELS[kind]}`}
+      actions={<ButtonLink size="small" href={DRIVE_SETTINGS_PATH}>添加媒体</ButtonLink>}>
+      添加内容并补充资料后，这里会显示对应信息。
     </EmptyState>
   );
 }

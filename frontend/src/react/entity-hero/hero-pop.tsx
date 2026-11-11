@@ -1,11 +1,9 @@
-/* 资料卡上那几枚进顶层的浮层：别名与标签的「+N」，以及订阅新作的说明。
+/* 资料卡上那几枚进顶层的浮层：别名与标签的「+N」。
  *
- * 三者都是原生 `popover="manual"`：进顶层才不被资料卡的 `overflow:hidden` 裁掉，也不被卡底
+ * 都是原生 `popover="manual"`：进顶层才不被资料卡的 `overflow:hidden` 裁掉，也不被卡底
  * 同台艺人那条压住。位置按视口算：默认贴锚点下方 8px，下面放不下翻到上方，左右夹在视口内
  * 8px；开着的时候页面滚动或窗口改宽就重算，收起后那条监听自己摘掉。 */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-
-import { Glyph } from './glyph';
 
 /** 把 `pop` 摆到 `anchor` 下方，放不下翻上方，左右夹在视口内 8px。两边都放不下时摆到空间大的
  *  那一边，高度压到那一边真正剩下的空间、浮层里自己滚：浮层从不横跨锚点，盖住「+N」那一下
@@ -25,20 +23,20 @@ export function placePop(anchor: Element, pop: HTMLElement): void {
 const isOpen = (pop: HTMLElement | null) => !!pop?.isConnected && pop.matches(':popover-open');
 
 /** 开着时跟着滚动与改窗宽重算位置；`open` 为假或卸载时摘掉监听。 */
-function useFollow(open: boolean, anchor: RefObject<Element | null>, pop: RefObject<HTMLElement | null>, onLost: () => void) {
+function usePlacement(open: boolean, anchor: RefObject<Element | null>, pop: RefObject<HTMLElement | null>, onLost: () => void) {
   const lost = useRef(onLost);
   lost.current = onLost;
   useEffect(() => {
     if (!open) return undefined;
-    const follow = () => {
+    const track = () => {
       if (anchor.current && isOpen(pop.current)) placePop(anchor.current, pop.current!);
       else lost.current();
     };
-    addEventListener('scroll', follow, { capture: true, passive: true });
-    addEventListener('resize', follow, { passive: true });
+    addEventListener('scroll', track, { capture: true, passive: true });
+    addEventListener('resize', track, { passive: true });
     return () => {
-      removeEventListener('scroll', follow, true);
-      removeEventListener('resize', follow);
+      removeEventListener('scroll', track, true);
+      removeEventListener('resize', track);
     };
   }, [open, anchor, pop]);
 }
@@ -83,7 +81,7 @@ export function MorePop({ id, rest, label, heading, hook, children }: {
       if (!pinned.current && !more.current?.matches(':hover,:focus-visible') && !pop.current?.matches(':hover')) hide();
     }, 150);
   };
-  useFollow(open, more, pop, hide);
+  usePlacement(open, more, pop, hide);
   // 点在按钮和浮层以外的地方就收。
   useEffect(() => {
     if (!open) return undefined;
@@ -117,49 +115,3 @@ export function MorePop({ id, rest, label, heading, hook, children }: {
   );
 }
 
-/** 「订阅新作」开关：一枚 RSS 图标，开关本身藏给读屏与键盘，说明浮层悬停和键盘聚焦都出。
- *
- *  Escape 只收起这一次；指针离开或焦点移走后，下一次悬停照常出现。 */
-export function FeedSwitch({ following, busy, onToggle, tip }: {
-  following: boolean;
-  busy: boolean;
-  onToggle(on: boolean): void;
-  tip: string;
-}) {
-  const label = useRef<HTMLLabelElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const pop = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
-  const dismissed = useRef(false);
-
-  const hideTip = () => {
-    if (isOpen(pop.current)) pop.current!.hidePopover();
-    setOpen(false);
-  };
-  const showTip = () => {
-    if (dismissed.current || !pop.current || !label.current || isOpen(pop.current)) return;
-    pop.current.showPopover();
-    placePop(label.current, pop.current);
-    setOpen(true);
-  };
-  const restore = () => { dismissed.current = false; hideTip() };
-  useFollow(open, label, pop, () => setOpen(false));
-  // 说明文字换了（订上／取消），浮层开着就按新宽度重摆一次。
-  useEffect(() => {
-    if (label.current && isOpen(pop.current)) placePop(label.current, pop.current!);
-  }, [tip]);
-
-  return (
-    <label ref={label} data-entry-feed="" onPointerEnter={showTip}
-      onPointerLeave={() => { if (!input.current?.matches(':focus-visible')) restore() }}>
-      <Glyph name="rss" />
-      <input ref={input} type="checkbox" role="switch" aria-label="订阅新作" aria-describedby="entityFeedTip"
-        data-entity-feed="" checked={following} aria-busy={busy || undefined} aria-disabled={busy || undefined}
-        onChange={(event) => { if (!busy) onToggle(event.currentTarget.checked) }}
-        onKeyDown={(event) => { if (event.key === 'Escape') { dismissed.current = true; hideTip() } }}
-        onFocus={() => { if (input.current?.matches(':focus-visible')) showTip() }}
-        onBlur={restore} />
-      <span ref={pop} role="tooltip" id="entityFeedTip" popover="manual" data-entry-feed-tip="">{tip}</span>
-    </label>
-  );
-}

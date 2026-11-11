@@ -31,7 +31,6 @@ powershell -File scripts\test.ps1 -Scope web -Focus frontend/test/keyboard-short
 | --- | --- |
 | `checks` | 仓库策略与文档层：文案、依赖清单、脚本策略、文档契约 |
 | `catalog` | 目录、索引、资料页与库内操作 |
-| `follow` | 关注源、订阅与抓取 |
 | `media` | 媒体文件、探测与取流 |
 | `metadata` | 刮削、识别与实体合并 |
 | `packaging` | 打包与发布产物 |

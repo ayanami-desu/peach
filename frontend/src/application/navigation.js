@@ -4,12 +4,10 @@ import { $, isCatalogPath } from '../core';
 import { clearOverlayBackground, holdOverlayBackground, isOverlayPath, overlayState } from './../history/overlay';
 import { openTok } from './media.js';
 import { immerseStartId } from './preferences.js';
-import { enterFollow } from './follow.js';
 import { setSelectMode } from './selection.js';
-import { followManageEntry, indexPath } from './index.js';
+import { indexPath } from './index.js';
 import { sidebarApi } from '../react/application-residents';
 import { layoutState, navOn, paintListTitle, syncHeaderActions } from './layout.js';
-import { clearHomeFeed, isFeedNewPath } from './feed.js';
 import { releaseManagedRoute } from './../history/managed';
 import { catalogState, clearCatalogGrid } from './catalog.js';
 import { peachHistory, shellNavigate } from './../history/index';
@@ -68,14 +66,13 @@ navigationState.managedPagePath = path=>{
 };
 navigationState.openRoutePath = path=>{
   if(path==='/immerse'){void openTok(immerseStartId());return}
-  if(path==='/follow'){enterFollow();return}
   if(path==='/playlists'||navigationState.catalogPage(path)){openRoutedPage(path);return}
   if(!navigationState.managedPagePath(path)){
     setSelectMode(false,true);
     openRoutedPage(indexPath({kind:path.slice(1),q:'',scope:'local',view:'alphabet',category:'all'}));
     return;
   }
-  navigationState.navigatePath(path==='/subscriptions'?followManageEntry():path);
+  navigationState.navigatePath(path);
 };
 }
 
@@ -90,9 +87,6 @@ navigationState.claimSurface = path=>{
      卸了再挂，换一条筛选就会让它塌一下再撑回来——实测那一下底下整块先往上跳 62px，
      二十来毫秒后落回原处，比它要说的那句话显眼得多。目录页之间它一直挂着，自己在轮询
      库那边的进度；离开目录页才收起，那些页面本来就不该有它。 */
-  /* 首页那一行新作同样只属于目录页。管理区的入口不经过 `showHomeSurfaces`，离开目录页时
-     在这里收起并清空，连同它的自动滚动一起停掉。 */
-  if(!isFeedNewPath(path))clearHomeFeed();
   /* 管理区正文与索引页、资料页的容器每次换页都经过这里，所以收起也落在这里。由路由树画进 `#stats`
      与 `#index` 的那几页（`openManagedRoute`）自己管取数：不收掉，离开之后页面还活着，有轮询的照着
      原节律继续敲库。没画着页面的容器是空操作，逐页判断反而会漏掉新迁过来的那一页。详情舞台压在

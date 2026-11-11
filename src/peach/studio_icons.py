@@ -516,7 +516,7 @@ def harvest_targets(padded: dict[str, dict[str, object]],
 
 #: 能拿来找图标的链接类型。`social` 不在内：那是另一条线的头像，混进来会把厂牌小标
 #: 换成运营的自拍。`catalog` 在内，因为发行平台（FC2-PPV、myfans 这类）按
-#: `docs/SOURCING.md` 的判据不登记 official——它们不是厂牌，没有厂牌官网——可它们照样
+#: `docs/METADATA.md` 的判据不登记 official——它们不是厂牌，没有厂牌官网——可它们照样
 #: 占着筛选片和卡片徽标那几个位置，需要一枚图标。只认 official 的话，这些实体会在复核件上
 #: 记成「无官网链接」，看起来像是漏采，其实是查都没查。
 ICON_LINK_KINDS = ("official", "catalog")

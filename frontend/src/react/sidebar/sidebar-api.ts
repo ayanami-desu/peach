@@ -1,12 +1,12 @@
 /* 侧栏（常驻组件 `sidebar`，`sidebar-island.tsx`）对壳的契约。
  *
  * 它画的是左侧抽屉 `#drawer` 里滚动的那一层：标题行的空槽、导航那一列、导航上那块滑动玻璃，
- * 以及导航下面按语境出现的筛选分组（目录与资料页的来源、时长、产地、画幅、创作者、标签，
- * 关注页的来源、时长与内容标签）。抽屉本身、它的开合、底栏（明暗、配色、设置三枚键）、品牌与开合键归壳：
+ * 以及导航下面按语境出现的筛选分组（目录与资料页的来源、时长、产地、画幅、创作者、标签）。
+ * 抽屉本身、它的开合、底栏（明暗、配色、设置三枚键）、品牌与开合键归壳：
  * 它们是壳里几张浮层的锚点，壳在 `attached` 时把品牌与开合键挪进标题行的空槽。
  *
  * 筛选、路由与取数仍归壳。成员、按下态与数字由壳算好推进来，点下去的动作回到壳的
- * `commitContextFilter`、`navTo` 与关注页的筛选。导航顺序读的是同一份 `appSettings`
+ * `commitContextFilter` 与 `navTo`。导航顺序读的是同一份 `appSettings`
  * （`host.store`）：设置面板或这一列自己拖动改了顺序，侧栏按 store 的通知当场重排。 */
 import type { SettingsStore } from '../../settings-store';
 
@@ -36,18 +36,16 @@ export interface SidebarFacets {
   creators: SidebarChip[];
   tags: SidebarChip[];
   tech: SidebarChip[];
-  followTags: SidebarChip[];
   /** 库里有时长读数时才出现时长那一组。 */
   duration: boolean;
 }
 
-export type SidebarContent =
-  /** `key` 换了就是一份新聚合：分组的默认展开重新按按下态定，计数徽标按上一次的值决定弹不弹。 */
-  | { kind: 'catalog'; key: string; facets: SidebarFacets }
-  /** 关注页与关注详情：内容标签的计数由壳按可见条目或这一条自己的标签算好。来源与时长只在关注页有：
-   *  来源按全库列（选中一个之后别的还在），`duration` 说库里有没有时长读数；按下态与时长两端读
-   *  `filters` 里的 `provider`、`dur_min`、`dur_max`。详情只给标签。 */
-  | { kind: 'follow'; tags: SidebarChip[]; selected: string[]; providers?: SidebarChip[]; duration?: boolean };
+/** `key` 换了就是一份新聚合：分组的默认展开重新按按下态定，计数徽标按上一次的值决定弹不弹。 */
+export interface SidebarContent {
+  kind: 'catalog';
+  key: string;
+  facets: SidebarFacets;
+}
 
 export interface SidebarProps {
   /** null 时只画导航（作品详情、管理区与索引页，或换页后聚合还没回来）。 */
@@ -74,14 +72,6 @@ export interface SidebarHost {
   toggleChip(key: string, value: string, multi: boolean): void;
   /** 时长两端松手（分钟）：0 与 180 表示这一端不限。 */
   setDuration(min: number, max: number): void;
-  /** 目录页上的关注标签：去关注页「已保存」那一份，只按这一枚标签筛。 */
-  openFollowTag(tag: string): void;
-  /** 关注页与关注详情的内容标签：换成只按这一枚标签筛。 */
-  selectFollowTag(tag: string): void;
-  /** 关注页的来源：单选，再点一次取消。 */
-  selectFollowProvider(provider: string): void;
-  /** 关注页的时长两端松手（分钟），口径同 `setDuration`。 */
-  setFollowDuration(min: number, max: number): void;
   /** 路由树画出首帧之后、句柄交出之前，在同一个任务里调一次：壳把品牌与开合键挪进标题行。 */
   attached(): void;
 }
