@@ -23,6 +23,13 @@ class LibraryListTests(unittest.TestCase):
         rows = media_libraries.libraries(config(drive_roots={'115': ('b1',), 'gdrive': ('root-1',)}))
         self.assertEqual([row['id'] for row in rows], ['gdrive:root-1'])
 
+    def test_two_accounts_of_one_source_stay_two_libraries(self):
+        rows = media_libraries.libraries(config(
+            drive_roots={'onedrive-family': ('root-a',), 'onedrive-math': ('root-b',)},
+            drive_locations={'onedrive-family': 'onedrive', 'onedrive-math': 'onedrive'}))
+        self.assertEqual([row['id'] for row in rows], ['onedrive:root-a', 'onedrive:root-b'])
+        self.assertEqual([row['roots'][0]['location'] for row in rows], ['onedrive', 'onedrive'])
+
     def test_display_fields_come_from_the_catalog_then_fall_back(self):
         catalog = {'gdrive:root-1': {'name': '电影', 'icon': 'heart', 'color': '#123456',
                                     'policy': 'custom', 'stages': 'probe, cover, unknown'}}

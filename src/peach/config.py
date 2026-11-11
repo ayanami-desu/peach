@@ -101,3 +101,14 @@ class PeachSettings:
     follow_state_root: Path = STATE_DIR
     # 人物页外部入口的开关与镜像域名，同样是本机偏好。
     entry_links_root: Path = STATE_DIR
+
+
+def drive_sources(config) -> tuple[str, ...]:
+    """接了扫描根的账号映射回来源类型，去重保序。
+
+    `drive_roots` 的键是账号名（`[drive.accounts]` 的键），而账本里 `asset.location` 只写
+    来源类型：按来源筛资产的地方要先过这一步，否则同来源多账号时筛不到。
+    """
+    locations = getattr(config, "drive_locations", {}) or {}
+    roots = getattr(config, "drive_roots", {}) or {}
+    return tuple(dict.fromkeys(locations.get(key, key) for key in roots))

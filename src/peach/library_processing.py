@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from PIL import Image
 
 from . import artifact_rules, preview_sheets, sample_followup, upgrade_rules
+from .config import drive_sources
 from .fsutil import atomic_write_text
 from .images import measure_image_file
 from .scripting import HostLimiter
@@ -1876,6 +1877,7 @@ def _preview_engine(config, database):
     settings = PeachSettings(
         drive_public_url=config.drive_public_url,
         drive_clients=dict(config.drive_clients),
+        drive_locations=dict(config.drive_locations),
         drive_roots=dict(config.drive_roots),
         drive_modes=dict(config.drive_modes),
         secrets_root=config.directory('secrets'),
@@ -2603,7 +2605,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
         try:
             guard = CapacityGuard(config)
             guard.check(force=True)
-            locations = tuple(config.drive_roots) if location == 'configured' else (location,)
+            locations = drive_sources(config) if location == 'configured' else (location,)
             scope_ids = scoped_assets(config, db_path, library_id, scope_ids)
             state['asset_ids'] = scope_ids
             traffic.asset_ids = scope_ids

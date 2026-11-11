@@ -10,6 +10,7 @@ from collections import deque
 from contextlib import contextmanager, closing, nullcontext
 from contextvars import ContextVar
 
+from .config import drive_sources
 from .fsutil import atomic_write_text
 
 CURRENT = ContextVar('peach_library_processing_control', default=None)
@@ -381,9 +382,10 @@ def initial_estimate(config, db_path, stage, asset_ids=None, mode=None, *, allow
     if asset_ids is not None:
         query += ' AND id IN (SELECT value FROM json_each(?))'
         parameters.append(json.dumps(asset_ids))
-    if config.drive_roots:
-        query += ' AND location IN (' + ','.join('?' * len(config.drive_roots)) + ')'
-        parameters += list(config.drive_roots)
+    sources = drive_sources(config)
+    if sources:
+        query += ' AND location IN (' + ','.join('?' * len(sources)) + ')'
+        parameters += list(sources)
     with closing(sqlite3.connect(db_path, timeout=30)) as connection:
         count, size = connection.execute(query, parameters).fetchone()
     # 抽帧只读取局部数据；文件总大小仅作为编解码复杂度的温和修正，不按全量读取估时。

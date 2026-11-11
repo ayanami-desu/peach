@@ -31,7 +31,10 @@ def libraries(config, live_names: dict[str, str] | None = None):
     names = {**(live_names or {}), **(getattr(config, "library_names", {}) or {})}
     icons = getattr(config, "library_icons", {}) or {}
     rows = []
-    for location, roots in (getattr(config, "drive_roots", {}) or {}).items():
+    # 扫描根的键是账号名，库的 id 与资产筛选用的是来源类型：同来源多账号时两者不同。
+    sources = getattr(config, "drive_locations", {}) or {}
+    for account, roots in (getattr(config, "drive_roots", {}) or {}).items():
+        location = sources.get(account, account)
         if location not in LOCATIONS:
             continue
         for root_id in roots:

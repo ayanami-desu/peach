@@ -264,6 +264,7 @@ def _init(args: argparse.Namespace) -> int:
         ),
         drive_public_url=args.public_url or config.drive_public_url,
         drive_clients=config.drive_clients,
+        drive_locations=config.drive_locations,
         drive_roots=config.drive_roots,
     )
     _create_data_tree(prepared)
