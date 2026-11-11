@@ -574,21 +574,6 @@ class DetailProjectionTests(unittest.TestCase):
                                  b'first' if identity == 'XeYkdb' else b'second')
             image.assert_called_once_with('MIKR-023', 'cover', movie=source)
 
-    def test_browser_people_projects_local_actor_rules_without_writes(self):
-        from peach.web_jav_browser_people import cached_people
-        source = {'actors': [{'name': '甲', 'gender': 0}, {'name': '乙', 'gender': 1},
-                             {'name': '丙'}, {'id': 'missing-name'}, None]}
-        with self.contract.database.read_connection() as connection:
-            before = connection.execute('SELECT COUNT(*) FROM entity').fetchone()[0]
-        with patch('peach.web_jav_browser_people._snapshots', return_value={'EXM-001': source}):
-            result = cached_people(self.contract, None, 'EXM-001,exm001')
-        self.assertEqual(result['source'], 'local-cache')
-        self.assertEqual(result['items'], {'EXM-001': [{'id': None, 'name': '甲'}, {'id': None, 'name': '丙'}]})
-        with self.contract.database.read_connection() as connection:
-            self.assertEqual(connection.execute('SELECT COUNT(*) FROM entity').fetchone()[0], before)
-        with self.assertRaises(ValueError):
-            cached_people(self.contract, None, 'invalid')
-
     def test_official_thumbnail_does_not_enable_a_javdb_cover(self):
         from peach.web_jav_detail import _artwork_fields
         for url in ('https://c0.jdbstatic.com/a.jpg', 'https://tp.spfcas.com/a.jpg?expires=100'):

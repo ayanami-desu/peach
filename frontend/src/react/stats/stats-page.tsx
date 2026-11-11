@@ -17,7 +17,7 @@ import { Tab, TabList, TabPanel, Tabs } from 'react-aria-components';
 import { fmtSize, LOC } from '@peach/legacy/core';
 import { MEDIA_SOURCE_ICONS } from '@peach/legacy/ui';
 
-import { settingsPath } from '@peach/history';
+import { DRIVE_SETTINGS_PATH } from '@peach/history';
 import { ButtonLink } from '@/components/base/buttons/button';
 
 import { errorMessage } from '../../api';
@@ -42,8 +42,8 @@ import {
   type Attribution, type Count, type RecentPlay, type StatsData, type StorageVolume, type TagSource, type TopTag,
 } from './stats';
 
-/** 空馆藏与没有存储来源时「添加媒体」去的那一栏设置。 */
-const MEDIA_SETTINGS = settingsPath('媒体库与入库');
+/** 空馆藏与没有存储来源时「添加媒体」去的那一栏设置：媒体只从网盘读，添加就是去网盘页配扫描起点。 */
+const MEDIA_SETTINGS = DRIVE_SETTINGS_PATH;
 
 /** 收起时露这么多条排行。三十条一次铺开会把下面两个面板整个顶到屏外。 */
 const RANKING_PREVIEW = 10;
@@ -228,7 +228,7 @@ function TagRanking({ tags, tagLabel, onTag, hasMedia }: { tags: TopTag[]; hasMe
   if (!tags.length) {
     return (
       <EmptyState icon={RiPriceTag3Line} title="还没有内容标签"
-        actions={<ButtonLink variant="secondary" href={hasMedia ? '/data-cleanup' : '/settings/library'} size="small">{hasMedia ? '补全资料' : '添加媒体'}</ButtonLink>}>{NO_TAG_HINT}</EmptyState>
+        actions={<ButtonLink variant="secondary" href={hasMedia ? '/data-cleanup' : MEDIA_SETTINGS} size="small">{hasMedia ? '补全资料' : '添加媒体'}</ButtonLink>}>{NO_TAG_HINT}</EmptyState>
     );
   }
   return (
@@ -252,7 +252,7 @@ function RecentWatches({ rows, hasMedia }: { rows: RecentPlay[]; hasMedia: boole
   if (!rows.length) {
     return (
       <EmptyState icon={RiHistoryLine} title="还没有观看记录"
-        actions={<ButtonLink variant="secondary" href={hasMedia ? '/' : '/settings/library'} size="small">{hasMedia ? '浏览馆藏' : '添加媒体'}</ButtonLink>}>{NO_WATCH_HINT}</EmptyState>
+        actions={<ButtonLink variant="secondary" href={hasMedia ? '/' : MEDIA_SETTINGS} size="small">{hasMedia ? '浏览馆藏' : '添加媒体'}</ButtonLink>}>{NO_WATCH_HINT}</EmptyState>
     );
   }
   return (
@@ -288,7 +288,7 @@ function TagSources({ sources, videos }: { sources: TagSource[]; videos: number 
   if (!sources.length) {
     return (
       <EmptyState icon={RiPriceTag3Line} title="还没有标签来源"
-        actions={<ButtonLink variant="secondary" href={videos ? '/data-cleanup' : '/settings/library'} size="small">{videos ? '补全资料' : '添加媒体'}</ButtonLink>}>{NO_TAG_SOURCE_HINT}</EmptyState>
+        actions={<ButtonLink variant="secondary" href={videos ? '/data-cleanup' : MEDIA_SETTINGS} size="small">{videos ? '补全资料' : '添加媒体'}</ButtonLink>}>{NO_TAG_SOURCE_HINT}</EmptyState>
     );
   }
   return (

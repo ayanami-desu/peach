@@ -5,7 +5,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { appSettingsStore } from '../../src/appearance/settings';
 import { queryClient } from '../../src/react/query';
 import { FollowPreferenceRows, VideoThumbnailRow, TaskSpeedSettings } from '../../src/react/settings/service-preferences';
-import { configurationContentSkeleton } from '../../src/configuration-skeleton';
 import { buttonNamed, choose, click, mount, mountRoot, pending, settle, type } from './render';
 
 notifyManager.setScheduler((notify) => notify());
@@ -179,16 +178,13 @@ it('服务设置重新进入时读取最新状态，关闭自动检查后保留�
   expect(second.querySelector<HTMLInputElement>('input[aria-label="自动检查间隔"]')?.value).toBe('180');
 });
 
-it('首次读取时「关注采集」就是五行，与配置页整页骨架同一组行；读回之后行数不变', async () => {
+it('首次读取时「关注采集」就是五行，拉取间隔先铺同形占位；读回之后行数不变', async () => {
   const hold = pending<unknown>();
   vi.stubGlobal('fetch', vi.fn(() => hold.answer));
   const host = await mount(<QueryClientProvider client={queryClient}><FollowPreferenceRows receipt={vi.fn()} /></QueryClientProvider>);
   const labels = (root: ParentNode) => [...root.querySelectorAll('section[aria-label="关注采集"] p.text-body-regular')].map((node) => node.textContent);
-  const page = document.createElement('div');
-  page.innerHTML = configurationContentSkeleton('来源与订阅');
   const waiting = labels(host);
   expect(waiting).toEqual(['自动检查更新', '订阅源拉取', '首次采集范围', '头像刷新', 'favicon 刷新']);
-  expect(labels(page), '整页骨架画的也是这五行').toEqual(waiting);
   expect(host.querySelector('[data-skeleton][aria-label="正在读取订阅源拉取间隔"]')).not.toBeNull();
   server();
   await hold.release({ ok: true, status: 200, json: async () => ({ available: true, enabled: true, interval_minutes: 360 }) });

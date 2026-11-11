@@ -29,15 +29,13 @@ def save(state_root: Path, value: bool) -> None:
     save_preferences(state_root, {'metadata_only': value})
 
 
-def acceleration(state_root: Path | None = None, *, purpose: str = 'playback') -> str:
-    if purpose not in ('preview', 'playback'):
-        raise ValueError('媒体加速用途无效')
+def acceleration(state_root: Path | None = None) -> str:
     if state_root is None:
         from .settings_file import active
         state_root = active().directory('state')
     try:
         payload = json.loads((Path(state_root) / FILENAME).read_text(encoding='utf-8'))
-        return 'software' if isinstance(payload, dict) and payload.get(f'{purpose}_acceleration') == 'software' else 'auto'
+        return 'software' if isinstance(payload, dict) and payload.get('preview_acceleration') == 'software' else 'auto'
     except (OSError, ValueError):
         return 'auto'
 
@@ -48,7 +46,7 @@ def save_preferences(state_root: Path, body: dict) -> None:
         if not isinstance(body['metadata_only'], bool):
             raise ValueError('请选择视频预览生成状态')
         patch['metadata_only'] = body['metadata_only']
-    for key in ('preview_acceleration', 'playback_acceleration'):
+    for key in ('preview_acceleration',):
         if key in body:
             if body[key] not in ('auto', 'software'):
                 raise ValueError('请选择自动或仅软件模式')

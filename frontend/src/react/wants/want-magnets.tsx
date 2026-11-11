@@ -1,13 +1,11 @@
-/* 卡片下方的磁链候选。可见时查询，提交复用云下载的幂等与失败分类。 */
+/* 卡片下方的磁链候选。可见时查询。 */
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { RiLink, RiHardDrive2Line, RiFileList2Line,
-  RiCalendarLine, RiPriceTag3Line, RiExternalLinkLine, RiFileCopyLine, RiCloudLine, RiRefreshLine } from '@remixicon/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+  RiCalendarLine, RiPriceTag3Line, RiExternalLinkLine, RiFileCopyLine, RiRefreshLine } from '@remixicon/react';
+import { useQuery } from '@tanstack/react-query';
 import { Button, ButtonLink } from '@/components/base/buttons/button';
 import { Chip } from '@/components/base/badges/chip';
-import { apiGet, apiSend, errorMessage } from '../../api';
-import type { DownloadsSnapshot, DownloadSubmitResult } from '../bundle';
-import { DOWNLOADS_KEY, DOWNLOADS_URL } from '../activity/downloads-panel';
+import { apiGet, errorMessage } from '../../api';
 import { LoadingDots } from '../components/loading-dots';
 import { Note } from '../components/note';
 import { busyProps, useAction } from '../settings/use-action';
@@ -15,7 +13,6 @@ import type { Want } from './wants';
 import { recordWantMagnets } from './wants';
 import { Disclosure } from '../settings/section';
 import { cachedResources, rememberResources, resourcesFresh } from './resource-cache';
-import { providerIcon } from '../components/source-label';
 import { resourceNotice, resourceSize } from './resource-display';
 import './want-magnets.css';
 
@@ -36,17 +33,15 @@ function ResourceFact({ icon: Icon, children, title }: { icon: ComponentType<{ c
   return <span title={title} className="inline-flex items-center gap-1"><Icon aria-hidden className="size-(--icon-inline) shrink-0" />{children}</span>;
 }
 
-export function WantMagnets({ want, readOnly, downloads, provider, toast, onSource, queryUrl, eager = false }: {
-  want: Pick<Want, 'id' | 'code' | 'title' | 'release_date'>; readOnly: boolean; downloads?: DownloadsSnapshot; provider: string; toast(message: string): void;
+export function WantMagnets({ want, toast, onSource, queryUrl, eager = false }: {
+  want: Pick<Want, 'id' | 'code' | 'title' | 'release_date'>; toast(message: string): void;
   onSource?(url: string): void;
   queryUrl?: string;
   eager?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(eager || typeof IntersectionObserver === 'undefined');
-  const [submitted, setSubmitted] = useState<string[]>([]);
   const action = useAction();
-  const client = useQueryClient();
   const refresh = useRef(false);
   const cacheCode = queryUrl ? `comment-resources:${queryUrl}:${want.code}` : `all-sources:${want.code || ''}`;
   const cached = useMemo(() => cachedResources(cacheCode, want.release_date), [cacheCode, want.release_date]);
@@ -86,22 +81,6 @@ export function WantMagnets({ want, readOnly, downloads, provider, toast, onSour
     if (!queryUrl && query.data && (query.data.state === 'ready' || query.data.items.length > 0))
       recordWantMagnets(want.id, query.data.items.some(item => item.protocol === 'magnet'));
   }, [query.data, queryUrl, want.id]);
-  const configured = downloads?.providers.find((row) => row.key === provider && row.configured);
-  const add = (candidate: MagnetCandidate) => {
-    if (readOnly || !downloads?.available || !configured || candidate.protocol !== 'magnet') return;
-    void action.run(candidate.id, async (signal) => {
-      const result = await apiSend<DownloadSubmitResult>(DOWNLOADS_URL, {
-        magnet: candidate.uri, provider: configured.key, target: configured.target,
-        code: want.code, title: want.title, origin: queryUrl ? `work:${want.code}` : `wishlist:${want.id}`,
-      }, 'POST', signal);
-      if (!result.ok) throw new Error(result.task.failure_detail || result.task.failure_label || '添加下载失败');
-      return result;
-    }, (result) => {
-      setSubmitted((current) => [...current, candidate.id]);
-      toast(result.outcome === 'submitted' ? `已添加下载：${candidate.name}` : `已关联现有下载：${candidate.name}`);
-      void client.invalidateQueries({ queryKey: DOWNLOADS_KEY });
-    });
-  };
   const copy = (candidate: MagnetCandidate) => {
     void action.run(`copy:${candidate.id}`, () => navigator.clipboard.writeText(candidate.uri),
       () => toast('已复制链接'));
@@ -126,8 +105,6 @@ export function WantMagnets({ want, readOnly, downloads, provider, toast, onSour
       {action.error ? <Note tone="error" title="操作未完成">{action.error}</Note> : null}
       {query.data?.items.length ? (() => {
         const rows = query.data.items.map((candidate) => {
-          const added = submitted.includes(candidate.id) || downloads?.tasks.some((task) => candidate.protocol === 'magnet' &&
-            task.info_hash === candidate.info_hash && (task.cancellable || task.state === 'ingested'));
           return <li key={candidate.id} data-resource-protocol={candidate.protocol}>
             <div data-resource-main="" className="flex min-w-0 flex-col gap-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -148,11 +125,6 @@ export function WantMagnets({ want, readOnly, downloads, provider, toast, onSour
               <ButtonLink data-button-link="" variant="secondary" size="small" trailingIcon={RiExternalLinkLine} href={candidate.source_url} target="_blank" rel="noopener noreferrer">链接来源</ButtonLink>
               <Button variant="secondary" size="small" leadingIcon={RiFileCopyLine} {...busyProps(action.busy === `copy:${candidate.id}`)}
                 onClick={() => copy(candidate)}>复制链接</Button>
-              {candidate.protocol === 'magnet' ?
-              <Button variant="primary" size="small" leadingIcon={configured ? providerIcon(configured.key) : RiCloudLine} title={configured ? `下载到 ${configured.label}` : undefined} disabled={readOnly || !downloads?.available || !configured || added}
-                {...busyProps(action.busy === candidate.id)} onClick={() => add(candidate)}>
-                {added ? '已添加' : '添加下载'}
-              </Button> : null}
             </div>
           </li>;
         });

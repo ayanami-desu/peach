@@ -30,11 +30,8 @@ from typing import NamedTuple
 from .catalog_rules import normalise_code_key
 from .config import (
     COVER_DIR,
-    DATA_ROOT,
     GENERATED_DIR,
-    MEDIA_ROOT_DECLARATIONS,
     SECRETS_DIR,
-    SHARED_CREDENTIAL_ROOT,
     SOURCES_DIR,
     STATE_DIR,
     TOOLS_DIR,
@@ -43,7 +40,6 @@ from . import avatar_face
 from . import brand_marks
 from . import jav_poster_crop
 from .jobs import BackgroundJob
-from .media import normalized_path
 # `previews` 是取图那一侧，不是 web 域处理器：依赖方向仍然只有一个走法。落盘名的
 # 规则必须和 `/logo` 用的是同一个函数，否则可用性判定迟早和取图对不上。
 from .previews import ENTITY_IMAGE_KINDS, LOGO_VARIANTS, entity_image_key, logo_key
@@ -125,18 +121,12 @@ class WebContract:
                  poster_root: Path | None = None,
                  timeline_root: Path | None = None,
                  photo_root: Path | None = None,
-                 transcode_root: Path | None = None,
-                 stream_root: Path | None = None,
                  follow_sources_root: Path | None = None,
                  follow_secrets_root: Path | None = None,
                  follow_state_root: Path | None = None,
                  follow_shared_root: Path | None = None,
                  entry_links_root: Path | None = None,
                  tools_root: Path | None = None,
-                 taste_history_root: Path | None = None,
-                 taste_history_store: Path | None = None,
-                 taste_history_import_root: Path | None = None,
-                 taste_history_manifest: Path | None = None,
                  database: LedgerDatabase | None = None):
         # 候选 CSV 的目录做成实例属性而不是模块常量，复核层才能在临时目录里被测试。
         self.candidate_root = Path(candidate_root) if candidate_root is not None else GENERATED_DIR
@@ -154,13 +144,10 @@ class WebContract:
         self.timeline_root = (Path(timeline_root) if timeline_root is not None
                               else GENERATED_DIR / "timeline")
         self.photo_root = Path(photo_root) if photo_root is not None else GENERATED_DIR / "photo-thumbs"
-        self.transcode_root = (Path(transcode_root) if transcode_root is not None
-                               else GENERATED_DIR / "transcodes")
-        self.stream_root = Path(stream_root) if stream_root is not None else GENERATED_DIR / "stream-segments"
         # API construction passes every managed cache root. A bare WebContract is also used
         # by isolated unit tests; it must never wander into the machine's real generated tree.
         self.resource_cleanup_enabled = any(
-            root is not None for root in (poster_root, photo_root, transcode_root, stream_root))
+            root is not None for root in (poster_root, photo_root, timeline_root))
         # 追更的原始证据与本机凭据目录同样做成实例属性，测试才能落在临时目录里。
         self.follow_sources_root = (Path(follow_sources_root)
                                     if follow_sources_root is not None else SOURCES_DIR)
@@ -174,25 +161,9 @@ class WebContract:
                                  if entry_links_root is not None else STATE_DIR)
         # 外部工具区（FFmpeg、amane 桥的 venv）。测试给临时目录，重建桥就不会碰真实工具区。
         self.tools_root = Path(tools_root) if tools_root is not None else TOOLS_DIR
-        # 共享副本只承载**声明为可同步**的凭据字段，见 follow_secrets.SYNCABLE_FIELDS。
-        # 复制关掉时 SHARED_CREDENTIAL_ROOT 是 None，凭据只留在本机。
-        self.follow_shared_root = (Path(follow_shared_root)
-                                   if follow_shared_root is not None
-                                   else SHARED_CREDENTIAL_ROOT)
-        # 浏览历史口味分析的产出目录，`scripts/taste_history.py --output` 的默认值。
-        self.taste_history_root = (Path(taste_history_root)
-                                   if taste_history_root is not None
-                                   else DATA_ROOT / "review" / "taste-history")
-        self.taste_history_store = (Path(taste_history_store)
-                                    if taste_history_store is not None
-                                    else SOURCES_DIR / "taste-history" / "history.sqlite")
-        self.taste_history_import_root = (Path(taste_history_import_root)
-                                          if taste_history_import_root is not None
-                                          else SOURCES_DIR / "taste-history" / "imports")
-        self.taste_history_manifest = (Path(taste_history_manifest)
-                                       if taste_history_manifest is not None
-                                       else STATE_DIR / "taste-history" / "manifest.json")
-        self.database = database or LedgerDatabase(db_path, media_roots=MEDIA_ROOT_DECLARATIONS)
+        # 双机同步已删，凭据只留在本机；参数留着是因为调用方还在传。
+        self.follow_shared_root = Path(follow_shared_root) if follow_shared_root is not None else None
+        self.database = database or LedgerDatabase(db_path)
         self.db_path = self.database.db_path
         self.snapshot_root = Path(snapshot_root) if snapshot_root is not None else None
         #: 键 → (算出时刻, 输入版本, 结果)，见 `cached()`。
@@ -222,12 +193,10 @@ class WebContract:
         #: 只读端由 `api` 关掉写入：那边的账本是复制来的，写一行就是一处合不回去的分叉。
         self.task_runs = TaskRunStore(self.database)
         #: 整理设置由组合根注入；垃圾检查由扫描和后处理共用领域规则。
-        self.download_organize_templates = lambda: {}
         #: 后继调度（ADR-0040）。导入 `avatar_followup` 就是它的登记动作：调度器本身
         #: 不认识任何一种后继，登记表在 `followups.REGISTRY` 里。
         from . import avatar_followup  # noqa: F401  登记补头像后继
         from . import creator_identity_followup  # noqa: F401  登记创作者身份查找后继
-        from . import download_postprocess  # noqa: F401  登记云下载后处理
         from . import feed_followup  # noqa: F401  登记新作资料采集后继
         from . import follow_creators  # noqa: F401  登记关注作者建档后继
         from . import performer_alias_followup  # noqa: F401  登记补女优别名后继
@@ -241,7 +210,6 @@ class WebContract:
         self.feed_job = self._job("PeachFeedCheckJob", "feed-check")
         self.want_job = self._job("PeachWantScrapeJob", "want-scrape")
         self.follow_resolve_job = self._job("PeachFollowResolveJob", "follow-resolve")
-        self.taste_refresh_job = self._job("PeachTasteRefreshJob", "taste-refresh")
         self.link_prune_job = self._job("PeachLinkPruneJob", "link-prune")
         self.scraping_cover_job = self._job("PeachScrapingCoverJob", "scraping-cover")
         self.amane_bridge_job = self._job("PeachAmaneBridgeJob", "amane-bridge")
@@ -249,10 +217,7 @@ class WebContract:
         self.face_models_job = self._job("PeachFaceModelsJob", "face-models")
         self.library_processing_job = self._job(
             "PeachLibraryProcessingJob", "library-processing")
-        self.thumbnail_job = self._job(
-            "PeachTimelineThumbnailJob", "timeline-thumbnails")
         self.resource_apply_job = self._job("PeachResourceApplyJob", "resource-apply")
-        self.media_repair_job = self._job("PeachMediaRepairJob", "media-repair")
         # 整理（ADR-0039）：同一时间只跑一批，互斥由这个任务自己的键提供。
         self.organize_job = self._job("PeachOrganizeJob", "organize")
         self.follow_scheduler = None
@@ -265,13 +230,6 @@ class WebContract:
         #: 定时拉取上一次派存量后继的时刻（`time.monotonic()`）；None 是本进程还没派过
         #: （`web_feeds.STOCK_INTERVAL`）。
         self.feed_stock_planned_at = None
-        #: 云下载（`downloads.DownloadService`），由 `api` 在装配时接上；没接上时
-        #: `/api/downloads` 回「云下载没有启用」。
-        self.downloads = None
-        #: 批量修 MP4 头要的两件东西，由 `api` 在装配时接上：它们属于播放链路，
-        #: 建在 app 那一侧，契约这边只留接口。没接上时修复端点会说清楚。
-        self.header_repairs = None
-        self.transcode_service = None
         # 两块后台任务的锁、状态和线程都归 BackgroundJob 管，契约上只留这两个字段。
         # 任务 id 的键名沿用各自原有的名字：它随公开投影下发，是前端契约。
         self.resource_scan = self._job(
@@ -506,16 +464,13 @@ class WebContract:
         self.follow_job.stop()
         self.scraping_cover_job.stop()
         self.library_processing_job.stop()
-        self.thumbnail_job.stop()
         self.follow_resolve_job.stop()
-        self.taste_refresh_job.stop()
         self.link_prune_job.stop()
         self.resource_apply_job.stop()
         self.link_check.stop()
         self.feed_job.stop()
         self.want_job.stop()
         self.organize_job.stop()
-        self.media_repair_job.stop()
         self.amane_bridge_job.stop()
         self.source_check_job.stop()
         self.face_models_job.stop()
@@ -556,7 +511,7 @@ class WebContract:
         """账本里那条接触印相路径在本机的文件；不在盘上是 None。"""
         if not raw_path:
             return None
-        path = normalized_path(raw_path) if self.snapshot_root is not None else Path(raw_path)
+        path = Path(raw_path)
         return path if path.is_file() else None
 
     def cover_path(self, code: str | None) -> Path | None:

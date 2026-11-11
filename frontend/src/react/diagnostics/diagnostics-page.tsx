@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { configurationSection, settingsPath } from '@peach/history';
+import { configurationSection, settingsTarget } from '@peach/history';
 import { Button, ButtonLink } from '@/components/base/buttons/button';
 import { Chip } from '@/components/base/badges/chip';
 import { SettingsCard, SettingsSectionLabel } from '@/components/application/settings/settings-rows';
@@ -47,9 +47,9 @@ function DownloadReport() {
 function Check({ name, check, compact = false }: {
   name: string; check: DiagnosticCheck; compact?: boolean;
 }) {
-  /* 访问安全与端口落在网络与访问里，即使检查项给的是媒体库那一栏。 */
-  const target = check.target === '/settings/library' && (name === 'security' || name === 'port')
-    ? settingsPath('网络与访问') : check.target;
+  /* 服务端给的检查项落点有新旧两种写法：旧分区地址先按 `settingsTarget` 换到现在的落点，
+     标签照换完的地址取名。 */
+  const target = check.target ? settingsTarget(check.target) : null;
   const Heading = compact ? 'h4' : 'h3';
   return <div data-diagnostic-check={name} className={cx('flex flex-col gap-4 border-b border-separator-border pr-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between', compact ? 'py-3' : 'py-5')}>
     <div className={cx('flex min-w-0 flex-1 flex-col', compact ? 'gap-1' : 'gap-2')}>
@@ -61,7 +61,7 @@ function Check({ name, check, compact = false }: {
       {check.action ? <p className="text-body-2-regular text-text-secondary">处理建议：{check.action}</p> : null}
     </div>
     {target ? <div className="shrink-0 self-end sm:self-auto"><ButtonLink size="small" variant="secondary" href={target}>
-      {target.startsWith('/settings/') ? `打开${configurationSection(target)}` : TARGET_LABELS[target] ?? '打开相关页面'}</ButtonLink></div> : null}
+      {target.startsWith('/settings') ? `打开${configurationSection(target)}` : TARGET_LABELS[target] ?? '打开相关页面'}</ButtonLink></div> : null}
   </div>;
 }
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from threading import Event
 from unittest import mock
 
-from scripts import agent_worktree, check_public_text, release_tag
+from scripts import agent_worktree, check_public_text
 from scripts.agent_worktree import (
     WorkspaceError, _git, _lines, create, integrate, processes_under, prune, ready,
 )
@@ -398,7 +398,7 @@ class PreflightTests(_WorktreeCase):
 
 
 class MasterCommitGuardTests(_WorktreeCase):
-    """主检出的 master 只收 `integrate` 与 `release_tag.py` 的提交。
+    """主检出的 master 只收 `integrate` 与人工放行的提交。
 
     2026-09 进 master 的五个红提交，四个是在主检出上直接提交，一个是手工 merge，
     都没经过 ready / integrate 的检查。这里用仓库里那份 hook 原样装进测试仓库。
@@ -438,11 +438,11 @@ class MasterCommitGuardTests(_WorktreeCase):
         integrate(self.repo, self.branch)
         self.assertEqual((self.repo / "worker.txt").read_text(encoding="utf-8"), "worker\n")
 
-    def test_the_release_commit_carries_the_pass(self):
-        """`release_tag.py` 发出的实际参数由 `test_scripts.ShipTests` 钉住。"""
+    def test_a_hand_approved_commit_carries_the_pass(self):
+        """人工放行的提交靠 `-c {MASTER_WRITER}=...` 一次性通过 hook。"""
         (self.repo / "tracked.txt").write_text("release\n", encoding="utf-8")
         _git(self.repo, "add", "tracked.txt")
-        _git(self.repo, "-c", f"{release_tag.MASTER_WRITER}=release", "commit", "-m", "release")
+        _git(self.repo, "-c", f"{agent_worktree.MASTER_WRITER}=release", "commit", "-m", "release")
         self.assertEqual(_git(self.repo, "log", "-1", "--format=%s").stdout.strip(), "release")
 
 
@@ -837,13 +837,9 @@ class IntegrationVersionTests(_WorktreeCase):
         self.assertEqual(read_version(self.repo), "0.7.14")
 
     def test_integration_never_creates_a_version_tag_itself(self):
-        """打标签只有 `scripts/release_tag.py` 一个入口，它遇到同名本地标签就拒绝。
-
-        集成这一步再造一个本地标签，等于把唯一的发布入口挡在门外。
-        """
+        """集成不发布：标签由人按发版节奏单独打，集成顺手造一个会把节奏打乱。"""
         branch = self.worker_touching("taggable", "src/peach/module.py")
-        report = integrate(self.repo, branch)
-        self.assertEqual(report["release_tag_entry"], "scripts/release_tag.py")
+        integrate(self.repo, branch)
         self.assertEqual(_lines(_git(self.repo, "tag", "--list")), [])
 
     def test_every_integration_reports_whether_a_release_is_due(self):

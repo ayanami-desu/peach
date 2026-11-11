@@ -15,7 +15,6 @@ from peach.genre_taxonomy import (
     resolve_profile_tag,
     unmapped_genre_warning,
 )
-from peach.taste_history import TASTE_CATEGORY_TAGS
 from opencc import OpenCC
 
 
@@ -328,19 +327,12 @@ class VocabularyHygieneTests(unittest.TestCase):
     """一件事只留一个标签名，译名取通行写法。"""
 
     def test_no_retired_name_survives_anywhere(self):
-        """退役名留在词表或投影表里，等于这次改名只改了一半。
-
-        口味维度那张表也要查：它按标签名取资产，名字改过之后那一条只是不再命中，
-        没有任何报错——`足系` 维度会安静地少掉一整类。
-        """
+        """退役名留在词表或投影表里，等于这次改名只改了一半。"""
         vocabulary = _catalog_vocabulary()
         self.assertEqual(sorted(set(catalog_rules.RETIRED_TAGS) & vocabulary), [])
         self.assertEqual(
             sorted({tag for tag in CONTENT_GENRES.values()
                     if tag in catalog_rules.RETIRED_TAGS}), [])
-        taste = {tag for tags in TASTE_CATEGORY_TAGS.values() for tag in tags}
-        self.assertEqual(sorted(taste & set(catalog_rules.RETIRED_TAGS)), [])
-        self.assertEqual(sorted(taste - vocabulary), [], "口味维度只能按词表里真有的标签取资产")
 
     def test_every_retired_name_points_at_a_live_tag(self):
         """改名的目标必须是词表里真有的标签，否则改完那批资产就剩一个没人认得的名字。"""

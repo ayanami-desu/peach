@@ -6,8 +6,8 @@ import time
 
 from . import settings_file
 from .library_processing_scope import scoped_config, scoped_assets
-from .library_processing import (ALL_STAGES, COLLECT_STAGE, SCAN_STAGE, STAGES, LABELS,
-                                METADATA_STAGE, PREVIEWS_STAGE, _asset_selection,
+from .library_processing import (ALL_STAGES, COLLECT_STAGE, STAGES, LABELS,
+                                METADATA_STAGE, _asset_selection,
                                 decorate, issues_path, process_library, snapshot)
 from .processing_control import control_for, initial_estimate, valid_mode, mode_ratio
 
@@ -385,8 +385,8 @@ def _reopen_metadata_reviews(contract, asset_id):
 
 def _processing_request(contract, config, previous, body):
     """校验馆藏、阶段与互斥的处理范围。"""
-    if not config.configured or not config.locations:
-        raise ValueError('请先添加媒体目录')
+    if not config.configured or not config.drive_roots:
+        raise ValueError('请先接入网盘并选定扫描起点')
     if contract.db_path.resolve() != (config.directory('database') / 'ledger.db').resolve():
         raise ValueError('当前馆藏与媒体配置不一致')
     body = dict(body or {})
@@ -401,11 +401,6 @@ def _processing_request(contract, config, previous, body):
                 (previous.get('requested_stage') if retry_ids is not None else None) or ALL_STAGES)
     if stage not in STAGES:
         raise ValueError('处理阶段无效')
-    if body.get('incremental') and stage not in (ALL_STAGES, SCAN_STAGE):
-        raise ValueError('新增文件发现只支持扫描或同步')
-    from .media_processing_policy import metadata_only
-    if stage == PREVIEWS_STAGE and metadata_only(config.directory('state')):
-        raise ValueError('视频预览生成已关闭，请先在媒体库设置中开启')
     refresh = bool((body or {}).get('refresh')) or (
         retry_ids is not None and bool(previous.get('refresh_metadata')))
     refresh_ids = asset_ids if asset_ids is not None else retry_ids
@@ -428,12 +423,12 @@ def _resume_request(previous, speed_mode):
 
 
 def _metered_grant(body, stage, asset_ids):
-    """开了流量保护的目录只在人点名的影片上、只为抽帧读：整库同步与资料采集都不接受这个授权。"""
+    """开了流量保护的目录只在人点名的影片上读：整库处理不接受这个授权。"""
     granted = (body or {}).get('allow_metered', False)
     if type(granted) is not bool:
         raise ValueError('流量保护授权必须为开关值')
-    if granted and (stage != PREVIEWS_STAGE or asset_ids is None):
-        raise ValueError('流量保护授权只用于指定影片的补全预览')
+    if granted and asset_ids is None:
+        raise ValueError('流量保护授权只用于指定影片')
     return granted
 
 
@@ -552,13 +547,12 @@ def w_library_processing(contract, body, *, resume=False):
 
 def _start_job(contract, config, work, *, stage, refresh, asset_ids, retry_ids, incremental, mode,
                library_id=None, allow_metered=False):
-    """起步那行字按这一趟真正要做的事写：点了「只扫描」却看到「读取本地资料」，人会以为点错了。
+    """起步那行字按这一趟真正要做的事写：点了「只扫描」却看到「准备采集资料」，人会以为点错了。
 
     恢复参数与起步文案同源：`retry` 那一路要靠 `refresh` 记住这次是重新匹配，
     增量发现要靠 `incremental` 找回冻结的那批新文件。"""
-    labels = {ALL_STAGES: '准备处理', SCAN_STAGE: '准备扫描文件', COLLECT_STAGE: '准备采集资料',
-              METADATA_STAGE: '准备重新匹配资料' if refresh else '准备采集资料',
-              PREVIEWS_STAGE: '准备生成预览图'}
+    labels = {ALL_STAGES: '准备处理', COLLECT_STAGE: '准备采集资料',
+              METADATA_STAGE: '准备重新匹配资料' if refresh else '准备采集资料'}
     estimate_ids = asset_ids if asset_ids is not None else retry_ids
     if incremental:
         from .library_new_assets import pending

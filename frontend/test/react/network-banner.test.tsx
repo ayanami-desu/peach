@@ -22,12 +22,12 @@ async function render() {
   return slot;
 }
 
-it('服务端确认断网时在壳节点里画出横幅与代理设置入口', async () => {
+it('服务端确认断网时在壳节点里画出横幅，并给一条到系统诊断的入口', async () => {
   answer('offline');
   const slot = await render();
   const banner = slot.querySelector('[data-network-offline]');
   expect(banner?.getAttribute('role')).toBe('status');
-  expect(banner?.querySelector('a')?.getAttribute('href')).toBe('/settings/network#peachProxy');
+  expect(banner?.querySelector('a')?.getAttribute('href')).toBe('/settings/diagnostics');
 });
 
 it.each(['online', 'checking', 'unknown'])('%s 时不画横幅', async (state) => {

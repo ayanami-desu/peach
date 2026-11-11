@@ -6,7 +6,6 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from peach.jobs import (
@@ -24,43 +23,35 @@ from peach.jobs import (
 
 class JobPolicyTests(unittest.TestCase):
     def test_metered_source_requires_explicit_authorization(self):
-        policy = SourceAccessPolicy()
         with self.assertRaises(MeteredSourceDenied):
-            policy.sql_filter("pikpak", allow_metered=False)
+            SourceAccessPolicy().sql_filter("gdrive", allow_metered=False)
+        with self.assertRaises(MeteredSourceDenied):
+            SourceAccessPolicy().sql_filter("onedrive", allow_metered=False)
 
-    def test_unmetered_query_uses_parameters_and_excludes_metered_sources(self):
-        sql, parameters = SourceAccessPolicy().sql_filter("115", allow_metered=False)
+    def test_a_location_outside_the_registry_is_treated_as_metered(self):
+        """来源清单只剩两个网盘，认不出的位置不能默认放行。"""
+        with self.assertRaises(MeteredSourceDenied):
+            SourceAccessPolicy().sql_filter("pikpak", allow_metered=False)
+
+    def test_an_explicit_budget_scopes_the_query_to_that_location(self):
+        sql, parameters = SourceAccessPolicy().sql_filter("gdrive", allow_metered=True)
+        self.assertEqual(sql, " AND location=?")
+        self.assertEqual(parameters, ("gdrive",))
         with sqlite3.connect(':memory:') as connection:
             connection.execute('CREATE TABLE asset(location TEXT,path TEXT)')
             connection.executemany('INSERT INTO asset VALUES(?,?)',
-                                   [('115', r'B:\movie.mp4'), ('online', ''), ('pikpak', r'A:\movie.mp4')])
+                                   [('gdrive', 'gdrive:/Media/one.mp4'),
+                                    ('onedrive', 'onedrive:/Media/two.mp4')])
             self.assertEqual(connection.execute('SELECT location FROM asset WHERE 1=1' + sql,
-                                                parameters).fetchall(), [('115',)])
+                                                parameters).fetchall(), [('gdrive',)])
 
-    def test_root_choices_allow_pikpak_and_protect_a_different_root_of_the_same_source(self):
-        config = SimpleNamespace(locations={'pikpak': (r'A:\Normal', r'A:\Proxy', r'A:\Proxy\Free')},
-                                 media_costs={r'A:\Normal': 'free', r'A:\Proxy': 'metered',
-                                              r'A:\Proxy\Free': 'free'})
-        with patch('peach.settings_file.active', return_value=config):
-            sql, parameters = SourceAccessPolicy().sql_filter('pikpak', False, 'a.location')
-        with sqlite3.connect(':memory:') as connection:
-            connection.execute('CREATE TABLE asset(location TEXT,path TEXT)')
-            connection.executemany('INSERT INTO asset VALUES(?,?)', [('pikpak', path) for path in
-                (r'A:\Normal\one.mp4', r'A:\Proxy\two.mp4', r'A:\Proxy\Free\three.mp4', r'A:\NormalExtra\four.mp4')])
-            self.assertEqual(connection.execute('SELECT path FROM asset a WHERE 1=1' + sql,
-                                                parameters).fetchall(),
-                             [(r'A:\Normal\one.mp4',), (r'A:\Proxy\Free\three.mp4',)])
-
-    def test_normal_source_can_require_budget_when_its_root_is_protected(self):
-        config = SimpleNamespace(locations={'115': (r'B:\Media',)}, media_costs={r'B:\Media': 'metered'})
-        with patch('peach.settings_file.active', return_value=config):
-            with self.assertRaises(MeteredSourceDenied):
-                SourceAccessPolicy().sql_filter('115', False)
-
-    def test_authorized_metered_query_is_scoped_to_requested_source(self):
-        sql, parameters = SourceAccessPolicy().sql_filter("pikpak", allow_metered=True)
-        self.assertEqual(sql, " AND location=?")
-        self.assertEqual(parameters, ("pikpak",))
+    def test_a_policy_naming_its_own_metered_sources_keeps_the_others(self):
+        policy = SourceAccessPolicy(metered_locations=frozenset({"onedrive"}))
+        sql, parameters = policy.sql_filter(None, allow_metered=False)
+        self.assertEqual(sql, " AND location NOT IN (?)")
+        self.assertEqual(parameters, ("onedrive",))
+        self.assertFalse(policy.requires_budget("gdrive"))
+        self.assertTrue(policy.requires_budget("onedrive"))
 
     def test_disk_guard_fails_closed_when_usage_is_unavailable(self):
         with patch("peach.jobs.shutil.disk_usage", side_effect=OSError("offline")):

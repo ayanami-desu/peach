@@ -19,7 +19,7 @@ from urllib.parse import urlsplit, urljoin
 import httpx
 
 from .follow_secrets import CredentialStore
-from . import browser_transport, peach_proxy
+from . import peach_proxy
 from .http import HttpRequest, HttpxTransport
 from .scripting import USER_AGENT, host_under, hostname_of
 from .fsutil import atomic_write_text
@@ -46,18 +46,13 @@ SOURCES = {
     # 按登录用户看到的那一页取；游客补问这一栏眼下也回，见 `sources/fc2cmadb.py`。
     "fc2cmadb": {"label": "FC2CMADB", "domains": ("fc2cmadb.com",), "login": "https://fc2cmadb.com/",
                  "cookie": True, "session": True},
-    # FC2 商品的两个存档站都在 Cloudflare 的 JS 验证后面：httpx 与模拟 Chrome 指纹的直连都回 403，
-    # 只有浏览器过完验证发下的 `cf_clearance` 能进，而它绑着解题那台浏览器的 User-Agent 与出口。
-    # `browser`：请求在本机 Edge/Chrome 的页面里发，验证由它自己过（ADR-0065）；这台机器没有可驱动的
-    # 浏览器时才退回下面这条路——整站 UA 与用户的 Chrome 一致、Cookie 由用户贴、连接方式选成与浏览器
-    # 同一个出口。验证没过或 Cookie 过期都按 `blocked_pause` 停下，不反复撞。
-    # `browser_gate`：新 profile 第一次进站会被送到年龄确认页（`/ja/age-verify?returnTo=…`），点那颗
-    # 「18 岁以上」的按钮才回到要看的页；浏览器传输落到这个路径就替用户点。
+    # FC2 的两个存档站都在 Cloudflare 的 JS 验证后面：httpx 直连回 403，只有浏览器过完验证发下的
+    # `cf_clearance` 能进，而它绑着解题那台浏览器的 User-Agent 与出口。所以这两站靠用户贴 Cookie，
+    # 整站 UA 与用户的 Chrome 一致；验证没过或 Cookie 过期都按 `blocked_pause` 停下，不反复撞。
     "fc2ppvdb": {"label": "FC2PPV-DB", "domains": ("fc2ppv-db.com",), "login": "https://fc2ppv-db.com/",
-                 "cookie": True, "session": True, "browser": True, "blocked_pause": 6 * 3600,
-                 "browser_gate": {"path": "/age-verify", "button": r"18|はい|入場|同意|以上|Enter|Yes"}},
+                 "cookie": True, "session": True, "blocked_pause": 6 * 3600},
     "javten": {"label": "JAVten", "domains": ("javten.com",), "login": "https://javten.com/",
-               "cookie": True, "session": True, "browser": True, "blocked_pause": 6 * 3600},
+               "cookie": True, "session": True, "blocked_pause": 6 * 3600},
     # 下架 FC2 的最后一档。作品页在 javarchive.com、封面转存在 javstore.net 上，两边算同一个
     # 来源。免登录可读，不收 Cookie，`robots.txt` 是全站放行。
     "javarchive": {"label": "JavArchive", "domains": ("javarchive.com", "javstore.net"),
@@ -87,11 +82,9 @@ SOURCES = {
     "avwikidb": {"label": "AVWikiDB", "domains": ("avwikidb.com",), "login": "https://avwikidb.com/",
                  "blocked_pause": 6 * 3600},
     # 女优资料表、别名与事务所名册（补别名、补女优资料、链接与名册采集）。Cloudflare 对 HTTP 客户端
-    # 间歇拦截：同一天里有的请求 403、有的照常 200。`browser_fallback`：HTTP 客户端撞上 403、429 或
-    # 验证页时，改由本机浏览器取同一页验证；取到正常页就把这个来源固定到浏览器（`fixed_to_browser`），
-    # 浏览器也没取到才照常冷却。不收 Cookie。
+    # 间歇拦截：同一天里有的请求 403、有的照常 200，撞上就按 `blocked_pause` 停下。不收 Cookie。
     "minnano-av": {"label": "みんなのAV", "domains": ("minnano-av.com",), "login": "https://www.minnano-av.com/",
-                   "blocked_pause": 6 * 3600, "browser_fallback": True},
+                   "blocked_pause": 6 * 3600},
 }
 _LOCK = threading.RLock()
 
@@ -135,13 +128,9 @@ def cooldown_path(root: Path, source: str) -> Path:
     return Path(root) / ("scraping-" + source + ".cooldown.json")
 
 
-#: 冷却记录里的 `via`：写下这笔账时请求走的是哪条路。HTTP 客户端（httpx 直连或经 Peach 代理、amane 桥）
-#: 与本机浏览器（ADR-0065）在站方眼里是两个客户端，一条路撞出的封不说明另一条路进不去。
-#: 没有 `via` 的记录按 HTTP 客户端算。
+#: 冷却记录里的 `via`：写下这笔账时请求走的是哪条路。只剩 httpx 一条路（直连或经 Peach 代理），
+#: 字段留着是为了旧记录还对得上。
 VIA_HTTP = "http"
-VIA_BROWSER = "browser"
-#: 来源设置里记「这个来源已固定走浏览器」的键，值是 `VIA_BROWSER`。只对登记了 `browser_fallback` 的来源有效。
-FIXED_TRANSPORT = "transport"
 
 
 def cooldown_state(root: Path, source: str) -> tuple[float, int]:
@@ -217,17 +206,6 @@ def values_for(root: Path, source: str) -> dict[str, str]:
         raise ValueError("未知采集来源")
     credential = _store(root).load("scraping-" + source)
     return dict(credential.values) if credential else {}
-
-
-def fixed_to_browser(root: Path, source: str) -> bool:
-    """登记了 `browser_fallback` 的来源，是不是已经在这台机器上验证过浏览器能进、固定走浏览器。"""
-    return (bool(SOURCES[source].get("browser_fallback"))
-            and values_for(root, source).get(FIXED_TRANSPORT) == VIA_BROWSER)
-
-
-def wants_browser(root: Path, source: str) -> bool:
-    """这个来源该不该走本机浏览器：登记了 `browser`，或 `browser_fallback` 已固定到浏览器。"""
-    return bool(SOURCES[source].get("browser")) or fixed_to_browser(root, source)
 
 
 def _write_values(root: Path, source: str, values: dict[str, str]) -> None:
@@ -326,12 +304,6 @@ def save(root: Path, source: str, body: dict) -> dict:
     return describe(root, source)
 
 
-def fix_to_browser(root: Path, source: str) -> None:
-    """把登记了 `browser_fallback` 的来源固定到本机浏览器：写进来源设置，连接方式与 Cookie 原样留着。"""
-    with _LOCK:
-        _write_values(root, source, {**values_for(root, source), FIXED_TRANSPORT: VIA_BROWSER})
-
-
 def describe(root: Path, source: str) -> dict:
     values = values_for(root, source)
     until = paused_until(root, source)
@@ -339,9 +311,7 @@ def describe(root: Path, source: str) -> dict:
             "login": SOURCES[source]["login"], "accepts_cookie": bool(SOURCES[source].get("cookie")),
             "network": "direct" if values.get("network") == "direct" else "peach",
             "cookie_saved": bool(values.get("cookie") or values.get("cookies_text")),
-            "cooldown_until": until or None,
-            # 这台机器上这个来源是不是由本机浏览器过验证：该走浏览器（`wants_browser`）且找得到浏览器。
-            "browser": wants_browser(root, source) and browser_transport.find_browser() is not None}
+            "cooldown_until": until or None}
 
 
 def source_checks(root: Path, source: str) -> dict:
@@ -403,11 +373,6 @@ def record_source_check(root: Path, source: str, stage: str, record: dict) -> No
             LOGGER.warning("来源 %s 的诊断记录未保存", source)
 
 
-def browser_profile(root: Path) -> Path:
-    """浏览器 profile 放在凭据根下：里面是 `cf_clearance` 与站点会话，和贴进来的 Cookie 一个性质。"""
-    return Path(root) / "browser"
-
-
 def client_for(root: Path, source: str, *, session: bool = False, **kwargs) -> httpx.Client:
     values = values_for(root, source)
     network = {"trust_env": False} if values.get("network") == "direct" else peach_proxy.client_options(root)
@@ -423,9 +388,8 @@ class SourceTransport:
     """公开采集按来源复用连接池；登录会话由特定来源消费者显式建立。"""
 
     def __init__(self, secrets_root: Path, *, max_requests: int = 0,
-                 max_bytes: int = 0, max_seconds: float = 0, allow_browser: bool = True):
+                 max_bytes: int = 0, max_seconds: float = 0):
         self.root = secrets_root
-        self.allow_browser = allow_browser
         self.transports: dict[str | None, HttpxTransport] = {}
         self.max_requests, self.max_bytes = max_requests, max_bytes
         from .processing_control import deadline_after
@@ -495,7 +459,7 @@ class SourceTransport:
         key = source or hashlib.sha256(hostname_of(request.url).encode()).hexdigest()
         cooldown = cooldown_path(self.root, key)
         # 冷却只认这条路自己撞出来的账：直连 403 攒下的 `blocks` 与 `until` 不压到浏览器那条路上，反之亦然。
-        via = self._via(source)
+        via = VIA_HTTP
         until, blocks = _state_for(self.root, key, via)
         if until > time.time():
             raise SourcePaused("来源正在冷却，请稍后重试；已有图片保留")
@@ -504,20 +468,8 @@ class SourceTransport:
         self.requests += 1
         try:
             response = self.transports[source](request, timeout, max_bytes)
-        except (httpx.HTTPError, browser_transport.BrowserUnavailable):
+        except httpx.HTTPError:
             raise httpx.TransportError("来源连接未取得，请检查该来源的网络设置") from None
-        except browser_transport.ChallengeUnsolved:
-            blocks += 1
-            _pause(cooldown, time.time() + min(FIRST_BLOCKED_PAUSE * 2 ** (blocks - 1),
-                                               SOURCES[source]["blocked_pause"]), blocks, via)
-            raise SourcePaused("来源的人机验证没有在限时内通过，暂停向它请求一段时间；"
-                               "浏览器窗口再弹出时点一下验证即可；已有图片保留")
-        if via == VIA_HTTP and source and SOURCES[source].get("browser_fallback") and _refused(response):
-            verified = self._verify_in_browser(source, request, timeout, max_bytes)
-            if verified is not None:
-                # HTTP 客户端那条路攒下的账不压到浏览器上：清掉，之后按浏览器那条路重新数。
-                cooldown.unlink(missing_ok=True)
-                response, via, blocks = verified, VIA_BROWSER, 0
         self.bytes += len(response.body)
         if response.status == 429:
             retry = response.headers.get("retry-after", "")
@@ -579,61 +531,11 @@ class SourceTransport:
         """
         if action not in {"blocked", "rate_limited"} or source not in SOURCES:
             return
-        pause_source(self.root, source, refused=action == "blocked", via=self._via(source))
+        pause_source(self.root, source, refused=action == "blocked", via=VIA_HTTP)
 
-    def _via(self, source: str | None) -> str:
-        """这个来源这次走哪条路。该走浏览器的来源要先选出传输才知道（不发请求、不起进程）。"""
-        if self.allow_browser and source and source not in self.transports and wants_browser(self.root, source):
-            self.transports[source] = self._transport_for(source)
-        transport = self.transports.get(source)
-        return VIA_BROWSER if isinstance(transport, browser_transport.BrowserTransport) else VIA_HTTP
-
-    def _verify_in_browser(self, source: str, request: HttpRequest, timeout: float, max_bytes: int):
-        """HTTP 客户端被拦后，由本机浏览器取同一页验证。
-
-        取到 200 且不是验证页：这个来源固定到浏览器（`fix_to_browser`），本趟之后的请求也走浏览器，返回这一页。
-        本机没有浏览器、浏览器没取到或同样被拦：返回 None，调用方照 HTTP 客户端被拦那样冷却。
-        """
-        if not self.allow_browser:
-            return None
-        from .processing_control import checkpoint
-        checkpoint('network')
-        browser = self._browser_for(source)
-        if browser is None:
-            return None
-        try:
-            response = browser(request, timeout, max_bytes)
-        except (browser_transport.BrowserUnavailable, browser_transport.ChallengeUnsolved) as error:
-            LOGGER.info("%s 的 HTTP 客户端被拦，浏览器验证也没取到：%s", source, error)
-            return None
-        if response.status != 200 or _refused(response):
-            LOGGER.info("%s 的 HTTP 客户端被拦，浏览器验证回 HTTP %s", source, response.status)
-            return None
-        fix_to_browser(self.root, source)
-        replaced = self.transports.get(source)
-        if isinstance(replaced, HttpxTransport):
-            replaced.close()
-        self.transports[source] = browser
-        LOGGER.warning("%s 的 HTTP 客户端被拦，浏览器验证取到正常页；这个来源之后固定走本机浏览器", source)
-        return response
-
-    def _browser_for(self, source: str):
-        """这个来源用的本机浏览器（进程共用）；本机没有可驱动的浏览器或代理带凭据时 None。"""
-        values = values_for(self.root, source)
-        direct = values.get("network") == "direct"
-        options = {"trust_env": False} if direct else peach_proxy.client_options(self.root)
-        proxy = options.get("proxy", "")
-        direct = not options.get("trust_env", True) and not proxy
-        gate = SOURCES[source].get("browser_gate")
-        gates = {domain: gate for domain in SOURCES[source]["domains"]} if gate else {}
-        return browser_transport.shared(browser_profile(self.root), direct=direct, proxy=proxy, gates=gates)
 
     def _transport_for(self, source: str | None):
-        """这个来源的请求走哪条路：该走浏览器（`wants_browser`）且本机有浏览器就走浏览器页面，否则 httpx。"""
-        if self.allow_browser and source and wants_browser(self.root, source):
-            browser = self._browser_for(source)
-            if browser is not None:
-                return browser
+        """这个来源的请求走哪条路：来源有自己的 Cookie 就用带 Cookie 的客户端，否则共用一份连接池。"""
         if source:
             client = client_for(self.root, source, session=bool(SOURCES[source].get("session")),
                                 follow_redirects=False)

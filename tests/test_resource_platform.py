@@ -5,7 +5,6 @@ import ctypes
 import errno
 import os
 from pathlib import Path
-import sys
 import tempfile
 import threading
 import time
@@ -16,8 +15,6 @@ from unittest.mock import Mock, patch
 import psutil
 
 from peach.resource_platform import ThreadInfo, cgroup_capacity, cpu_capacity, thread_times
-from peach.gpu_linux import LinuxGpuCounters
-from peach.gpu_usage import GpuCounters
 
 
 class PlatformCpuTests(unittest.TestCase):
@@ -115,91 +112,3 @@ class PlatformCpuTests(unittest.TestCase):
         after = thread_times(process, {identity})
         self.assertGreater(after[identity], before[identity])
         self.assertGreater(cpu_capacity(process), 0)
-
-    @unittest.skipUnless(sys.platform == 'darwin', 'macOS 原生 GPU 能力边界')
-    def test_macos_gpu_unavailable_does_not_return_zero(self):
-        counter = GpuCounters()
-        self.addCleanup(counter.close)
-        values, state, reason = counter.sample()
-        self.assertIsNone(values)
-        self.assertEqual(state, 'unavailable')
-        self.assertIn('macOS', reason)
-
-
-class LinuxGpuTests(unittest.TestCase):
-    def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name).resolve()
-        self.devices = self.root / 'dri'
-        self.devices.mkdir()
-        self.now = 100.0
-        self.counter = LinuxGpuCounters(proc=self.root / 'proc', devices=self.devices, clock=lambda: self.now)
-        self.addCleanup(self.counter.close)
-
-    def fd(self, pid, descriptor, busy, *, client=1, capacity=1, device='0000:01:00.0'):
-        folder = self.root / 'proc' / str(pid) / 'fdinfo'
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / str(descriptor)
-        path.write_text(f'drm-driver: i915\ndrm-pdev: {device}\ndrm-client-id: {client}\n'
-                        f'drm-engine-render: {busy} ns\ndrm-engine-capacity-render: {capacity}\n')
-        return path
-
-    def sample(self, processes=None):
-        self.counter.sample()
-        return self.counter.sample_processes(processes or {10: 1.0})
-
-    def test_drm_duplicates_are_counted_once_and_capacity_normalizes_busy_time(self):
-        for descriptor in (4, 5):
-            self.fd(10, descriptor, 1_000_000_000, capacity=2)
-        self.assertEqual(self.sample()[1], 'sampling')
-        self.now += 2
-        for descriptor in (4, 5):
-            self.fd(10, descriptor, 3_000_000_000, capacity=2)
-        values, state, reason = self.sample()
-        self.assertEqual((state, reason), ('ready', ''))
-        self.assertEqual(values[10], {'0000:01:00.0:render': 50.0})
-
-    def test_counter_regression_keeps_high_water_mark_and_pid_reuse_starts_sampling(self):
-        self.fd(10, 4, 2_000_000_000)
-        self.sample()
-        self.now += 1
-        self.fd(10, 4, 1_000_000_000)
-        self.assertEqual(self.sample()[0][10]['0000:01:00.0:render'], 0.0)
-        self.now += 1
-        self.fd(10, 4, 3_000_000_000)
-        self.assertEqual(self.sample()[0][10]['0000:01:00.0:render'], 50.0)
-        self.now += 1
-        self.assertEqual(self.sample({10: 2.0})[1], 'sampling')
-
-    def test_shared_clients_are_not_attributed_twice_to_owned_processes(self):
-        self.fd(10, 4, 0)
-        self.fd(20, 6, 0)
-        values, state, reason = self.sample({10: 1.0, 20: 2.0})
-        self.assertIsNone(values)
-        self.assertEqual(state, 'unavailable')
-        self.assertIn('共享', reason)
-
-    def test_missing_container_device_or_process_permissions_are_unavailable(self):
-        self.devices.rmdir()
-        self.assertEqual(self.sample()[1], 'unavailable')
-        self.devices.mkdir()
-        with patch.object(Path, 'iterdir', side_effect=PermissionError('fdinfo denied')):
-            values, state, reason = self.sample()
-        self.assertIsNone(values)
-        self.assertEqual(state, 'unavailable')
-        self.assertIn('denied', reason)
-
-    def test_driver_without_engine_counters_is_not_idle_zero(self):
-        path = self.fd(10, 4, 0)
-        path.write_text('drm-driver: nvidia\ndrm-client-id: 1\n')
-        values, state, reason = self.sample()
-        self.assertIsNone(values)
-        self.assertEqual(state, 'unavailable')
-        self.assertIn('未提供', reason)
-
-    def test_readable_process_with_no_gpu_descriptors_is_idle(self):
-        folder = self.root / 'proc/10/fdinfo'
-        folder.mkdir(parents=True)
-        (folder / '0').write_text('pos: 0\nflags: 0100000\n')
-        self.assertEqual(self.sample(), ({10: {}}, 'ready', ''))

@@ -120,7 +120,7 @@ export function DeviceSessions({ revision, receipt }: { revision: string; receip
     queryFn: ({ signal }) => apiGet<DeviceSessionList>(URL, signal),
   });
   if (query.error) {
-    return <Section title="已登录的设备"><Stack><ErrorText>{errorMessage(query.error)}</ErrorText></Stack></Section>;
+    return <Section guide="devices" title="已登录的设备"><Stack><ErrorText>{errorMessage(query.error)}</ErrorText></Stack></Section>;
   }
   if (query.isFetching || !query.data) return <SectionSkeleton label="正在读取已登录的设备" html={devicesSkeleton} />;
   return <DeviceList initial={query.data} receipt={receipt} />;
@@ -155,7 +155,7 @@ function DeviceList({ initial, receipt }: { initial: DeviceSessionList; receipt(
   });
 
   return (
-    <Section title="已登录的设备">
+    <Section guide="devices" title="已登录的设备">
       {list.sessions.length
         ? <Rows>
             {list.sessions.map(row => (

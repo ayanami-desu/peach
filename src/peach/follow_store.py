@@ -505,7 +505,7 @@ class FollowStore:
                 added += 1
         if fresh:
             # 新写了一份就在这个来源目录里删一份，抵消增长；条目都写完了再删，这一轮的新引用已算进去。
-            # 只删一份：这里在写事务里，升级前留下的存量等用户在「修复与迁移」里确认（`follow_evidence`）。
+            # 只删一份：这里在写事务里，升级前留下的存量不摊到抓取里清（`follow_evidence.prune`）。
             follow_evidence.prune(self._evidence_directory(fetch),
                                   follow_evidence.referenced_names(connection, source_id), limit=1)
         if fetch.provider in _SITE_WIDE_CHARACTERS:

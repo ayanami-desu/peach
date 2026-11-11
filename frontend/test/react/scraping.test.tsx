@@ -31,7 +31,6 @@ const source = (overrides: Partial<Source> = {}): Source => ({
   accepts_cookie: true,
   network: 'peach',
   cookie_saved: false,
-  browser: false,
   ...overrides,
 });
 
@@ -127,19 +126,7 @@ it('首屏用 prefetch 缓存画出来源与任务，挂载时不重复请求', 
   // 连接方式是 BoardUI 的 Select，画出来的是按钮；原生 select 是 React Aria 藏在后面
   // 供表单取值的那一个，不是这一行的长相。
   expect(host.querySelector('[aria-haspopup=listbox]')?.textContent?.trim()).toBe('Peach 代理');
-  expect(host.querySelector<HTMLAnchorElement>('a[href="/settings/library#peachProxy"]')?.textContent)
-    .toContain('配置 Peach 代理');
   expect(host.querySelector<HTMLAnchorElement>('a[href="https://www.javbus.com/"]')?.target).toBe('_blank');
-});
-
-it('走本机浏览器的来源只说明验证怎么过，不画 Cookie 输入', async () => {
-  const { host } = await open(quiet({ source: 'fc2ppvdb', label: 'FC2PPV-DB', browser: true }));
-  const card = section(host, 'FC2PPV-DB');
-  expect(card?.textContent).toContain('人机验证由本机浏览器自动完成');
-  expect(card?.textContent).toContain('这台机器上不需要 Cookie');
-  expect(password(host), '浏览器自己带 Cookie，这一格不该出现').toBeNull();
-  expect(card?.textContent).not.toContain('任选一种方式提供 Cookie');
-  expect(host.querySelector('[aria-haspopup=listbox]'), '连接方式仍由用户选，浏览器按它换出口').not.toBeNull();
 });
 
 it('保存后清空秘密输入，列表就地换成服务端回的那一条，撤销随之可操作', async () => {

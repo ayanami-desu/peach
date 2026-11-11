@@ -12,10 +12,8 @@ import time
 
 from . import change_impact
 
-EXTERNAL = {'frontend/e2e/': 'test_web_e2e.py', 'frontend/test/': 'test_frontend_build.py'}
+EXTERNAL = {'frontend/test/': 'test_frontend_build.py'}
 CONTAINERS = {
-    'test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants': 'frontend/e2e/',
-    'test_web_e2e.SetupE2ETests.test_the_first_run_page_writes_errors_back_and_finishes': 'frontend/e2e/setup.test.ts',
     'test_frontend_build.VitestTests.test_the_island_suite_passes': 'frontend/test/',
 }
 OUTCOMES = frozenset({'pass', 'fail', 'unknown'})
@@ -40,8 +38,6 @@ def owner(unit: str) -> str:
 def container_files(root: Path, case: str) -> set[str]:
     prefix = CONTAINERS[case]
     names = {name for name in external_files(root, owner('case:' + case)) if name.startswith(prefix)}
-    if case.endswith('test_every_route_holds_the_layout_and_runtime_invariants'):
-        names.discard('frontend/e2e/setup.test.ts')
     return names
 
 
@@ -102,10 +98,9 @@ class ImpactPlan:
             invalid = self.calculate(path, kind)
             invalid.update(name for name in self.all_units if name.startswith('case:') and owner(name) in invalid)
             if kind != 'unsafe' and (path.startswith(SETUP_PREFIXES) or path in PAGE_BUNDLES):
-                # 独立页面不加载主应用；Python 契约、打包、组件与 setup 浏览器检查仍执行。
+                # 独立页面不加载主应用；Python 契约、打包与组件检查仍执行。
                 invalid.difference_update(name for name in self.all_units
-                                          if name.startswith('frontend/e2e/') and name != 'frontend/e2e/setup.test.ts')
-                invalid.discard('case:test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants')
+                                          if name.startswith('frontend/e2e/'))
             self.paths[key] = invalid
         return self.paths[key]
 
@@ -334,8 +329,7 @@ def validate_child_plan(root: Path, data: dict, *, state: str, valid_seconds: fl
 @contextmanager
 def selection_environment(plan, active_module=None):
     changed = {}
-    for module, variable in (('test_web_e2e.py', 'PEACH_E2E_FILES'),
-                              ('test_frontend_build.py', 'PEACH_VITEST_FILES')):
+    for module, variable in (('test_frontend_build.py', 'PEACH_VITEST_FILES'),):
         if module in plan.get('external', {}) and (active_module is None or active_module == module):
             changed[variable] = os.environ.get(variable)
             os.environ[variable] = json.dumps([name.removeprefix('frontend/') for name in plan['external'][module]])

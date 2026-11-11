@@ -3,42 +3,27 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
-from . import auth, distribution, onboarding, scan, settings_file
+from . import auth, distribution, ledger_backups, onboarding, settings_file
 from .api import create_app
 from .config import (
     CONFIGURED,
     DATABASE_PATH,
-    MDNS_NAME,
     MIGRATIONS_DIR,
-    REPLICATION_ENABLED,
     SERVE_HOST,
     SERVE_PORT,
     SETTINGS_ERROR,
-    SHARED_DATABASE_PATH,
-    STATE_DIR,
-    CLOUDFLARED_BINARY,
-    TUNNEL_ENABLED,
-    TUNNEL_HOSTNAME,
-    TUNNEL_MODE,
-    TUNNEL_TOKEN,
     PeachSettings,
 )
 from .migrations import plan, upgrade
-from .platform import location_mounts
 from .scripting import open_readonly
-from .sync import LedgerSync, device_id
-from .sync import plan as sync_plan
-from .sync import writer_device
-from . import tunnel
 
 
 DEFAULT_DB = DATABASE_PATH
 
-#: 只监听这些地址时，服务在局域网上不可达。
+#: 只监听这些地址时，服务只对运行它的这台机器可达。
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
 
@@ -50,8 +35,7 @@ def _require_readable_settings() -> None:
     """设置文件在但读不出来时，明确拒绝。
 
     这种情况下 `config` 里那份是退回的内建默认——Peach 数据目录仍然对（发现顺序不看文件内容），
-    但端口、mDNS 名、复制坐标全是通用值。拿它启动会得到一个「看起来正常」的服务，
-    比直接失败难查得多。
+    但端口、网盘授权全是通用值。拿它启动会得到一个「看起来正常」的服务，比直接失败难查得多。
     """
     if SETTINGS_ERROR is not None:
         raise SystemExit(
@@ -61,7 +45,7 @@ def _require_readable_settings() -> None:
 def _run_uvicorn(app, **options) -> None:
     """与单进程的 `uvicorn.run` 相同，只是先在 uvicorn 的事件循环上装好 Peach 的 asyncio 处理器。
 
-    处理器拿着 Server：Windows 上客户端在 accept 完成前断开时，标准库会关掉监听套接字，
+    处理器拿着 Server：客户端在 accept 完成前断开时，标准库会关掉监听套接字，
     `error_reporting.asyncio_handler` 靠它按原地址重新监听。
     """
     import asyncio
@@ -88,44 +72,17 @@ def _run_uvicorn(app, **options) -> None:
 
 def _serve(args: argparse.Namespace) -> int:
     _require_readable_settings()
-    if args.redirect_origin:
-        from .redirect import create_redirect_app
-        if args.ssl_certfile or args.ssl_keyfile:
-            raise SystemExit("redirect listener must use HTTP")
-        _run_uvicorn(create_redirect_app(args.redirect_origin), host=args.host, port=args.port)
-        return 0
     if distribution.docker():
-        # Docker 没有托盘，日志的半年保留、按月切段与空进程日志清理在这里做；子进程还没起。
+        # 容器里没有别的东西管日志：半年保留、按月切段与空进程日志清理在这里做。
         import logging
         from . import log_retention
         try:
             log_retention.sweep(settings_file.active().directory("logs"))
         except Exception:
             logging.getLogger(__name__).warning("日志整理失败", exc_info=True)
-    if bool(args.ssl_certfile) != bool(args.ssl_keyfile):
-        raise SystemExit("--ssl-certfile and --ssl-keyfile must be provided together")
-    for path in (args.ssl_certfile, args.ssl_keyfile):
-        if path is not None and not path.is_file():
-            raise SystemExit(f"TLS file not found: {path}")
-    tls_enabled = args.ssl_certfile is not None
-    # 绑在回环上就不能发布 mDNS：广播出去的是本机的局域网地址，而那个地址上没有
-    # 任何东西在监听，`peach.local` 于是变成一个必然连不上的名字。更糟的是开发机
-    # 会就此抢占生产用的 `peach.local`，把同一局域网里的真实实例挤掉。
-    publish_mdns = not args.no_mdns and not _is_loopback(args.host)
-    if not args.no_mdns and not publish_mdns:
-        print(
-            f"mDNS 未发布：--host {args.host} 只允许本机访问，"
-            f"发布 peach.local 会指向一个连不上的地址。"
-            f"需要局域网访问就用 --host 0.0.0.0。"
-        )
-    # `--setup` 是托盘首启拉起的引导服务：只提供首次运行表单，不认发现到的 Peach 数据目录，
-    # 也不要口令。口令刻意置空而不是读文件——表单一提交就会生成一份口令，那之后要是
-    # 有人重启这条引导服务，读到新口令的它会把还没看到口令的用户关在门外。
-    # 安全边界由绑定地址给：这条服务只监听回环（`build_setup_service_specs`）。
-    tunnel_lan_address = None
-    if not distribution.standalone() and not _is_loopback(args.host) and (publish_mdns or TUNNEL_ENABLED):
-        from .mdns import lan_ipv4
-        tunnel_lan_address = args.mdns_address or lan_ipv4()
+    # `--setup` 是首次设置的引导服务：只提供首次运行表单，不要口令、也报未配置。
+    # 口令刻意置空而不是读文件——表单一提交就会生成一份口令，那之后要是有人重启这条
+    # 引导服务，读到新口令的它会把还没看到口令的用户关在门外。
     token = "" if args.setup else _serve_token(args)
     secrets_dir = settings_file.active().directory("secrets")
     settings = PeachSettings(
@@ -137,45 +94,25 @@ def _serve(args: argparse.Namespace) -> int:
         access_path=secrets_dir / "access.json",
         configured=CONFIGURED and not args.setup,
         docs_enabled=args.docs,
-        mdns_enabled=publish_mdns,
-        mdns_name=args.mdns_name,
-        mdns_port=args.port,
-        mdns_address=args.mdns_address,
-        tls_enabled=tls_enabled,
-        tunnel_enabled=TUNNEL_ENABLED,
-        tunnel_binary=CLOUDFLARED_BINARY,
-        tunnel_mode=TUNNEL_MODE,
-        tunnel_token=TUNNEL_TOKEN,
-        tunnel_hostname=TUNNEL_HOSTNAME,
-        tunnel_standalone=distribution.standalone(),
-        tunnel_lan_address=tunnel_lan_address,
-        tunnel_origin_port=(args.port if distribution.standalone() or tls_enabled else None),
-        tunnel_state_root=settings_file.active().directory("state"),
-        tunnel_log_root=settings_file.active().directory("logs"),
     )
-    sync = _build_sync(args, settings)
-    _run_uvicorn(
-        create_app(settings, sync), host=args.host, port=args.port, proxy_headers=False,
-        ssl_certfile=str(args.ssl_certfile) if args.ssl_certfile else None,
-        ssl_keyfile=str(args.ssl_keyfile) if args.ssl_keyfile else None,
-    )
+    _run_uvicorn(create_app(settings), host=args.host, port=args.port, proxy_headers=False)
     return 0
 
 
 def _serve_token(args: argparse.Namespace) -> str:
-    """取这次启动要用的口令，并在绑局域网却没有口令时拒绝启动。
+    """取这次启动要用的口令，并在对外可达却没有口令时拒绝启动。
 
-    拒绝而不是告警：托盘在后台起服务，告警不会有人看见，服务却已经把整个馆藏和写接口
-    摆在同网段上了。回环地址不拦——那时只有本机进程够得着，与文件系统同级。
+    拒绝而不是告警：服务是公网部署的，告警不会有人看见，服务却已经把整个馆藏和写接口
+    摆在外部地址上。回环地址不拦——那时只有本机进程够得着，与文件系统同级。
 
     `--no-auth` 让本机开发跳过登录页，同一条回环判据照样拦：它只影响这次启动，
-    不读也不改口令文件，所以托盘起的那份服务仍然要口令。
+    不读也不改口令文件，所以部署里的那份服务仍然要口令。
     """
     if getattr(args, "no_auth", False):
         if not _is_loopback(args.host):
             raise SystemExit(
                 f"拒绝启动：--no-auth 仅允许监听本机地址时使用，而 --host {args.host} 不是。\n"
-                f"在局域网地址上关掉登录，等于把整个馆藏和写接口交给同网段的任何设备。"
+                f"在对外地址上关掉登录，等于把整个馆藏和写接口交给任何够得着这台服务的人。"
             )
         # 直接写而不是 setdefault：走到这里就是这次启动确实要开调试口径，
         # 继承来的旧值不该把它顶掉，反过来也不该由它决定别的进程算不算调试。
@@ -186,46 +123,18 @@ def _serve_token(args: argparse.Namespace) -> str:
     if token or _is_loopback(args.host):
         return token
     raise SystemExit(
-        f"拒绝启动：--host {args.host} 允许其他设备访问，而这台机器还没有访问口令。\n"
-        f"这样起服务，同网段的任何设备都能读整个馆藏并调用写接口。\n"
+        f"拒绝启动：--host {args.host} 允许其他机器访问，而这台机器还没有访问口令。\n"
+        f"这样起服务，任何够得着它的人都能读整个馆藏并调用写接口。\n"
         f"先跑 `peach token` 生成并查看口令（存在 {auth.token_path(secrets_dir)}），"
         f"再重新启动；只给本机用就改成 --host 127.0.0.1。"
     )
 
 
-def _build_sync(args: argparse.Namespace, settings: PeachSettings) -> LedgerSync | None:
-    """建立只读角色观察器；服务启动与浏览绝不触发跨机复制。
-
-    冲突不自动挑边：两台机器都写过之后没有安全的合并规则，服务照常起但转只读，
-    由人选一边（把要保留的那份复制成另一份，或删掉一侧的 `.sync.json` 重新播种）。
-
-    `replication.enabled = false` 时整条链路不装配：不建观察器、不探测共享目录。
-    没有第二台机器就没有「读者」可言，服务按独立写者跑——写接口全开，只读闸门不生效
-    （`sync is None` 时 `/healthz` 的 `ledger_sync` 是 `disabled`，不是 `writer`）。
-    """
-    if not REPLICATION_ENABLED:
-        print("数据库角色：disabled · replication.enabled = false，允许本机独立修改数据库")
-        return None
-    sync = LedgerSync(
-        settings.db_path, args.shared_db, device_id(STATE_DIR),
-        interval=0,
-    )
-    decision = sync.observe()
-    print(f"数据库角色：{sync.status} · {sync.detail}")
-    if decision.conflict:
-        print(
-            "  服务转只读。请人工选定一份数据库："
-            f"本地 {settings.db_path}，共享 {args.shared_db}。"
-        )
-    return sync
-
 def _migrate(args: argparse.Namespace) -> int:
     _require_readable_settings()
-    if args.action == "upgrade":
-        # 托盘起服务前先跑这一步；恢复中断后账本可能暂时不在，不收拾就会迁出一个空账本。
-        from .ledger_backups import recover
-        if (settled := recover(args.db)) is not None:
-            print(f"restore marker: {settled['message']}")
+    # 上次从备份恢复如果被中断，账本可能不在或不是一份。先把标记处理掉再谈迁移：
+    # 否则这里会被当成新装，建出一个空账本。
+    ledger_backups.recover(args.db)
     all_migrations, pending = plan(args.db, MIGRATIONS_DIR)
     print(f"database: {args.db}")
     print(f"migrations: {len(all_migrations)}, pending: {len(pending)}")
@@ -233,12 +142,6 @@ def _migrate(args: argparse.Namespace) -> int:
         print(f"PENDING {migration.version} {migration.name}")
     if args.action == "status" or not pending:
         return 0
-    config = settings_file.active()
-    if args.db.resolve() == (config.directory('database') / 'ledger.db').resolve():
-        from .runtime_prepare import configured_ledger_writer
-        writer, reason = configured_ledger_writer(config)
-        if not writer:
-            raise SystemExit(f'本机不能迁移账本：{reason}；请先在写入端迁移并同步')
     if args.db.resolve() == DEFAULT_DB.resolve() and not args.yes:
         raise SystemExit("refusing to modify the real ledger without --yes")
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -262,7 +165,7 @@ _PROCESSED_MEASURES = (
 
 
 def _status(args: argparse.Namespace) -> int:
-    """一屏看完账本、迁移和同步状态。只读，随时可跑。
+    """一屏看完账本与迁移状态。只读，随时可跑。
 
     这里刻意不报后台任务：进程名和日志 mtime 都不是存活判据（长跑批处理各自持有
     pid 锁与进度文件），`scripts/job_status.py` 才是那件事的正式表面。
@@ -315,59 +218,7 @@ def _status(args: argparse.Namespace) -> int:
     print(f"\n  迁移：共 {len(all_migrations)} 个，待应用 {len(pending)} 个")
     for migration in pending:
         print(f"    PENDING {migration.version} {migration.name}")
-
-    decision = sync_plan(args.db, args.shared_db)
-    owner = writer_device(args.db, args.shared_db)
-    # 只读取已有的 device-id，不像 `device_id()` 那样在缺失时顺手生成一个：
-    # 状态命令生成标识会让「这一代是谁写的」多出一个从没写过库的名字。
-    local_device = ""
-    try:
-        local_device = (STATE_DIR / "device-id").read_text(encoding="utf-8").strip()
-    except OSError:
-        pass
-    whose = "本机" if owner and owner == local_device else (owner or "未确定")
-    print(f"  同步：{decision.action} · {decision.reason}；写入端 {whose}")
     return 0
-
-
-def _ledger_sync(args: argparse.Namespace) -> int:
-    sync = LedgerSync(args.db, args.shared_db, device_id(STATE_DIR), interval=0)
-    decision = sync.take_ownership() if args.take_ownership else sync.synchronize_now()
-    completed = {
-        "pull": "已从共享副本拉取",
-        "push": "已推送到共享副本",
-        "local-ahead": "已推送到共享副本",
-        "in-sync": "两侧已经一致",
-        "take-ownership": "本机已成为唯一写入端",
-        "disabled": decision.reason,
-    }
-    print(f"数据库同步：{decision.action} · {completed.get(decision.action, decision.reason)}")
-    return {"conflict": 2, "offline": 3, "missing": 4}.get(decision.action, 0)
-
-
-def _parse_mounts(
-    raw: list[str] | None, locations: dict[str, tuple[str, ...]] | None = None,
-) -> dict[str, tuple[str, ...]]:
-    """`--mount local=/Volumes/Media/media` 形式的挂载点；同一来源重复给就按顺序
-    对应它的几个数据库路径前缀。
-
-    键是 `asset.location`（`[media.locations]` 里声明过的来源 ID），不是盘符：
-    打错一个 ID 如果静默收下，那个来源就会安静地进脱盘模式，所以这里直接拒绝。
-    """
-    known = dict(locations or {})
-    mounts: dict[str, list[str]] = {}
-    for chunk in raw or ():
-        key, separator, value = chunk.partition("=")
-        key = key.strip()
-        if not separator or not key:
-            raise SystemExit(f"--mount 要写成 来源ID=路径，收到：{chunk}")
-        if key not in known:
-            raise SystemExit(
-                f"--mount 的来源 ID 未在 [media.locations] 声明：{key}"
-                f"（已知：{'、'.join(sorted(known)) or '尚未声明媒体来源'}）"
-            )
-        mounts.setdefault(key, []).append(value.strip())
-    return {key: tuple(item for item in values if item) for key, values in mounts.items()}
 
 
 def _resolved_config(
@@ -383,15 +234,11 @@ def _resolved_config(
 
 
 def _init(args: argparse.Namespace) -> int:
-    """首次运行：建目录、建库、写设置文件、生成本机 CA。
-
-    `--from-existing` 是给已经在跑的机器用的另一条路径：不建目录、不建库、不生成
-    证书，只把当前生效的配置落成设置文件。现有部署的坐标散在环境变量和运行现场里，
-    进程看不见的那几项（局域网地址、钥匙串账号名）由命令行显式补，落不下的会在末尾
-    逐条列出来，绝不拿猜的值填。
+    """首次运行：建目录、建库、写设置文件、生成访问口令。
 
     一个参数都没给、stdin 又是终端时进问答（`_init_interactive`）；给了任何参数、
-    加了 `--no-input` 或 stdin 不是终端，都走下面这条非交互路径。
+    加了 `--no-input` 或 stdin 不是终端，都走下面这条非交互路径——它只落已知的坐标，
+    网盘凭据留给网页上的授权流程。
     """
     if _wants_interview(args):
         return _init_interactive()
@@ -401,36 +248,32 @@ def _init(args: argparse.Namespace) -> int:
         print("要重新生成就加 --force；它会覆盖这个文件，不动数据。")
         return 3
     if broken is not None:
-        # 第一阶段的 `[media] R = ...` 在第二阶段是硬错误，于是 `--from-existing` 读到的
-        # 「当前生效配置」其实是内建默认。不说这一句，重写出来的文件会安静地丢掉旧文件
-        # 里的 mDNS 名、writer 地址和 SMB 坐标——那正是这条命令声称要保下来的东西。
         print(f"注意：{broken}")
-        print("下面这份是按内建默认加环境变量重建的，**没有**继承旧文件里的值。")
+        print("下面这份是按内建默认重建的，**没有**继承旧文件里的值。")
         print("旧文件里自定义过的坐标要在这次命令里用对应参数重新给一遍。")
-
-    overrides: dict[str, object] = {
-        "host": args.host, "port": args.port, "mdns_name": args.mdns_name,
-        "review_writer_origin": args.writer_origin,
-        "review_writer_proxy": args.writer_proxy,
-        "shared_root": str(args.shared_root) if args.shared_root else None,
-        "smb_host": args.smb_host, "smb_share": args.smb_share,
-        "smb_user": args.smb_user,
-    }
-    mounts = dict(config.mounts)
-    mounts.update(_parse_mounts(args.mount, config.locations))
-    prepared = settings_file.capture_existing(
-        config, replication_enabled=args.from_existing,
-        overrides=overrides, mounts=mounts,
+    prepared = settings_file.PeachConfig(
+        data_root=config.data_root,
+        path=config.path,
+        present=True,
+        data_root_found=config.data_root_found,
+        # 目录键一次写全：设置文件是给人读的，省略掉的那些反而要人去猜默认规则。
+        directories={key: config.directories.get(key, key)
+                     for key in settings_file.DIRECTORY_KEYS},
+        library_names=config.library_names,
+        library_icons=config.library_icons,
+        library_catalog=config.library_catalog,
+        server=settings_file.ServerSettings(
+            host=args.host or config.server.host,
+            port=args.port or config.server.port,
+        ),
+        drive_public_url=args.public_url or config.drive_public_url,
+        drive_clients=config.drive_clients,
+        drive_roots=config.drive_roots,
     )
-
-    if not args.from_existing:
-        _create_data_tree(prepared)
-    else:
-        _announce_token(prepared)
+    _create_data_tree(prepared)
     path = settings_file.write(prepared, force=args.force)
     print(f"设置文件：{path}")
-    _report_blanks(prepared)
-    _print_next_steps(prepared, from_existing=args.from_existing)
+    _print_next_steps(prepared)
     return 0
 
 
@@ -444,26 +287,20 @@ def _wants_interview(args: argparse.Namespace) -> bool:
     return vars(args) == vars(bare) and onboarding.is_interactive(sys.stdin)
 
 
-def _init_interactive(
-    ask: onboarding.Ask = onboarding.console_ask, *,
-    windows: bool | None = None, home: Path | None = None,
-) -> int:
+def _init_interactive(ask: onboarding.Ask = onboarding.console_ask) -> int:
     """首次运行问答。题目、校验与落盘全在 `peach.onboarding`，这里只是终端前端。
 
-    `ask`、`windows`、`home` 可注入：测试用脚本化答案驱动，不碰真实 stdin，也不看
-    测试机自己是什么系统。托盘的设置页复用同一组函数，不走这个入口。
+    `ask` 可注入：测试用脚本化答案驱动，不碰真实 stdin。
     """
-    windows = os.name == "nt" if windows is None else windows
     config, _broken = _resolved_config(None)
     print("首次运行问答：每一题直接回车就接受方括号里的默认值。")
     collected: dict[str, object] = {}
     try:
-        for index, (key, value) in enumerate(
-                onboarding.collect(config, ask, windows=windows, home=home)):
+        for index, (key, value) in enumerate(onboarding.collect(config, ask)):
             collected[key] = value
             if index == 0:
-                # Peach 数据目录定了，设置文件在哪也就定了。这一题之后就判，别让人把剩下四题
-                # 答完才听到「文件已存在」——那四个答案会被整份丢掉。
+                # Peach 数据目录定了，设置文件在哪也就定了。这一题之后就判，别让人把剩下的
+                # 题答完才听到「文件已存在」——那些答案会被整份丢掉。
                 config, _broken = _resolved_config(collected["data_root"])
                 if config.path.exists():
                     print(f"设置文件已存在：{config.path}")
@@ -472,70 +309,23 @@ def _init_interactive(
     except onboarding.OnboardingAborted as exc:
         raise SystemExit(f"{exc}已退出，没有写任何文件。") from None
     answers = onboarding.Answers(**collected)  # type: ignore[arg-type]
-    applied = onboarding.apply(config, answers, windows=windows)
+    applied = onboarding.apply(config, answers)
     prepared = applied.config
     print(f"Peach 数据目录：{prepared.data_root}")
     _report_data_tree(applied.tree)
     print(f"设置文件：{applied.settings_path}")
-    if not windows:
-        print(onboarding.mounts_explanation(answers.media_dirs))
-
-    summaries: list[str] = []
-    try:
-        scan_now = onboarding.ask_until_valid(onboarding.scan_question(answers.media_dirs), ask)
-    except onboarding.OnboardingAborted as exc:
-        print(f"{exc}跳过扫描，之后可以跑 `peach scan local`。")
-        scan_now = False
-    if scan_now:
-        for root in onboarding.scan_roots(prepared):
-            result = scan.scan_location(
-                prepared.directory("database") / "ledger.db", onboarding.LOCAL_LOCATION,
-                root, declared_roots=prepared.locations,
-                mounts=prepared.mounts, report=print, windows=windows,
-            )
-            summaries.append(result.summary())
-    _print_next_steps(prepared, from_existing=False)
-    for summary in summaries:
-        print(f"  扫描结果：{summary}")
+    _print_next_steps(prepared)
     return 0
 
 
-def _scan(args: argparse.Namespace) -> int:
-    """`peach scan <来源ID> [根目录]`：根目录省略时逐个扫该来源的全部数据库路径前缀（本机目录按挂载表取）。"""
-    _require_readable_settings()
-    if not args.db.is_file():
-        print(f"数据库不存在：{args.db}")
-        print("这台机器还没初始化过，先跑 `peach init`。")
-        return 4
-    config = settings_file.active()
-    mounts = {location: tuple(str(mount) for mount in points)
-              for location, points in location_mounts().items()}
-    try:
-        if args.location == "configured" and args.root is None:
-            from .platform import root_online, translate_ledger_path
-            for location, declared in config.locations.items():
-                for root in declared:
-                    if not root_online(translate_ledger_path(root)):
-                        print(f"{location}：挂载点离线，未扫描", flush=True)
-                        continue
-                    scan.scan_location(args.db, location, root, declared_roots=config.locations,
-                                       mounts=mounts, report=lambda line: print(line, flush=True))
-            return 0
-        if args.root is None:
-            if args.location not in config.locations:
-                known = "、".join(sorted(config.locations)) or "（设置文件里一个都没有）"
-                raise scan.ScanTargetError(
-                    f"✗ 未声明的来源 {args.location!r}；[media.locations] 里已知：{known}")
-            roots = tuple(config.locations[args.location])
-        else:
-            roots = (scan.ledger_root_for(
-                args.location, args.root, declared_roots=config.locations, mounts=mounts),)
-        for root in roots:
-            scan.scan_location(args.db, args.location, root, declared_roots=config.locations,
-                               mounts=mounts, report=lambda line: print(line, flush=True))
-    except scan.ScanTargetError as exc:
-        raise SystemExit(str(exc)) from None
-    return 0
+def _print_next_steps(config: settings_file.PeachConfig) -> None:
+    """首次设置之后必须做的事：起服务，然后在网页上完成网盘授权。"""
+    print("\n下一步：")
+    print(f"  1. peach serve --host {config.server.host} --port {config.server.port}")
+    print(f"  2. 浏览器打开 http://127.0.0.1:{config.server.port}/ 确认页面可用。")
+    public = config.drive_public_url or "https://<公网地址>"
+    print(f"  3. 网盘授权：后台登记的回调地址填 {public}/oauth/gdrive/callback 或")
+    print(f"     {public}/oauth/onedrive/callback；授权完成后在配置页选择要扫描的目录。")
 
 
 def _processing_line(state: dict) -> str:
@@ -592,8 +382,8 @@ def _process_library(args: argparse.Namespace) -> int:
 
 
 def _create_data_tree(config: settings_file.PeachConfig) -> None:
-    """建目录、把库迁到最新、生成本机 CA。事情由 `onboarding.create_data_tree` 做，
-    这里只把它做过的事说出来——托盘的设置页调同一个函数，两条前端不会各做一套。
+    """建目录、把库迁到最新、生成访问口令。事情由 `onboarding.create_data_tree` 做，
+    这里只把它做过的事说出来——网页上的首次设置调同一个函数，两条前端不会各做一套。
     """
     print(f"Peach 数据目录：{config.data_root}")
     _report_data_tree(onboarding.create_data_tree(config))
@@ -602,13 +392,8 @@ def _create_data_tree(config: settings_file.PeachConfig) -> None:
 def _report_data_tree(tree: onboarding.DataTree) -> None:
     if tree.ledger_existed:
         print(f"数据库已存在，跳过建库：{tree.database}")
-        print("要为现有部署生成设置文件，用 `peach init --from-existing`。")
     else:
         print(f"数据库：{tree.database}（已应用 {tree.migrations} 个迁移）")
-    if tree.ca_cert is not None:
-        print(f"本机 CA：{tree.ca_cert}")
-    else:
-        print(f"未生成本机 CA（{tree.ca_error}）。装好 openssl 后重跑 `peach init --force` 补上。")
     _report_token(tree)
 
 
@@ -618,17 +403,7 @@ def _report_token(tree: onboarding.DataTree) -> None:
     终端输出会进日志、截图和 issue，口令不该顺着这条路走出去。
     """
     print(f"访问口令：{tree.token_path}" + ("" if tree.token_created else "（沿用已有的那份）"))
-    print("绑局域网地址的服务必须读得到它，`peach token` 看内容。")
-
-
-def _announce_token(config: settings_file.PeachConfig) -> None:
-    """`--from-existing` 不建目录也不迁库，但口令要补：现有部署正是靠托盘绑局域网
-    起服务的，没有这个文件下一次重启就会被 `_serve_token` 拒掉。
-    """
-    secrets_dir = config.directory("secrets")
-    _token, created = auth.ensure_token(secrets_dir)
-    print(f"访问口令：{auth.token_path(secrets_dir)}" + ("" if created else "（沿用已有的那份）"))
-    print("绑局域网地址的服务必须读得到它，`peach token` 看内容。")
+    print("对外提供服务的进程必须读得到它，`peach token` 看内容。")
 
 
 def _token(args: argparse.Namespace) -> int:
@@ -646,129 +421,7 @@ def _token(args: argparse.Namespace) -> int:
     print(f"口令：{token}")
     if fresh:
         print("已经登录过的浏览器要再登录一次；正在跑的服务要重启才会读到这份口令。")
-    print("两台机器互取复核结果时发的是自己的口令，reader 要用和 writer 相同的这份文件。")
     return 0
-
-
-def _tunnel(args: argparse.Namespace) -> int:
-    """按设置文件的模式运行一个前台隧道；托盘/配置页使用同一模块的生命周期管理。"""
-    _require_readable_settings()
-    config = settings_file.load_config()
-    if not config.configured:
-        raise SystemExit("这台机器还没初始化过，先跑 `peach init`。")
-    state_dir = config.directory("state")
-    log_dir = config.directory("logs")
-    if args.action == "status":
-        snapshot = tunnel.saved_snapshot(state_dir)
-        print(f"状态：{snapshot.state}")
-        if snapshot.url:
-            print(f"地址：{snapshot.url}")
-        if snapshot.error:
-            print(f"原因：{snapshot.error}")
-        return 0 if snapshot.state not in {"error"} else 1
-
-    token = auth.resolve_token("", config.directory("secrets"))
-    lan_address = args.lan_address
-    if not distribution.standalone() and not lan_address:
-        from .mdns import lan_ipv4
-        lan_address = lan_ipv4()
-    origin_port = getattr(args, "https_port", None)
-    if origin_port is None:
-        origin_port = (
-            config.server.port if distribution.standalone()
-            else (8443 if sys.platform == "darwin" else 443)
-        )
-    plan = tunnel.plan_for_config(
-        config,
-        access_path=config.directory("secrets") / "access.json",
-        token=token,
-        standalone_mode=distribution.standalone(),
-        lan_address=lan_address,
-        https_port=origin_port,
-    )
-    manager = tunnel.TunnelManager(state_dir, log_dir, wait_timeout=args.timeout)
-    # 启动握手本身也要在 try 里：Ctrl-C 打在等待边缘连接的那几十秒上时，子进程已经
-    # 起来了，只有走到 finally 才收得掉。
-    try:
-        snapshot = manager.start(plan)
-        print(f"公网入口：{snapshot.url}", flush=True)
-        while manager.snapshot().state == "running":
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("正在停止临时链接…", flush=True)
-    finally:
-        manager.stop()
-    return 0
-
-
-#: 留空就会改变行为的坐标。进程猜不出来，只能让人在命令行给。
-_BLANK_HINTS = (
-    ("server.review_writer_origin", "--writer-origin https://<writer 的地址>",
-     "reader 不做复核镜像"),
-    ("replication.smb_host", "--smb-host <writer 的主机名>", "不挂载共享传输点"),
-    ("replication.smb_user", "--smb-user <钥匙串里的账号>", "不挂载共享传输点"),
-)
-
-
-def _report_blanks(config: settings_file.PeachConfig) -> None:
-    blanks = []
-    for dotted, flag, effect in _BLANK_HINTS:
-        table, _, name = dotted.partition(".")
-        if not getattr(getattr(config, table), name):
-            blanks.append(f"  {dotted} 留空 → {effect}；要填就重跑并加 {flag}")
-    if config.locations and not config.mounts and os.name != "nt":
-        # Windows 上盘符本身就是挂载点，空表是正常的，提示它只会让人去填没用的值。
-        known = "、".join(sorted(config.locations))
-        blanks.append(
-            f"  [media.mounts] 为空 → 无法读取媒体来源的目录；"
-            f"可用 --mount <媒体来源ID>=<媒体目录> 指定目录（已知来源：{known}）"
-        )
-    if blanks:
-        print("以下坐标是空的（这不是错误，单机部署本来就该空）：")
-        print("\n".join(blanks))
-
-
-def _print_next_steps(config: settings_file.PeachConfig, *, from_existing: bool) -> None:
-    print("\n下一步：")
-    if from_existing:
-        print("  1. 打开上面那个文件核对一遍，尤其是 [media.mounts] 和 [replication]。")
-        print("  2. 重启服务让它生效。这一步之前，运行行为和现在完全一样。")
-        print("  3. `peach token` 取口令：绑局域网地址的服务读不到它就起不来，"
-              "已经在用的设备也要重新登录一次。")
-        return
-    print(f"  1. peach serve --host {config.server.host} --port {config.server.port}")
-    print("  2. 浏览器打开 http://127.0.0.1:%d/ 确认页面可用。" % config.server.port)
-    if _is_loopback(config.server.host):
-        print("  3. 要在局域网访问就改 --host 0.0.0.0，并把本机 CA 装进各设备的信任列表。"
-              "访问密码为可选项，在配置页设置。")
-    else:
-        print("  3. 局域网设备要装本机 CA。访问密码为可选项，在配置页设置。")
-
-
-def _doctor(args: argparse.Namespace) -> int:
-    import json
-    from . import diagnostics
-    from .mount_reachability import source_roots
-
-    config = settings_file.active()
-    host, port = diagnostics.doctor_endpoint(config)
-    settings = PeachSettings(db_path=args.db, host=args.host or host, port=port if args.port is None else args.port,
-                             token=auth.read_token(config.directory("secrets")),
-                             tunnel_enabled=config.tunnel.enabled,
-                             access_path=config.directory("secrets") / "access.json")
-    snapshot = {"state": "checking", "sources": [], "warnings": []}
-    if diagnostics.configuration(config, settings.configured)["status"] != "failed":
-        snapshot = diagnostics.probe_mounts(source_roots())
-    result = diagnostics.report(settings, snapshot, config=config)
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False))
-    else:
-        for check in result["checks"].values():
-            print(f"{check['label']} [{check['status']}] {check['reason']}")
-            if check["action"]:
-                print(f"  {check['action']}")
-    return 1 if result["status"] == "failed" else 0
-
 
 
 def _check_sources(args: argparse.Namespace) -> int:
@@ -790,130 +443,61 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="peach")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    from .local_poster import main as local_image_main
-    local_image = commands.add_parser('local-image', help='读取单张配套图片')
-    local_image.add_argument('source', type=Path)
-    local_image.add_argument('output', type=Path)
-    local_image.set_defaults(handler=lambda args: local_image_main([str(args.source), str(args.output)]))
-
-    from .media_io import main as media_read_main, OPERATIONS
-    media_read = commands.add_parser('media-read', help='限时读取媒体目录与配套文件')
-    media_read.add_argument('operation', choices=OPERATIONS)
-    media_read.add_argument('path')
-    media_read.add_argument('value', nargs='?', default='')
-    media_read.set_defaults(handler=lambda args: media_read_main([args.operation, args.path, args.value]))
-
     init = commands.add_parser(
         "init", help="首次运行：不带参数在终端里问答；带任何参数或 --no-input 走非交互")
     init.add_argument("--no-input", action="store_true",
                       help="不进入问答，按参数与内建默认直接生成")
     init.add_argument("--data-root", type=Path, help="Peach 数据目录；默认沿用当前发现结果")
-    init.add_argument("--from-existing", action="store_true",
-                      help="只为已在运行的部署生成设置文件，不建目录、不建库")
     init.add_argument("--force", action="store_true", help="覆盖已存在的设置文件")
     init.add_argument("--host", help="服务监听地址")
     init.add_argument("--port", type=int, help="服务端口")
-    init.add_argument("--mdns-name", help="本机在局域网发布的名字（<name>.local）")
-    init.add_argument("--writer-origin", help="reader 复核镜像要读的 writer 源")
-    init.add_argument("--writer-proxy", help="只对 writer 源生效的 HTTP 代理")
-    init.add_argument("--shared-root", type=Path, help="ledger 复制的共享传输点")
-    init.add_argument("--smb-host", help="共享传输点所在主机")
-    init.add_argument("--smb-share", help="共享名")
-    init.add_argument("--smb-user", help="挂载共享用的账号")
-    init.add_argument("--mount", action="append", metavar="来源ID=路径",
-                      help="媒体来源 ID 与本机媒体目录的对应关系，例如 local=/mnt/media；可重复指定")
+    init.add_argument("--public-url", help="网盘授权的回调基址，例如 https://peach.example.com")
     init.set_defaults(handler=_init)
 
-    serve = commands.add_parser("serve", help="run the FastAPI application")
+    serve = commands.add_parser("serve", help="运行 Peach 服务")
     serve.add_argument("--host", default=SERVE_HOST)
-    serve.add_argument("--redirect-origin", default="", help="HTTP navigation to one HTTPS origin")
     serve.add_argument("--port", type=int, default=SERVE_PORT)
     serve.add_argument("--db", type=Path, default=DEFAULT_DB)
     serve.add_argument("--token", default="")
     serve.add_argument("--docs", action="store_true")
     serve.add_argument("--setup", action="store_true",
-                       help="只提供首次运行表单：忽略发现到的 Peach 数据目录，也不要口令")
+                       help="只提供首次设置页：不要口令，报告未配置")
     serve.add_argument("--no-auth", action="store_true",
                        help="跳过登录页；仅允许本机访问时可用，不读取或修改口令文件")
-    serve.add_argument("--no-mdns", action="store_true")
-    serve.add_argument("--shared-db", type=Path, default=SHARED_DATABASE_PATH)
-    serve.add_argument("--no-ledger-sync", action="store_true")
-    serve.add_argument("--ledger-sync-seconds", type=float, default=0.0,
-                       help=argparse.SUPPRESS)
-    serve.add_argument("--mdns-name", default=MDNS_NAME)
-    serve.add_argument("--mdns-address", help="explicit LAN IPv4 to publish")
-    serve.add_argument("--ssl-certfile", type=Path)
-    serve.add_argument("--ssl-keyfile", type=Path)
     serve.set_defaults(handler=_serve)
 
-    scan_parser = commands.add_parser(
-        "scan", help="扫描一个媒体来源的目录，将文件信息保存到数据库")
-    scan_parser.add_argument("location", help="来源 ID（asset.location），要在 [media.locations] 里声明过")
-    scan_parser.add_argument("root", nargs="?",
-                             help="要扫描的媒体目录；省略时读取该来源的配置（非 Windows 系统使用 [media.mounts]）")
-    scan_parser.add_argument("--db", type=Path, default=DEFAULT_DB)
-    scan_parser.set_defaults(handler=_scan)
-    process_parser = commands.add_parser('process', help='扫描文件并补全馆藏资料')
+    process_parser = commands.add_parser('process', help='扫描网盘并补全馆藏资料')
     process_parser.add_argument('location', nargs='?', default='configured')
     process_parser.add_argument('--db', type=Path, default=DEFAULT_DB)
     process_parser.set_defaults(handler=_process_library)
 
-    token = commands.add_parser("token", help="查看局域网访问口令，没有就生成一份")
+    token = commands.add_parser("token", help="查看访问口令，没有就生成一份")
     token.add_argument("--rotate", action="store_true",
                        help="换一个新口令，已签发的 cookie 立即失效")
     token.set_defaults(handler=_token)
 
-    tunnel_parser = commands.add_parser(
-        "tunnel", help="运行或查看 Cloudflare Tunnel（默认要求已设置访问密码）",
-    )
-    tunnel_parser.add_argument("action", choices=("start", "status"), nargs="?", default="start")
-    tunnel_parser.add_argument("--lan-address", help=argparse.SUPPRESS)
-    tunnel_parser.add_argument(
-        "--https-port", type=int, help="源码服务的实际 HTTPS 端口（macOS 默认 8443，其他平台默认 443）",
-    )
-    tunnel_parser.add_argument("--timeout", type=float, default=30.0)
-    tunnel_parser.set_defaults(handler=_tunnel)
-
-    migrate = commands.add_parser("migrate", help="inspect or apply SQLite migrations")
+    migrate = commands.add_parser("migrate", help="查看或应用 SQLite 迁移")
     migrate.add_argument("action", choices=("status", "upgrade"), nargs="?", default="status")
     migrate.add_argument("--db", type=Path, default=DEFAULT_DB)
     migrate.add_argument("--yes", action="store_true")
     migrate.set_defaults(handler=_migrate)
 
-    status = commands.add_parser("status", help="read-only ledger, migration and sync state")
+    status = commands.add_parser("status", help="只读查看账本与迁移状态")
     status.add_argument("--db", type=Path, default=DEFAULT_DB)
-    status.add_argument("--shared-db", type=Path, default=SHARED_DATABASE_PATH)
     status.set_defaults(handler=_status)
 
-    sources = commands.add_parser("check-sources", help="安装后有界检测外部资料源与图片 CDN，不读取影片")
+    sources = commands.add_parser("check-sources", help="有界检测外部资料源与图片 CDN，不读取影片")
     sources.add_argument("--source", action="append", help="只检查指定来源 ID；可重复指定，默认检查全部资料源")
     sources.add_argument("--json", action="store_true", help="输出不含凭据的 JSON 结果")
     sources.set_defaults(handler=_check_sources)
-
-    doctor = commands.add_parser("doctor", help="逐项诊断本机配置、数据库、工具与挂载，不执行修复")
-    doctor.add_argument("--json", action="store_true", help="输出脱敏 JSON 报告")
-    doctor.add_argument("--db", type=Path, default=DEFAULT_DB)
-    doctor.add_argument("--host", help="诊断指定的服务监听地址")
-    doctor.add_argument("--port", type=int, help="诊断指定的服务端口")
-    doctor.set_defaults(handler=_doctor)
-
-    ledger_sync = commands.add_parser("ledger-sync", help="synchronize the local ledger now")
-    ledger_sync.add_argument("--db", type=Path, default=DEFAULT_DB)
-    ledger_sync.add_argument("--shared-db", type=Path, default=SHARED_DATABASE_PATH)
-    ledger_sync.add_argument("--take-ownership", action="store_true",
-                             help="claim the single-writer role after both copies are in sync")
-    ledger_sync.set_defaults(handler=_ledger_sync)
 
     return parser
 
 
 def subcommands() -> frozenset[str]:
-    """`peach` 现有的子命令名。
+    """`peach` 现有的子命令名，从 parser 现算。
 
-    打包入口靠它决定「第一个参数是子命令还是托盘参数」。这个集合必须从 parser 现算，
-    不能在别处抄一份常量：抄过一次，结果是 `ledger-sync` 和 `status` 在 EXE 里一直
-    不可达，而且不报错——参数被当成托盘参数吞掉了。
-
+    不能在别处抄一份常量：抄过一次，结果是某个子命令在别处一直不可达，而且不报错。
     `_subparsers` 是 argparse 私有属性，argparse 没有公开的「列出子命令」接口；私有
     访问只留在这一处。
     """

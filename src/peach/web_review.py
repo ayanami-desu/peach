@@ -827,7 +827,7 @@ def q_review(contract: ReviewContract):
     """复核页只放冲突项（ADR-0052 第五条）。
 
     九宫格没抽出来是机械状态，没有可批准或否决的东西，和 `cover_sources` 的未取得同一条
-    理由不进队列；重抽归 `scripts/sheets.py`，缺多少由 `peach status` 的加工进度报。
+    理由不进队列；缺多少由 `peach status` 的加工进度报。
     """
     groups = {key: {} for key in ('pending', 'later', 'ignored')}
     sources, skipped = {}, {}

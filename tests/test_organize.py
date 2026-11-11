@@ -1,22 +1,23 @@
-"""按模板整理：模板渲染、逃逸防护、计划生成、执行与回滚（ADR-0039）。"""
+"""按模板整理：模板渲染、逃逸防护、计划生成、网盘改名与回滚（ADR-0039）。"""
 from __future__ import annotations
 
-import sqlite3
 import json
+import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
-from pathlib import Path, PureWindowsPath
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from peach import organize
+from peach.drive_provider import DriveEntry, DriveNotFound
 from peach.organize_templates import (
     TemplateError, render, sanitise_component, validate_template, clean_filename,
 )
 from support.ledger import fresh_ledger
 
-ROOT_DECLARATION = "R:\\media"
-DECLARED = {"local": (ROOT_DECLARATION,)}
+SOURCE = "gdrive"
 
 VALUES = {
     "code": "ABC-123", "title": "标题", "studio": "厂牌", "series": "系列",
@@ -143,23 +144,82 @@ class TemplateEscapeTests(unittest.TestCase):
         self.assertEqual(text, "a_.._b")
 
 
+
+class FakeProvider:
+    """整理只用到三个方法：列目录、问条目、改名移动。"""
+
+    def __init__(self, entries):
+        self.entries = {entry.remote_id: entry for entry in entries}
+        self.moves: list[tuple[str, str, str]] = []
+
+    def list_folder(self, parent_id, cursor=None):
+        page = [entry for entry in self.entries.values() if entry.parent_id == parent_id]
+        return sorted(page, key=lambda entry: entry.remote_id), None
+
+    def entry(self, remote_id):
+        if remote_id not in self.entries:
+            raise DriveNotFound(remote_id)
+        return self.entries[remote_id]
+
+    def move(self, remote_id, parent_id, name=None):
+        entry = self.entries[remote_id]
+        moved = replace(entry, parent_id=parent_id, name=name or entry.name)
+        self.entries[remote_id] = moved
+        self.moves.append((remote_id, parent_id, moved.name))
+        return moved
+
+
+class FakeDrive:
+    """`DriveConnections` 里整理与设置页用到的那几项。"""
+
+    def __init__(self, provider, roots=("ROOT",)):
+        self._provider = provider
+        self._roots = tuple(roots)
+
+    def provider(self, _location):
+        return self._provider
+
+    def roots(self, _location):
+        return self._roots
+
+    def connection(self, location):
+        return {"location": location, "label": "Google Drive", "configured": True,
+                "connected": True, "email": "peach@example.com",
+                "roots": [{"remote_id": remote,
+                           "name": self._provider.entry(remote).name} for remote in self._roots]}
+
+    def snapshot(self):
+        return {"public_url": "https://peach.example.com",
+                "locations": [self.connection(SOURCE)]}
+
+
+def _entries(folders=(), files=()):
+    """搭一棵小目录树：起点 `夹` 下若干目录，每个目录里若干文件。"""
+    entries = [DriveEntry(remote_id="ROOT", name="夹", parent_id="", folder=True)]
+    for remote_id, name, parent in folders:
+        entries.append(DriveEntry(remote_id=remote_id, name=name, parent_id=parent, folder=True))
+    for remote_id, name, parent in files:
+        entries.append(DriveEntry(remote_id=remote_id, name=name, parent_id=parent, folder=False))
+    return entries
+
+
 def _seed(db_path: Path, rows: list[dict]) -> None:
     with closing(sqlite3.connect(db_path)) as connection:
         for row in rows:
             connection.execute(
                 "INSERT INTO asset(id,location,path,name,medium,code,catalog_title,"
-                "studio,series,release_date,width,height) "
-                "VALUES(:id,'local',:path,:name,'video',:code,:title,:studio,NULL,"
-                ":release_date,:width,:height)",
-                {"series": None, "code": None, "title": None, "studio": None,
-                 "release_date": None, "width": None, "height": None, **row})
+                "studio,series,release_date,width,height,remote_id) "
+                "VALUES(:id,:location,:path,:name,'video',:code,:title,:studio,NULL,"
+                ":release_date,:width,:height,:remote_id)",
+                {"location": SOURCE, "series": None, "code": None, "title": None,
+                 "studio": None, "release_date": None, "width": None, "height": None,
+                 "remote_id": None, **row})
         connection.commit()
 
 
 def _plan(db_path: Path, **kwargs) -> dict:
     with closing(sqlite3.connect(db_path)) as connection:
-        return organize.build_plan(connection, location="local", roots=DECLARED,
-                                   online=True, **kwargs)
+        return organize.build_plan(connection, location=SOURCE, **kwargs)
 
 
 class PlanTests(unittest.TestCase):
@@ -168,83 +228,68 @@ class PlanTests(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(self.holder, ignore_errors=True))
         self.db_path = fresh_ledger(self.holder)
 
-    def test_online_root_does_not_hide_another_roots_offline_state(self):
-        _seed(self.db_path, [
-            dict(id=1, path='R:\\media\\a.mp4', name='a.mp4', code='ABC-001'),
-            dict(id=2, path='S:\\media\\b.mp4', name='b.mp4', code='ABC-002'),
-        ])
-        with closing(sqlite3.connect(self.db_path)) as connection, \
-                mock.patch.object(organize, 'translate_ledger_path', side_effect=lambda root: root), \
-                mock.patch.object(organize, 'root_online', side_effect=lambda root: str(root).startswith('R:')):
-            result = organize.build_plan(connection, location='local', roots={'local': ('R:\\media', 'S:\\media')},
-                                         file_template='{number}')
-        self.assertEqual(result['counts']['change'], 1)
-        self.assertEqual(result['counts']['skip'], 1)
-        self.assertEqual(result['rows'][1]['reason'], organize.SKIP_OFFLINE)
-
     def test_rename_in_place_and_move_into_template_directory(self):
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\[site.com]abc123.mp4",
+            {"id": 1, "path": "gdrive:/夹/旧/[site.com]abc123.mp4",
              "name": "[site.com]abc123.mp4", "code": "ABC-123", "title": "标题",
              "studio": "厂牌"},
         ])
         plan = _plan(self.db_path, file_template="{number}[ {title}]")
         self.assertEqual(plan["counts"]["change"], 1)
         self.assertEqual(plan["rows"][0]["action"], "rename")
-        self.assertEqual(plan["rows"][0]["target_path"],
-                         "R:\\media\\旧\\ABC-123 标题.mp4")
+        self.assertEqual(plan["rows"][0]["target_path"], "gdrive:/夹/旧/ABC-123 标题.mp4")
 
         plan = _plan(self.db_path, file_template="{number}", dir_template="{studio}")
         self.assertEqual(plan["rows"][0]["action"], "move")
-        self.assertEqual(plan["rows"][0]["target_path"], "R:\\media\\厂牌\\ABC-123.mp4")
+        self.assertEqual(plan["rows"][0]["target_path"], "gdrive:/夹/厂牌/ABC-123.mp4")
 
     def test_directory_scope_includes_descendants_and_excludes_prefix_siblings(self):
         _seed(self.db_path, [
-            {'id': 1, 'path': r'R:\media\合集\a.mp4', 'name': 'a.mp4', 'code': 'ABC-001'},
-            {'id': 2, 'path': r'R:\media\合集\子目录\b.mp4', 'name': 'b.mp4', 'code': 'ABC-002'},
-            {'id': 3, 'path': r'R:\media\合集2\c.mp4', 'name': 'c.mp4', 'code': 'ABC-003'},
+            {"id": 1, "path": "gdrive:/夹/合集/a.mp4", "name": "a.mp4", "code": "ABC-001"},
+            {"id": 2, "path": "gdrive:/夹/合集/子目录/b.mp4", "name": "b.mp4", "code": "ABC-002"},
+            {"id": 3, "path": "gdrive:/夹/合集2/c.mp4", "name": "c.mp4", "code": "ABC-003"},
         ])
-        plan = _plan(self.db_path, file_template='{number}', path='r:/MEDIA/合集/')
-        self.assertEqual([row['asset_id'] for row in plan['rows']], [1, 2])
-        self.assertEqual(plan['counts']['total'], 2)
-        self.assertEqual(_plan(self.db_path, file_template='{number}', path='')['counts']['total'], 3)
+        plan = _plan(self.db_path, file_template="{number}",
+                     path=organize.scope_path(SOURCE, "gdrive:/夹/合集/"))
+        self.assertEqual([row["asset_id"] for row in plan["rows"]], [1, 2])
+        self.assertEqual(plan["counts"]["total"], 2)
+        self.assertEqual(_plan(self.db_path, file_template="{number}")["counts"]["total"], 3)
 
-    def test_scope_rejects_relative_outside_and_parent_paths(self):
-        for path in ('合集', r'S:\media', r'R:\media2', r'R:\media\..\other'):
-            with self.subTest(path=path), self.assertRaisesRegex(organize.OrganizeError, '整理路径'):
-                _plan(self.db_path, file_template='{number}', path=path)
+    def test_scope_rejects_relative_foreign_and_parent_paths(self):
+        for path in ("合集", "onedrive:/夹", "gdrive:/夹/../其它"):
+            with self.subTest(path=path), self.assertRaisesRegex(organize.OrganizeError, "路径"):
+                organize.scope_path(SOURCE, path)
+        with self.assertRaisesRegex(organize.OrganizeError, "整理路径"):
+            organize.scope_path(SOURCE, ["gdrive:/夹"])
 
     def test_directory_template_uses_scope_as_base_and_checks_outside_scope_collisions(self):
         _seed(self.db_path, [
-            {'id': 1, 'path': r'R:\media\合集\旧\a.mp4', 'name': 'a.mp4', 'code': 'ABC-001', 'studio': '厂牌'},
-            {'id': 2, 'path': r'R:\media\合集\厂牌\ABC-001.mp4', 'name': 'ABC-001.mp4', 'code': 'ABC-001'},
+            {"id": 1, "path": "gdrive:/夹/合集/旧/a.mp4", "name": "a.mp4",
+             "code": "ABC-001", "studio": "厂牌"},
+            {"id": 2, "path": "gdrive:/夹/合集/厂牌/ABC-001.mp4", "name": "ABC-001.mp4",
+             "code": "ABC-001"},
         ])
-        plan = _plan(self.db_path, file_template='{number}', dir_template='{studio}', path=r'R:\media\合集', asset_ids=[1])
-        self.assertEqual(plan['counts']['skip'], 1)
-        self.assertEqual(plan['rows'][0]['reason'], organize.SKIP_TARGET_EXISTS)
-        self.assertEqual(plan['rows'][0]['target_path'], r'R:\media\合集\厂牌\ABC-001.mp4')
-
-    def test_local_mount_scope_is_translated_to_ledger_shape(self):
-        mount = self.holder / 'mounted'
-        mount.mkdir()
-        with mock.patch.object(organize, 'location_mounts', return_value={'local': (mount,)}):
-            self.assertEqual(organize.scope_path('local', str(mount / '合集'), DECLARED), r'R:\media\合集')
+        plan = _plan(self.db_path, file_template="{number}", dir_template="{studio}",
+                     path="gdrive:/夹/合集", asset_ids=[1])
+        self.assertEqual(plan["counts"]["skip"], 1)
+        self.assertEqual(plan["rows"][0]["reason"], organize.SKIP_TARGET_EXISTS)
+        self.assertEqual(plan["rows"][0]["target_path"], "gdrive:/夹/合集/厂牌/ABC-001.mp4")
 
     def test_filename_cleanup_needs_no_template_or_metadata(self):
-        _seed(self.db_path, [{'id': 1, 'path': r'R:\media\★标题⧹⧹片段.mp4',
-                             'name': '★标题⧹⧹片段.mp4'}])
+        _seed(self.db_path, [{"id": 1, "path": "gdrive:/夹/★标题⧹⧹片段.mp4",
+                              "name": "★标题⧹⧹片段.mp4"}])
         plan = _plan(self.db_path)
-        self.assertEqual(plan['rows'][0]['target_path'], r'R:\media\标题 片段.mp4')
+        self.assertEqual(plan["rows"][0]["target_path"], "gdrive:/夹/标题 片段.mp4")
 
     def test_template_values_share_filename_symbol_cleanup(self):
-        _seed(self.db_path, [{'id': 1, 'path': r'R:\media\old.mp4', 'name': 'old.mp4',
-                             'code': 'ABC-123', 'title': '★标题💎'}])
-        plan = _plan(self.db_path, file_template='{number} {title}')
-        self.assertEqual(plan['rows'][0]['target_path'], r'R:\media\ABC-123 标题.mp4')
+        _seed(self.db_path, [{"id": 1, "path": "gdrive:/夹/old.mp4", "name": "old.mp4",
+                              "code": "ABC-123", "title": "★标题💎"}])
+        plan = _plan(self.db_path, file_template="{number} {title}")
+        self.assertEqual(plan["rows"][0]["target_path"], "gdrive:/夹/ABC-123 标题.mp4")
 
     def test_row_already_named_as_asked_is_not_listed(self):
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\ABC-123.mp4", "name": "ABC-123.mp4",
+            {"id": 1, "path": "gdrive:/夹/ABC-123.mp4", "name": "ABC-123.mp4",
              "code": "ABC-123"},
         ])
         plan = _plan(self.db_path, file_template="{number}")
@@ -252,17 +297,15 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan["rows"], [])
 
     def test_missing_field_skips_the_row(self):
-        _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\x.mp4", "name": "x.mp4", "code": None},
-        ])
+        _seed(self.db_path, [{"id": 1, "path": "gdrive:/夹/x.mp4", "name": "x.mp4", "code": None}])
         plan = _plan(self.db_path, file_template="{number}")
         self.assertEqual(plan["rows"][0]["action"], "skip")
         self.assertEqual(plan["rows"][0]["reason"], organize.SKIP_MISSING_FIELD)
 
     def test_two_rows_landing_on_one_name_keep_the_first(self):
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\a.mp4", "name": "a.mp4", "code": "ABC-123"},
-            {"id": 2, "path": "R:\\media\\b.mp4", "name": "b.mp4", "code": "ABC-123"},
+            {"id": 1, "path": "gdrive:/夹/a.mp4", "name": "a.mp4", "code": "ABC-123"},
+            {"id": 2, "path": "gdrive:/夹/b.mp4", "name": "b.mp4", "code": "ABC-123"},
         ])
         plan = _plan(self.db_path, file_template="{number}")
         self.assertEqual(plan["counts"]["change"], 1)
@@ -271,33 +314,31 @@ class PlanTests(unittest.TestCase):
 
     def test_scoped_plan_only_contains_requested_assets(self):
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\a.mp4", "name": "a.mp4", "code": "ABC-123"},
-            {"id": 2, "path": "R:\\media\\b.mp4", "name": "b.mp4", "code": "DEF-456"},
+            {"id": 1, "path": "gdrive:/夹/a.mp4", "name": "a.mp4", "code": "ABC-123"},
+            {"id": 2, "path": "gdrive:/夹/b.mp4", "name": "b.mp4", "code": "DEF-456"},
         ])
         plan = _plan(self.db_path, file_template="{number}", asset_ids=[2])
         self.assertEqual(plan["counts"], {"total": 1, "unchanged": 0, "change": 1, "skip": 0})
         self.assertEqual([row["asset_id"] for row in plan["rows"]], [2])
 
-    def test_offline_source_skips_every_row(self):
+    def test_a_source_that_is_not_connected_skips_every_row(self):
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\a.mp4", "name": "a.mp4", "code": "ABC-123"},
+            {"id": 1, "path": "gdrive:/夹/a.mp4", "name": "a.mp4", "code": "ABC-123"},
         ])
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            plan = organize.build_plan(connection, location="local", roots=DECLARED,
-                                       online=False, file_template="{number}")
+        plan = _plan(self.db_path, connected=False, file_template="{number}")
         self.assertEqual(plan["counts"]["skip"], 1)
-        self.assertEqual(plan["reasons"], {organize.SKIP_OFFLINE: 1})
+        self.assertEqual(plan["reasons"], {organize.SKIP_NOT_CONNECTED: 1})
 
-    def test_path_outside_the_declared_root_is_skipped(self):
+    def test_a_path_without_the_source_prefix_is_skipped(self):
         _seed(self.db_path, [
             {"id": 1, "path": "B:\\其它\\a.mp4", "name": "a.mp4", "code": "ABC-123"},
         ])
         plan = _plan(self.db_path, file_template="{number}")
-        self.assertEqual(plan["rows"][0]["reason"], organize.SKIP_OUTSIDE_ROOT)
+        self.assertEqual(plan["rows"][0]["reason"], organize.SKIP_OUTSIDE_SCOPE)
 
     def test_plan_csv_carries_every_column(self):
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\a.mp4", "name": "a.mp4", "code": "ABC-123"},
+            {"id": 1, "path": "gdrive:/夹/a.mp4", "name": "a.mp4", "code": "ABC-123"},
         ])
         plan = _plan(self.db_path, file_template="{number}")
         path = organize.write_plan(self.holder / "plan.csv", plan["rows"])
@@ -306,214 +347,118 @@ class PlanTests(unittest.TestCase):
 
 
 class ApplyTests(unittest.TestCase):
-    """执行与回滚都真的动文件：`translate_ledger_path` 指到临时目录，两个平台一致。"""
-
-    def test_committed_moves_keep_one_journal_and_resume_without_renaming_twice(self):
-        for index in (1, 2):
-            self._file(f'old/{index}.mp4')
-        _seed(self.db_path, [dict(id=index, path=f'R:\\media\\old\\{index}.mp4',
-                                  name=f'{index}.mp4', code=f'ABC-00{index}') for index in (1, 2)])
-        plan = _plan(self.db_path, file_template='{number}')
-        def stop(**fields):
-            raise InterruptedError('模拟整理中断')
-        with closing(sqlite3.connect(self.db_path)) as connection, self.assertRaises(InterruptedError):
-            organize.apply_plan(connection, plan['rows'], generated_root=self.holder, stamp='resume', progress=stop)
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            result = organize.apply_plan(connection, plan['rows'], generated_root=self.holder, stamp='resume')
-        self.assertEqual((result['moved'], result['failed']), (2, 0))
-        journal = json.loads(Path(result['log_path']).read_text(encoding='utf-8'))
-        self.assertEqual(len(journal['entries']), 2)
-        self.assertEqual(len(list(organize.batch_log_dir(self.holder).glob('*.json'))), 1)
+    """执行与回滚都只动网盘那棵树与账本：假 provider 记下每一次改名。"""
 
     def setUp(self):
         self.holder = Path(tempfile.mkdtemp(prefix="peach-organize-apply-")).resolve()
         self.addCleanup(lambda: __import__("shutil").rmtree(self.holder, ignore_errors=True))
-        self.media = self.holder / "media"
-        self.media.mkdir()
         self.db_path = fresh_ledger(self.holder)
-        patcher = mock.patch.object(organize, "translate_ledger_path", self._translate)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def _translate(self, raw) -> Path:
-        return self.media.joinpath(*PureWindowsPath(str(raw)).parts[2:])
-
-    def _file(self, relative: str) -> Path:
-        path = self.media / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("x", encoding="utf-8")
-        return path
-
-    def _apply(self, plan):
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            return organize.apply_plan(connection, plan["rows"],
-                                       generated_root=self.holder)
-
-    def test_apply_moves_the_file_and_updates_the_ledger(self):
-        self._file("旧/abc123.mp4")
+        self.provider = FakeProvider(_entries(
+            folders=(("OLD", "旧", "ROOT"),),
+            files=(("FILE1", "1.mp4", "OLD"), ("FILE2", "2.mp4", "OLD"))))
+        self.drive = FakeDrive(self.provider)
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\abc123.mp4", "name": "abc123.mp4",
-             "code": "ABC-123", "studio": "厂牌"},
+            {"id": 1, "path": "gdrive:/夹/旧/1.mp4", "name": "1.mp4",
+             "code": "ABC-001", "remote_id": "FILE1"},
+            {"id": 2, "path": "gdrive:/夹/旧/2.mp4", "name": "2.mp4",
+             "code": "ABC-002", "remote_id": "FILE2"},
         ])
-        plan = _plan(self.db_path, file_template="{number}", dir_template="{studio}")
-        result = self._apply(plan)
-        self.assertEqual((result["moved"], result["failed"]), (1, 0))
-        self.assertTrue((self.media / "厂牌" / "ABC-123.mp4").is_file())
-        self.assertFalse((self.media / "旧" / "abc123.mp4").exists())
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            row = connection.execute("SELECT path,name FROM asset WHERE id=1").fetchone()
-        self.assertEqual(row, ("R:\\media\\厂牌\\ABC-123.mp4", "ABC-123.mp4"))
 
-    def test_a_disposed_asset_in_a_saved_plan_is_left_on_disk(self):
-        original = self._file('old/title.mp4')
-        _seed(self.db_path, [dict(id=1, path=r'R:\media\old\title.mp4', name='title.mp4', code='ABC-123')])
-        plan = _plan(self.db_path, file_template='{number}')
+    def _plan(self, **kwargs):
+        return _plan(self.db_path, **kwargs)
+
+    def _ledger_path(self, asset_id: int) -> str:
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            return connection.execute("SELECT path FROM asset WHERE id=?", (asset_id,)).fetchone()[0]
+
+    def _apply(self, plan, **kwargs):
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            result = organize.apply_plan(self.drive, connection, plan["rows"],
+                                        generated_root=self.holder, **kwargs)
+        return result
+
+    def test_apply_renames_on_the_drive_and_updates_the_ledger(self):
+        plan = self._plan(file_template="{number}")
+        result = self._apply(plan)
+        self.assertEqual((result["moved"], result["failed"]), (2, 0))
+        self.assertEqual(self.provider.moves,
+                         [("FILE1", "OLD", "ABC-001.mp4"), ("FILE2", "OLD", "ABC-002.mp4")])
+        self.assertEqual(self._ledger_path(1), "gdrive:/夹/旧/ABC-001.mp4")
+        journal = json.loads(Path(result["log_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([entry["asset_id"] for entry in journal["entries"]], [1, 2])
+        self.assertEqual(len(list(organize.batch_log_dir(self.holder).glob("*.json"))), 1)
+
+    def test_an_interrupted_batch_resumes_without_renaming_twice(self):
+        plan = self._plan(file_template="{number}")
+
+        def stop(**_fields):
+            if len(self.provider.moves) == 1:
+                raise InterruptedError("模拟整理中断")
+        with self.assertRaises(InterruptedError):
+            self._apply(plan, stamp="resume", progress=stop)
+        self.assertEqual(len(self.provider.moves), 1)
+        result = self._apply(plan, stamp="resume")
+        self.assertEqual((result["moved"], result["failed"]), (2, 0))
+        self.assertEqual(len(self.provider.moves), 2)
+        self.assertEqual(self._ledger_path(1), "gdrive:/夹/旧/ABC-001.mp4")
+
+    def test_rollback_puts_every_name_back(self):
+        plan = self._plan(file_template="{number}")
+        applied = self._apply(plan)
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            result = organize.rollback_batch(self.drive, connection, applied["log_path"])
+        self.assertEqual((result["restored"], result["failed"]), (2, 0))
+        self.assertEqual(self._ledger_path(1), "gdrive:/夹/旧/1.mp4")
+        self.assertEqual(self._ledger_path(2), "gdrive:/夹/旧/2.mp4")
+        self.assertFalse(Path(applied["log_path"]).exists())
+
+    def test_a_disposed_asset_in_a_saved_plan_is_left_alone(self):
+        plan = self._plan(file_template="{number}")
         with closing(sqlite3.connect(self.db_path)) as connection:
             connection.execute("UPDATE asset SET disposal='trash' WHERE id=1")
             connection.commit()
         result = self._apply(plan)
-        self.assertEqual((result['moved'], result['failed']), (0, 1))
-        self.assertTrue(original.is_file())
+        self.assertEqual((result["moved"], result["failed"]), (1, 1))
+        self.assertEqual(result["failures"][0]["reason"], "资产已不在馆藏，未执行整理")
+        self.assertEqual(self._ledger_path(1), "gdrive:/夹/旧/1.mp4")
 
-    def test_case_only_rename_updates_spelling_and_can_be_rolled_back(self):
-        self._file('old/abc-123.mp4')
-        original = r'R:\media\old\abc-123.mp4'
-        target = r'R:\media\old\ABC-123.mp4'
-        _seed(self.db_path, [dict(id=1, path=original, name='abc-123.mp4', code='ABC-123')])
-        plan = _plan(self.db_path, file_template='{number}')
-        result = self._apply(plan)
-        self.assertEqual((result['moved'], result['failed']), (1, 0))
-        self.assertEqual([path.name for path in (self.media / 'old').iterdir()], ['ABC-123.mp4'])
+    def test_a_target_folder_missing_from_the_drive_is_reported(self):
         with closing(sqlite3.connect(self.db_path)) as connection:
-            self.assertEqual(connection.execute('SELECT path,name FROM asset').fetchone(),
-                             (target, 'ABC-123.mp4'))
-            result = organize.rollback_batch(connection, organize.latest_batch(self.holder))
-            self.assertEqual((result['restored'], result['failed']), (1, 0))
-            self.assertEqual(connection.execute('SELECT path,name FROM asset').fetchone(),
-                             (original, 'abc-123.mp4'))
-        self.assertEqual([path.name for path in (self.media / 'old').iterdir()], ['abc-123.mp4'])
+            connection.execute("UPDATE asset SET studio='厂牌'")
+            connection.commit()
+        plan = self._plan(file_template="{number}", dir_template="{studio}")
+        self.assertEqual(plan["rows"][0]["action"], "move")
+        result = self._apply(plan)
+        self.assertEqual(result["failed"], 2)
+        self.assertEqual(result["failures"][0]["reason"], organize.SKIP_TARGET_FOLDER)
+        self.assertEqual(self.provider.moves, [])
 
-    def test_case_only_move_committed_before_journal_is_not_renamed_again(self):
-        self._file('old/ABC-123.mp4')
-        original = r'R:\media\old\abc-123.mp4'
-        target = r'R:\media\old\ABC-123.mp4'
-        _seed(self.db_path, [dict(id=1, path=target, name='ABC-123.mp4', code='ABC-123')])
-        plan = {'rows': [dict(asset_id=1, action='rename', current_path=original, target_path=target)]}
-        with mock.patch.object(organize, '_rename', side_effect=AssertionError('已提交的行不应再次改名')):
+    def test_a_name_taken_on_the_drive_by_another_file_is_refused(self):
+        self.provider.entries["FILE3"] = DriveEntry(
+            remote_id="FILE3", name="ABC-001.mp4", parent_id="OLD", folder=False)
+        plan = self._plan(file_template="{number}")
+        result = self._apply(plan)
+        reasons = {failure["asset_id"]: failure["reason"] for failure in result["failures"]}
+        self.assertEqual(reasons, {1: organize.SKIP_TARGET_EXISTS})
+        self.assertEqual(self._ledger_path(1), "gdrive:/夹/旧/1.mp4")
+        self.assertEqual(self._ledger_path(2), "gdrive:/夹/旧/ABC-002.mp4")
+
+    def test_an_asset_without_a_remote_id_is_reported(self):
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            connection.execute("UPDATE asset SET remote_id=NULL WHERE id=1")
+            connection.commit()
+        result = self._apply(self._plan(file_template="{number}"))
+        reasons = {failure["asset_id"]: failure["reason"] for failure in result["failures"]}
+        self.assertEqual(reasons[1], organize.SKIP_NO_REMOTE_ID)
+
+    def test_a_failed_ledger_write_puts_the_name_back(self):
+        plan = self._plan(file_template="{number}")
+        with mock.patch.object(organize, "_update_row", return_value=0):
             result = self._apply(plan)
-        self.assertEqual((result['moved'], result['failed']), (1, 0))
-
-    def test_scoped_symbol_cleanup_and_rollback_preserve_unselected_files(self):
-        self._file('合集/★标题⧹⧹片段.mp4')
-        self._file('合集2/★标题.mp4')
-        _seed(self.db_path, [
-            {'id': 1, 'path': r'R:\media\合集\★标题⧹⧹片段.mp4', 'name': '★标题⧹⧹片段.mp4'},
-            {'id': 2, 'path': r'R:\media\合集2\★标题.mp4', 'name': '★标题.mp4'},
-        ])
-        plan = _plan(self.db_path, path=r'R:\media\合集')
-        result = self._apply(plan)
-        self.assertEqual((result['moved'], result['failed']), (1, 0))
-        self.assertTrue((self.media / '合集/标题 片段.mp4').exists())
-        self.assertTrue((self.media / '合集2/★标题.mp4').exists())
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            self.assertEqual(connection.execute('SELECT name FROM asset WHERE id=1').fetchone()[0], '标题 片段.mp4')
-            result = organize.rollback_batch(connection, organize.latest_batch(self.holder))
-        self.assertEqual((result['restored'], result['failed']), (1, 0))
-        self.assertTrue((self.media / '合集/★标题⧹⧹片段.mp4').exists())
-
-    def test_rollback_puts_everything_back(self):
-        self._file("旧/abc123.mp4")
-        _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\abc123.mp4", "name": "abc123.mp4",
-             "code": "ABC-123", "studio": "厂牌"},
-        ])
-        self._apply(_plan(self.db_path, file_template="{number}", dir_template="{studio}"))
-        batch = organize.latest_batch(self.holder)
-        self.assertIsNotNone(batch)
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            result = organize.rollback_batch(connection, batch)
-        self.assertEqual((result["restored"], result["failed"]), (1, 0))
-        self.assertTrue((self.media / "旧" / "abc123.mp4").is_file())
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            path = connection.execute("SELECT path FROM asset WHERE id=1").fetchone()[0]
-        self.assertEqual(path, "R:\\media\\旧\\abc123.mp4")
-        # 整批退回去之后它不该再出现在「回滚上一批」里。
-        self.assertIsNone(organize.latest_batch(self.holder))
-
-    def test_target_taken_on_disk_fails_only_that_row(self):
-        self._file("旧/abc123.mp4")
-        self._file("ABC-123.mp4")
-        _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\abc123.mp4", "name": "abc123.mp4",
-             "code": "ABC-123"},
-        ])
-        plan = {"rows": [{"asset_id": 1, "action": "move",
-                          "current_path": "R:\\media\\旧\\abc123.mp4",
-                          "target_path": "R:\\media\\ABC-123.mp4"}]}
-        result = self._apply(plan)
-        self.assertEqual((result["moved"], result["failed"]), (0, 1))
-        self.assertEqual(result["failures"][0]["reason"], organize.SKIP_TARGET_EXISTS)
-        self.assertTrue((self.media / "旧" / "abc123.mp4").is_file())
-
-    def test_cross_volume_row_is_refused(self):
-        self._file("旧/abc123.mp4")
-        _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\abc123.mp4", "name": "abc123.mp4",
-             "code": "ABC-123"},
-        ])
-        plan = {"rows": [{"asset_id": 1, "action": "move",
-                          "current_path": "R:\\media\\旧\\abc123.mp4",
-                          "target_path": "B:\\media\\ABC-123.mp4"}]}
-        result = self._apply(plan)
-        self.assertEqual(result["failures"][0]["reason"], organize.SKIP_CROSS_VOLUME)
-        self.assertTrue((self.media / "旧" / "abc123.mp4").is_file())
-
-    def _pikpak_plan(self):
-        self._file("旧/abc123.mp4")
-        _seed(self.db_path, [
-            {"id": 1, "path": "A:\\x\\旧\\abc123.mp4", "name": "abc123.mp4", "code": "ABC-123"},
-        ])
-        roots = mock.patch.object(organize, "location_roots",
-                                  lambda: {"local": (ROOT_DECLARATION,), "pikpak": ("A:\\",)})
-        roots.start()
-        self.addCleanup(roots.stop)
-        return {"rows": [{"asset_id": 1, "action": "rename",
-                          "current_path": "A:\\x\\旧\\abc123.mp4",
-                          "target_path": "A:\\x\\旧\\ABC-123.mp4"}]}
-
-    def test_pikpak_batch_without_a_verified_rename_is_refused_whole(self):
-        plan = self._pikpak_plan()
-        with self.assertRaisesRegex(organize.OrganizeError, "pikpak"):
-            self._apply(plan)
-        self.assertTrue((self.media / "旧" / "abc123.mp4").is_file())
-        with self.assertRaises(organize.UnverifiedRename):
-            organize._rename("A:\\x\\旧\\abc123.mp4", "A:\\x\\旧\\ABC-123.mp4")
-        self.assertTrue((self.media / "旧" / "abc123.mp4").is_file())
-
-    def test_injected_verified_rename_carries_pikpak_rows(self):
-        plan = self._pikpak_plan()
-        calls = []
-
-        def verified(source, target):
-            calls.append((source, target))
-            self._translate(source).rename(self._translate(target))
-
-        with organize.verified_renames("pikpak", verified):
-            result = self._apply(plan)
-        self.assertEqual((result["moved"], result["failed"]), (1, 0))
-        self.assertEqual(calls, [("A:\\x\\旧\\abc123.mp4", "A:\\x\\旧\\ABC-123.mp4")])
-        self.assertTrue((self.media / "旧" / "ABC-123.mp4").is_file())
-        self.assertTrue(organize.unverified_location("pikpak"))
-
-    def test_missing_source_is_reported_not_raised(self):
-        _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\abc123.mp4", "name": "abc123.mp4",
-             "code": "ABC-123"},
-        ])
-        plan = _plan(self.db_path, file_template="{number}")
-        result = self._apply(plan)
-        self.assertEqual((result["moved"], result["failed"]), (0, 1))
-        self.assertEqual(result["failures"][0]["reason"], "源文件不存在")
+        self.assertEqual(result["failed"], 2)
+        self.assertIn("数据库写入失败，已改回原名", result["failures"][0]["reason"])
+        self.assertEqual([move[2] for move in self.provider.moves],
+                         ["ABC-001.mp4", "1.mp4", "ABC-002.mp4", "2.mp4"])
 
 
 class EndpointTests(unittest.TestCase):
@@ -526,23 +471,21 @@ class EndpointTests(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(self.holder, ignore_errors=True))
         self.db_path = fresh_ledger(self.holder)
         _seed(self.db_path, [
-            {"id": 1, "path": "R:\\media\\旧\\abc123.mp4", "name": "abc123.mp4",
-             "code": "ABC-123", "title": "标题"},
+            {"id": 1, "path": "gdrive:/夹/旧/abc123.mp4", "name": "abc123.mp4",
+             "code": "ABC-123", "title": "标题", "remote_id": "FILE1"},
         ])
+        self.provider = FakeProvider(_entries(
+            folders=(("OLD", "旧", "ROOT"),), files=(("FILE1", "abc123.mp4", "OLD"),)))
         self.contract = WebContract(self.db_path, candidate_root=self.holder)
-        for target, value in (("location_roots", lambda: DECLARED),
-                              ("root_online", lambda _root: True)):
-            patcher = mock.patch.object(organize, target, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self.contract.drive = FakeDrive(self.provider)
 
     def test_preview_writes_a_plan_and_counts_changes(self):
         from peach.web_organize import w_organize_preview
 
         result = w_organize_preview(self.contract, {
-            "location": "local", "file_template": "{number}[ {title}]"})
+            "location": SOURCE, "file_template": "{number}[ {title}]"})
         self.assertEqual(result["counts"]["change"], 1)
-        self.assertEqual(result["rows"][0]["target_path"], "R:\\media\\旧\\ABC-123 标题.mp4")
+        self.assertEqual(result["rows"][0]["target_path"], "gdrive:/夹/旧/ABC-123 标题.mp4")
         self.assertTrue(Path(result["plan_csv"]).is_file())
 
     def test_write_reports_existing_foreign_keys_and_rejects_new_violations(self):
@@ -551,6 +494,7 @@ class EndpointTests(unittest.TestCase):
             connection.execute("INSERT INTO media_binding(asset_id,backend,external_id) VALUES(99999,'test','old')")
             connection.commit()
         self.assertEqual(_run_write(self.contract, 'test', lambda _: {})['existing_foreign_keys'], 1)
+
         def introduce(connection):
             connection.execute("INSERT INTO media_binding(asset_id,backend,external_id) VALUES(99998,'test','new')")
             connection.commit()
@@ -562,46 +506,42 @@ class EndpointTests(unittest.TestCase):
         from peach.web_organize import w_organize_apply
 
         with self.assertRaises(ValueError):
-            w_organize_apply(self.contract, {"location": "local",
-                                             "file_template": "{number}"})
+            w_organize_apply(self.contract, {"location": SOURCE, "file_template": "{number}"})
 
     def test_preview_and_apply_share_validated_scope_and_recovery_parameters(self):
-        from peach.web_organize import w_organize_preview, w_organize_apply
+        from peach.web_organize import w_organize_apply, w_organize_preview
 
-        request = {'location': 'local', 'path': r'R:\media\旧', 'file_template': '{number}', 'dir_template': ''}
+        request = {'location': SOURCE, 'path': 'gdrive:/夹/旧', 'file_template': '{number}',
+                   'dir_template': ''}
         plan = w_organize_preview(self.contract, request)
         self.assertEqual(plan['path'], request['path'])
         self.assertEqual(plan['counts']['total'], 1)
-        with mock.patch.object(self.contract.organize_job, 'start', return_value={'status': 'running'}) as start:
+        with mock.patch.object(self.contract.organize_job, 'start',
+                               return_value={'status': 'running'}) as start:
             w_organize_apply(self.contract, {**request, 'confirm': True})
         self.assertEqual(start.call_args.kwargs['recovery']['path'], request['path'])
         self.assertEqual(start.call_args.kwargs['initial']['path'], request['path'])
-        for body in ({**request, 'path': r'S:\outside'}, {**request, 'path': ['R:\\media']}):
-            with self.subTest(body=body), self.assertRaisesRegex(organize.OrganizeError, '整理路径'):
+        for body in ({**request, 'path': 'onedrive:/别处'}, {**request, 'path': ['gdrive:/夹']}):
+            with self.subTest(body=body), self.assertRaisesRegex(organize.OrganizeError, '路径'):
                 w_organize_preview(self.contract, body)
-            with self.subTest(body=body), self.assertRaisesRegex(organize.OrganizeError, '整理路径'):
+            with self.subTest(body=body), self.assertRaisesRegex(organize.OrganizeError, '路径'):
                 w_organize_apply(self.contract, {**body, 'confirm': True})
 
-    def test_a_scope_outside_the_source_is_a_bad_request_not_a_server_error(self):
-        """整理路径填错是参数问题：接口回 400 并带原因，不是 500。"""
-        from peach.api import create_app
-        from peach.config import PeachSettings
-        from support.web import route_client
-
-        app = create_app(PeachSettings(db_path=self.db_path, configured=True, token=""))
-        with route_client(app) as client:
-            for route in ("/api/organize/preview", "/api/organize/apply"):
-                with self.subTest(route=route):
-                    response = client.post(route, json={"location": "local", "path": r"S:\outside",
-                                                        "file_template": "{number}", "confirm": True})
-                    self.assertEqual(response.status_code, 400)
-                    self.assertIn("整理路径不在所选来源内", response.json()["error"])
-
-    def test_apply_on_a_source_without_verified_rename_is_refused(self):
+    def test_apply_on_a_source_that_is_not_connected_is_refused(self):
         from peach.web_organize import w_organize_apply
 
-        with self.assertRaisesRegex(ValueError, "pikpak"):
-            w_organize_apply(self.contract, {"location": "pikpak", "confirm": True,
+        self.contract.drive = FakeDrive(self.provider)
+        self.contract.drive.connection = lambda location: {"connected": False}
+        with self.assertRaisesRegex(ValueError, "还没有授权"):
+            w_organize_apply(self.contract, {"location": SOURCE, "confirm": True,
+                                             "file_template": "{number}"})
+
+    def test_apply_without_a_drive_is_refused(self):
+        from peach.web_organize import w_organize_apply
+
+        del self.contract.drive
+        with self.assertRaisesRegex(ValueError, "还没有接入网盘"):
+            w_organize_apply(self.contract, {"location": SOURCE, "confirm": True,
                                              "file_template": "{number}"})
 
     def test_rollback_without_a_batch_is_refused(self):
@@ -614,23 +554,25 @@ class EndpointTests(unittest.TestCase):
         from peach.web_settings import organize_templates, w_settings
 
         w_settings(self.contract, {"organizeTemplates": {
-            "115": {"file": "{number}[ {title}]", "dir": "{studio}"}}})
+            "gdrive": {"file": "{number}[ {title}]", "dir": "{studio}"}}})
         self.assertEqual(organize_templates(self.contract),
-                         {"115": {"file": "{number}[ {title}]", "dir": "{studio}"}})
+                         {"gdrive": {"file": "{number}[ {title}]", "dir": "{studio}"}})
 
     def test_escaping_template_is_refused_on_save(self):
         from peach.web_settings import w_settings
 
         with self.assertRaises(TemplateError):
             w_settings(self.contract, {"organizeTemplates": {
-                "115": {"file": "{number}", "dir": "../{studio}"}}})
+                "gdrive": {"file": "{number}", "dir": "../{studio}"}}})
 
-    def test_status_lists_placeholders_and_presets(self):
+    def test_status_lists_connected_sources_placeholders_and_presets(self):
         from peach.web_organize import q_organize
 
         payload = q_organize(self.contract)
         self.assertEqual(payload["status"], "idle")
         self.assertTrue(payload["presets"])
+        self.assertEqual([item["location"] for item in payload["locations"]], [SOURCE])
+        self.assertEqual(payload["locations"][0]["roots"], ["夹"])
         self.assertIn("code", [item["key"] for item in payload["placeholders"]])
         self.assertNotIn("number", [item["key"] for item in payload["placeholders"]])
 

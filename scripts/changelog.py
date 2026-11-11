@@ -37,13 +37,12 @@ CHANGELOG = "CHANGELOG.md"
 #: 未发布节的标题。Keep a Changelog 要求它常驻，让人随时知道主线上攒了什么。
 UNRELEASED = "未发布"
 
-#: Release 页正文里跟在变更日志后面的安装提示。每一版都一样，所以只写在这里一处，
+#: Release 页正文里跟在变更日志后面的部署提示。每一版都一样，所以只写在这里一处，
 #: 工作流不再自己抄一份。
-INSTALL_NOTE = ("Windows 安装包、免安装包和 macOS DMG 都内置 Python、FFmpeg、untrunc、cloudflared 和人脸模型，装好即可使用；"
-                "Docker 镜像适合 NAS 与 Linux 服务器。"
-                "安装与使用见 [Windows 使用说明](https://github.com/peach-mitao/peach/blob/master/docs/TESTING_DESKTOP.md)、"
-                "[macOS 使用说明](https://github.com/peach-mitao/peach/blob/master/docs/OPERATIONS.md#macos-独立测试包)"
-                "和 [Docker 部署](https://github.com/peach-mitao/peach/blob/master/docs/DOCKER.md)。")
+INSTALL_NOTE = ("Docker 镜像是一键部署的方式，媒体留在你自己的 Google Drive 或 OneDrive 里，"
+                "Peach 只保存元数据与播放所需的访问凭据。"
+                "部署与升级见 [Docker 部署](https://github.com/peach-mitao/peach/blob/master/docs/DOCKER.md)，"
+                "日常运维见 [运维手册](https://github.com/peach-mitao/peach/blob/master/docs/OPERATIONS.md)。")
 
 #: Conventional Commits 的主题形状：`type(scope)!: 描述`。
 SUBJECT = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<text>.+)$")
@@ -100,8 +99,7 @@ AREA_BY_SCOPE = {
     "review": "复核",
     "follow": "关注",
     "setup": "配置", "config": "配置", "auth": "配置",
-    "update": "更新",
-    "tray": "桌面", "desktop": "桌面", "ops": "桌面",
+    "ops": "配置",
     "ledger": "账本", "migrations": "账本",
 }
 

@@ -1,4 +1,4 @@
-"""外部播放器票据只授权单资产、限时读取；本机播放器的进度经假 IPC / HTTP 端点回传。"""
+"""外部播放器票据只授权单资产、限时读取；播放器进度经假 IPC / HTTP 端点回传。"""
 import base64
 import json
 import socket
@@ -6,14 +6,10 @@ import threading
 import time
 import unittest
 import urllib.error
-import os
-import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from peach.external_playback import TTL_SECONDS, issue, valid
-from peach import local_playback
 from peach import playback_tracking as tracking
 
 
@@ -33,105 +29,6 @@ class ExternalPlaybackTests(unittest.TestCase):
         self.assertTrue(valid(b'key', 1, ticket, origin='https://public.example', now=101))
         self.assertFalse(valid(b'key', 1, ticket, origin='https://other.example', now=101))
         self.assertFalse(valid(b'key', 1, ticket, now=101))
-
-    def test_default_player_uses_windows_file_association(self):
-        with tempfile.TemporaryDirectory() as directory:
-            media = Path(directory).resolve() / '测试 movie.mp4'
-            media.write_bytes(b'video')
-            with patch.object(local_playback.sys, 'platform', 'win32'), \
-                    patch.dict(os.environ, {'PEACH_HEADLESS_MANAGED': '0'}), \
-                    patch.object(os, 'startfile', create=True) as launch:
-                local_playback.open_media(media)
-                launch.assert_called_once_with(str(media), 'open')
-
-    def test_mac_selected_player_uses_open_without_shell(self):
-        with tempfile.TemporaryDirectory() as directory:
-            media = Path(directory).resolve() / 'movie.mp4'
-            media.write_bytes(b'video')
-            with patch.object(local_playback.sys, 'platform', 'darwin'), \
-                    patch.dict(os.environ, {'PEACH_HEADLESS_MANAGED': '0'}), \
-                    patch.object(local_playback, 'installed', return_value={'iina': ('IINA', '/Applications/IINA.app')}), \
-                    patch.object(local_playback.subprocess, 'run') as launch:
-                local_playback.open_media(media, 'iina')
-                self.assertEqual(launch.call_args.args[0], ['/usr/bin/open', '-a', '/Applications/IINA.app', str(media)])
-                local_playback.open_media(media)
-                self.assertEqual(launch.call_args.args[0], ['/usr/bin/open', str(media)])
-
-    def test_mounted_media_path_supports_file_access_without_final_path_resolution(self):
-        with tempfile.TemporaryDirectory() as directory:
-            media = Path(directory).resolve() / 'mounted.mp4'
-            media.touch()
-            with patch.object(local_playback.sys, 'platform', 'win32'), \
-                    patch.dict(os.environ, {'PEACH_HEADLESS_MANAGED': '0'}), \
-                    patch.object(Path, 'resolve', side_effect=OSError(1005, '挂载卷不支持最终路径解析')), \
-                    patch.object(os, 'startfile', create=True) as launch, \
-                    patch.object(local_playback, 'installed', return_value={'potplayer': ('PotPlayer', 'player.exe')}), \
-                    patch.object(local_playback.subprocess, 'Popen') as selected:
-                local_playback.open_media(media)
-                launch.assert_called_once_with(str(media), 'open')
-                local_playback.open_media(media, 'potplayer')
-                self.assertEqual(selected.call_args.args[0], ['player.exe', str(media)])
-
-    def test_headless_deployment_and_unknown_player_cannot_launch(self):
-        with patch.dict(os.environ, {'PEACH_HEADLESS_MANAGED': '1'}):
-            self.assertFalse(local_playback.available())
-            self.assertEqual(local_playback.installed(), {})
-            with self.assertRaises(ValueError):
-                local_playback.open_media(Path('movie.mp4'))
-        with tempfile.TemporaryDirectory() as directory:
-            media = Path(directory).resolve() / 'movie.mp4'
-            media.touch()
-            with patch.object(local_playback, 'available', return_value=True), \
-                    patch.object(local_playback, 'installed', return_value={}):
-                with self.assertRaises(ValueError):
-                    local_playback.open_media(media, 'cmd.exe')
-                script = media.with_suffix('.exe')
-                script.touch()
-                with self.assertRaises(ValueError):
-                    local_playback.open_media(script)
-
-    def test_tracked_players_open_random_ipc_endpoints(self):
-        with tempfile.TemporaryDirectory() as directory:
-            media = Path(directory).resolve() / 'movie.mp4'
-            media.write_bytes(b'video')
-            track = MagicMock(return_value=True)
-            players = {'mpv': ('mpv', 'C:/mpv/mpv.exe'), 'vlc': ('VLC', 'C:/VLC/vlc.exe')}
-            with patch.object(local_playback.sys, 'platform', 'win32'), \
-                    patch.dict(os.environ, {'PEACH_HEADLESS_MANAGED': '0'}), \
-                    patch.object(local_playback, 'installed', return_value=players), \
-                    patch.object(local_playback.subprocess, 'Popen') as launch:
-                self.assertTrue(local_playback.open_media(media, 'mpv', track=track))
-                command = launch.call_args.args[0]
-                self.assertEqual((command[0], command[-1]), ('C:/mpv/mpv.exe', str(media)))
-                self.assertRegex(command[1], r'^--input-ipc-server=\\\\\.\\pipe\\peach-mpv-[0-9a-f]{24}$')
-                self.assertTrue(local_playback.open_media(media, 'vlc', track=track))
-                vlc = launch.call_args.args[0]
-                self.assertIn('--extraintf=http', vlc)
-                self.assertIn('--http-host=127.0.0.1', vlc)
-                self.assertTrue(any(part.startswith('--http-password=') and len(part) > 20 for part in vlc))
-                self.assertEqual(track.call_count, 2)
-                self.assertFalse(local_playback.open_media(media, 'mpv'))
-                self.assertEqual(launch.call_args.args[0], ['C:/mpv/mpv.exe', str(media)])
-
-    def test_mac_iina_tracks_through_iina_cli_and_vlc_keeps_open(self):
-        with tempfile.TemporaryDirectory() as directory:
-            media = Path(directory).resolve() / 'movie.mp4'
-            media.write_bytes(b'video')
-            track = MagicMock(return_value=True)
-            players = {'iina': ('IINA', '/Applications/IINA.app'), 'vlc': ('VLC', '/Applications/VLC.app')}
-            with patch.object(local_playback.sys, 'platform', 'darwin'), \
-                    patch.dict(os.environ, {'PEACH_HEADLESS_MANAGED': '0'}), \
-                    patch.object(local_playback, 'installed', return_value=players), \
-                    patch.object(local_playback.subprocess, 'Popen') as launch, \
-                    patch.object(local_playback.subprocess, 'run') as opened:
-                self.assertTrue(local_playback.open_media(media, 'iina', track=track))
-                command = launch.call_args.args[0]
-                self.assertEqual(Path(command[0]).as_posix(), '/Applications/IINA.app/Contents/MacOS/iina-cli')
-                self.assertRegex(command[1], r'^--mpv-input-ipc-server=.+peach-mpv-[0-9a-f]{24}\.sock$')
-                self.assertFalse(local_playback.open_media(media, 'vlc', track=track))
-                self.assertEqual(opened.call_args.args[0], ['/usr/bin/open', '-a', '/Applications/VLC.app', str(media)])
-                self.assertEqual(track.call_count, 1)
-
 
 class _FakeMpv(threading.Thread):
     """按脚本回答 get_property，夹几条事件，放完脚本就断开，像 mpv 退出。"""

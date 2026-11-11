@@ -2,15 +2,13 @@
 
 # Peach
 
-本地优先的影片刮削与媒体管理工具。
+自托管的影片信息管理工具，媒体留在你自己的 Google Drive 或 OneDrive 里。
 
 [官网](https://peach.video) · [下载](#下载与使用) · [在线演示](https://demo.peach.video) · [文档](#文档) · [English](README.md)
 
 [![Release](https://img.shields.io/github/v/release/peach-mitao/peach?include_prereleases&sort=semver&label=release&logo=github)](https://github.com/peach-mitao/peach/releases)
-[![CI 流水线](https://img.shields.io/github/actions/workflow/status/peach-mitao/peach/test.yml?branch=master&label=CI&logo=githubactions&logoColor=white)](https://github.com/peach-mitao/peach/actions/workflows/test.yml)
 [![许可证](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue?logo=gnu&logoColor=white)](LICENSE)
-[![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)](docs/TESTING_DESKTOP.md)
-[![macOS DMG](https://img.shields.io/badge/macOS-DMG-555555?logo=apple&logoColor=white)](docs/OPERATIONS.md#macos-独立测试包)
+[![Docker](https://img.shields.io/badge/Docker-image-2496ED?logo=docker&logoColor=white)](docs/DOCKER.md)
 [![年龄限制](https://img.shields.io/badge/age-18%2B-555555)](#许可证)
 
 ## 截图
@@ -43,27 +41,27 @@
 ## 能做什么
 
 - **影片刮削**：识别影片编号，读取 NFO，多来源补齐标题、演员、厂牌和封面，保留人工修改。
-- **本地与网盘**：统一浏览本地硬盘、SMB、已挂载网盘和 PikPak 媒体库。
-- **播放与记录**：网页与外部播放器、字幕、倍速、旋转、续播和时间轴预览。
+- **网盘里的馆藏**：接上 Google Drive 与 OneDrive，选好要扫描的目录就能浏览。影片留在原处，Peach 只保存资料、缩略图和观看记录。
+- **播放**：在网页里播放，或者把一条带时限的直链交给桌面播放器；续播位置、倍速和时间轴预览按作品保存。
+- **变更跟踪**：每 15 分钟取一次增量、每天一次全量，配置页也能当场刷新。
 - **关注与发现**：订阅人物与创作者更新，发现作品，管理「想要」清单。
-- **云下载**：按影片编号查找或提交磁力，下载完成后整理入库。
-- **馆藏管理**：管理标签、重复文件、多版本与分卷；按女优批量永久删除影片，保留人物档案和照片。资料和观看记录保存在本机。
-- **任务中心**：暂停、继续或取消本机后台任务，查看可取得的各任务 CPU、GPU 与下载活动。
+- **馆藏管理**：管理标签、重复文件、多版本与分卷；按女优批量删除影片，保留人物档案和照片。
+- **任务中心**：暂停、继续或取消后台任务，看进度和问题。
 
 ## 下载与使用
 
 | 方式 | 入口 |
 | --- | --- |
-| Windows x64 | [安装版](https://github.com/peach-mitao/peach/releases/download/v0.57.0/Peach-0.57.0-windows-x64-setup.exe) · [免安装版](https://github.com/peach-mitao/peach/releases/download/v0.57.0/Peach-0.57.0-windows-x64.zip) |
-| macOS | [Apple Silicon / ARM64](https://github.com/peach-mitao/peach/releases/download/v0.57.0/Peach-0.57.0-macos-arm64.dmg) · [Intel / x86_64](https://github.com/peach-mitao/peach/releases/download/v0.57.0/Peach-0.57.0-macos-x86_64.dmg) |
 | Docker / NAS | [部署说明](docs/DOCKER.md) |
-| 源码运行 | [安装步骤](docs/OPERATIONS.md#从源码运行windowsmacos)，需要 Git、uv 和 Python 3.14+ |
+| 源码运行 | [安装步骤](docs/OPERATIONS.md)，需要 Git、uv 和 Python 3.14+ |
 
-安装后选择媒体目录，扫描后即可浏览与播放。桌面测试包未签名，macOS 尚未完成公证；详见 [Windows](docs/TESTING_DESKTOP.md) 与 [macOS](docs/OPERATIONS.md#macos-独立测试包) 说明。
+Peach 就是一个容器或一个进程，跑在你自己的数据目录上。首次启动后在配置页授权一个 Google Drive 或 OneDrive 账号，选定要扫描的目录，馆藏会自己长出来。
+
+OAuth 客户端由你自己申请：在 Google Cloud 或 Azure 上登记应用，把 client id 与 secret 填进配置，令牌就一直在你手里。详见[部署说明](docs/DOCKER.md)。
 
 ## 文档
 
-[运行与配置](docs/OPERATIONS.md) · [来源支持](docs/SOURCING.md) · [外部播放器](docs/EXTERNAL_PLAYERS.md) · [诊断与数据分享](docs/DIAGNOSTICS.md) · [更新日志](CHANGELOG.md)
+[部署](docs/DOCKER.md) · [运行与配置](docs/OPERATIONS.md) · [来源支持](docs/SOURCING.md) · [外部播放器](docs/EXTERNAL_PLAYERS.md) · [诊断与数据分享](docs/DIAGNOSTICS.md) · [更新日志](CHANGELOG.md)
 
 参与开发：[贡献说明](CONTRIBUTING.md) · [开发约定](AGENTS.md) · [测试](docs/TESTING.md)
 
@@ -73,7 +71,7 @@
 
 ## 相关项目
 
-感谢 [amane](https://github.com/sqzw-x/amane)、[Gfriends](https://github.com/gfriends/gfriends) 与 [CloudDrive2](https://www.clouddrive2.com/)；完整致谢见[复用清单](docs/REUSE.md)。
+感谢 [amane](https://github.com/sqzw-x/amane) 与 [Gfriends](https://github.com/gfriends/gfriends)；完整致谢见[复用清单](docs/REUSE.md)。
 
 ## Star 历史
 

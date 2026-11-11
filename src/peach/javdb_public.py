@@ -603,7 +603,7 @@ class PublicAPI:
 
     def resources(self, code: str, *, refresh=False, review_pages=MAX_REVIEW_PAGES) -> dict:
         """磁链区与评论正文的资源链接；一侧未取得只记警告，作品身份未取得直接抛出。"""
-        from .downloads import parse_magnet
+        from .magnets import parse_magnet
         from .sources.javdb import merge_resources, parse_comment_text
 
         movie = self.movie(code, refresh=True) if refresh else self.movie(code)

@@ -1,4 +1,8 @@
-"""馆藏任务的逐目录流量读数、连接分账与预估。"""
+"""馆藏任务的逐来源流量读数与预估。
+
+媒体只在网盘上，所以一个来源一行：读一个文件就是走一次外网流量，没有本地可省。
+影片资料与配套文件是 Peach 自己取回的小文件，记在 `metadata` 那几行上。
+"""
 from __future__ import annotations
 
 import math
@@ -7,18 +11,21 @@ import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from pathlib import PureWindowsPath
 
-from .media_sources import CLOUD_LOCATIONS, cost_for
+from .media_sources import SCANNABLE_LOCATIONS, SOURCES
 
 CURRENT = ContextVar('peach_processing_traffic', default=None)
 ROUTE = ContextVar('peach_processing_traffic_route', default='metadata')
 MIB = 1024 ** 2
 STATISTICS = re.compile(r'Statistics:\s*(\d+) bytes read')
 
+#: 未观测到的读数统一用这一句，界面按它标「约」。
+UNOBSERVED_READ = '网盘读取量与预读未观测'
+
 
 def _key(path):
-    return str(PureWindowsPath(path)).rstrip('\\').casefold()
+    """账本路径只做比较用的键：按 `/` 归一，大小写不敏感。"""
+    return str(path or '').strip().rstrip('/').casefold()
 
 
 def record_download(size):
@@ -44,12 +51,11 @@ def record_media_read(path, size):
 
 
 def media_statistics(path, stderr, *, kind=None, successful=False):
-    """FFmpeg 的输入读取量；挂载缓存和预读由挂载工具管理。"""
+    """FFmpeg 的输入读取量，用来校准一个文件实际被读了多少。"""
     meter = CURRENT.get()
     if meter is None:
         return
-    from .smb_media import source_identity
-    path = source_identity(path)
+    path = str(path)
     text = stderr.decode('utf-8', 'replace') if isinstance(stderr, bytes) else str(stderr or '')
     sizes = STATISTICS.findall(text)
     if sizes:
@@ -58,7 +64,7 @@ def media_statistics(path, stderr, *, kind=None, successful=False):
         if kind and successful:
             meter.observe_media(path, kind, amount)
     else:
-        meter.media_read(str(path), 0, missing=True)
+        meter.media_read(path, 0, missing=True)
 
 
 @contextmanager
@@ -78,19 +84,13 @@ class ProcessingTraffic:
         self.publish = lambda: None
         self.published_at = 0
         self.owner = threading.get_ident()
+        self.locations = SCANNABLE_LOCATIONS
         self.rows = {}
-        from .clouddrive_proxy import connections
-        routes = connections(config)
-        for location, roots in config.locations.items():
-            for root in roots:
-                remote = any(value.get('transport') == 'smb' and _key(value['root']) == _key(root)
-                             for value in config.storage_roots.values())
-                network = remote or location in CLOUD_LOCATIONS or cost_for(location, root, config) == 'metered'
-                connection = routes.get(_key(root), 'unknown') if network and not remote else 'direct'
-                self.rows[f'{location}:{_key(root)}'] = dict(
-                    label=config.library_names.get(root) or root, root=root, location=location,
-                    metered=connection == 'proxy', connection=connection, network=network,
-                    used_bytes=0, remaining_min=0, remaining_max=0, unobserved=[])
+        for location in self.locations:
+            self.rows[location] = dict(
+                label=SOURCES[location].label, root=f'{location}:/', location=location,
+                metered=True, connection='direct', network=True,
+                used_bytes=0, remaining_min=0, remaining_max=0, unobserved=[])
         for key, label, metered in [('metadata', '影片资料', True),
                                      ('metadata-proxy', '影片资料', True),
                                      ('metadata-direct', '影片资料', False)]:
@@ -105,12 +105,11 @@ class ProcessingTraffic:
             elif old.get('key') and old.get('used_bytes'):
                 self.rows[old['key']] = {key: old[key] for key in
                     ('label', 'root', 'location', 'metered', 'network', 'used_bytes', 'unobserved')}
-                self.rows[old['key']].update(remaining_min=0, remaining_max=0)
-        self.unknown_files = stage in ('all', 'scan') and asset_ids is None
+                self.rows[old['key']].update(remaining_min=0, remaining_max=0,
+                                             connection=old.get('connection', 'direct'))
+        self.unknown_files = stage == 'all' and asset_ids is None
         from .processing_traffic_plan import TrafficPlan
         self.plan = TrafficPlan(config, stage, self._media_key, allow_metered=allow_metered)
-        from .processing_storage import ProcessingStorage
-        self.storage = ProcessingStorage(config)
         self.plan.completed.update(previous.get('completed_work', []))
         self.active_sample = None
         self.refresh_plan()
@@ -130,32 +129,20 @@ class ProcessingTraffic:
             CURRENT.reset(token)
 
     def _media_key(self, path, location=None):
-        candidates = []
-        for key, row in self.rows.items():
-            if not row['root'] or location and row['location'] != location:
-                continue
-            roots = self.config.locations.get(row['location'], ())
-            if row['root'] not in roots:
-                continue
-            index = roots.index(row['root'])
-            mounts = self.config.mounts.get(row['location'], ())
-            for prefix in [row['root'], *([mounts[index]] if index < len(mounts) else [])]:
-                declared, actual = _key(prefix), _key(path)
-                if actual == declared or actual.startswith(declared + '\\'):
-                    candidates.append((len(declared), key))
-        return max(candidates)[1] if candidates else None
+        """账本路径属于哪个来源：`gdrive:/夹/文件.mp4` → `gdrive`。"""
+        declared = str(location or str(path or '').partition(':')[0]).strip()
+        return declared if declared in self.locations else None
 
     def refresh_plan(self, rows=None):
-        """账本统计不访问媒体目录；保护开启的目录不预估自动探测。"""
+        """账本统计不访问网盘；网盘那一行永远标着「读取量未观测」。"""
         if rows is None:
             from .processing_traffic_plan import ledger_rows
-            roots = tuple(root for values in self.config.locations.values() for root in values)
-            rows = ledger_rows(self.db_path, self.asset_ids, library_roots=roots)
+            rows = ledger_rows(self.db_path, self.asset_ids)
         with self.lock:
             self.plan.refresh(rows)
             for row in self.rows.values():
                 if row['root'] and row['network']:
-                    self._reason(row, '挂载缓存与预读未观测')
+                    self._reason(row, UNOBSERVED_READ)
 
     def start_metadata(self, code):
         from .library_processing import _provider_code
@@ -180,7 +167,7 @@ class ProcessingTraffic:
     def observe_media(self, path, kind, amount):
         key = self._media_key(path)
         with self.lock:
-            if key and self.rows[key]['network']:
+            if key:
                 self.plan.history.observe(key + ':' + kind, amount)
                 self.plan.history.save()
 
@@ -216,7 +203,7 @@ class ProcessingTraffic:
         key = self._media_key(path)
         if key is not None:
             if self.rows[key]['network']:
-                self.mark(key, '挂载缓存与预读未观测')
+                self.mark(key, UNOBSERVED_READ)
             if missing:
                 self.mark(key, '媒体读取量未取得')
             self.add(key, size)
@@ -235,10 +222,10 @@ class ProcessingTraffic:
                     estimated_bytes=row['used_bytes'] + amount,
                     estimated_min_bytes=row['used_bytes'],
                     estimated_max_bytes=row['used_bytes'] + amount))
-            result = dict(sources=sources, workload=self.plan.workload(), unknown_files=self.unknown_files and not finished,
+            result = dict(sources=sources, workload=self.plan.workload(),
+                          unknown_files=self.unknown_files and not finished,
                           partial=any(row['unobserved'] for row in sources),
                           completed_work=sorted(self.plan.completed))
-            result['disk'] = self.storage.snapshot(self.plan, self.rows, finished=finished)
             for field in ('used_bytes', 'estimated_bytes', 'estimated_min_bytes', 'estimated_max_bytes'):
                 result[field] = sum(row[field] for row in sources)
                 result['metered_' + field] = sum(row[field] for row in sources if row['metered'])

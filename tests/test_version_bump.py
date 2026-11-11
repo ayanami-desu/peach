@@ -33,23 +33,17 @@ class BumpPartTests(unittest.TestCase):
         self.assertEqual(bump_part_for([], []), "patch")
 
     def test_runtime_inputs_are_told_apart_from_development_only_paths(self):
-        self.assertTrue(runtime_inputs_changed(["src/peach/tray.py"]))
-        self.assertTrue(runtime_inputs_changed(["web/app.js"]))
-        self.assertTrue(runtime_inputs_changed(["frontend/src/main.ts"]))
-        self.assertTrue(runtime_inputs_changed(["migrations/0042_thing.sql"]))
-        self.assertTrue(runtime_inputs_changed(["resources/peach.ico"]))
-        self.assertTrue(runtime_inputs_changed(["scripts/build_windows.ps1"]))
-        self.assertTrue(runtime_inputs_changed(["scripts/build_app_entry.py"]))
-        for path in ("scripts/build_macos_app.py", "scripts/build_macos_standalone.py",
-                     "scripts/peach_macos.spec", "scripts/package_windows_release.py",
-                     "scripts/installer/peach.iss", "scripts/ci_windows.ps1",
-                     "scripts/ci_macos.sh", ".gitlab-ci.yml"):
+        for path in ("src/peach/tray.py", "web/app.js", "frontend/src/main.ts",
+                     "migrations/0042_thing.sql", "resources/peach.ico",
+                     "pyproject.toml", "uv.lock", r"src\peach\tray.py"):
             with self.subTest(path=path):
                 self.assertTrue(runtime_inputs_changed([path]))
-        self.assertTrue(runtime_inputs_changed(["pyproject.toml"]))
-        self.assertTrue(runtime_inputs_changed(["uv.lock"]))
-        self.assertTrue(runtime_inputs_changed([".github/workflows/release.yml"]))
-        self.assertTrue(runtime_inputs_changed([r"src\peach\tray.py"]))
+
+        self.assertFalse(runtime_inputs_changed([]))
+        self.assertFalse(runtime_inputs_changed(["docs/STATUS.md", "AGENTS.md"]))
+        self.assertFalse(runtime_inputs_changed(["tests/test_tray.py"]))
+        self.assertFalse(runtime_inputs_changed(["scripts/build_windows.ps1"]))
+        self.assertFalse(runtime_inputs_changed([".claude/skills/peach-worktree/SKILL.md"]))
 
         self.assertFalse(runtime_inputs_changed([]))
         self.assertFalse(runtime_inputs_changed(["docs/STATUS.md", "AGENTS.md"]))
@@ -139,34 +133,9 @@ class ReleasePlanTests(unittest.TestCase):
         self.assertEqual(plan_bump(self.root, "major")["version"], "1.0.0")
         self.assertEqual(plan_bump(self.root, "minor")["version"], "0.8.0")
 
-    def test_release_workflow_changes_plan_a_patch(self):
-        self.tag()
-        self.commit("fix(desktop): 发布构建使用完整依赖", self.write(".github/workflows/release.yml"))
-        self.assertEqual(plan_bump(self.root)["version"], "0.7.15")
-
     def test_locked_dependency_changes_plan_a_patch(self):
         self.tag()
         self.commit("fix(desktop): 固定构建依赖", self.write("uv.lock"))
-        self.assertEqual(plan_bump(self.root)["version"], "0.7.15")
-
-    def test_bundled_sidecar_fetch_changes_plan_a_patch(self):
-        self.tag()
-        self.commit('fix(desktop): 获取随包工具', self.write('scripts/fetch_cloudflared.ps1'))
-        self.assertEqual(plan_bump(self.root)['version'], '0.7.15')
-
-    def test_bundled_sidecar_lock_changes_plan_a_patch(self):
-        self.tag()
-        self.commit('fix(desktop): 固定随包工具版本', self.write('scripts/cloudflared-windows.json'))
-        self.assertEqual(plan_bump(self.root)['version'], '0.7.15')
-
-    def test_macos_disk_image_changes_plan_a_patch(self):
-        self.tag()
-        self.commit("fix(macos): 保留镜像资源签名", self.write("scripts/build_macos_standalone.py"))
-        self.assertEqual(plan_bump(self.root)["version"], "0.7.15")
-
-    def test_gitlab_release_build_changes_plan_a_patch(self):
-        self.tag()
-        self.commit("fix(packaging): 使用项目要求的解释器", self.write(".gitlab-ci.yml"))
         self.assertEqual(plan_bump(self.root)["version"], "0.7.15")
 
     def test_planning_writes_nothing(self):
@@ -195,40 +164,5 @@ class ReleasePlanTests(unittest.TestCase):
         self.assertEqual((self.root / "src/peach/__init__.py").read_text(encoding="utf-8"),
                          VERSION_SEED.replace("0.7.14", "0.8.0"))
 
-    def test_readme_downloads_wait_for_the_release_and_then_move_alone(self):
-        """定版不碰 README；换直链时只动链接里的版本号，制品名后缀与其余字节原样保留。"""
-        old = ("[Installer](https://github.com/o/p/releases/download/v0.7.14/Peach-0.7.14-windows-x64-setup.exe)"
-               " · [Releases](https://github.com/o/p/releases)\r\nPeach 0.7.14\n")
-        for name in version_bump.README_FILES:
-            (self.root / name).write_bytes(old.encode("utf-8"))
-        write_version(self.root, "patch")
-        self.assertEqual(version_bump.readme_assets(self.root, "0.7.15"),
-                         ["Peach-0.7.15-windows-x64-setup.exe"])
-        self.assertEqual(version_bump.point_readmes(self.root, "0.7.15"), list(version_bump.README_FILES))
-        self.assertEqual(version_bump.point_readmes(self.root, "0.7.15"), [])
-        for name in version_bump.README_FILES:
-            with self.subTest(readme=name):
-                self.assertEqual((self.root / name).read_bytes().decode("utf-8"),
-                                 old.replace("v0.7.14/Peach-0.7.14-", "v0.7.15/Peach-0.7.15-"))
-
-
 if __name__ == "__main__":
     unittest.main()
-
-
-class ReleaseNoticeGateTests(unittest.TestCase):
-    def test_a_minor_release_without_a_notice_is_refused_and_a_patch_is_not(self):
-        from scripts.release_tag import require_release_notice
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "src/peach").mkdir(parents=True)
-            (root / "src/peach/release_notices.py").write_text(
-                'NOTICES: dict[str, dict] = {"0.57.0": {"level": "notice"}}\n', encoding="utf-8")
-            require_release_notice(root, "0.57.0", "minor")
-            require_release_notice(root, "0.57.1", "patch")
-            with self.assertRaisesRegex(version_bump.VersionError, "0.58.0 还没有更新公告"):
-                require_release_notice(root, "0.58.0", "minor")
-
-    def test_the_repository_notices_parse_without_importing_the_package(self):
-        from scripts.release_tag import ROOT, require_release_notice
-        require_release_notice(ROOT, "0.57.0", "minor")

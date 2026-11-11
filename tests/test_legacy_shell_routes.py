@@ -22,13 +22,13 @@ SETTINGS = FRONTEND_SRC / "history" / "settings-route.ts"
 #: （`TREE_PATTERNS`）登记，同样不在此列。
 FROZEN_ROUTES = frozenset({
     "/", "/trash", "/playlists", "/assets/:id", "/posts/:id",
-    "/performers", "/creators", "/studios", "/agencies", "/series", "/tags", "/stats", "/taste",
-    "/review", "/data-cleanup", "/duplicates", "/resource-sync", "/quality-goals",
+    "/performers", "/creators", "/studios", "/agencies", "/series", "/tags", "/stats",
+    "/review", "/data-cleanup", "/duplicates", "/quality-goals",
     "/sources", "/follow", "/subscriptions", "/tasks", "/immerse", "/wall",
     "/settings/diagnostics", "/jav", "/works/:code", "/settings", "/settings/appearance",
-    "/settings/playback", "/settings/jav", "/settings/search", "/settings/content",
-    "/settings/library", "/settings/subscriptions", "/settings/downloads",
-    "/settings/network", "/settings/maintenance", "/settings/maintenance/repairs",
+    "/settings/browsing", "/settings/jav", "/settings/search", "/settings/content",
+    "/settings/drives", "/settings/access", "/settings/token", "/settings/devices",
+    "/settings/speed",
 })
 #: 路由树按模式登记的资料页，一个实体种类一条。
 TREE_PATTERNS = frozenset({"/performers/*", "/studios/*", "/creators/*", "/series/*", "/agencies/*", "/tags/*"})

@@ -106,18 +106,11 @@ def print_plan(planned: dict) -> None:
         print(f" - 否决 {rejection['category']} {rejection['item_key']}")
     for tag in planned["tags"]:
         print(f" - 标签 {tag['asset_id']:<8} {tag['tag'][:30]:<30} {tag['source']}")
-    for rehome in planned["rehomes"]:
-        print(f" - 接回 {rehome['old_asset_id']:<8} → {rehome['new_asset_id']:<8} "
-              f"{rehome['name'][:40]} {rehome['batch']}")
     for item in planned["garbled"]:
         row = item["row"]
         label = row.get("canonical_name") or row.get("tag") or row.get("external_id") or row.get("alias") or ""
         print(f" - 乱码人物 {item['table']:<20} {str(row.get('asset_id') or row.get('entity_id') or row.get('id')):<8} "
               f"{str(label)[:30]} {item['batch']}")
-    for item in planned.get("javdb_records", []):
-        what = (f"订阅源 {item['source_id']}" if item["kind"] == "feed"
-                else ("无码" if item["uncensored"] else "有码"))
-        print(f" - JavDB {item['entity_id']:<8} {item['external_id']:<10} {what} {item['batch']}")
     print(auto_landing_revert.counts(planned))
 
 

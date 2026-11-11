@@ -25,7 +25,7 @@
 
 **三、只在浏览器能直接解码时才播放。** 转码与 HLS 全部删除，`BROWSER_NATIVE_SUFFIXES`（`src/peach/transcodes.py:21`）成为唯一判据。白名单外照常入库、可浏览、可复制直链、可交外部播放器。
 
-**四、元数据靠 provider 字段与远端探测。** 优先用 Drive 的 `videoMediaMetadata`、OneDrive 的 `video` facet；缺字段时用 HTTP Range 取头部给 `ffprobe`，不落本地文件。九宫格删除。
+**四、元数据靠 provider 字段与远端探测。** 优先用 Drive 的 `videoMediaMetadata`、OneDrive 的 `video` facet；缺字段时用 HTTP Range 取头部给 `ffprobe`，不落本地文件。九宫格（卡片 3×3 接触印相）保留，改成从网盘流抽九帧生成（`preview_sheets`）；时间轴预览不变，仍按需生成。
 
 **五、时间轴预览保留，按需生成。** 第一次打开播放页时后台抽帧并缓存，扫描只登记不碰字节。
 
@@ -57,7 +57,7 @@
 - 播放路径由「本机读挂载 + 服务端 remux」变成「浏览器直连或单跳转发」，可播集合收窄到浏览器原生支持的容器与编码。
 - Google Drive 的播放流量全部经过服务器，上行带宽与计费需要按实际被看到的内容评估。
 - 探测与抽帧从远端读，每个文件要拉几百 KB 到数 MB；必须设并发上限，避免触发网盘限流。
-- FC2PPV-DB 与 JAVten 两个抓取源随 `browser_transport` 一起消失，来源登记与文档里标「未取得」。
+- FC2PPV-DB 与 JAVten 不再由本机浏览器过 Cloudflare 验证，改走 httpx 加用户在采集设置里贴的 `cf_clearance` Cookie；验证没过照常整站冷却。
 - 旧账本里 115／PikPak／光鸭 的行不再参与扫描与播放，只做只读展示；处置由维护者手工执行。
 
 ## 验证

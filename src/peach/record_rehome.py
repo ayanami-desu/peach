@@ -1,38 +1,26 @@
-"""把「已消失」行的个人记录接到新文件上（ADR-0087 决策二）。
+"""把「已消失」行的个人记录接到重新登记的文件上（ADR-0087 决策二，按 ADR-0157 精简）。
 
-文件在盘上消失、行上带着个人记录时，资源同步只标 `disposal='vanished'`。新文件登记之后
-按两条判据找它的旧行：
+网盘文件被删掉又被重新传上来时，扫描先把它标成 `disposal='vanished'`，新上传的那份是一个
+新的 `remote_id`，登记成新行。两行对不上，但人只有一部片：评分、播放进度、收藏、队列都在
+旧行上。新行登记完（时长探测之后再判一遍，见 `reattach_in`）按下面两条判据找旧行：
 
-1. 番号：`normalise_code_key` 之后对上的已消失行只有一条，新文件也只有一个就搬；新文件有
-   几个时取时长与旧行最接近的那个，时长缺或并列就不搬，留给人在孤儿记录列表里选。
+1. 番号：`normalise_code_key` 之后对上的已消失行只有一条、新行也只有一个就搬；几个时取
+   时长最接近的，时长缺或并列就不搬，留人在孤儿记录里选。
 2. 无番号的创作者视频：旧行的创作者是新文件路径上的一层目录、文件名主干相同、时长差在
    `DURATION_TOLERANCE` 秒之内；候选多个时同样取最接近的。
 
-同一 `(location, path)` 的文件回来了不归这里管：扫描的 upsert 直接清掉那一行的 `disposal`。
-
-旧行还没标已消失时由 `CodeRelocator` 在登记之前处理（ADR-0131）：旧文件不在、番号唯一对上，就把
-旧行改指新文件，不新建行，也不记批次。
-
-新版本先入库、旧文件后消失时反过来找：资源同步与「同步删除」标完已消失，`reattach_vanished`
-拿刚标的这几行按同一套判据在全部在库视频里找，唯一命中就当场接回，记同一种批次；候选多个
-分不出的照旧留成孤儿。
-
-搬运把五张表的行改指新行，新行已有同一键的记录时以新行为准；`asset_quality_goal` 搬到新行
-后置 `wanted=0` 并记 `replaced_at` 关闭，不当作新行的待找目标。旧行自己的四列个人记录并进
-新行：评分新行为空才取旧的，高潮与播放次数相加，最近播放取较晚的。搬完删旧行。每次搬运在
-`record_rehome` 记一行，批次号 `<source>@<id>`（ADR-0052），存旧行整行、它在各引用表里的
-全部行、改指过的键与新行四列在接回前的值，`revert` 按快照重建旧行、把搬走的改回去、新行四列
-还原成接回前的值。
+搬运改指五张引用表、把旧行四列个人记录并进新行，然后删掉旧行。与挂载时代的实现相比，
+这里不再写 `record_rehome` 批次快照：整批撤回的入口（自动落库撤回、孤儿接回按钮）已随
+挂载面一起删除，留着快照没有读者。撤销只能回到账本备份。
 
 调用方负责事务：这里的函数都只在给定连接上写，不提交。
 """
 from __future__ import annotations
 
-import json
+import logging
 import sqlite3
-import time
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from contextlib import closing
 from datetime import datetime
 from pathlib import PureWindowsPath
@@ -40,10 +28,7 @@ from pathlib import PureWindowsPath
 from .catalog_rules import normalise_code_key, release_code_from_filename
 from .personal_records import ASSET_RECORD_COLUMNS, ASSET_REFERENCE_TABLES, VANISHED
 
-#: 登记时自动接回记的来源。
-AUTO_SOURCE = "auto:vanished-reattach"
-#: 孤儿记录列表里由人接到某个文件记的来源。
-MANUAL_SOURCE = "user:reattach"
+LOGGER = logging.getLogger(__name__)
 
 #: 搬运时改指新行的五张表，各自除 `asset_id` 之外认同一条记录的键。
 MOVED_TABLES: dict[str, tuple[str, ...]] = {
@@ -55,8 +40,6 @@ MOVED_TABLES: dict[str, tuple[str, ...]] = {
 }
 #: 寻找更好版本的目标：搬到新行后关闭。
 GOAL_TABLE, GOAL_KEYS = "asset_quality_goal", ("profile_id",)
-#: `moved_json` 里记新行四列个人记录原值的那一项。
-ROW_RECORDS = "asset_row"
 
 #: 无番号的创作者视频：时长差在这几秒之内算同一部。
 DURATION_TOLERANCE = 2.0
@@ -65,10 +48,7 @@ _COLUMNS = "id,location,path,name,code,creator,duration"
 
 
 def _rows(connection, sql: str, params: Sequence = ()) -> list[dict]:
-    """查询结果按列名转成字典，不依赖调用方连接上的 `row_factory`。"""
-    cursor = connection.execute(sql, tuple(params))
-    names = [column[0] for column in cursor.description]
-    return [dict(zip(names, row)) for row in cursor.fetchall()]
+    return [dict(row) for row in connection.execute(sql, params).fetchall()]
 
 
 def code_key(row: dict) -> str:
@@ -81,93 +61,20 @@ def _stem(name: str | None) -> str:
 
 
 def _creator(connection, row: dict) -> str:
-    """旧行的创作者：先看 `asset.creator`，没有再看挂着的创作者实体。"""
-    name = str(row.get("creator") or "").strip()
-    if name:
-        return name
+    if row.get("creator"):
+        return str(row["creator"])
     found = connection.execute(
-        "SELECT e.canonical_name FROM asset_entity ae JOIN entity e ON e.id=ae.entity_id "
-        "WHERE ae.asset_id=? AND e.kind='creator' ORDER BY e.id LIMIT 1", (row["id"],)).fetchone()
-    return str(found[0]) if found else ""
+        "SELECT creator FROM asset WHERE id=?", (row["id"],)).fetchone()
+    return str(found[0] or "") if found else ""
 
 
 def _under(path: str, creator: str) -> bool:
-    """新文件路径上有一层目录就叫这个创作者名。"""
-    folded = creator.casefold()
-    return any(part.casefold() == folded for part in PureWindowsPath(path).parent.parts)
-
-
-def _gone(native) -> bool:
-    """只有盘上明确答「没有这个文件」才算；读不了、超时都不算。"""
-    try:
-        native.stat()
-    except FileNotFoundError:
-        return True
-    except OSError:
+    """创作者目录是不是这个文件路径上的一层。虚拟路径与旧的本机路径都按同一套写法看。"""
+    wanted = creator.strip().casefold()
+    if not wanted:
         return False
-    return False
-
-
-class CodeRelocator:
-    """扫描登记新视频之前，把同番号、文件已不在盘上的在库旧行改指到它（ADR-0131）。
-
-    目录改名又换了编码时文件身份对不上；旧行还没被资源同步标已消失，`reattach` 也找不到它。
-    只在同一扫描根里找：番号对上恰好一条在库视频、新文件所在目录里这个番号的视频只有它一个、
-    旧路径 `stat` 明确答文件不在，才把旧行的路径改过来。行 id 不变，标签、封面、资料与个人记录
-    原样保留；文件换了，探测列清空等探测补上。其余情况一概不动，交给资源同步与 `reattach`。
-    """
-
-    def __init__(self, connection, location: str, root: str, walk_root, *, moved: Iterable[int] = ()):
-        from .smb_media import SmbResource
-        self.connection = connection
-        self.location = location
-        self.root = str(PureWindowsPath(root))
-        self.walk_root = walk_root
-        #: SMB 直连的目录对象没有本机 `stat`，问不出「不在」，不改指。
-        self.enabled = not isinstance(walk_root, SmbResource)
-        #: 这一轮（含断点之前）改指过的行 id。
-        self.moved = list(moved)
-        self._by_code: dict[str, list[dict]] | None = None
-
-    def _olds(self, key: str) -> list[dict]:
-        """扫描根下按番号分组的在库视频；第一次用到才查，一轮扫描只查一次。"""
-        if self._by_code is None:
-            from .media_folders import path_predicate
-            scope, params = path_predicate(self.location, self.root)
-            self._by_code = defaultdict(list)
-            for row in _rows(self.connection, f"SELECT a.id,a.path,a.name,a.code FROM asset a WHERE {scope} "
-                             "AND a.medium='video' AND a.disposal IS NULL", params):
-                if found := code_key(row):
-                    self._by_code[found].append(row)
-        return self._by_code.get(key, [])
-
-    def relocate(self, path: str, video_names: Callable[[], Iterable[str]]) -> int | None:
-        """`path` 是还没登记的视频，`video_names()` 列出同目录全部视频的文件名；返回改指过来的行 id。
-
-        名单只在找到唯一候选之后才列：首次扫描的大目录里每个新文件都列一遍会变成平方级。
-        """
-        name = PureWindowsPath(path).name
-        key = code_key({"name": name}) if self.enabled else ""
-        olds = self._olds(key) if key else []
-        if len(olds) != 1 or sum(code_key({"name": other}) == key for other in video_names()) != 1:
-            return None
-        old = olds[0]
-        try:
-            relative = PureWindowsPath(old["path"]).relative_to(self.root)
-        except ValueError:
-            return None
-        if not _gone(self.walk_root.joinpath(*relative.parts)):
-            return None
-        from .media_probe import PROBED_COLUMNS
-        cleared = ",".join(f"{column}=NULL" for column in PROBED_COLUMNS)
-        changed = self.connection.execute(
-            f"UPDATE asset SET path=?,name=?,{cleared} WHERE id=? AND path=? AND disposal IS NULL",
-            (path, name, old["id"], old["path"])).rowcount
-        olds.clear()
-        if not changed:
-            return None
-        self.moved.append(old["id"])
-        return old["id"]
+    parts = [part.casefold() for part in PureWindowsPath(path or "").parts]
+    return any(part == wanted for part in parts)
 
 
 def _closest(old: dict, candidates: list[dict]) -> dict | None:
@@ -195,36 +102,8 @@ def _creator_candidates(connection, old: dict, by_stem: dict[str, list[dict]]) -
 
 
 def _vanished_rows(connection) -> list[dict]:
-    return _rows(connection, f"SELECT {_COLUMNS} FROM asset WHERE disposal=? AND medium='video'", (VANISHED,))
-
-
-def plan(connection, new_ids: Iterable[int]) -> list[tuple[dict, dict, str]]:
-    """这几行新文件各自该接哪一条已消失行：`(旧行, 新行, 判据)`，一对一。"""
-    wanted = sorted({int(item) for item in new_ids})
-    if not wanted:
-        return []
-    vanished = _vanished_rows(connection)
-    if not vanished:
-        return []
-    fresh = []
-    for offset in range(0, len(wanted), 400):
-        batch = wanted[offset:offset + 400]
-        fresh += _rows(connection, f"SELECT {_COLUMNS} FROM asset WHERE id IN ({','.join('?' * len(batch))}) "
-                       "AND disposal IS NULL AND medium='video'", batch)
-    return _pairs(connection, vanished, fresh)
-
-
-def plan_vanished(connection, old_ids: Iterable[int]) -> list[tuple[dict, dict, str]]:
-    """刚标已消失的这几行各自该接到哪一条在库视频：新版本先入库、旧文件后消失的那种。
-
-    全部已消失行都参与判定：同番号还有别的孤儿、两条旧行争同一个文件，都照旧留给人。
-    """
-    wanted = {int(item) for item in old_ids}
-    vanished = _vanished_rows(connection) if wanted else []
-    if not any(row["id"] in wanted for row in vanished):
-        return []
-    fresh = _rows(connection, f"SELECT {_COLUMNS} FROM asset WHERE disposal IS NULL AND medium='video'")
-    return [pair for pair in _pairs(connection, vanished, fresh) if pair[0]["id"] in wanted]
+    return _rows(connection, f"SELECT {_COLUMNS} FROM asset WHERE disposal=? AND medium='video'",
+                 (VANISHED,))
 
 
 def _pairs(connection, vanished: list[dict], fresh: list[dict]) -> list[tuple[dict, dict, str]]:
@@ -256,6 +135,23 @@ def _pairs(connection, vanished: list[dict], fresh: list[dict]) -> list[tuple[di
     return [pair for pair in pairs if claimed[pair[1]["id"]] == 1]
 
 
+def plan(connection, new_ids: Iterable[int]) -> list[tuple[dict, dict, str]]:
+    """这几行新文件各自该接哪一条已消失行：`(旧行, 新行, 判据)`，一对一。"""
+    wanted = sorted({int(item) for item in new_ids})
+    if not wanted:
+        return []
+    vanished = _vanished_rows(connection)
+    if not vanished:
+        return []
+    fresh = []
+    for offset in range(0, len(wanted), 400):
+        batch = wanted[offset:offset + 400]
+        fresh += _rows(connection,
+                       f"SELECT {_COLUMNS} FROM asset WHERE id IN ({','.join('?' * len(batch))}) "
+                       "AND disposal IS NULL AND medium='video'", batch)
+    return _pairs(connection, vanished, fresh)
+
+
 def _move_rows(connection, table: str, keys: tuple[str, ...], old_id: int, new_id: int) -> list[dict]:
     """把旧行在这张表里的记录改指新行，新行已有同键记录的那条不搬；返回搬了的键。"""
     moved = []
@@ -282,11 +178,8 @@ def _epoch(value) -> float:
             return float("-inf")
 
 
-def _fold_row_records(connection, old_id: int, new_id: int) -> dict:
-    """把旧行上四列个人记录并进新行，返回新行这四列在接回前的值，供撤回还原。
-
-    评分新行为空才取旧行的；高潮与播放次数相加；最近播放取两者中较晚的。
-    """
+def _fold_row_records(connection, old_id: int, new_id: int) -> None:
+    """把旧行上四列个人记录并进新行：评分新行为空才取旧的，次数相加，最近播放取较晚的。"""
     columns = ",".join(ASSET_RECORD_COLUMNS)
     old = _rows(connection, f"SELECT {columns} FROM asset WHERE id=?", (old_id,))[0]
     new = _rows(connection, f"SELECT {columns} FROM asset WHERE id=?", (new_id,))[0]
@@ -298,63 +191,38 @@ def _fold_row_records(connection, old_id: int, new_id: int) -> dict:
     merged["last_played"] = max(played, key=_epoch) if played else None
     connection.execute(f"UPDATE asset SET {','.join(f'{column}=?' for column in ASSET_RECORD_COLUMNS)} "
                        "WHERE id=?", (*[merged[column] for column in ASSET_RECORD_COLUMNS], new_id))
-    return new
 
 
-def _snapshot(connection, old_id: int) -> dict:
-    return {
-        "asset": _rows(connection, "SELECT * FROM asset WHERE id=?", (old_id,))[0],
-        "tables": {table: _rows(connection, f"SELECT * FROM {table} WHERE asset_id=?", (old_id,))
-                   for table in ASSET_REFERENCE_TABLES},
-        "playlists": _rows(connection, "SELECT id,current_asset_id,source_seed_asset_id FROM playlist "
-                           "WHERE current_asset_id=? OR source_seed_asset_id=?", (old_id, old_id)),
-        "follow_items": _rows(connection, 'SELECT id FROM follow_item WHERE asset_id=?', (old_id,)),
-    }
-
-
-def move(connection, old_id: int, new_id: int, *, source: str, rule: str,
-         now: str | None = None) -> int:
-    """把一条已消失行的个人记录搬到新行，删掉旧行；返回这一批的 `record_rehome.id`。"""
-    stamp = now or time.strftime("%Y-%m-%d %H:%M:%S")
+def move(connection, old_id: int, new_id: int, *, rule: str = "code") -> None:
+    """把一条已消失行的个人记录搬到新行，删掉旧行。调用方提交。"""
     old = connection.execute("SELECT disposal FROM asset WHERE id=?", (old_id,)).fetchone()
     target = connection.execute("SELECT disposal FROM asset WHERE id=?", (new_id,)).fetchone()
     if old is None or old[0] != VANISHED:
         raise ValueError("只能接回已消失的行")
     if target is None or target[0] is not None or old_id == new_id:
         raise ValueError("只能接到在库的另一行")
-    snapshot = _snapshot(connection, old_id)
-    moved: dict = {table: _move_rows(connection, table, keys, old_id, new_id)
-                   for table, keys in MOVED_TABLES.items()}
-    moved[ROW_RECORDS] = _fold_row_records(connection, old_id, new_id)
-    moved[GOAL_TABLE] = _move_rows(connection, GOAL_TABLE, GOAL_KEYS, old_id, new_id)
+    for table, keys in MOVED_TABLES.items():
+        _move_rows(connection, table, keys, old_id, new_id)
+    _fold_row_records(connection, old_id, new_id)
+    moved_goals = _move_rows(connection, GOAL_TABLE, GOAL_KEYS, old_id, new_id)
     connection.executemany(
-        f"UPDATE {GOAL_TABLE} SET wanted=0,replaced_at=? WHERE asset_id=? AND profile_id=?",
-        [(stamp, new_id, row["profile_id"]) for row in moved[GOAL_TABLE]])
+        f"UPDATE {GOAL_TABLE} SET wanted=0,replaced_at=strftime('%Y-%m-%d %H:%M:%S','now') "
+        "WHERE asset_id=? AND profile_id=?",
+        [(new_id, row["profile_id"]) for row in moved_goals])
     for column in ("current_asset_id", "source_seed_asset_id"):
         connection.execute(f"UPDATE playlist SET {column}=? WHERE {column}=?", (new_id, old_id))
     connection.execute('UPDATE follow_item SET asset_id=? WHERE asset_id=?', (new_id, old_id))
     for table in ASSET_REFERENCE_TABLES:
         connection.execute(f"DELETE FROM {table} WHERE asset_id=?", (old_id,))
     connection.execute("DELETE FROM asset WHERE id=?", (old_id,))
-    cursor = connection.execute(
-        "INSERT INTO record_rehome(source,rule,old_asset_id,new_asset_id,snapshot_json,moved_json,"
-        "created_at) VALUES(?,?,?,?,?,?,?)",
-        (source, rule, old_id, new_id, json.dumps(snapshot, ensure_ascii=False),
-         json.dumps(moved, ensure_ascii=False), stamp))
-    return int(cursor.lastrowid)
+    LOGGER.info("个人记录接回：旧行 %s 接到新行 %s（%s）", old_id, new_id, rule)
 
 
-def reattach(connection, new_ids: Iterable[int], *, now: str | None = None) -> list[int]:
-    """登记完一批新文件后接回记录；返回这一轮记下的批次 id。调用方提交。"""
-    return [move(connection, old["id"], new["id"], source=AUTO_SOURCE, rule=rule, now=now)
-            for old, new, rule in plan(connection, new_ids)]
-
-
-def reattach_vanished(connection, old_ids: Iterable[int], *, now: str | None = None) -> list[int]:
-    """刚标已消失的行唯一命中在库视频时当场接回；返回接走了的旧行 id。调用方提交。"""
-    pairs = plan_vanished(connection, old_ids)
+def reattach(connection, new_ids: Iterable[int]) -> list[int]:
+    """登记完一批新文件后接回记录；返回接走了的旧行 id。调用方提交。"""
+    pairs = plan(connection, new_ids)
     for old, new, rule in pairs:
-        move(connection, old["id"], new["id"], source=AUTO_SOURCE, rule=rule, now=now)
+        move(connection, old["id"], new["id"], rule=rule)
     return [old["id"] for old, _new, _rule in pairs]
 
 
@@ -363,76 +231,7 @@ def reattach_in(db_path, new_ids: Sequence[int]) -> int:
     if not new_ids:
         return 0
     with closing(sqlite3.connect(db_path, timeout=30)) as connection:
-        batches = reattach(connection, new_ids)
+        connection.row_factory = sqlite3.Row
+        reattached = reattach(connection, new_ids)
         connection.commit()
-    return len(batches)
-
-
-def _batch_clause(source: str, batch: str) -> tuple[str, tuple]:
-    """批次号是 `<source>@<id>`；前半段要与 `--source` 一致，别的来源的批次号一条都不认。"""
-    if batch:
-        head, _, tail = batch.rpartition("@")
-        return "source=? AND source=? AND id=?", (source, head, int(tail) if tail.isdigit() else -1)
-    return "source=?", (source,)
-
-
-def planned_revert(connection, source: str, batch: str = "") -> list[dict]:
-    """这个来源（或其中一批）还没撤回的搬运，新的在前。"""
-    clause, values = _batch_clause(source, batch)
-    return [{"id": row["id"], "batch": f"{row['source']}@{row['id']}", "rule": row["rule"],
-             "old_asset_id": row["old_asset_id"], "new_asset_id": row["new_asset_id"],
-             "name": json.loads(row["snapshot_json"])["asset"].get("name") or ""}
-            for row in _rows(connection, "SELECT id,source,rule,old_asset_id,new_asset_id,snapshot_json "
-                             f"FROM record_rehome WHERE reverted_at IS NULL AND {clause} ORDER BY id DESC",
-                             values)]
-
-
-def _insert(connection, table: str, row: dict) -> None:
-    present = {item[1] for item in connection.execute(f"PRAGMA table_info({table})")}
-    columns = [column for column in row if column in present]
-    connection.execute(
-        f"INSERT OR IGNORE INTO {table}({','.join(columns)}) VALUES({','.join('?' * len(columns))})",
-        [row[column] for column in columns])
-
-
-def revert_one(connection, rehome_id: int, *, now: str | None = None) -> None:
-    """按快照重建旧行，把搬到新行的记录改回旧行。旧行的 id 或路径已被占用时拒绝。"""
-    row = _rows(connection, "SELECT * FROM record_rehome WHERE id=? AND reverted_at IS NULL", (rehome_id,))
-    if not row:
-        raise ValueError(f"没有可撤回的批次 {rehome_id}")
-    snapshot, moved, new_id = (json.loads(row[0]["snapshot_json"]), json.loads(row[0]["moved_json"]),
-                               int(row[0]["new_asset_id"]))
-    old = snapshot["asset"]
-    if connection.execute("SELECT 1 FROM asset WHERE id=? OR (location=? AND path=?)",
-                          (old["id"], old["location"], old["path"])).fetchone():
-        raise ValueError(f"旧行 {old['id']} 的 id 或路径已被占用，不能撤回")
-    _insert(connection, "asset", old)
-    for table, keys in (*MOVED_TABLES.items(), (GOAL_TABLE, GOAL_KEYS)):
-        match = " AND ".join(f"{key}=?" for key in keys)
-        connection.executemany(f"DELETE FROM {table} WHERE asset_id=? AND {match}",
-                               [(new_id, *[item[key] for key in keys]) for item in moved.get(table, [])])
-    for table, rows in snapshot["tables"].items():
-        for item in rows:
-            _insert(connection, table, item)
-    for playlist in snapshot["playlists"]:
-        for column in ("current_asset_id", "source_seed_asset_id"):
-            if playlist[column] == old["id"]:
-                connection.execute(f"UPDATE playlist SET {column}=? WHERE id=? AND {column}=?",
-                                   (old["id"], playlist["id"], new_id))
-    for item in snapshot.get('follow_items', []):
-        connection.execute('UPDATE follow_item SET asset_id=? WHERE id=? AND asset_id=?',
-                           (old['id'], item['id'], new_id))
-    if before := moved.get(ROW_RECORDS):
-        connection.execute(
-            f"UPDATE asset SET {','.join(f'{column}=?' for column in ASSET_RECORD_COLUMNS)} WHERE id=?",
-            (*[before[column] for column in ASSET_RECORD_COLUMNS], new_id))
-    connection.execute("UPDATE record_rehome SET reverted_at=? WHERE id=?",
-                       (now or time.strftime("%Y-%m-%d %H:%M:%S"), rehome_id))
-
-
-def revert(connection, source: str, batch: str = "") -> int:
-    """撤回这个来源（或其中一批）的搬运，新的先撤；返回撤了几批。调用方负责事务与备份。"""
-    planned = planned_revert(connection, source, batch)
-    for item in planned:
-        revert_one(connection, item["id"])
-    return len(planned)
+    return len(reattached)

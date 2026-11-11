@@ -7,7 +7,7 @@ import * as legacyUi from '@peach/legacy/ui';
 
 import { DuplicatesPage } from '../../src/react/duplicates/duplicates-page';
 import {
-  cloudPreferenceLocations, distinctName, DUPLICATES_KEY, duplicateVictims, mixedCloudPreferences, prefetchDuplicates,
+  cloudPreferenceLocations, distinctName, DUPLICATES_KEY, duplicateVictims, keepRuleLabel, mixedCloudPreferences, prefetchDuplicates,
   sharedNamePrefix,
   type DuplicateFile, type DuplicateGroup, type DuplicatesData,
 } from '../../src/react/duplicates/duplicates';
@@ -30,16 +30,16 @@ const group = (code: string, files: DuplicateFile[], patch: Partial<DuplicateGro
   reclaimable: GB, ...patch,
 });
 
-/** 一组全在本地，一组本地与 115 混着。 */
+/** 一组全在本地，一组本地与 Google Drive 混着。 */
 const groups = [
   group('ABC-001', [file(1, { size: 2 * GB, is_largest: true }), file(2, { is_longest: true })], { identical: true }),
-  group('ABC-002', [file(3, { size: 3 * GB, is_largest: true, is_longest: true }), file(4, { location: '115', drive: 'B:' })],
-    { cross_drive: true, drives: ['R:', 'B:'] }),
+  group('ABC-002', [file(3, { size: 3 * GB, is_largest: true, is_longest: true }), file(4, { location: 'gdrive', drive: 'G:' })],
+    { cross_drive: true, drives: ['R:', 'G:'] }),
 ];
 const data: DuplicatesData = { total: 2, files: 4, reclaimable: 2 * GB, groups };
 const sources: MediaSourcesData = {
-  sources: [{ location: 'local', online: true, roots: [{ online: true }] }, { location: '115', online: false, roots: [{ online: false }] },
-    { location: 'pikpak', online: true, roots: [] }],
+  sources: [{ location: 'local', online: true, roots: [{ online: true }] }, { location: 'gdrive', online: false, roots: [{ online: false }] },
+    { location: 'onedrive', online: true, roots: [] }],
 };
 
 type Confirmation = Parameters<typeof legacyUi.confirmModal>[0];
@@ -68,18 +68,18 @@ const card = (host: ParentNode, code: string) => host.querySelector(`section[ari
 describe('网盘保留选项', () => {
   it('本地与在线来源不算网盘；已配置但离线的网盘仍然算，没配根目录的不算', () => {
     expect(cloudLocations({ sources: [{ location: 'local', online: true }, { location: 'online', online: true }] })).toEqual([]);
-    expect(cloudLocations(sources)).toEqual(['115']);
+    expect(cloudLocations(sources)).toEqual(['gdrive']);
   });
 
   it('只给组内真的出现过、且已配置的网盘', () => {
-    expect(cloudPreferenceLocations([{ location: 'local' }], ['115', 'pikpak'])).toEqual([]);
-    expect(cloudPreferenceLocations([{ location: 'local' }, { location: '115' }], ['115', 'pikpak'])).toEqual(['115']);
-    expect(cloudPreferenceLocations([{ location: '115' }], [])).toEqual([]);
+    expect(cloudPreferenceLocations([{ location: 'local' }], ['gdrive', 'onedrive'])).toEqual([]);
+    expect(cloudPreferenceLocations([{ location: 'local' }, { location: 'gdrive' }], ['gdrive', 'onedrive'])).toEqual(['gdrive']);
+    expect(cloudPreferenceLocations([{ location: 'gdrive' }], [])).toEqual([]);
   });
 
-  it('整组都在同一个网盘时不给「留 115」：留它和留最大是同一个结果', () => {
-    expect(mixedCloudPreferences([{ location: '115' }, { location: '115' }], ['115'])).toEqual([]);
-    expect(mixedCloudPreferences([{ location: '115' }, { location: 'local' }], ['115'])).toEqual(['115']);
+  it('整组都在同一个网盘时不给「留网盘」：留它和留最大是同一个结果', () => {
+    expect(mixedCloudPreferences([{ location: 'gdrive' }, { location: 'gdrive' }], ['gdrive'])).toEqual([]);
+    expect(mixedCloudPreferences([{ location: 'gdrive' }, { location: 'local' }], ['gdrive'])).toEqual(['gdrive']);
   });
 });
 
@@ -87,7 +87,7 @@ describe('每组留谁', () => {
   it('留最大、留最长按服务端标的那一个；指名网盘时那里没有就退回全组最大；整组回收一个不留', () => {
     expect(duplicateVictims(groups, 'largest')).toEqual([2, 4]);
     expect(duplicateVictims(groups, 'longest')).toEqual([1, 4]);
-    expect(duplicateVictims(groups, '115')).toEqual([2, 3]);
+    expect(duplicateVictims(groups, 'gdrive')).toEqual([2, 3]);
     expect(duplicateVictims([groups[1]!], 'all')).toEqual([3, 4]);
   });
 });
@@ -112,21 +112,36 @@ it('组头说清判据：sha1 齐全才写「一致」，否则只是时长推�
   const { host } = await open();
   expect(card(host, 'ABC-001').textContent).toContain('sha1 一致');
   expect(card(host, 'ABC-002').textContent).toContain('时长推断');
-  expect(card(host, 'ABC-002').textContent).toContain('跨盘 R: B:');
+  expect(card(host, 'ABC-002').textContent).toContain('跨盘 R: G:');
   expect(card(host, 'ABC-001').textContent).not.toContain('跨盘');
 });
 
-it('「留 115」只出现在混着 115 与别处文件的那一组，批量条上的「全部优先 115」同理', async () => {
+it('「留 Google Drive」只出现在混着网盘与别处文件的那一组，批量条上的「全部优先 Google Drive」同理', async () => {
   vi.stubGlobal('fetch', fetchMock(200, {}));
   const { host } = await open();
-  expect(buttonNamed('留 115', card(host, 'ABC-001'))).toBeNull();
-  expect(buttonNamed('留 115', card(host, 'ABC-002'))).not.toBeNull();
-  expect(buttonNamed('全部优先 115', host)).not.toBeNull();
-  expect(buttonNamed('留 115', card(host, 'ABC-002'))?.querySelector('svg use')?.getAttribute('href'))
-    .toBe(`#i-${legacyUi.MEDIA_SOURCE_ICONS['115']}`);
-  expect(buttonNamed('全部优先 115', host)?.querySelector('svg use')?.getAttribute('href'))
-    .toBe(`#i-${legacyUi.MEDIA_SOURCE_ICONS['115']}`);
-  expect(buttonNamed('全部优先 PikPak', host)).toBeNull();
+  expect(buttonNamed('留 Google Drive', card(host, 'ABC-001'))).toBeNull();
+  expect(buttonNamed('留 Google Drive', card(host, 'ABC-002'))).not.toBeNull();
+  expect(buttonNamed('全部优先 Google Drive', host)).not.toBeNull();
+  // Google Drive 在登记表里没有品牌图，走通用云标识；按钮名里的网盘名来自 `GET /api/sources` 的 label。
+  expect(buttonNamed('留 Google Drive', card(host, 'ABC-002'))?.querySelector('svg use')?.getAttribute('href'))
+    .toBe('#i-database');
+  expect(buttonNamed('全部优先 Google Drive', host)?.querySelector('svg use')?.getAttribute('href'))
+    .toBe('#i-database');
+  expect(buttonNamed('全部优先 OneDrive', host)).toBeNull();
+});
+
+it('确认弹层里点名的网盘写成来源名并说清没有就留最大；不认识的代号原样写，不退回「最大的一个」', async () => {
+  expect(keepRuleLabel('largest')).toBe('最大的一个');
+  expect(keepRuleLabel('longest')).toBe('最长的一个');
+  expect(keepRuleLabel('all')).toBe('零个文件');
+  expect(keepRuleLabel('gdrive')).toBe('Google Drive（没有则留最大）');
+  expect(keepRuleLabel('pikpak')).toBe('pikpak（没有则留最大）');
+  const seen = confirmEverything();
+  vi.stubGlobal('fetch', fetchMock(200, { ok: true }));
+  const { host } = await open();
+  await click(buttonNamed('留 Google Drive', card(host, 'ABC-002')));
+  await settle();
+  expect(seen[0]!.body).toContain('每组保留Google Drive（没有则留最大）');
 });
 
 it('批量保留最大先确认，弹层点名条数与字节数；确认后进回收站，回执带撤销', async () => {

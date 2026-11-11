@@ -19,7 +19,6 @@ on:
         uv.lock,
         setup.py,
         MANIFEST.in,
-        scripts/smoke_docker.py,
         .github/workflows/docker.yml,
       ]
   workflow_dispatch:
@@ -53,7 +52,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: 验收临时容器
-        run: python3 scripts/smoke_docker.py longmeidao/peach:test
+        # 起一次性容器，等镜像自带的健康检查通过即算验收；失败时把日志打出来。
+        run: |
+          docker run -d --name peach-smoke -p 127.0.0.1:8900:8900 -e PEACH_ACCESS_PASSWORD=smoke-docker-2026 longmeidao/peach:test
+          for _ in $(seq 1 45); do
+            if curl -fsS 'http://127.0.0.1:8900/healthz?ready=1' >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker logs peach-smoke
+          exit 1
       - name: 登录 GHCR
         uses: docker/login-action@v4
         with:

@@ -121,6 +121,8 @@ describe('关注域地址与会话控制', () => {
     expect(followManagePath({ tab: 'list', page: 1, sort: '', dir: '' })).toBe('/subscriptions');
     expect(followManageEntry('?tab=wants&page=4&sort=x')).toBe('/jav?tab=wants');
     expect(followManageEntry('?tab=wants', 'add')).toBe('/subscriptions?tab=add');
+    // 「来源与订阅」那一页没了：旧入口改去采集来源页。
+    expect(followManageEntry('?tab=source')).toBe('/sources');
   });
 
   it('详情标签先写返回路径再关闭，组内换条保留来处，题材标志按可用性出图', () => {

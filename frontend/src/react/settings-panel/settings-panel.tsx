@@ -19,7 +19,6 @@ import {
 import { flushSync } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { VisuallyHidden } from 'react-aria-components';
-import { ButtonLink } from '@/components/base/buttons/button';
 import {
   attachOverlayScrollbar, closeAnchoredMenu, iconSwapHtml, moveGlidePane, revealTexts,
   setActionBusy, setIconSwap, wireHorizontalScroller,
@@ -415,7 +414,6 @@ function SettingsPanel({ host: current, view: shown }: { host: SettingsPanelHost
                   onApply={(value) => { settings.relatedLimit = value; save() }} />
               </div>
             </Row>
-            <Row title="口味与记录"><div className="peach-react"><ButtonLink variant="secondary" href="/taste" onClick={() => close(false)}>打开口味与记录</ButtonLink></div></Row>
           </Group>
           <Group index={4} tab={shown.tab}>
             <ToggleRow id="censorSetting" title="SFW 模式" describedBy="sfwDescription" checked={current.censored()}

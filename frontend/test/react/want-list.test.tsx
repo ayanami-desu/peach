@@ -75,22 +75,7 @@ it('按待找、未发售、暂时放弃、已入库分段，段名带条数；�
   expect(buttonNamed('重新查找', host.querySelector('[data-want-id="3"]')!)).not.toBeNull();
   expect(buttonNamed('重新查找', host.querySelector('[data-want-id="2"]')!)).toBeNull();
   expect(actionOrder(buttonNamed('重新查找', host.querySelector('[data-want-id="3"]')!)!.parentElement))
-    .toEqual(['来源页', '移除', '重新查找', '查找资源']);
-});
-
-it('待找与暂时放弃两段每行有查找资源，原地打开带番号与标题的云下载弹层；未发售与已入库没有', async () => {
-  serve(listed([
-    want(2, { title: '雨の日' }), want(3, { phase: 'given_up', search_count: 3 }),
-    want(4, { phase: 'unreleased', release_date: '2026-12-01' }), want(1, { phase: 'acquired' }),
-    want(6, { code: null, origin: 'follow', title: '关注里的一条', follow_item_id: 9 }),
-  ]));
-  const { host } = await open();
-  const key = (id: number) => buttonNamed('查找资源', host.querySelector(`[data-want-id="${id}"]`)!);
-  expect([2, 3, 4, 1, 6].map((id) => !!key(id))).toEqual([true, true, false, false, true]);
-  expect(key(2)!.className).toContain('bg-background-primary-default');
-  await click(key(2));
-  await settle();
-  expect(document.querySelector('[role=dialog]')?.textContent).toContain('ABC-2 · 雨の日');
+    .toEqual(['来源页', '移除', '重新查找']);
 });
 
 it('一条都没有就是空态，不画空的分段', async () => {
@@ -164,7 +149,6 @@ it('只读的机器：输入框、添加与每行的键都禁用', async () => {
   expect(host.querySelector<HTMLInputElement>('input[aria-label="番号"]')!.disabled).toBe(true);
   expect(buttonNamed('添加', host)!.disabled).toBe(true);
   expect(buttonNamed('移除', host)!.disabled).toBe(true);
-  expect(buttonNamed('查找资源', host)!.disabled).toBe(false);
 });
 
 it(`一段多于 ${WANT_PAGE_SIZE} 条时分页，页码各段各记各的；报错只露一行`, async () => {

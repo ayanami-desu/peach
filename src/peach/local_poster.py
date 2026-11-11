@@ -17,8 +17,7 @@ MAX_BYTES = 32 * 1024 * 1024
 
 
 def read_jpeg(source: Path, *, isolated=True) -> tuple[bytes, tuple[int, int]]:
-    from .smb_media import SmbResource
-    if not isolated or isinstance(source, SmbResource):
+    if not isolated:
         return _decode(source)
     from .images import measure_image_size
     from .processing_traffic import CURRENT, record_media_read

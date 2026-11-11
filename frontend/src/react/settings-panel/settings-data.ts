@@ -33,7 +33,6 @@ export const MEDIA_PROCESSING_KEY = ['media-processing'] as const;
 export interface MediaProcessingPolicy {
   metadata_only: boolean;
   preview_acceleration?: 'auto' | 'software';
-  playback_acceleration?: 'auto' | 'software';
 }
 export const fetchMediaProcessing = (signal?: AbortSignal) =>
   apiGet<MediaProcessingPolicy>(MEDIA_PROCESSING_URL, signal);
@@ -55,7 +54,7 @@ export interface SyncedSettings {
   feedHideExcerpts?: boolean;
   /** 数据库里还没存过时是 null：这台设备本地那个数替所有访问端先定下来。 */
   searchHistoryLimit?: number | null;
-  /** 番号识别规则，一条一个正则；配置页「媒体库与入库」里编辑。 */
+  /** 番号识别规则，一条一个正则。 */
   codePatterns?: string[];
 }
 

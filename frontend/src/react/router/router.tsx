@@ -37,12 +37,10 @@ import { Providers } from '../providers';
 import { LibraryProcessingDock } from '../library-processing/library-processing-dock';
 import { NetworkBanner } from '../network-banner';
 import { TutorialCenter } from '../onboarding/tutorial-center';
-import { ClientUpdateBanner } from '../client-updates';
-import { ReleaseNotice } from '../release-notice';
 import { SettingsMatch } from './pages/settings';
 import { CatalogChrome } from './pages/catalog';
 import {
-  BROWSE_ROUTES, CATALOG_PATHS, CATALOG_ROUTES, ENTITY_ROUTES, IMMERSE_ROUTES, INDEX_ROUTES, MANAGED_ROUTES, REDIRECT_ROUTES,
+  BROWSE_ROUTES, CATALOG_PATHS, CATALOG_ROUTES, ENTITY_ROUTES, IMMERSE_ROUTES, INDEX_ROUTES, MANAGED_ROUTES,
   isManagedPath, isRoutedPath, managedPage,
 } from './managed-routes';
 import { FollowDetailGround, OverlayMatch, QueueRequests } from './pages/overlay';
@@ -162,8 +160,6 @@ function RouteGroups({ children }: { children?: ReactNode }) {
       <Routes location={background ?? location}>
         {/* ── 管理区 ── */}
         {Object.entries(MANAGED_ROUTES).map(([path, route]) => <Route key={path} path={path} element={route.element} />)}
-        {/* 资源同步的旧直达地址转到数据管理下的二级页。 */}
-        {Object.entries(REDIRECT_ROUTES).map(([path, route]) => <Route key={path} path={path} element={route.element} />)}
 
 
 
@@ -233,9 +229,7 @@ export function RouterRoot({ children, actions = null, background, processing = 
           <QueueRequests />
           {processing && actions ? <LibraryProcessingDock toast={actions.toast} /> : null}
           {processing && actions ? <NetworkBanner /> : null}
-          {processing && actions ? <ClientUpdateBanner navigate={actions.navigate} /> : null}
           {processing && actions ? <TutorialCenter actions={actions} /> : null}
-          {processing && actions ? <ReleaseNotice navigate={actions.navigate} /> : null}
           <RouteGroups>{children}</RouteGroups>
         </PeachRouter>
       </ShellActionsContext.Provider>

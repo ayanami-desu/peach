@@ -11,6 +11,8 @@ import re
 from collections.abc import Mapping
 from html import escape
 
+from . import __version__
+
 #: 三页共用的文档头。`robots` 那一行管只读 HTML 的爬虫，响应头 `X-Robots-Tag` 管所有响应：
 #: 公网入口在跑的时候登录页就在互联网上，不希望它进任何搜索结果。图标声明和主站同一份，
 #: 没有会话时登录页就是书签实际停在的地方。
@@ -54,14 +56,11 @@ def page_shell(title: str, page: str, data: Mapping[str, str] | None = None, *, 
 
 def runtime_facts(config) -> tuple[tuple[str, str], ...]:
     """这台机器上 Peach 的位置与版本：设置完成页和 `/api/configuration` 共用同一份。"""
-    from . import __version__
     import platform as system_platform
     from .ffmpeg import FFmpegResolver
-    from .mp4recover import untrunc_path
 
     available = FFmpegResolver(config.directory("tools") / "ffmpeg").ffmpeg() is not None
-    ffmpeg = "可用" if available else "未安装；MP4 可直接播放，转码和缩略图需要安装 FFmpeg。"
-    untrunc = "可用" if untrunc_path(config.directory("tools")) else "未安装；缺索引的 MP4 需要它才修得了。"
+    ffmpeg = "可用" if available else "未安装；预览图与媒体信息需要安装 FFmpeg。"
     return (
         ("版本", __version__),
         ("操作系统", system_platform.system()),
@@ -69,47 +68,23 @@ def runtime_facts(config) -> tuple[tuple[str, str], ...]:
         ("设置文件", str(config.path)),
         ("日志目录", str(config.directory("logs"))),
         ("FFmpeg", ffmpeg),
-        ("untrunc", untrunc),
     )
 
 
 def runtime_fact_entries(config) -> list[dict[str, str]]:
-    """运行信息中的缺失依赖附带入口：Windows x64 由 Peach 装进数据目录（`install_tool`），
-    其余平台没有发布的工具包，给官方下载外链。
+    """运行信息里缺的那几项附带安装入口：FFmpeg 由部署者自己装到数据目录或 PATH 上。
 
-    依赖可用时，只有数据目录里那份占一行并写明版本，让刚装完的人看到结果；随包或 PATH 上的不占行。
+    依赖齐了就不占行——页面只列需要动手的。`download_url` 给官方下载页，Peach 不再代下工具包。
     """
-    from . import media_tools
     from .ffmpeg import FFmpegResolver
-    from .mp4recover import untrunc_path
     tools = config.directory("tools")
-    installable = media_tools.supported()
     entries = [{"term": term, "value": value} for term, value in runtime_facts(config)]
-
-    def installed(tool: str) -> str:
-        version = media_tools.installed_version(tools, tool)
-        return f"已安装，版本 {version}" if version else "已安装在数据目录"
-
     resolver = FFmpegResolver(tools / "ffmpeg")
     choices = {"FFmpeg": resolver.ffmpeg(), "ffprobe": resolver.ffprobe()}
-    entry = next(row for row in entries if row["term"] == "FFmpeg")
     missing = [name for name, choice in choices.items() if choice is None]
-    if missing:
-        entry.update(value="未找到 " + "、".join(missing) + "；转码、媒体信息与缩略图需要 FFmpeg 工具包。")
-        if installable:
-            entry["install_tool"] = "ffmpeg"
-        else:
-            entry.update(download_url="https://ffmpeg.org/download.html", download_label="下载 FFmpeg")
-    elif all(choice.source == "peach-managed" for choice in choices.values()):
-        entry["value"] = installed("ffmpeg")
-    untrunc = next(row for row in entries if row["term"] == "untrunc")
-    path = untrunc_path(tools)
-    if path is None and installable:
-        untrunc["install_tool"] = "untrunc"
-    elif path is None:
-        untrunc.update(value=untrunc["value"] + f"解压到 {tools / 'untrunc'}。",
-                       download_url="https://github.com/anthwlock/untrunc/releases",
-                       download_label="下载 untrunc")
-    elif path.parent == (tools / "untrunc").resolve():
-        untrunc["value"] = installed("untrunc")
-    return [row for row in entries if not (row["term"] in ("FFmpeg", "untrunc") and row["value"] == "可用")]
+    if not missing:
+        return [row for row in entries if row["term"] != "FFmpeg"]
+    entry = next(row for row in entries if row["term"] == "FFmpeg")
+    entry.update(value="未找到 " + "、".join(missing) + "；预览图与媒体信息需要 FFmpeg 工具包。",
+                 download_url="https://ffmpeg.org/download.html", download_label="下载 FFmpeg")
+    return entries

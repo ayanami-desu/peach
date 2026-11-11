@@ -1,75 +1,57 @@
 # 外部播放器与 VR
 
-## 本地播放器
+Peach 只对网页能直接播放的容器签发外链：`.mp4`、`.m4v`、`.webm`、`.ogv`、`.ogg`。其他容器入库后可以在详情页看到条目，但签发接口会以 404 拒绝。外部播放通过两条限时链接完成：M3U 播放列表和网络播放地址。
 
-Windows 或 macOS 上，在运行 Peach 的电脑打开作品详情，在详情上方选择「系统默认播放器」或检测到的播放器，再点同一行的「打开」。Windows 检测 PATH 和常见安装目录中的 PotPlayer、VLC、mpv；macOS 检测系统与用户应用目录中的 IINA、VLC、mpv。选择保存在当前浏览器；播放器接收原始媒体文件，网页播放在请求成功后暂停。
+## 生成链接
 
-播放器菜单只列出当前部署支持且检测到已安装的程序，以及系统默认播放器。同一选择器还提供网络播放地址和 M3U 播放列表，供 Docker 和远程访问使用。在 Windows 上下载 M3U 后，可用系统默认播放器打开，或通过系统的「打开方式」选择播放器。播放器需要支持对应媒体格式、网络地址及 Peach 证书。
+`POST /api/external-playback?id=<资产 id>` 需要登录，并随 `require_auth` 接受同源检查：跨站页面发起的请求返回 403「请从 Peach 配置页提交」，没有凭据返回 401。请求体不参与判定，地址只由资产 id 决定。
 
-本地打开接口只对本机直接连接开放，拒绝转发请求；Docker 和无桌面部署不启动宿主机或容器中的应用。接口接受账本资产 ID 和固定播放器 ID，经媒体根目录授权后打开文件，不接受客户端指定程序或文件路径。STRM 使用网络播放地址或 M3U。
-
-## 观看进度回传
-
-从详情选定 mpv、VLC（Windows）或 IINA、mpv（macOS）打开时，Peach 跟踪这次播放，把观看记录写进网页播放器使用的同一组列：位置第一次前进时计一次播放（`play_count`、`last_played`），连续前进的时长累计进 `play_seconds`，大幅跳转计入 `seek_count`，最后位置写成 `leave_ratio`，放完记为 1。每 30 秒和播放器退出时各写一次。系统默认播放器和 PotPlayer 不回传。
-
-| 播放器 | 通道 | 启动参数 |
-| --- | --- | --- |
-| mpv | JSON IPC：Windows 命名管道，macOS Unix socket，名字随机 | `--input-ipc-server=…` |
-| IINA | 经 `iina-cli` 透传给内置 mpv，读法同 mpv | `--mpv-input-ipc-server=…` |
-| VLC | Lua HTTP 接口的 `requests/status.json`，只听 `127.0.0.1`，端口和密码随机 | `--extraintf=http --http-host=127.0.0.1 --http-port=… --http-password=…` |
-
-Peach 每秒读一次位置、时长与暂停状态。播放器退出、断开、换成别的文件、mpv 进入空闲或 VLC 停止时结束跟踪；停下时离片尾不到 3 秒，或 mpv 报告文件放完，都按放完记录。同时最多跟踪 4 个播放器，每个最长 12 小时；启动后 15 秒内连不上进度接口就放弃。连不上、读失败或播放器异常退出时只是不记，不提示用户；已经看过的部分照常写入。Peach 关闭时先写下在跟踪的播放再退出。
-
-续播位置在网页播放器里先读当前浏览器保存的位置，没有时才用 `leave_ratio`。在这个浏览器里看过的作品，外部播放器写入的位置不会改变网页续播点。
-
-VLC 开启了「只允许一个实例」并已在运行时，新打开的文件交给已有窗口，HTTP 接口不会启动，这次播放不记录。
-
-### PotPlayer 取证
-
-PotPlayer 只做了取证，没有接入，原因如下：
-
-- 社区记录的做法是向 PotPlayer 窗口发送 `WM_USER`（`0x0400`）消息，wParam `0x5004` 返回当前毫秒数，`0x5002` 返回总时长。这不是官方公开接口。要查询当前文件名，PotPlayer 只能通过 `WM_COPYDATA` 回信，Peach 需要再建一个接收消息的窗口。
-- 要把窗口对应到具体文件，只能用 `/new` 强制新开实例，再按进程 ID 找窗口。用户在同一窗口里换片后，Peach 无法得知。服务进程须与 PotPlayer 在同一桌面会话；PotPlayer 以管理员身份运行时，UIPI 会拦截普通权限进程发出的消息。
-- 本机 PotPlayer 的设置在注册表 `HKCU\Software\DAUM\PotPlayerMini64`。其中 `Positions` 存放窗口位置和大小，不是播放位置；`Settings` 下也没有逐文件续播记录。默认播放列表 `%APPDATA%\PotPlayerMini64\Playlist\PotPlayerMini64.dpl` 是文本文件，只记录最后一个文件的 `playname=`、`playtime=` 和 `saveplaypos=`，无法区分多次播放。`playtime` 的单位和写入时机未取得。
-- `SendMessage` 读数没有实测。启动 PotPlayer 会改写用户默认播放列表里的「上次播放」记录，因此没有在这台机器上执行。
-
-## 网页画面旋转
-
-播放器「设置 → 画面旋转」提供 0°、90°、180°、270°；0° 恢复原始方向。画面保持比例并适配播放器，控制条保持正向。切换清晰度、影院模式和全屏时继续适配。旋转只影响网页画面，不修改媒体文件或外部播放器设置。
-
-旋转、播放速度、字幕选择与字幕外观按视频保存到服务端同一份记忆文件，详情、小窗和沉浸播放共用；刷新、重新打开或更换浏览器后恢复。设置 0°、正常速度或关闭字幕同样会保存，各部视频互不影响。WebVTT 内容与记忆文件放在数据目录的 `state/player-subtitles/<视频标识>/`，清单为 `subtitles.json`。Windows、macOS 和 Docker 共用此存储；Docker 需要持久挂载数据目录。已有字幕内容与选择直接沿用，浏览器已保存的字幕外观作为尚无外观记录的视频的初始值。播放记忆接口为 `GET/PUT /api/player/memory?video=…`，字幕接口共用同一份清单；更新仅合并提交的字段，不修改 ledger。
-
-画中画入口在支持该 API 的浏览器中固定占位，媒体加载期间禁用。浏览器明确拒绝画中画时，入口保留不可用原因。浏览器声明 API 可用不能保证系统窗口可创建，限制及异常见 [Picture-in-Picture API](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestPictureInPicture)。
-
-## 网络播放
-
-本地或已挂载视频的作品详情共用一行播放器选择和「打开」按钮。选择网络播放方式后点击「打开」，
-即可生成限时链接并下载 M3U。选择「网络播放地址 / VR」时，只显示可复制的地址。
-
-| 选项 | 使用方式 |
+| 情形 | 响应 |
 | --- | --- |
-| M3U 播放列表 | 用支持网络地址的外部播放器打开下载的 `.m3u` |
-| 网络播放地址 / VR | 生成地址并显示，供 VR 等播放器使用 |
+| 资产不存在 | 404 `{"error": "no such id"}` |
+| 容器不支持外链，或资产缺少网盘位置 | 404 `{"error": "unavailable"}` |
+| Origin 无法解析 | 400「播放地址无效」 |
+| 成功 | `{"url": …, "playlist": …, "expires_in": 21600}` |
 
-播放器选择只保存在当前浏览器。另一台设备需要能访问当前 Peach 地址；电脑上用 `localhost`
-生成的地址不能供手机访问。HTTPS 使用项目证书时，外部设备也需要信任该证书。
+成功响应返回相对路径 `/external-stream/<id>?ticket=…&origin=…` 与 `/external-playlist/<id>.m3u?ticket=…&origin=…`，页面按当前 origin 拼成完整地址；响应头为 `Cache-Control: no-store`。详情页的两个选项对应这两条路径：「M3U 播放列表」下载 `peach-<id>.m3u`，「网络播放地址 / VR」只显示可复制的地址。
 
-播放链接有效期为 6 小时，Peach 重启后失效。链接只允许读取选中的资产，不包含本机盘符路径或
-长期登录凭据。请求支持 HTTP Range，传输原始文件；解码能力、VR 投影方式由外部播放器决定。
-生成链接和打开播放器不计作观看记录，也不能证明播放器已经起播。
+## 票据
 
-## 协议与验证
+票据形如 `<过期秒>.<签名>`。签名是对字符串 `"<资产 id>.<过期秒>.<origin>"` 做的 HMAC-SHA256 十六进制摘要，密钥是进程启动时生成的 32 字节随机数。
 
-签发接口 `POST /api/external-playback?id=…` 使用现有登录及同源检查。流和 M3U 端点验证
-进程内密钥签发的单资产限时票据，每次读取仍经过现有媒体根目录检查。
-播放地址的 origin 一并签名：优先使用通过同源检查的页面 Origin；无 Origin 的客户端使用已配置的
-隧道入口或当前服务地址。M3U 使用该签名地址，代理转发的本机 Host 不会改写列表中的公网入口。
+- 有效期 6 小时。校验条件为「当前时间早于过期秒」且「过期秒不晚于当前时间加 6 小时」，把过期时间往后改不会通过。
+- 密钥只存在进程内存里。Peach 重启后，此前发出的链接一律失效。
+- `origin` 参与签名，改主机名或端口都要重新生成。签名不绑定客户端地址：拿到完整链接的任何人，在有效期内都能取到字节。
 
-播放器程序不随 Peach 分发；进度回传只用 Python 标准库，无新增依赖。自动化验证覆盖票据、Range、
-M3U 内容和页面交互，不替代真实设备的解码验收。
+## Origin 的选择
 
-Windows 原生验证使用现有 ffplay、临时 HTTPS 服务与专用测试证书，播放 M3U 中的签名网络地址。
-两秒 H.264 合成测试画面在关闭音频、隐藏输出时正常播放并退出，ffprobe 确认解码 20 帧；
-TLS 校验保持开启。该验证不覆盖本机播放器唤起或 VR 投影。
+页面请求带的 `Origin` 头优先，没有该头时用 `request.base_url`。取值必须能解析成 http 或 https 地址：要有主机名，路径为空或 `/`，不带查询串与片段；带用户名密码、含控制字符或在 Origin 头里无法解析时，签发接口返回 400「播放地址无效」。默认端口 80、443 会被归一化去掉，IPv6 主机名重新加方括号，票据里存的就是这个归一化后的地址。
 
-本地打开复用 Python 标准库的 [Windows 文件关联](https://docs.python.org/3/library/os.html#os.startfile) 和 macOS 的 [`open`](https://support.apple.com/guide/terminal/apdb66b5242-0d18-49fc-9c47-a2498b7c91d5/mac)。进程参数以数组传递，不经 shell。跨平台自动化覆盖调用参数和权限边界；系统关联、应用唤起及真实媒体解码需要在对应桌面系统验证。
+## 取流
+
+`GET /external-stream/<id>?ticket=…&origin=…`（也接受 HEAD）不需要登录，只认票据。`origin` 为空或票据校验失败返回 401「播放链接已失效，请在作品详情重新打开」。通过后按资产位置分流：
+
+- OneDrive：返回 302，`Location` 是网盘给出的预授权地址，响应头 `Cache-Control: no-store`。字节由播放器直连网盘，不经过 Peach。
+- Google Drive：由 Peach 转发 Range 请求。客户端带的 `Range` 原样转发，只回传 `content-length`、`content-range`、`accept-ranges`、`etag`、`last-modified`；`content-type` 取资产扩展名对应的媒体类型，并声明 `accept-ranges: bytes`，`cache-control: private, max-age=0, no-store`。分块大小 256 KiB，边读边发。
+
+上游拒绝（状态码 400 及以上）时照搬状态码，正文固定为 `upstream rejected the range request`，不透传网盘错误体。这条端点不设 `Referrer-Policy`，也不带网页播放那组媒体安全响应头。
+
+## 播放列表
+
+`GET /external-playlist/<id>.m3u?ticket=…&origin=…` 同样只验票据，返回三行：
+
+```
+#EXTM3U
+#EXTINF:-1,Peach <id>
+<origin>/external-stream/<id>?ticket=…&origin=…
+```
+
+`Content-Type` 为 `audio/x-mpegurl`，`Content-Disposition` 为 `attachment; filename="peach-<id>.m3u"`，另有 `Cache-Control: no-store` 与 `Referrer-Policy: no-referrer`。列表里的绝对地址由签名中的 origin 拼出，反向代理改写 Host 不会把内网地址写进列表。
+
+## 使用边界
+
+- 链接只覆盖票据对应的那一个资产，不含网盘路径、网盘访问凭据或长期登录凭据。
+- 另一台设备要能访问签发链接时用的地址：在 `localhost` 上生成的地址手机打不开，需要换成这台机器在局域网里的地址再生成。
+- 容器与编码由外部播放器自己解码，Peach 只发原始字节，不做转码、切片或缓存。
+- 生成链接不计入观看记录，也不能证明播放器已经开始播放。
+- 服务端不提供本机播放器检测或唤起接口，播放器需要自己打开链接或下载的 M3U 文件。

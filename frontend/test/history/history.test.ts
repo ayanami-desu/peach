@@ -74,12 +74,14 @@ it('页面打开序号只在没人认领的变化上递增：壳认领的写地�
   expect(seen.map((n) => n.openEpoch - start)).toEqual([0, 0, 1, 2, 3]);
 });
 
-it('顶栏换一批的行为登记在路由元数据上：关注页与关注管理页跳过、口味页与播放列表页重开、统计页不登记', () => {
+it('顶栏换一批的行为登记在路由元数据上：关注页与关注管理页跳过、播放列表页与配置页重开、统计页不登记', () => {
   expect(routeMetaOf('/follow')?.refresh).toBe('skip');
   expect(routeMetaOf('/subscriptions')?.refresh).toBe('skip');
   expect(routeMetaOf('/playlists')?.refresh).toBe('reopen');
-  expect(routeMetaOf('/taste')?.refresh).toBe('reopen');
+  expect(routeMetaOf('/settings/drives')?.refresh).toBe('reopen');
+  expect(routeMetaOf('/settings/appearance')?.refresh).toBe('skip');
   expect(routeMetaOf('/stats')?.refresh).toBeUndefined();
+  expect(routeMetaOf('/taste')).toBeNull();
 });
 
 it('对象式导航使用规范路径并保留查询片段与状态', () => {
@@ -88,7 +90,7 @@ it('对象式导航使用规范路径并保留查询片段与状态', () => {
   expect(location.pathname + location.search + location.hash).toBe('/assets/12?t=93#media');
   expect(peachHistory.navigation.location.state).toEqual(state);
   peachHistory.replace({ pathname: '/configuration', search: '?tab=source' }, state);
-  expect(location.pathname + location.search).toBe('/settings/library?tab=source');
+  expect(location.pathname + location.search).toBe('/settings?tab=source');
 });
 
 it('后退前进的兼容地址只通知一次且保留原历史条目', () => {

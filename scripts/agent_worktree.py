@@ -18,7 +18,8 @@ if not __package__:
     __package__ = "scripts"
 from . import (changelog, check_public_text, co_author, commit_subject,
                test_evidence, test_runner, version_bump)
-from .release_tag import MASTER_WRITER
+#: 允许直接写 master 的 git 配置项。集成提交靠 `-c` 临时放行一次，平时 master 只收验证过的改动。
+MASTER_WRITER = "peach.masterWriter"
 
 #: `create` 的落点，建在主检出旁边（ADR-0017 的四个运行时目录之一）。
 WORKTREE_ROOT = "peach-worktrees"
@@ -32,10 +33,6 @@ BUILTIN_WORKTREES = Path(".claude") / "worktrees"
 class WorkspaceError(RuntimeError):
     pass
 
-
-#: 版本号推进与打标签的唯一入口。集成不碰 `__version__`：主线上每个提交由 commit 标识，
-#: 版本号留给真正发出去的那些（ADR-0012）。集成结果里的 `version` 只是当前值，供人核对。
-RELEASE_TAG_ENTRY = "scripts/release_tag.py"
 
 #: 仓库自带的 git hook。`create` 与 `integrate` 每次都把 `core.hooksPath` 指到这里：
 #: 哪台机器先走一遍工作流就在哪台装上，不靠人记着去配。
@@ -133,9 +130,9 @@ def preflight(repo: Path, target_branch: str = "master") -> dict[str, object]:
             "metadata": "passed", "tests": "not_checked", "pull_request": "not_checked"}
 
 
-def ready(repo: Path, target_branch: str = "master", *, ci_run: int | None = None) -> dict[str, object]:
+def ready(repo: Path, target_branch: str = "master") -> dict[str, object]:
     report = _worker_delivery(repo, target_branch)
-    proof = require_verified(repo, target_branch, set(report["files"]), ci_run=ci_run)
+    proof = require_verified(repo, target_branch, set(report["files"]))
     if _git(repo, "rev-parse", "HEAD").stdout.strip() != report["head"]:
         raise WorkspaceError("验证检查期间工作者分支改变，请重试")
     return {"ok": True, "action": "ready", **report, "verification": proof}
@@ -158,33 +155,18 @@ def require_metadata(worker: Path, target_branch: str) -> str:
     return head
 
 
-def require_verified(worker: Path, target_branch: str, paths: Iterable[str], *,
-                     ci_run: int | None = None) -> dict:
+def require_verified(worker: Path, target_branch: str, paths: Iterable[str]) -> dict:
+    """本机测试记录必须覆盖这次改动选出的域；没有 CI 可依赖，记录只来自 `scripts/test.sh`。"""
     head = require_metadata(worker, target_branch)
     scopes, _ = test_runner.scopes_for_changes(paths, contents=test_runner.changed_contents(worker, target_branch, paths),
                                               root=worker)
-    from . import ci_test_evidence
-    proof, ci_error = None, None
-    try:
-        run_id = ci_run if ci_run is not None else ci_test_evidence.remembered(worker)
-        if run_id is not None:
-            proof = ci_test_evidence.verify(worker, run_id, scopes, target_branch)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        ci_error = error
-    if proof is None and ci_run is None:
-        state = test_evidence.key(worker)
-        if test_evidence.covers(test_evidence.read(worker, state), scopes):
-            proof = {"source": "local", "state": state, "scopes": list(scopes)}
-    if proof is None:
-        if ci_error is not None:
-            raise WorkspaceError(f"CI 测试证明未取得或无效：{ci_error}") from ci_error
-        raise WorkspaceError("缺少有效测试记录；请运行统一测试入口 auto，或 ready --ci-run 指定成功 Test")
+    state = test_evidence.key(worker)
+    if not test_evidence.covers(test_evidence.read(worker, state), scopes):
+        raise WorkspaceError("缺少有效测试记录；请运行统一测试入口 auto")
     if _git(worker, "rev-parse", "HEAD").stdout.strip() != head or \
             _git(worker, "status", "--porcelain").stdout.strip():
         raise WorkspaceError("验证检查期间工作树改变，请重试")
-    if proof['source'] == 'github':
-        ci_test_evidence.remember(worker, proof)
-    return proof
+    return {"source": "local", "state": state, "scopes": list(scopes)}
 
 
 ISSUE_LINK = re.compile(
@@ -283,7 +265,7 @@ def _integrate_locked(repo: Path, worker_branch: str,
 
     这台机器既是开发机又是生产机：提交先落本地再推 GitHub，本地永远领先。跑着的是哪一份
     由 commit 认定——`build-info.json` 随包走，托盘按它算自己落后多少个提交——所以集成
-    不碰版本号，它在 `RELEASE_TAG_ENTRY` 那里一次发布推一格。
+    不碰版本号：主线上每个提交由 commit 标识，版本号留给真正发出去的那些（ADR-0012）。
     """
     main = _main_worktree(repo)
     if repo.resolve() != main.resolve():
@@ -329,7 +311,6 @@ def _integrate_locked(repo: Path, worker_branch: str,
         "files": sorted(worker_files),
         "pull_request": pull_request,
         "version": version_bump.read_version(main),
-        "release_tag_entry": RELEASE_TAG_ENTRY,
         # 发布提示挂在这里，是因为集成的输出是人和智能体每次都会读的那一份。挂在别处
         # 就得有谁记着去查，而「记着」正是这条判据要替掉的东西。
         "release": changelog.due(main),
@@ -641,8 +622,6 @@ def main() -> int:
     for name in ("preflight", "ready"):
         inspect = sub.add_parser(name)
         inspect.add_argument("--target", default="master")
-        if name == 'ready':
-            inspect.add_argument('--ci-run', type=int, help='复用同一提交的受信 GitHub Test 运行')
     merge = sub.add_parser("integrate")
     merge.add_argument("--branch", required=True)
     merge.add_argument("--target", default="master")
@@ -658,7 +637,7 @@ def main() -> int:
         elif args.command == "preflight":
             result = preflight(args.repo, args.target)
         elif args.command == "ready":
-            result = ready(args.repo, args.target, ci_run=args.ci_run)
+            result = ready(args.repo, args.target)
         elif args.command == "prune":
             result = prune(args.repo, args.target, apply=args.apply)
         elif args.command == "processes":

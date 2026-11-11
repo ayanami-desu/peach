@@ -5,7 +5,7 @@ import { queryClient } from '../../src/react/query';
 import { WantMagnets, type MagnetCandidate } from '../../src/react/wants/want-magnets';
 import type { Want } from '../../src/react/wants/wants';
 import { WANTS_KEY, type WantsData } from '../../src/react/wants/wants';
-import { buttonNamed, click, mount, mountRoot, pending, settle } from './render';
+import { buttonNamed, click, mount, mountRoot, settle } from './render';
 import { cachedResources, rememberResources, resourceLifetime } from '../../src/react/wants/resource-cache';
 import { resourceNotice, resourceSize } from '../../src/react/wants/resource-display';
 
@@ -16,71 +16,33 @@ const candidate: MagnetCandidate = {
   name: 'DEMO-001 HD', size: '4 GB', files: '2 個文件', date: '2026-10-01', attributes: ['字幕', '高清'],
   source: 'JavDB', source_url: 'https://javdb.com/v/demo', origins: ['https://javdb.com/v/demo'],
 };
-async function open(items = [candidate], readOnly = false, ok = true) {
+async function open(items = [candidate]) {
   vi.stubGlobal('IntersectionObserver', undefined);
-  const toast = vi.fn();
-  const fetcher = vi.fn(async (_url: string, init?: RequestInit) => ({ ok: true, status: 200,
-    json: async () => init?.method === 'POST'
-      ? { ok, outcome: ok ? 'submitted' : 'failed', task: { failure_detail: '远端拒绝' } }
-      : { state: 'ready', items, error: '', checked_at: null },
+  const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, status: 200,
+    json: async () => ({ state: 'ready', items, error: '', checked_at: null }),
   }));
   vi.stubGlobal('fetch', fetcher);
   const host = await mount(<QueryClientProvider client={queryClient}>
-    <WantMagnets want={{ id: 1, code: 'DEMO-001', title: '演示作品' } as Want} readOnly={readOnly}
-      downloads={{ available: true, providers: [{ key: '115', label: '115', configured: true, target: '/下载' }], tasks: [] }}
-      provider="115" toast={toast} />
+    <WantMagnets want={{ id: 1, code: 'DEMO-001', title: '演示作品' } as Want} toast={() => {}} />
   </QueryClientProvider>);
   await settle();
-  return { host, fetcher, toast };
+  return { host, fetcher };
 }
-it('自动查询，展示来源、大小、日期与属性，直接添加到选定的云下载目录', async () => {
-  const { host, fetcher, toast } = await open();
+it('自动查询，展示来源、大小、日期与属性', async () => {
+  const { host, fetcher } = await open();
   expect(fetcher.mock.calls[0]?.[0]).toBe('/api/wants/magnets?id=1');
   for (const text of ['4 GB', '2 个文件', '2026-10-01', '字幕', 'JavDB']) expect(host.textContent).toContain(text);
   expect(host.querySelector('[data-resource-facts]')?.textContent).not.toContain('高清');
-  expect([...host.querySelectorAll('[data-resource-actions] button, [data-resource-actions] a')].map(node => node.textContent)).toEqual(['链接来源', '复制链接', '添加下载']);
-  await click(buttonNamed('添加下载', host));
-  await settle();
-  const writes = fetcher.mock.calls.filter(([, init]) => init?.method === 'POST');
-  expect(JSON.parse(String(writes[0]?.[1]?.body))).toEqual({ magnet: candidate.uri, provider: '115', target: '/下载',
-    code: 'DEMO-001', title: '演示作品', origin: 'wishlist:1' });
-  expect(buttonNamed('已添加', host)?.disabled).toBe(true);
-  expect(toast).toHaveBeenCalledWith('已添加下载：DEMO-001 HD');
+  expect([...host.querySelectorAll('[data-resource-actions] button, [data-resource-actions] a')].map(node => node.textContent)).toEqual(['链接来源', '复制链接']);
 });
-it('ed2k 与网页链接可复制，不能作为磁链提交', async () => {
+it('ed2k 与网页链接可以复制链接', async () => {
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   const ed2k = { ...candidate, id: 'ed2k:abc:12', protocol: 'ed2k' as const, uri: 'ed2k://|file|demo|12|abc|/' };
   const { host } = await open([ed2k]);
-  expect(buttonNamed('添加下载', host)).toBeNull();
-  expect(buttonNamed('复制链接', host)?.className).not.toContain('bg-button-primary');
+  expect(buttonNamed('复制链接', host)).not.toBeNull();
   await click(buttonNamed('复制链接', host));
   expect(writeText).toHaveBeenCalledWith(ed2k.uri);
-});
-it('提交等待期保持按钮可聚焦并拦截重复点击', async () => {
-  const { host, fetcher, toast } = await open();
-  const held = pending<{ ok: boolean; outcome: string; task: { failure_detail: string } }>();
-  fetcher.mockImplementationOnce(async () => ({ ok: true, status: 200, json: () => held.answer }));
-  const add = buttonNamed('添加下载', host)!;
-  await click(add);
-  await click(add);
-  expect(add.getAttribute('aria-busy')).toBe('true');
-  expect(add.disabled).toBe(false);
-  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
-  expect(toast).not.toHaveBeenCalled();
-  await held.release({ ok: true, outcome: 'submitted', task: { failure_detail: '' } });
-  await settle();
-  expect(buttonNamed('已添加', host)?.disabled).toBe(true);
-});
-it('只读时禁止提交，远端失败留在卡片并保留重试', async () => {
-  const reader = await open([candidate], true);
-  expect(buttonNamed('添加下载', reader.host)?.disabled).toBe(true);
-  const writer = await open([candidate], false, false);
-  await click(buttonNamed('添加下载', writer.host));
-  await settle();
-  expect(writer.host.textContent).toContain('远端拒绝');
-  expect(buttonNamed('已添加', writer.host)).toBeNull();
-  expect(writer.toast).not.toHaveBeenCalled();
 });
 
 it('更多资源默认折叠且协议有独立标记', async () => {
@@ -110,7 +72,6 @@ it('ED2K 类型使用文字，字节容量按馆藏口径展示', async () => {
   const { host } = await open([{ ...candidate, protocol: 'ed2k', size: '27,311,519,717 B' }]);
   expect(host.textContent).toContain('ED2K');
   expect(host.textContent).toContain('25.4 GB');
-  expect(buttonNamed('添加下载', host)).toBeNull();
   expect(resourceSize('1.61 GB')).toBe('1.61 GB');
   expect(resourceSize('')).toBe('大小未知');
   expect(resourceSize('123')).toBe('大小未知');
@@ -125,7 +86,7 @@ it('作品详情按自身来源查询资源，想要缓存不能代替公开来�
   vi.stubGlobal('fetch', fetcher);
   const host = await mount(<QueryClientProvider client={queryClient}><WantMagnets
     want={{ id: 0, code: 'DEMO-001', title: '示例作品', release_date: '2010-01-01' }}
-    queryUrl="/api/jav/resources?code=DEMO-001" readOnly provider="" toast={vi.fn()} /></QueryClientProvider>);
+    queryUrl="/api/jav/resources?code=DEMO-001" toast={vi.fn()} /></QueryClientProvider>);
   await settle();
   expect(fetcher.mock.calls[0]?.[0]).toBe('/api/jav/resources?code=DEMO-001');
   expect(host.textContent).toContain('暂未找到资源链接');
@@ -171,8 +132,8 @@ it('页面与查询客户端重建后复用持久缓存，手动查询强制更�
   const fetcher = vi.fn(async (_url: string) => ({ ok: true, status: 200, json: async () =>
     ({ state: 'ready', items: [candidate], error: '', checked_at: null }) }));
   vi.stubGlobal('fetch', fetcher);
-  const render = () => <QueryClientProvider client={queryClient}><WantMagnets want={want} readOnly
-    provider="" toast={() => {}} /></QueryClientProvider>;
+  const render = () => <QueryClientProvider client={queryClient}><WantMagnets want={want}
+    toast={() => {}} /></QueryClientProvider>;
   const first = await mountRoot(render());
   await settle();
   await first.unmount();
@@ -202,8 +163,8 @@ it('过期的内存缓存随卡片进入视口重新查询', async () => {
     { updatedAt: Date.now() - 366 * 86_400_000 });
   const fetcher = vi.fn(async () => ({ ok: true, status: 200, json: async () => result }));
   vi.stubGlobal('fetch', fetcher);
-  await mount(<QueryClientProvider client={queryClient}><WantMagnets want={want} readOnly
-    provider="" toast={() => {}} /></QueryClientProvider>);
+  await mount(<QueryClientProvider client={queryClient}><WantMagnets want={want}
+    toast={() => {}} /></QueryClientProvider>);
   await settle();
   expect(fetcher).not.toHaveBeenCalled();
   await act(async () => reveal!());

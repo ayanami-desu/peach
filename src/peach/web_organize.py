@@ -3,7 +3,7 @@
 预览只读，执行与回滚是真实 ledger 写入，所以它们不进 `READ_ONLY_POST_ROUTES`——
 只读端那份账本是复制来的，改了路径就是一处合不回去的分叉。
 
-执行走后台任务：几千行改名在 115 挂载上是分钟级的事，HTTP 等不住。互斥、进度和
+执行走后台任务：几千行改名在网盘上是分钟级的事，HTTP 等不住。互斥、进度和
 「这一批什么时候跑的、动了多少」都落在任务中心那张表里。
 """
 from __future__ import annotations
@@ -15,11 +15,10 @@ from pathlib import Path
 from . import junk, ledger_backups, organize
 from .media_sources import SCANNABLE_LOCATIONS
 from .organize_templates import PLACEHOLDERS, TemplateError, example_path, validate_template
-from .platform import location_roots
 from .scripting import verify_after_write
 from .web_settings import organize_templates
 
-#: 界面上能整理的来源。`online` 是追更抓来的东西，不在任何一个媒体根下面。
+#: 界面上能整理的来源。媒体只在这些网盘上，本机没有可整理的文件。
 ORGANIZE_LOCATIONS = SCANNABLE_LOCATIONS
 
 
@@ -37,18 +36,43 @@ def _templates(contract, body) -> tuple[str, str, str]:
             validate_template(dir_template, directory=True))
 
 
+def _connection_rows(contract, location: str) -> dict:
+    drive = getattr(contract, "drive", None)
+    if drive is None:
+        return {}
+    try:
+        return drive.connection(location)
+    except Exception:
+        return {}
+
+
+def _root_prefixes(contract, location: str) -> list[str]:
+    """这个来源的整理范围：设置里选的起点目录，没选过就是整个网盘。"""
+    rows = _connection_rows(contract, location).get("roots") or []
+    names = [str(row.get("name") or "") for row in rows if row.get("name")]
+    return [organize.ledger_path(location, (name,)) for name in names] or [f"{location}:/"]
+
+
 def q_organize(contract, _args=None) -> dict:
     """整理这一块的当前状态：任务快照、可选来源、占位符说明与上一批。"""
     # 任务快照摊在顶层：进度组件（`followJobProgress`）认的就是这个形状，
     # 多包一层 `job` 就要在前端再写一遍拆包。
     state = contract.organize_job.snapshot() or {"status": "idle"}
     latest = organize.latest_batch(contract.candidate_root)
-    declared = location_roots()
+    drive = getattr(contract, "drive", None)
+    locations = []
+    for item in (drive.snapshot()["locations"] if drive is not None else []):
+        if not item["connected"]:
+            continue
+        locations.append({
+            "location": item["location"],
+            "label": item["label"],
+            "roots": [str(row.get("name") or "") for row in item["roots"]] or ["整个网盘"],
+        })
     return {
         **{key: value for key, value in state.items() if key not in ('plan', 'batch_stamp')},
         "status": state.get("status", "idle"),
-        "locations": [{"location": location, "roots": list(declared.get(location, ()))}
-                      for location in ORGANIZE_LOCATIONS if declared.get(location)],
+        "locations": locations,
         "templates": organize_templates(contract),
         "presets": [dict(preset) for preset in organize.PRESETS],
         "placeholders": [{"key": key, "label": label} for key, label in PLACEHOLDERS.items()],
@@ -57,7 +81,7 @@ def q_organize(contract, _args=None) -> dict:
 
 
 def q_organize_example(_contract, args=None) -> dict:
-    """以示例字段预览模板，保持账本与文件系统只读。"""
+    """以示例字段预览模板，保持账本与网盘只读。"""
     args = args or {}
     return example_path(str(args.get("file_template") or ""), str(args.get("dir_template") or ""))
 
@@ -66,10 +90,11 @@ def w_organize_preview(contract, body) -> dict:
     """出计划：写一份 CSV，回给界面会变的行（上限 200）与跳过统计。"""
     location, file_template, dir_template = _templates(contract, body)
     path_scope = organize.scope_path(location, body.get('path', ''))
+    connected = bool(_connection_rows(contract, location).get("connected"))
     with contract.read_connection() as connection:
         plan = organize.build_plan(connection, location=location,
                                    file_template=file_template, dir_template=dir_template,
-                                   path=path_scope)
+                                   connected=connected, path=path_scope)
     path = organize.plan_path(contract.candidate_root, location)
     organize.write_plan(path, plan["rows"])
     changes = [row for row in plan["rows"] if row["action"] != "skip"]
@@ -113,26 +138,32 @@ def w_organize_apply(contract, body) -> dict:
         raise ValueError("整理需要确认")
     location, file_template, dir_template = _templates(contract, body)
     path_scope = organize.scope_path(location, body.get('path', ''))
-    if organize.unverified_location(location):
-        raise ValueError(f"{location} 挂载上的改名无法核验云端结果，界面只出预览，不执行")
+    drive = getattr(contract, "drive", None)
+    if drive is None:
+        raise ValueError("还没有接入网盘，整理无处执行")
+    connected = bool(_connection_rows(contract, location).get("connected"))
+    if not connected:
+        raise ValueError(f"{location} 还没有授权，先到设置页接入网盘")
     job = contract.organize_job
 
     def work(job_id: str) -> None:
         batch_stamp = (job.snapshot() or {}).get('batch_stamp') or f"{time.strftime('%Y%m%d-%H%M%S')}-{job_id}"
-        roots = [(location, path_scope)] if path_scope else [(location, root) for root in location_roots()[location]]
-        checked = junk.isolate(contract.database, roots=roots)
+        scopes = [path_scope] if path_scope else _root_prefixes(contract, location)
+        checked = junk.isolate(contract.database,
+                               roots=[(location, scope) for scope in scopes])
         job.update(job_id, junk_isolated=checked['isolated'], junk_review=checked['review'])
         plan = (job.snapshot() or {}).get('plan')
         if plan is None:
             with contract.read_connection() as connection:
                 plan = organize.build_plan(connection, location=location,
                                            file_template=file_template,
-                                           dir_template=dir_template, path=path_scope)
+                                           dir_template=dir_template, connected=True,
+                                           path=path_scope)
             if not job.checkpoint(job_id, plan=plan, batch_stamp=batch_stamp):
                 raise InterruptedError('整理已停止')
         job.update(job_id, total=plan["counts"]["change"], stage="正在整理")
         result = _run_write(contract, job_id, lambda connection: organize.apply_plan(
-            connection, plan["rows"], generated_root=contract.candidate_root,
+            drive, connection, plan["rows"], generated_root=contract.candidate_root,
             stamp=batch_stamp,
             progress=lambda **fields: job.checkpoint(job_id, **fields)))
         job.update(job_id, **result, counts=plan["counts"], status="complete",
@@ -149,6 +180,9 @@ def w_organize_rollback(contract, body) -> dict:
     """把上一批整理原样退回去。"""
     if body.get("confirm") is not True:
         raise ValueError("回滚需要确认")
+    drive = getattr(contract, "drive", None)
+    if drive is None:
+        raise ValueError("还没有接入网盘，回滚无处执行")
     from .job_recovery import current_job_id, read
     saved = read(contract.db_path, 'organize') if current_job_id.get() else {}
     batch = (saved.get('checkpoint') or {}).get('rollback_batch')
@@ -165,7 +199,7 @@ def w_organize_rollback(contract, body) -> dict:
             job.update(job_id, status='complete', restored=0, failed=0)
             return
         result = _run_write(contract, job_id, lambda connection: organize.rollback_batch(
-            connection, latest, progress=lambda **fields: job.checkpoint(job_id, **fields)))
+            drive, connection, latest, progress=lambda **fields: job.checkpoint(job_id, **fields)))
         job.update(job_id, **result, status="complete", completed_at=time.time())
 
     return job.start(work, restart=True,

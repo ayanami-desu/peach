@@ -25,7 +25,7 @@ import { queryClient } from '../query';
 import { SourceMark } from '../settings/section';
 import { busyProps } from '../settings/use-action';
 import {
-  batchOperate, bulkCloudPreferences, distinctName, DUPLICATES_KEY, duplicateVictims, fetchDuplicates, keepGroup, KEEP_LABELS,
+  batchOperate, bulkCloudPreferences, distinctName, DUPLICATES_KEY, duplicateVictims, fetchDuplicates, keepGroup, keepRuleLabel,
   mixedCloudPreferences, sharedNamePrefix, victimBytes, type DuplicateFile, type DuplicateGroup, type KeepRule,
 } from './duplicates';
 import { t } from '../../i18n';
@@ -157,7 +157,7 @@ export function DuplicatesPage({ openItem, toast, failure }: DuplicatesProps) {
     void confirmModal({
       title: t('cleanup:duplicates.moveToTrash'),
       body: t('cleanup:duplicates.trashBody', {
-        count: ids.length, keep: KEEP_LABELS[keep] ?? KEEP_LABELS.largest, size: fmtSize(victimBytes(chosen, ids)) }),
+        count: ids.length, keep: keepRuleLabel(keep), size: fmtSize(victimBytes(chosen, ids)) }),
       confirmLabel: t('cleanup:duplicates.moveToTrash'),
       onConfirm: () => { setPending(key); return dispose.mutateAsync(ids) },
     });

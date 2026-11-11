@@ -1,4 +1,4 @@
-/* 访问口令与 HTTPS 证书分区：换口令先说清谁要重新登录，新口令只显示这一次；证书分区画出二维码与指纹。
+/* 访问口令分区：换口令先说清谁要重新登录，新口令只显示这一次。
  * 外观由预览与 e2e 量。 */
 import { notifyManager, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -7,7 +7,6 @@ import * as legacyUi from '@peach/legacy/ui';
 
 import { queryClient } from '../../src/react/query';
 import { ApiTokenSettings, rotationEffect } from '../../src/react/settings/api-token-settings';
-import { CertificateTrust, type CertificateState } from '../../src/react/settings/certificate-trust';
 import { buttonNamed, click, mount, section, settle } from './render';
 
 notifyManager.setScheduler(notify => notify());
@@ -68,20 +67,4 @@ it('口令被启动参数覆盖时只写原因，不给更换键', async () => {
     mode="password" receipt={vi.fn()} />);
   expect(buttonNamed('更换口令', host)).toBeNull();
   expect(section(host, '访问口令')!.textContent).toContain('口令由启动参数指定。');
-});
-
-it('证书分区画出二维码、分段的指纹和下载链接', async () => {
-  const fingerprint = Array.from({ length: 32 }, (_, index) => index.toString(16).padStart(2, '0').toUpperCase()).join(':');
-  const state: CertificateState = {
-    fingerprint, not_after: '2036-08-18', download: '/api/configuration/certificate/peach-local-ca.crt',
-    phone_url: 'https://peach.local/api/configuration/certificate/peach-local-ca.crt?k=x', expires_in: 600,
-    qr: ['101', '010', '101'],
-  };
-  const host = await render(<CertificateTrust initial={state} />);
-  const card = section(host, '其他设备信任 HTTPS 证书')!;
-  expect(card.querySelector('svg[role="img"] path')!.getAttribute('d')).toBe('M4 4h1v1h-1zM6 4h1v1h-1zM5 5h1v1h-1zM4 6h1v1h-1zM6 6h1v1h-1z');
-  expect([...card.querySelectorAll('.font-mono > span')].map(node => node.textContent)).toEqual([
-    '00:01:02:03:04:05:06:07', '08:09:0A:0B:0C:0D:0E:0F', '10:11:12:13:14:15:16:17', '18:19:1A:1B:1C:1D:1E:1F']);
-  expect(card.querySelector('a[download]')!.getAttribute('href')).toBe(state.download);
-  expect(card.textContent).toContain('证书信任设置');
 });

@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from peach import feed_followup, feeds, web_entity, web_feeds, web_settings, web_state  # noqa: E402
-from peach import web_jav_browser_performer as performer  # noqa: E402
 from peach.http import HttpResponse  # noqa: E402
 from peach.web_contract import WebContract  # noqa: E402
 from peach.web_router import dispatch_api_get, dispatch_api_post  # noqa: E402
@@ -252,7 +251,8 @@ class FeedWebTest(FeedWebFixture):
         second = self._add()
         run = self.contract.task_runs.start('feed-check', trigger='manual', total=2)
         self.contract.task_runs.suspend(run.id)
-        job_recovery.save(self.db_path, 'feed-check', 'original', {'background': True}, run_id=run.id, waiting=True)
+        job_recovery.save(self.db_path, 'feed-check', 'original', {'background': True}, run_id=run.id)
+        job_recovery.waiting(self.db_path, 'feed-check', 'original')
         job_recovery.checkpoint(self.db_path, 'feed-check', 'original', dict(source_ids=[first, second],
             checked=1, total=2, added=1, results=[{'source': first, 'ok': True, 'codes': ['AAA-001']}]))
         seen = []
@@ -1607,88 +1607,9 @@ class FeedFollowByNameTest(FeedFollowByNameFixture):
         self.assertEqual(self._sources(), [])
 
 
-class PerformerPageFollowTest(FeedFollowByNameFixture):
-    """用户脚本女优页上的「订阅新作」：先按页面地址里的站内编号认人，只有名字的页去 JavDB 确认。"""
-
-    JAVDB = "https://javdb.com/actors/Kn01"
-    DMM = "https://video.dmm.co.jp/av/list/?actress=1061586"
-    MISSAV = "https://missav.ws/dm127/cn/actresses/" + "%E7%80%AC%E6%88%B8%E7%92%B0%E5%A5%88"
-
-    def _status(self, url, names=()):
-        return performer.performer_status(self.contract, None, url, names)
-
-    def _page_follow(self, url, enabled=True, names=()):
-        return performer.follow_performer(self.contract, None,
-                                          {"source_url": url, "enabled": enabled, "names": list(names)})
-
-    def test_the_page_address_names_the_site_id_or_the_name(self):
-        self.assertEqual(performer.performer_page(self.JAVDB, ["瀬戸環奈, 瀨戶環奈"]),
-                         {"site": "javdb", "javdb": "Kn01", "dmm": "", "names": ["瀬戸環奈", "瀨戶環奈"]})
-        for url in (self.DMM, "https://www.dmm.co.jp/digital/videoa/-/list/=/article=actress/id=1061586/"):
-            with self.subTest(url=url):
-                self.assertEqual(performer.performer_page(url)["dmm"], "1061586")
-        self.assertEqual(performer.performer_page(
-            "https://missav.ws/cn/actresses/" + "%E6%A3%AE%E6%B2%A2%E3%81%8B%E3%81%AA%EF%BC%88%E9%A3%AF%E5%B2%A1%E3%81%8B%E3%81%AA%E3%81%93%EF%BC%89")["names"],
-                         ["森沢かな", "飯岡かなこ"])
-        for url in ("https://javdb.com/v/WM9m8", "https://video.dmm.co.jp/av/list/?actress=abc",
-                    "https://missav.ws/cn/ssis-057", "https://example.com/actors/Kn01", "http://javdb.com/actors/Kn01"):
-            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "不是支持的女优页"):
-                performer.performer_page(url)
-
-    def test_a_held_javdb_id_names_her_and_switches_her_subscription(self):
-        held = self._performer("瀬戸かんな", ["Kn01"])
-        status = self._status(self.JAVDB, ["瀬戸環奈"])
-        self.assertEqual((status["name"], status["entity_id"], status["following"]), ("瀬戸かんな", held, False))
-        self.assertTrue(self._page_follow(self.JAVDB)["following"])
-        self._settled()
-        self.assertFalse(self._page_follow(self.JAVDB, enabled=False)["following"])
-
-    def test_an_unknown_javdb_page_creates_her_from_the_page_name_and_binds_the_id(self):
-        status = self._page_follow(self.JAVDB, names=["瀬戸環奈, 瀨戶環奈"])
-        self.assertEqual((status["name"], status["following"]), ("瀬戸環奈", True))
-        _row, refs = self._entity(status["entity_id"])
-        self.assertEqual([ref["external_id"] for ref in refs], ["Kn01"])
-        self._settled()
-
-    def test_an_unknown_dmm_page_asks_dmm_for_her_name_and_subscribes_her_catalogue(self):
-        with patch.object(performer, "_dmm_name", return_value="森日向子") as asked, \
-                patch.object(web_feeds, "fetch_new_sources"):
-            status = self._page_follow(self.DMM)
-        asked.assert_called_once()
-        self.assertEqual((status["name"], status["following"]), ("森日向子", True))
-        [source] = [row for row in self._sources() if row["entity_id"] == status["entity_id"]]
-        self.assertEqual(source["url"], feeds.dmm_actress_url("1061586"))
-        # 再来一次就按编号认出她，不再问 DMM。
-        with patch.object(performer, "_dmm_name") as again:
-            self.assertEqual(self._status(self.DMM)["entity_id"], status["entity_id"])
-        again.assert_not_called()
-
-    def test_a_name_only_page_follows_her_once_javdb_confirms_one_person(self):
-        status = self._page_follow(self.MISSAV)
-        self.assertEqual((status["name"], status["following"]), ("瀬戸環奈", True))
-        _row, refs = self._entity(status["entity_id"])
-        self.assertEqual([ref["external_id"] for ref in refs], ["Kn01", "Kn02"])
-        self._settled()
-
-    def test_a_name_only_page_refuses_when_javdb_has_two_people_or_cannot_search(self):
-        for page, reason in ((TWINS_PAGE, "没能确认是同一位女优"), (LOGIN_PAGE, "登入页")):
-            with self.subTest(reason=reason):
-                self._serve(self.search, page)
-                with self.assertRaisesRegex(ValueError, reason):
-                    self._page_follow(self.MISSAV)
-        self.assertEqual(self._sources(), [])
-        self.assertEqual((self._status(self.MISSAV)["entity_id"], self._status(self.MISSAV)["name"]),
-                         (None, "瀬戸環奈"))
-
-    def test_a_known_name_with_an_id_is_followed_without_searching(self):
-        self._serve(self.search, LOGIN_PAGE)
-        held = self._performer("瀬戸環奈", ["Kn01"])
-        self.assertEqual(self._page_follow(self.MISSAV)["entity_id"], held)
-        self.assertTrue(all(request.url != self.search for request in self.transport.requests))
-        self._settled()
-
-
 class JavDiscoveryTest(FeedWebFixture):
+    """发现页只按所选字段排序：候选来自订阅源与馆藏，资料投影取边车，不按口味筛选。"""
+
     def test_discovery_cast_projects_canonical_names_and_preserves_unknown_names(self):
         self._add()
         self._check()
@@ -1699,10 +1620,9 @@ class JavDiscoveryTest(FeedWebFixture):
             connection.execute("INSERT INTO entity_alias(entity_id,alias,normalized_alias,source) VALUES(?,?,?,'test')",
                                (eid, '篠田ゆう', '篠田ゆう'))
             connection.execute("UPDATE feed_discovery SET performers='篠田ゆう、筱田优、未知人物',studio='示例厂牌'")
-        rankings = {'peach_studios': [{'name': '示例厂牌', 'score': 4}]}
         for metadata in ({}, {'actors': [{'name': '篠田ゆう'}, {'name': '筱田优'}, {'name': '未知人物'}]}):
             with self.subTest(source=bool(metadata)):
-                rows = self._discover(rankings=rankings, metadata=metadata)['items']
+                rows = self._discover(metadata=metadata)['items']
                 self.assertEqual(len(rows), 2)
                 for row in rows:
                     self.assertEqual(row['performers'], '筱田优、未知人物')
@@ -1723,7 +1643,7 @@ class JavDiscoveryTest(FeedWebFixture):
             self.assertEqual(item['performers'], '示例女优、未分类人物')
             self.assertEqual([ref['name'] for ref in item['performer_refs']], ['示例女优', '未分类人物'])
             self.assertTrue(item['performer_refs'][0]['source_avatar'])
-            self.assertFalse(any('示例男优' in reason for reason in item['reasons']))
+            self.assertNotIn('示例男优', item['performers'])
 
     def test_persistent_metadata_supplies_canonical_filters_and_sort_values_without_detail(self):
         from peach import web_jav_discovery
@@ -1735,37 +1655,37 @@ class JavDiscoveryTest(FeedWebFixture):
             codes = [row[0] for row in connection.execute("SELECT code FROM feed_discovery ORDER BY id")]
         for code, score in zip(codes, (None, "4.23")):
             metadata.remember(code, {"number": code, "tags": [{"name": "中出"}], "score": score, "duration": 180})
-        with patch.object(web_jav_discovery, "preference_profile", return_value=self._preference_fixture(
-                {"browser_tags": [{"name": "中出内射", "score": 4}]})), \
-                patch("peach.javdb_public.PUBLIC_API.movie") as movie:
+        with patch("peach.javdb_public.PUBLIC_API.movie") as movie:
             result = web_jav_discovery.q_jav_discoveries(self.contract, {"sort": "source_score"})
         movie.assert_not_called()
         self.assertIsNone(metadata.job.thread, "GET 只读，不起外网任务")
         self.assertEqual([row["source_score"] for row in result["items"]], [4.23, None])
         self.assertTrue(all(row["tags"] == ["中出内射"] for row in result["items"]))
         self.assertTrue(all(row["duration"] == 10800 for row in result["items"]))
-        self.assertEqual(result["ranking_method"], "field-sort")
         self.assertEqual([row["rank"] for row in result["items"]], [1, 2])
-        self.assertTrue(all(row["taste_score"] == row["score"] for row in result["items"]))
 
-    def test_discovery_scoring_is_cached_until_its_inputs_change(self):
-        """任务进行中页面会反复来取；打分只在账本、口味库或资料边车变了之后重算。"""
+    def test_discovery_candidates_are_cached_until_the_ledger_or_sidecar_changes(self):
+        """任务进行中页面会反复来取；候选只在账本或资料边车变了之后重采。"""
         from peach import web_jav_discovery
         from peach.jav_discovery_metadata import discovery_metadata
         self._add()
         self._check()
-        with self.contract.database.write_transaction() as connection:
-            connection.execute("UPDATE feed_discovery SET studio='示例厂牌'")
-        fixture = self._preference_fixture({"peach_studios": [{"name": "示例厂牌", "score": 4}]})
-        with patch.object(web_jav_discovery, "preference_profile", return_value=fixture) as profile:
+        calls = []
+        harvested = web_jav_discovery._external
+
+        def counted(connection, contract):
+            calls.append(1)
+            return harvested(connection, contract)
+
+        with patch.object(web_jav_discovery, "_external", side_effect=counted):
             first = web_jav_discovery.q_jav_discoveries(self.contract, {})
             again = web_jav_discovery.q_jav_discoveries(self.contract, {})
-            self.assertEqual(profile.call_count, 1)
+            self.assertEqual(len(calls), 1)
             self.assertEqual([row["id"] for row in again["items"]], [row["id"] for row in first["items"]])
             code = first["items"][0]["code"]
             discovery_metadata(self.contract).remember(code, {"number": code, "tags": [{"name": "中出"}]})
             web_jav_discovery.q_jav_discoveries(self.contract, {})
-            self.assertEqual(profile.call_count, 2, "资料边车变了要重算")
+            self.assertEqual(len(calls), 2, "资料边车变了要重采")
 
     def test_metadata_reading_starts_from_post_and_progress_is_read_alone(self):
         """GET 不起任务；页面用 POST 起、停，进度单独轮询，不再整页重取。"""
@@ -1774,11 +1694,9 @@ class JavDiscoveryTest(FeedWebFixture):
         self._check()
         with self.contract.database.write_transaction() as connection:
             connection.execute("UPDATE feed_discovery SET studio='示例厂牌'")
-        fixture = self._preference_fixture({"peach_studios": [{"name": "示例厂牌", "score": 4}]})
         started = {"job_id": "batch", "status": "running", "completed": 0, "total": 2, "failed": 0,
                    "requests": 0, "bytes": 0, "codes": ["X"]}
-        with patch.object(web_jav_discovery, "preference_profile", return_value=fixture), \
-                patch("peach.jav_discovery_metadata.DiscoveryMetadata.ensure", return_value=started) as ensure:
+        with patch("peach.jav_discovery_metadata.DiscoveryMetadata.ensure", return_value=started) as ensure:
             listing = web_jav_discovery.q_jav_discoveries(self.contract, {})
             ensure.assert_not_called()
             response = web_jav_discovery.w_jav_discovery_metadata(self.contract, {"action": "refresh"})
@@ -1787,7 +1705,7 @@ class JavDiscoveryTest(FeedWebFixture):
         self.assertEqual(response["metadata_job"]["status"], "running")
         self.assertNotIn("codes", response["metadata_job"])
         with patch("peach.jav_discovery_metadata.DiscoveryMetadata.current", return_value=started), \
-                patch.object(web_jav_discovery, "_ranked", side_effect=AssertionError("进度轮询不打分")):
+                patch.object(web_jav_discovery, "_ranked", side_effect=AssertionError("进度轮询不排序")):
             progress = web_jav_discovery.q_jav_discovery_metadata(self.contract, {})
         self.assertEqual(progress["metadata_job"]["job_id"], "batch")
         self.assertEqual(progress["poll_after_ms"], 3000)
@@ -1842,67 +1760,35 @@ class JavDiscoveryTest(FeedWebFixture):
         self.assertEqual(order(sort="duration"), ["SSIS-950", "HMN-071"])
         self.assertEqual(order(sort="random", seed="a"), order(sort="random", seed="a"), "同一个种子翻页时顺序不变")
 
-    def _discover(self, scope="external", rankings=None, metadata=None, args=None):
+    def _discover(self, scope="external", metadata=None, args=None):
         from peach import web_jav_discovery
-        # 口味与来源资料在这里是换掉的函数，不经它们的版本；每次从头算，不读上一次的打分缓存。
+        # 来源资料在这里是换掉的函数，不经它的版本；每次从头算，不读上一次的候选缓存。
         self.contract.cache.clear()
-        with patch.object(web_jav_discovery, "preference_profile", return_value=self._preference_fixture(rankings or {})), \
-                patch.object(web_jav_discovery, "_cached_movie", return_value=metadata or {}), \
+        with patch.object(web_jav_discovery, "_cached_movie", return_value=metadata or {}), \
                 patch("peach.jav_discovery_metadata.DiscoveryMetadata.ensure", return_value=None):
             return web_jav_discovery.q_jav_discoveries(self.contract, {"scope": scope, **(args or {})})
 
-    def _preference_fixture(self, rankings):
-        from peach import web_jav_discovery
-        from peach.taste_preferences import WEIGHTS
-        strengths, names, evidence = ({kind: {} for kind in WEIGHTS} for _ in range(3))
-        with self.contract.database.read_connection() as connection:
-            for key, kind in (("peach_studios", "studio"), ("peach_tags", "tag"),
-                              ("browser_tags", "tag"), ("peach_series", "series")):
-                for row in rankings.get(key, ()):
-                    eid = row.get("entity_id") or web_jav_discovery._identity(connection, kind, row["name"])
-                    strengths[kind][eid] = .7
-                    names[kind][eid] = row["name"]
-                    evidence[kind][eid] = ["浏览记录" if key.startswith("browser") else "观看与反馈"]
-        return strengths, names, evidence
-
-    def test_taste_ascending_preserves_the_selection_and_scores(self):
+    def test_direction_reverses_the_selected_field_sort(self):
         self._add()
         self._check()
         with self.contract.database.write_transaction() as connection:
-            connection.execute("UPDATE feed_discovery SET studio='示例厂牌'")
-        rankings = {"peach_studios": [{"name": "示例厂牌", "score": 4}]}
-        descending = self._discover(rankings=rankings, args={"direction": "desc"})
-        ascending = self._discover(rankings=rankings, args={"direction": "asc"})
-        self.assertEqual(ascending["direction"], "asc")
-        self.assertEqual(ascending["ranking_method"], "mmr")
+            connection.execute("UPDATE feed_discovery SET release_date='2010-01-01' WHERE id=(SELECT MIN(id) FROM feed_discovery)")
+        descending = self._discover(args={"sort": "release_date", "direction": "desc"})
+        ascending = self._discover(args={"sort": "release_date", "direction": "asc"})
+        self.assertEqual((descending["sort"], ascending["direction"]), ("release_date", "asc"))
+        self.assertEqual(len(descending["items"]), 2)
         self.assertEqual([row["id"] for row in ascending["items"]],
                          [row["id"] for row in reversed(descending["items"])])
         self.assertEqual([row["rank"] for row in ascending["items"]], [1, 2])
-        def score_fields(rows):
-            return {row["id"]: (row["score"], row["taste_score"], row["ranking_score"]) for row in rows}
-        self.assertEqual(score_fields(ascending["items"]), score_fields(descending["items"]))
-
-    def test_external_discovery_includes_older_known_works_and_studio_matches(self):
-        self._add()
-        self._check()
-        with self.contract.database.write_transaction() as connection:
-            connection.execute("UPDATE feed_discovery SET release_date='2010-01-01',studio='示例厂牌'")
-        result = self._discover(rankings={"peach_studios": [{"name": "示例厂牌", "score": 4}]})
-        self.assertEqual(len(result["items"]), 2)
-        self.assertTrue(all(row["release_date"] == "2010-01-01" for row in result["items"]))
-        self.assertTrue(all(row["reasons"] == ["厂牌偏好：示例厂牌（观看与反馈）"] for row in result["items"]))
-        self.assertEqual(self._discover()["items"], [])
+        self.assertEqual({row["id"]: row["release_date"] for row in ascending["items"]},
+                         {row["id"]: row["release_date"] for row in descending["items"]})
 
     def test_external_discovery_projects_obtained_metadata_and_canonical_tags(self):
         self._add()
         self._check()
-        rankings = {"browser_tags": [{"name": "恋足", "score": 4}],
-                    "peach_series": [{"name": "示例系列", "score": 2}]}
-        self.assertEqual(self._discover(rankings=rankings)["items"], [])
-        rows = self._discover(rankings=rankings, metadata={"tags": [{"name": "恋足"}], "series_name": "示例系列"})["items"]
+        rows = self._discover(metadata={"tags": [{"name": "恋足"}], "series_name": "示例系列"})["items"]
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["tags"], ["恋足"])
-        self.assertEqual(rows[0]["reasons"], ["标签偏好：恋足（浏览记录）", "系列偏好：示例系列（观看与反馈）"])
 
     def test_library_exploration_excludes_completed_disliked_and_frequently_watched(self):
         with self.contract.database.write_transaction() as connection:
@@ -1916,11 +1802,9 @@ class JavDiscoveryTest(FeedWebFixture):
                     " VALUES(?,'local',?,'示例作品','video',?,'示例厂牌',100,?,?,?,?)",
                     (aid, f"R:\\media\\SSIS-{aid:03d}.mp4", f"SSIS-{aid:03d}", plays, reached, feedback, disposal))
                 connection.execute("INSERT INTO asset_entity(asset_id,entity_id,role,source) VALUES(?,?,'tag','test')", (aid, entity_id))
-        result = self._discover("library", {"peach_tags": [{"name": "恋足", "entity_id": entity_id, "score": 4}]})
+        result = self._discover("library")
         self.assertEqual({row["asset_id"] for row in result["items"]}, {1, 2})
         self.assertTrue(all(row["tags"] == ["恋足"] for row in result["items"]))
-        self.assertTrue(all(row["reasons"] == ["标签偏好：恋足（观看与反馈）"] for row in result["items"]))
-
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

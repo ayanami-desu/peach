@@ -10,7 +10,6 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "amane-bridge" / "bridge.py"
@@ -297,25 +296,6 @@ class RuntimePackagingTests(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs["env"]["PATH"], "")
             self.assertEqual(run.call_args.kwargs["env"]["PYINSTALLER_RESET_ENVIRONMENT"], "1")
 
-    def test_desktop_smoke_requires_the_service_to_use_the_bundled_runtime(self):
-        from scripts import smoke_desktop
-        manifest = self.manifest('executable')
-        facts = {'installed': True, 'problem': '', 'revision': manifest['revision'],
-                 'installed_version': manifest['version'], 'python': str(self.root / manifest['executable'])}
-        opener = mock.Mock()
-        with mock.patch.dict(sys.modules, {'build_amane_runtime': self.builder}), \
-                mock.patch.object(self.builder, 'verify') as verify:
-            opener.open.return_value = io.StringIO(json.dumps(facts))
-            smoke_desktop.assert_amane_runtime(opener, 'http://127.0.0.1:8900', self.root)
-            verify.assert_called_once_with(self.root)
-            opener.open.assert_called_once_with('http://127.0.0.1:8900/api/scraping/amane-bridge', timeout=15)
-            for change in ({'installed': False}, {'revision': 'foreign'}, {'installed_version': 'unknown'},
-                           {'python': str(self.root / 'user-python')}, {'problem': '缺少运行环境'}):
-                with self.subTest(change=change):
-                    opener.open.return_value = io.StringIO(json.dumps({**facts, **change}))
-                    with self.assertRaises(AssertionError):
-                        smoke_desktop.assert_amane_runtime(opener, 'http://127.0.0.1:8900', self.root)
-
     def test_runtime_self_check_rejects_wrong_versions_and_process_failures(self):
         self.manifest("executable")
         with mock.patch.object(self.builder.subprocess, "run", return_value=mock.Mock(
@@ -350,59 +330,6 @@ class RuntimePackagingTests(unittest.TestCase):
                 self.builder.build(self.root, work=self.root.parent / "work")
         run.assert_not_called()
         self.assertEqual(private_file.read_text(encoding="utf-8"), "keep")
-
-    def test_docker_smoke_checks_the_bundled_runtime_and_matching_api_facts(self):
-        from scripts import smoke_docker
-        manifest = {**self.builder.locked_amane(), "kind": "python", "executable": ".venv/bin/python"}
-        report = {"ok": True, "amane": {"version": manifest["version"]}, "sites": list(bridge.SITES)}
-        description = {"python": "/app/amane-runtime/.venv/bin/python", "installed": True,
-                       "revision": manifest["revision"]}
-        with mock.patch.object(smoke_docker, "docker", side_effect=[json.dumps(manifest), json.dumps(report)]) as docker, \
-                mock.patch.object(smoke_docker, "request", return_value=json.dumps(description)):
-            smoke_docker.amane_checks("fixture")
-        self.assertEqual(docker.call_args_list[1], mock.call(
-            "exec", "fixture", "/app/amane-runtime/.venv/bin/python", "-X", "utf8",
-            "/app/tools/amane-bridge/bridge.py", "--self-check"))
-
-    def test_windows_application_and_lite_payloads_keep_the_complete_bridge(self):
-        from peach.update_packages import TOOL_PATHS
-        from scripts.package_windows_release import package, build_lite_installer
-        payload = self.root / "Peach"
-        (payload / "_internal").mkdir(parents=True)
-        (payload / "Peach.exe").write_bytes(b"application")
-        (payload / "_internal/standalone.txt").touch()
-        runtime_files = {"amane-bridge.exe", "manifest.json", "LICENSE-amane.txt",
-                         "amane-corresponding-source.zip", "_internal/python314.dll"}
-        runtime = payload / "_internal/tools/amane-runtime"
-        for name in runtime_files:
-            target = runtime / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(name.encode())
-        for prefix, required in TOOL_PATHS.values():
-            for name in required:
-                target = payload / prefix / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(b"tool")
-        release = self.root / "release"
-        package(payload, release, "1.0.0")
-        expected = {"Peach/_internal/tools/amane-runtime/" + name for name in runtime_files}
-        for suffix in (".zip", "-update.zip"):
-            with zipfile.ZipFile(release / f"Peach-1.0.0-windows-x64{suffix}") as archive:
-                self.assertTrue(expected <= set(archive.namelist()))
-        for tool in TOOL_PATHS:
-            with zipfile.ZipFile(release / f"Peach-1.0.0-windows-x64-tools-{tool}.zip") as archive:
-                self.assertFalse(expected & set(archive.namelist()))
-
-        def compile_installer(command, **kwargs):
-            source = Path(next(arg.removeprefix("/DSourceDir=") for arg in command
-                               if arg.startswith("/DSourceDir=")))
-            for name in runtime_files:
-                self.assertEqual((source / "_internal/tools/amane-runtime" / name).read_bytes(), name.encode())
-            self.assertIn("/DLiteInstaller=1", command)
-            (release / "Peach-1.0.0-windows-x64-lite-setup.exe").write_bytes(b"installer")
-
-        with mock.patch("scripts.package_windows_release.subprocess.run", side_effect=compile_installer):
-            self.assertTrue(build_lite_installer(release, "1.0.0", self.root / "ISCC.exe").is_file())
 
 
 if __name__ == "__main__":

@@ -1,9 +1,7 @@
 """按时间点抽单帧、把若干帧拼成一张接触印相。
 
-九宫格（`scripts/sheets.py`）和时间轴预览（`timeline_sheets`）要的是同一件事：在给定
-时间点取一帧、缩到固定宽度、若干帧拼成一张图。两处各写一份的代价不是重复，而是分叉
-——网盘上那批坏色彩元数据的片子只在其中一份里被认出来并重试，另一份就永远少一批图，
-而失败形态是「这些片子没有预览」，看不出是哪一份的判据少了一条。
+时间轴预览（`timeline_sheets`）要的就是这件事：在给定时间点取一帧、缩到固定宽度、若干帧
+拼成一张图。抽帧失败要能说出是哪一类失败，否则使用者看到的只是「这些片子没有预览」。
 """
 from __future__ import annotations
 
@@ -40,29 +38,35 @@ COLOR_METADATA_ERROR = re.compile(
 )
 
 
-def capture_frame(ffmpeg: str, path: str, timestamp: float, destination: Path, *,
+def headers_option(headers: dict[str, str] | None) -> list[str]:
+    """网盘直链要带的请求头。FFmpeg 的 `-headers` 收一整段文本，每行都以 CRLF 结尾。"""
+    if not headers:
+        return []
+    return ["-headers", "".join(f"{name}: {value}\r\n" for name, value in headers.items())]
+
+
+def capture_frame(ffmpeg: str, url: str, timestamp: float, destination: Path, *,
+                  headers: dict[str, str] | None = None,
                   width: int = 480, color_override: bool = False,
                   timeout: float = 45, diagnostics: dict | None = None,
                   input_options: tuple[str, ...] = ()) -> tuple[bool, str]:
     """抽一帧，返回（是否成功, stderr）。stderr 用于判断值不值得重试。
 
+    `url` 是网盘给的预授权地址，`headers` 是它要求的请求头：不落本地文件。
     `-ss` 在 `-i` 之前：那是输入端 seek，只解目标附近的帧。放到后面就是从头解码到
     那个时间点，两小时的片子抽最后一帧要几分钟。
     """
     destination.unlink(missing_ok=True)
-    from .task_resources import media_input
-    media_input(path)
-    from .smb_media import input_url
-    path = input_url(path)
     from .processing_traffic import CURRENT as TRAFFIC, media_statistics
     command = [ffmpeg, "-y", "-v", "verbose" if TRAFFIC.get() is not None else "error", "-rw_timeout", "8000000"]
     checkpoint('frame')
     command += ffmpeg_options(filter_option='-filter_threads')
     if color_override:
         command += COLOR_OVERRIDE
+    command += headers_option(headers)
     command += input_options
     command += [
-        "-ss", f"{timestamp:.2f}", "-i", path, "-frames:v", "1",
+        "-ss", f"{timestamp:.2f}", "-i", url, "-frames:v", "1",
         "-vf", f"scale={int(width)}:'max(1,round(ow/dar))',setsar=1", "-q:v", "4",
         *ffmpeg_options(), str(destination),
     ]
@@ -70,7 +74,7 @@ def capture_frame(ffmpeg: str, path: str, timestamp: float, destination: Path, *
         completed = run_task_process(command, capture_output=True, timeout=timeout,
                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
     except subprocess.TimeoutExpired as error:
-        media_statistics(path, error.stderr)
+        media_statistics(url, error.stderr)
         if diagnostics is not None:
             diagnostics.update(reason='timeout', returncode=None,
                                stderr=(error.stderr or b'').decode('utf-8', 'replace'))
@@ -78,7 +82,7 @@ def capture_frame(ffmpeg: str, path: str, timestamp: float, destination: Path, *
         return False, "ffmpeg timeout"
     stderr = (completed.stderr or b'').decode('utf-8', 'replace')
     ok = completed.returncode == 0 and _readable_image(destination)
-    media_statistics(path, stderr, kind='frame', successful=ok)
+    media_statistics(url, stderr, kind='frame', successful=ok)
     if diagnostics is not None:
         diagnostics.update(reason='success' if ok else
                            'ffmpeg_error' if completed.returncode else 'no_frame',
@@ -88,36 +92,25 @@ def capture_frame(ffmpeg: str, path: str, timestamp: float, destination: Path, *
     return ok, stderr
 
 
-def capture_with_retry(ffmpeg: str, path: str, timestamp: float, destination: Path,
-                       *, width: int = 480, timeout: float = 45,
-                       diagnostics: dict | None = None,
-                       decode_options: tuple[str, ...] | None = None) -> bool:
-    """抽一帧；坏色彩元数据可重试一次，同部多帧可复用 decode_options。
-
-    None 表示现场探测，空元组表示软件解码；硬件失败仍在本帧内回退。
-    """
-    from .smb_media import input_url
-    path = input_url(path)
-    from .hardware_transcode import frame_decode_options
+def capture_with_retry(ffmpeg: str, url: str, timestamp: float, destination: Path,
+                       *, headers: dict[str, str] | None = None,
+                       width: int = 480, timeout: float = 45,
+                       diagnostics: dict | None = None) -> bool:
+    """抽一帧；坏色彩元数据可重试一次。"""
     deadline = deadline_after(timeout)
-    hardware = frame_decode_options(ffmpeg, path) if decode_options is None else decode_options
     attempts, detail, ok = [], {}, False
-    for options in ((hardware, ()) if hardware else ((),)):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
+    remaining = deadline - time.monotonic()
+    if remaining > 0:
         detail = {}
-        ok, stderr = capture_frame(ffmpeg, path, timestamp, destination, width=width,
-                                   timeout=min(10, remaining) if options else remaining,
-                                   diagnostics=detail, input_options=options)
-        attempts.append(dict(detail, color_override=False, hardware_decode=bool(options)))
+        ok, stderr = capture_frame(ffmpeg, url, timestamp, destination, headers=headers,
+                                   width=width, timeout=remaining, diagnostics=detail)
+        attempts.append(dict(detail, color_override=False))
         if not ok and COLOR_METADATA_ERROR.search(stderr) and deadline > time.monotonic():
             detail = {}
-            ok, _ = capture_frame(ffmpeg, path, timestamp, destination, width=width, color_override=True,
-                                  timeout=deadline - time.monotonic(), diagnostics=detail, input_options=options)
-            attempts.append(dict(detail, color_override=True, hardware_decode=bool(options)))
-        if ok:
-            break
+            ok, _ = capture_frame(ffmpeg, url, timestamp, destination, headers=headers,
+                                  width=width, color_override=True,
+                                  timeout=deadline - time.monotonic(), diagnostics=detail)
+            attempts.append(dict(detail, color_override=True))
     if diagnostics is not None:
         diagnostics.update(detail, timestamp_seconds=timestamp, timeout_seconds=timeout,
                            attempts=attempts)

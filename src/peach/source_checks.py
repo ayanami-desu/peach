@@ -5,6 +5,7 @@ import httpx
 from PIL import Image
 from .http import HttpRequest
 from .scraping_access import SOURCES, SourcePaused, SourceRefused, SourceTransport, record_source_check
+from .sources.base import challenge_page
 
 MOBILE_BROADBAND_HINT = "中国移动宽带直连 DMM 图片主机常在握手后被断开，请把 DMM / FANZA 的连接方式设成 Peach 代理。"
 
@@ -58,7 +59,7 @@ def check_source(secrets_root, source, *, preflight=False):
         targets.append(("高清图片 CDN", "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/gyan00017/gyan00017pl.jpg"))
     results = []
     transport = (SourceTransport(secrets_root, max_requests=12, max_bytes=12 * 65536,
-                                 max_seconds=15, allow_browser=False)
+                                 max_seconds=15)
                  if preflight else SourceTransport(secrets_root))
     try:
         for label, url in targets:
@@ -76,9 +77,7 @@ def check_source(secrets_root, source, *, preflight=False):
                               ok=response.status in {200, 206} and not reason,
                               kind="ok" if response.status in {200, 206} and not reason
                               else "auth" if reason else "unavailable")
-                from .browser_transport import CHALLENGE_MARKS
-                challenge = any(mark.lower() in response.body.decode("utf-8", errors="replace").lower()
-                                for mark in CHALLENGE_MARKS)
+                challenge = challenge_page(response.body)
                 detail = ("cloudflare_challenge" if challenge else "auth_required" if reason
                           else "ok" if result["ok"] else "rate_limited" if response.status == 429
                           else "server_error" if response.status >= 500

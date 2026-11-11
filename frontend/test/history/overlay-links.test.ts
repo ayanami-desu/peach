@@ -39,8 +39,8 @@ it('浏览器修饰键、其它按钮、已处理的链接与其它窗口不进�
   expect(clickPath('/assets/11', {}, { target: '_self' })).toBe('/assets/11');
 });
 
-it.each(['/', '/subscriptions?tab=add', '/settings/library', '/follow?status=new', '/tags?scope=online&view=alphabet',
-  '/data-cleanup', '/junk-files?phase=pending', '/taste', '/jav?tab=discover'])(
+it.each(['/', '/subscriptions?tab=add', '/settings', '/settings/access', '/follow?status=new', '/tags?scope=online&view=alphabet',
+  '/data-cleanup', '/junk-files?phase=pending', '/jav?tab=discover'])(
   '已登记页面由客户端导航接管：%s', path => { expect(clickPath(path)).toBe(path) },
 );
 
@@ -59,8 +59,8 @@ it('目录页内的锚点保留浏览器原生滚动', () => {
 });
 
 it('管理区锚点通过站内导航，页内锚点也保留当前页面', () => {
-  expect(clickPath('/data-cleanup#resource-sync')).toBe('/data-cleanup#resource-sync');
-  expect(clickPath('/settings/library#peachProxy')).toBe('/settings/library#peachProxy');
+  expect(clickPath('/data-cleanup#orphan-records')).toBe('/data-cleanup#orphan-records');
+  expect(clickPath('/settings#drives')).toBe('/settings#drives');
   window.history.replaceState(null, '', '/data-cleanup');
   expect(clickPath('#libraryProcessing')).toBe('/data-cleanup#libraryProcessing');
 });

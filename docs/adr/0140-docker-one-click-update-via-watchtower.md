@@ -1,6 +1,6 @@
 # ADR-0140：Docker 部署经可选 Watchtower 在页面里一键更新
 
-- 状态：已采纳
+- 状态：已失效（容器一键更新随桌面分发链一并删除，见 [ADR-0157](0157-remote-drive-api-storage-and-playback.md)）
 - 日期：2026-11-04
 - 关系：沿用 [ADR-0121](0121-release-rehearsal-and-atomic-publication.md) 的「`edge` 只指向已完整发布的版本」与 [ADR-0126](0126-upgrade-effective-repairs.md) 的启动时备份并迁移；Windows 独立包的应用内更新不变
 

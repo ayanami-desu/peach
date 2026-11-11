@@ -208,7 +208,7 @@ def parse_comment_text(text: str, origin: str, date: str = "") -> list[dict]:
 
 
 def comment_resources(links: list[str], origin: str, date: str) -> list[dict]:
-    from ..downloads import parse_magnet
+    from ..magnets import parse_magnet
 
     found = []
     for uri in links:

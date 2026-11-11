@@ -33,10 +33,10 @@ function StudioMark({ studio }: { studio: ReleaseFacetStudio | undefined; }) {
     : <span data-list-studio-mark="" aria-hidden="true">{leadingGraphemes(studio?.name || '', 1)}</span>;
 }
 
-export function ReleaseTable({ items, waiting, filters, studios, javImage, readOnly, navigate, onTag, onSort, wanting, onWant, onResource }: {
+export function ReleaseTable({ items, waiting, filters, studios, javImage, readOnly, navigate, onTag, onSort, wanting, onWant }: {
   items: Discovery[]; waiting: boolean; filters: ReleaseFilters; studios: ReleaseFacetStudio[]; javImage: unknown; readOnly: boolean;
   navigate(path: string): void; onTag(tag: string): void; onSort(key: ReleaseSort, dir: DiscoveryDirection): void;
-  wanting(item: Discovery): boolean; onWant(item: Discovery): void; onResource(item: Discovery): void;
+  wanting(item: Discovery): boolean; onWant(item: Discovery): void;
 }) {
   const selection = useJavSelection();
   const preferences = useTablePreferences('jav-releases', releaseColumns, KEYS);
@@ -84,11 +84,10 @@ export function ReleaseTable({ items, waiting, filters, studios, javImage, readO
       case 'score': return item.source_score != null ? `${item.source_score.toFixed(2)} / 5` : '—';
       case 'release': return item.release_date || '—';
       default:
-        /* 行里只放两个动作；作品来源链接在详情页。 */
+        /* 行里只放入库之外的一个动作；作品来源链接在详情页。 */
         return <div data-release-actions="" className="flex gap-2">
           <Button size="small" variant="ghost" disabled={readOnly || item.wanted || !!item.asset_id} {...busyProps(wanting(item))}
             onClick={() => onWant(item)}>{item.wanted ? '已想要' : '想要'}</Button>
-          <Button size="small" variant="secondary" onClick={() => onResource(item)}>查找资源</Button>
         </div>;
     }
   };

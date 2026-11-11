@@ -725,30 +725,20 @@ class RepeatTests(Case):
         self.assertTrue(summary["sites"][alias.MINNANO].startswith("命中 " + PROFILE_URL))
         self.assertFalse(list(self.cooldown.glob("scraping-minnano-av.cooldown.json")))
 
-    def test_a_refused_page_is_fetched_in_the_local_browser_and_the_site_stays_there(self):
-        """默认传输是 `SourceTransport`：HTTP 客户端被拦时同一页由本机浏览器取，取到就缓存、不冷却，
-        这一站之后固定走浏览器；补女优资料后继与链接、名册脚本走的是同一个入口。"""
-        from peach import browser_transport
-        from peach.scraping_access import fixed_to_browser
-
-        class Browser(browser_transport.BrowserTransport):
-            def __init__(self):
-                self.calls = []
-
-            def __call__(self, request, timeout, max_bytes):
-                self.calls.append(request.url)
-                return HttpResponse(200, {}, b"<title>profile</title>", PROFILE_URL)
-
-        url = minnano_av.search_url("神山ももか")
-        browser = Browser()
-        pages = alias.MinnanoPages(self.generated / "provider-cache" / "minnano", self.cooldown, limiter=NoWait())
-        pages.transport.transports[alias.MINNANO] = lambda request, *_args: HttpResponse(403, {}, b"", request.url)
-        with mock.patch("peach.browser_transport.shared", return_value=browser):
-            self.assertEqual(pages.get(url), (PROFILE_URL, "<title>profile</title>"))
-        pages.close()
-        self.assertEqual(browser.calls, [url])
-        self.assertTrue(fixed_to_browser(self.cooldown, alias.MINNANO))
-        self.assertFalse(paused_until(self.cooldown, alias.MINNANO))
+    def test_a_refused_page_pauses_the_site_instead_of_facing_a_retry(self):
+        """固定来源被拒（403）就整站进冷却：这一轮不再问，名字链没变也不重试。"""
+        momoka = self.entity("神山ももか")
+        self.minnano.pages[minnano_av.search_url("神山ももか")] = (403, b"")
+        self.av_neme.pages[wiki_search_url("神山ももか")] = (403, b"")
+        summary = self.run_followup(momoka)
+        self.assertEqual(summary["outcome"], "未取得")
+        for site in (alias.MINNANO, alias.AV_NEME):
+            self.assertEqual(summary["sites"][site], "未取得：来源拒绝访问或要求机器人验证")
+        self.assertTrue(paused_until(self.cooldown, alias.MINNANO))
+        self.assertTrue(paused_until(self.cooldown, alias.AV_NEME))
+        requested = len(self.minnano.calls) + len(self.av_neme.calls)
+        self.assertEqual(self.run_followup(momoka, run_id=9)["outcome"], "未取得")
+        self.assertEqual(len(self.minnano.calls) + len(self.av_neme.calls), requested)
 
 
 def load_revert():

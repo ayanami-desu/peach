@@ -36,7 +36,7 @@ class ErrorReportingTests(unittest.TestCase):
     def test_local_timezone_and_browser_timezone_are_independent_and_survive_export(self):
         from datetime import datetime, timedelta, timezone
         from zoneinfo import ZoneInfoNotFoundError
-        from peach import diagnostic_context, remote_reporting
+        from peach import diagnostic_context
         moment = datetime(2026, 10, 24, 21, 0, tzinfo=timezone(timedelta(hours=8)))
         with mock.patch('tzlocal.get_localzone_name', return_value='Asia/Taipei'):
             facts = error_reporting.timezone_facts(moment)
@@ -44,10 +44,8 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(facts['utc_offset_minutes'], 480)
         self.assertTrue(facts['local_time'].endswith('+08:00'))
         browser = diagnostic_context.browser({'timezone': 'America/New_York', 'utc_offset_minutes': -240})
-        with mock.patch.object(error_reporting, 'timezone_facts', return_value=facts), \
-                mock.patch.object(remote_reporting, 'capture') as capture:
+        with mock.patch.object(error_reporting, 'timezone_facts', return_value=facts):
             path = error_reporting.local_event('browser-context', browser=browser)
-        capture.assert_not_called()
         record = json.loads(support_bundle.redact_log(path.read_text(encoding='utf-8')))
         self.assertEqual(record['server_timezone'], facts)
         self.assertEqual(record['browser']['timezone'], 'America/New_York')
@@ -227,7 +225,7 @@ class ErrorReportingTests(unittest.TestCase):
             self.assertTrue(any(row['status'] == 'size_limit' for row in manifest['entries']))
             self.assertLessEqual(sum(info.file_size for info in archive.infolist()), 180000)
 
-    def test_scraping_export_rejects_candidate_snapshot_outside_sources_and_remote_download(self):
+    def test_scraping_export_rejects_candidate_snapshot_outside_sources(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         from peach.routes_api import require_auth
@@ -262,8 +260,6 @@ class ErrorReportingTests(unittest.TestCase):
                 self.assertTrue(any(row['name'].startswith('snapshots/') and row['status'] == 'unavailable'
                                     for row in manifest['entries']))
             self.assertEqual(client.post('/api/diagnostics/exports', json={'kind': 'scraping', 'codes': '../secret'}).status_code, 400)
-            remote = TestClient(app, base_url='http://127.0.0.1', client=('192.0.2.55', 1234))
-            self.assertEqual(remote.get('/api/diagnostics/exports').status_code, 403)
 
     def test_processing_export_keeps_recent_bounded_evidence_and_hides_media_names(self):
         from peach.settings_file import PeachConfig
@@ -392,7 +388,7 @@ class ErrorReportingTests(unittest.TestCase):
         state = self.root / 'state'
         state.mkdir()
         for name, content in [('library-processing.json', '{"status":'),
-                              ('runtime-prepare.json', ''), ('standalone-update.json', 'x' * 200)]:
+                              ('media-processing.json', ''), ('drive-sync.json', 'x' * 200)]:
             (state / name).write_text(content, encoding='utf-8')
         with mock.patch.object(error_reporting, 'log_directories', return_value=[]), \
                 mock.patch.object(support_bundle, 'JSON_READ_BYTES', 100), \
@@ -400,8 +396,8 @@ class ErrorReportingTests(unittest.TestCase):
             report = json.loads(archive.read('report.json'))
             entries = {row['name']: row for row in report['logs']}
             self.assertEqual(entries['library-processing.json']['status'], 'unreadable_json')
-            self.assertEqual(entries['runtime-prepare.json']['status'], 'empty_json')
-            self.assertEqual(entries['standalone-update.json']['status'], 'json_size_limit')
+            self.assertEqual(entries['media-processing.json']['status'], 'empty_json')
+            self.assertEqual(entries['drive-sync.json']['status'], 'json_size_limit')
             self.assertFalse(any(name.startswith('processing/') for name in archive.namelist()))
 
     def test_processing_jsonl_export_keeps_record_at_exact_tail_boundary(self):
@@ -458,17 +454,17 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(entries['library-processing-empty.issues.jsonl']['status'], 'empty_jsonl')
         self.assertEqual(entries['library-processing-invalid.issues.jsonl']['status'], 'no_complete_records')
 
-    def test_support_bundle_contains_local_delivery_receipts_without_research_payloads(self):
+    def test_support_bundle_contains_state_evidence_but_not_other_state_files(self):
         from peach.settings_file import PeachConfig
         config = PeachConfig(self.root, self.root / 'config.toml', present=True)
         state = config.directory('state')
         state.mkdir(parents=True)
-        (state / 'remote-reporting-delivery.json').write_text(json.dumps({'errors': {'status': 'accepted', 'status_code': 200}}))
+        (state / 'drive-sync.json').write_text(json.dumps({'gdrive': {'cursor': 'abc'}}))
         (state / 'library-sharing-attempt.json').write_text(json.dumps({'status': 'unknown', 'attempted': True}))
         (state / 'remote-reporting-frequency.json').write_text('private-technical-sample')
         with mock.patch.object(error_reporting, 'log_directories', return_value=[]), \
                 zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes(config=config))) as archive:
-            self.assertEqual(json.loads(archive.read('processing/remote-reporting-delivery.json'))['errors']['status'], 'accepted')
+            self.assertEqual(json.loads(archive.read('processing/drive-sync.json'))['gdrive']['cursor'], 'abc')
             self.assertEqual(json.loads(archive.read('processing/library-sharing-attempt.json'))['status'], 'unknown')
             self.assertNotIn('processing/remote-reporting-frequency.json', archive.namelist())
 
@@ -494,36 +490,35 @@ class ErrorReportingTests(unittest.TestCase):
             self.assertEqual(json.loads(archive.read('covers/feed-cover-attempts/ABC-002.json'))['error_type'], 'Unavailable')
             self.assertEqual(json.loads(archive.read('covers/jav-discovery-metadata.job.json'))['failed_codes'], ['ABC-002'])
 
-    def test_bundle_contains_update_tunnel_rotated_and_startup_evidence_with_invalid_config(self):
+    def test_bundle_contains_rotated_logs_and_state_evidence_with_invalid_config(self):
         from peach import settings_file
         self.logs.mkdir()
-        for name in ('tray-restart.out.log', 'tray-scan.out.log', 'windows-source-sync.log',
-                     'cloudflare-tunnel.log', 'tray.until-20261001.log'):
+        for name in ('server.log', 'errors-7.log', 'errors.until-20261001.log'):
             (self.logs / name).write_text('failure --token private-cli-token\n', encoding='utf-8')
         state = self.root / 'state'
         state.mkdir()
-        (state / 'runtime-prepare.json').write_text(json.dumps({
-            'ok': False, 'steps': [{'name': 'dependencies', 'message': 'failed --password private-password'}]},
-            indent=2), encoding='utf-8')
+        (state / 'drive-sync.json').write_text(json.dumps({
+            'status': 'failed', 'reason': 'upload failed --password private-password'}, indent=2), encoding='utf-8')
         migration = state / 'update-backups' / 'fixture' / 'migration.log'
         migration.parent.mkdir(parents=True)
         migration.write_text('migration failed\n', encoding='utf-8')
         with mock.patch.object(settings_file, 'load_config', side_effect=ValueError('invalid config')), \
                 zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
             names = archive.namelist()
-            self.assertTrue(any('tray.until-' in name for name in names))
-            for name in ('tray-restart.out.log', 'tray-scan.out.log', 'windows-source-sync.log', 'cloudflare-tunnel.log'):
+            self.assertTrue(any('errors.until-' in name for name in names))
+            for name in ('server.log', 'errors-7.log'):
                 self.assertTrue(any(item.endswith('/' + name) for item in names), name)
-            startup = json.loads(archive.read('processing/runtime-prepare.json'))
-            self.assertFalse(startup['ok'])
+            state_evidence = json.loads(archive.read('processing/drive-sync.json'))
+            self.assertEqual(state_evidence['status'], 'failed')
             self.assertIn('updates/update-backups/fixture/migration.log', names)
+            self.assertEqual(json.loads(archive.read('report.json'))['configuration']['status'], 'unavailable')
             contents = '\n'.join(archive.read(name).decode() for name in names)
         for private in ('private-cli-token', 'private-password'):
             self.assertNotIn(private, contents)
 
     def test_one_unreadable_error_log_does_not_hide_other_logs(self):
         self.logs.mkdir()
-        (self.logs / 'tray.log').write_text('service failed\n', encoding='utf-8')
+        (self.logs / 'server.log').write_text('service failed\n', encoding='utf-8')
         (self.logs / 'errors-unreadable.log').write_text('error', encoding='utf-8')
         original = Path.stat
         def stat(path, *args, **kwargs):
@@ -532,7 +527,7 @@ class ErrorReportingTests(unittest.TestCase):
             return original(path, *args, **kwargs)
         with mock.patch.object(Path, 'stat', stat), \
                 zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
-            self.assertTrue(any(name.endswith('/tray.log') for name in archive.namelist()))
+            self.assertTrue(any(name.endswith('/server.log') for name in archive.namelist()))
             report = json.loads(archive.read('report.json'))
         self.assertTrue(any(row['name'] == 'errors-unreadable.log' and row['status'] == 'PermissionError'
                             for row in report['logs']))
@@ -541,8 +536,18 @@ class ErrorReportingTests(unittest.TestCase):
         return [json.loads(line) for path in self.logs.glob("errors-*.log")
                 for line in path.read_text(encoding="utf-8").splitlines()]
 
-    def test_local_context_is_bounded_exported_and_never_sent_remotely(self):
-        from peach import diagnostic_context, remote_reporting
+    def logged_in(self, app, *, address='127.0.0.1', password='valid-private-password'):
+        """设置口令并给这台客户端一个已登记的会话；浏览器错误上报也要登录凭据。"""
+        from fastapi.testclient import TestClient
+        from peach import access
+        policy = access.save(app.state.settings.access_path, password)
+        sessions = access.Sessions(access.sessions_path(app.state.settings.access_path))
+        client = TestClient(app, base_url='http://127.0.0.1', client=(address, 1234))
+        client.cookies.set(access.COOKIE, access.issue(policy, 30, sessions)[0])
+        return client
+
+    def test_local_context_is_bounded_and_exported(self):
+        from peach import diagnostic_context
         from peach.settings_file import PeachConfig
         context = {'user_agent': 'Chrome/150', 'platform': 'Win32', 'native_codecs': {'h264': '', 'hevc': 'probably'},
                    'cookie': 'private-cookie', 'viewport_width': 2 ** 10000, 'connection': {'downlink_mbps': float('inf')}}
@@ -557,11 +562,9 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertNotIn('source_route', media)
         self.assertEqual(media['buffered_ranges'], [[0, 2]])
         self.assertEqual(media['recent_requests'], [{'status': 206, 'duration_ms': 20, 'route': '/stream'}])
-        with mock.patch.object(remote_reporting, 'capture') as capture:
-            for index in range(25):
-                error_reporting.local_event('browser', browser=browser, playback=media, sequence=index)
-            payload = support_bundle.bundle_bytes(config=PeachConfig(self.root, self.root / 'config.toml'))
-        capture.assert_not_called()
+        for index in range(25):
+            error_reporting.local_event('browser', browser=browser, playback=media, sequence=index)
+        payload = support_bundle.bundle_bytes(config=PeachConfig(self.root, self.root / 'config.toml'))
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
             report = json.loads(archive.read('report.json'))
             exported = '\n'.join(archive.read(name).decode() for name in archive.namelist())
@@ -616,33 +619,27 @@ class ErrorReportingTests(unittest.TestCase):
         for raw in ('not-base64', 'x' * 12001, base64.b64encode(b'not-json').decode()):
             self.assertEqual(browser_header(raw)['status'], 'unavailable')
 
-    def test_tool_error_category_survives_path_redaction_and_stays_local(self):
-        from peach import remote_reporting
-        with mock.patch.object(remote_reporting, 'capture') as capture:
-            error_reporting.subprocess_failure('media-probe', tool='ffprobe', returncode=1,
-                stderr=b'C:\\private\\movie.mp4: No such file or directory\n')
+    def test_tool_error_category_survives_path_redaction(self):
+        error_reporting.subprocess_failure('media-probe', tool='ffprobe', returncode=1,
+            stderr=b'C:\\private\\movie.mp4: No such file or directory\n')
         row = self.records()[-1]
         self.assertEqual(row['reason_code'], 'missing_media')
         self.assertNotIn('movie.mp4', str(row))
-        self.assertNotIn('reason_code', capture.call_args.kwargs)
 
     def test_context_snapshots_are_deduplicated_without_spending_the_error_budget(self):
         from fastapi import FastAPI
-        from fastapi.testclient import TestClient
         from types import SimpleNamespace
-        from peach import routes_configuration, remote_reporting
+        from peach import routes_configuration
         app = FastAPI()
         app.include_router(routes_configuration.router)
         app.state.settings = SimpleNamespace(mdns_name='peach', token='', access_path=self.root / 'access.json')
-        client = TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 1234))
+        client = self.logged_in(app)
         path = '/api/diagnostics/client-error'
-        with mock.patch.object(remote_reporting, 'capture') as capture:
-            replies = [client.post(path, json={'kind': 'context', 'message': 'environment',
-                'browser': {'viewport_width': 1280}}) for _ in range(30)]
+        replies = [client.post(path, json={'kind': 'context', 'message': 'environment',
+            'browser': {'viewport_width': 1280}}) for _ in range(30)]
         self.assertTrue(all(reply.status_code == 200 for reply in replies))
         self.assertEqual(sum(reply.json()['recorded'] for reply in replies), 1)
         self.assertEqual(len(self.records()), 1)
-        capture.assert_not_called()
         for index in range(20):
             self.assertEqual(client.post(path, json={'message': f'failure {index}'}).status_code, 200)
         self.assertEqual(client.post(path, json={'message': 'another failure'}).status_code, 429)
@@ -684,7 +681,7 @@ class ErrorReportingTests(unittest.TestCase):
             raise OSError(5, 'password=private-password https://example.com/?token=private-token')
         except OSError as error:
             error.peach_operation = "OpenProcess(desktop)"
-            path = error_reporting.event("tray-handoff", error)
+            path = error_reporting.event("background-job", error)
         row = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(row["exception"][0]["errno"], 5)
         self.assertEqual(row["exception"][0]["operation"], "OpenProcess(desktop)")
@@ -709,7 +706,7 @@ class ErrorReportingTests(unittest.TestCase):
                        "immediate_limit_names": ["KILL_ON_JOB_CLOSE"]},
             "desktop": {"pid": 456, "in_job": True},
             "job_chain": {"status": "unavailable"}, "token": "private-job-token"}
-        error_reporting.event("tray-handoff", error)
+        error_reporting.event("background-job", error)
         with zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
             name = next(name for name in archive.namelist() if 'errors-' in name)
             payload = archive.read(name).decode()
@@ -723,7 +720,7 @@ class ErrorReportingTests(unittest.TestCase):
         (self.root / "config.toml").write_text('secret = "unclosed-private-config', encoding="utf-8")
         (self.root / "ledger.db").write_text("private-database", encoding="utf-8")
         self.logs.mkdir()
-        (self.logs / "tray.log").write_text(
+        (self.logs / "server.log").write_text(
             'Cookie: session=private-session; other=private-cookie\n'
             'Authorization: Bearer private-auth\n'
             'password=private-password\n'
@@ -745,17 +742,17 @@ class ErrorReportingTests(unittest.TestCase):
 
     def test_report_tail_is_bounded_and_records_the_truncation(self):
         self.logs.mkdir()
-        (self.logs / "tray.log").write_bytes(b"discard-this\n" * 20_000 + b"final-error\n")
+        (self.logs / "server.log").write_bytes(b"discard-this\n" * 20_000 + b"final-error\n")
         with zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
-            name = next(name for name in archive.namelist() if name.endswith("tray.log"))
+            name = next(name for name in archive.namelist() if name.endswith("server.log"))
             self.assertLessEqual(len(archive.read(name)), support_bundle.TAIL_BYTES)
             self.assertIn(b"final-error", archive.read(name))
             report = json.loads(archive.read("report.json"))
-            self.assertTrue(next(row for row in report["logs"] if row["name"] == "tray.log")["truncated"])
+            self.assertTrue(next(row for row in report["logs"] if row["name"] == "server.log")["truncated"])
 
     def test_prefixed_cookie_headers_and_arbitrary_absolute_paths_are_redacted(self):
         self.logs.mkdir()
-        (self.logs / "tray.log").write_text(
+        (self.logs / "server.log").write_text(
             '2026-10-15 ERROR Cookie: SEID=private-a; CID=private-b; UID=private-c\n'
             '/data/private-user/movie.mp4\n/srv/private-user/movie.mp4\n', encoding="utf-8")
         with zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
@@ -781,7 +778,7 @@ class ErrorReportingTests(unittest.TestCase):
         self.logs.mkdir()
         row = {"stage": "logging", "message": "Cookie: SEID=private-cookie; CID=private-cid",
                "exception": [{"type": "OSError", "winerror": 5}],
-               "frames": [{"file": "tray.py", "line": 5}], "token": "private-token"}
+               "frames": [{"file": "worker.py", "line": 5}], "token": "private-token"}
         (self.logs / "errors-123.log").write_text(json.dumps(row) + "\n", encoding="utf-8")
         with zipfile.ZipFile(io.BytesIO(support_bundle.bundle_bytes())) as archive:
             name = next(name for name in archive.namelist() if name.endswith("errors-123.log"))
@@ -840,7 +837,7 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertIsNone(emit.call_args.kwargs["source_id"])
 
     def test_failure_dialog_points_to_an_existing_report_and_cli_needs_no_service(self):
-        message = error_reporting.failure_details("tray-handoff", OSError("desktop unavailable"))
+        message = error_reporting.failure_details("startup", OSError("desktop unavailable"))
         self.assertIn("诊断报告", message)
         self.assertEqual(len(list(self.logs.glob("peach-support-*.zip"))), 1)
         destination = self.root / "share.zip"
@@ -850,7 +847,7 @@ class ErrorReportingTests(unittest.TestCase):
         again = self.probe(f"from peach.support_bundle import main; raise SystemExit(main([{str(destination)!r}]))")
         self.assertNotEqual(again.returncode, 0)
 
-    def test_browser_errors_require_same_origin_and_remote_login_while_export_is_local(self):
+    def test_browser_errors_require_same_origin_and_a_valid_login(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         from types import SimpleNamespace
@@ -861,10 +858,13 @@ class ErrorReportingTests(unittest.TestCase):
         app.dependency_overrides[require_auth] = lambda: {}
         app.state.settings = SimpleNamespace(mdns_name="peach", token='', access_path=self.root / 'access.json')
         app.state.mount_reachability = SimpleNamespace(summary=lambda: {})
-        client = TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 1234))
         path = "/api/diagnostics/client-error"
-        self.assertEqual(client.post(path, json={"message": "secret=private-browser"},
-                                     headers={"Origin": "https://other.example"}).status_code, 403)
+        anonymous = TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 1234))
+        self.assertEqual(anonymous.post(path, json={"message": "secret=private-browser"},
+                                        headers={"Origin": "https://other.example"}).status_code, 403)
+        self.assertEqual(anonymous.post(path, json={"message": "secret=private-browser"}).status_code, 401)
+        self.assertEqual([row for row in self.records() if row['stage'] == 'browser'], [])
+        client = self.logged_in(app)
         self.assertEqual(client.post(path, content=b"x" * 20_000).status_code, 413)
         self.assertEqual(client.post(path, json={"message": 5}).status_code, 400)
         self.assertEqual(client.post(path, json={"message": "secret=private-browser", "stack": "at render",
@@ -874,23 +874,18 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(browser["stack"], "at render")
         self.assertEqual(browser['line'], 21)
         self.assertEqual(browser['source_file'], 'app-abcd.js')
-        from peach import remote_reporting
-        with mock.patch.object(remote_reporting, 'send') as send:
-            response = client.post(path, json={'message': 'request cancelled', 'error_name': 'AbortError',
-                                               'stack': 'at peach-app.js:12:34'})
+        response = client.post(path, json={'message': 'request cancelled', 'error_name': 'AbortError',
+                                           'stack': 'at peach-app.js:12:34'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row for row in self.records() if row['stage'] == 'browser'][-1]['error_name'], 'AbortError')
-        send.assert_not_called()
-        with mock.patch.object(remote_reporting, 'capture') as capture:
-            response = client.post(path, json={'kind': 'media', 'message': 'media error',
-                'browser': {'native_codecs': {'h264': ''}}, 'playback': {'code': 4, 'network_state': 3,
-                    'src': 'https://private.example/clip.mp4?token=private-token'}},
-                headers={'User-Agent': 'Chrome/150'})
-            self.assertEqual(response.status_code, 200)
-            response = client.post(path, json={'kind': 'context', 'message': 'browser context',
-                                               'browser': {'platform': 'Win32'}})
-            self.assertEqual(response.status_code, 200)
-        capture.assert_not_called()
+        response = client.post(path, json={'kind': 'media', 'message': 'media error',
+            'browser': {'native_codecs': {'h264': ''}}, 'playback': {'code': 4, 'network_state': 3,
+                'src': 'https://private.example/clip.mp4?token=private-token'}},
+            headers={'User-Agent': 'Chrome/150'})
+        self.assertEqual(response.status_code, 200)
+        response = client.post(path, json={'kind': 'context', 'message': 'browser context',
+                                           'browser': {'platform': 'Win32'}})
+        self.assertEqual(response.status_code, 200)
         media = [row for row in self.records() if 'playback' in row][-1]
         self.assertEqual(media['browser']['user_agent'], 'Chrome/150')
         self.assertEqual(media['playback']['code'], 4)
@@ -909,22 +904,19 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(exported['browser']['native_codecs']['h264'], 'probably')
         self.assertEqual(exported['browser']['client_hints']['fullVersionList'][0]['version'], 'v150.0.1.2')
         self.assertNotIn('private-cookie', str(exported))
+        from peach import access
         remote = TestClient(app, base_url="http://127.0.0.1", client=("192.0.2.55", 1234))
         self.assertEqual(remote.post(path, json={"message": "example"}).status_code, 401)
-        from peach import access
-        empty_policy = access.load(app.state.settings.access_path)
-        empty_policy['key'] = ''
-        remote.cookies.set(access.COOKIE, access.issue(empty_policy, 1)[0])
-        self.assertEqual(remote.post(path, json={'message': 'anonymous'}).status_code, 401)
-        policy = access.save(app.state.settings.access_path, 'valid-private-password')
+        policy = access.load(app.state.settings.access_path)
         sessions = access.Sessions(access.sessions_path(app.state.settings.access_path))
+        remote.cookies.set(access.COOKIE, 'unsigned-session')
+        self.assertEqual(remote.post(path, json={'message': 'anonymous'}).status_code, 401)
         remote.cookies.set(access.COOKIE, access.issue(policy, 1, sessions)[0])
         self.assertEqual(remote.post(path, json={'message': 'phone failed'}).status_code, 200)
         self.assertEqual(remote.post(path, json={'message': 'phone failed'},
                                      headers={'Origin': 'https://other.example'}).status_code, 403)
         remote.cookies.clear()
         self.assertEqual(remote.post(path, json={'message': 'anonymous'}).status_code, 401)
-        self.assertEqual(remote.get("/api/diagnostics/bundle").status_code, 403)
         for _ in range(20):
             response = client.post(path, json={"message": "example"})
         self.assertEqual(response.status_code, 429)
@@ -961,8 +953,7 @@ class ErrorReportingTests(unittest.TestCase):
     def test_probe_error_preserves_exit_code_and_stderr(self):
         from peach import media_probe
         result = subprocess.CompletedProcess(['ffprobe'], 69, b'{}', b'AV1 decoder unavailable')
-        with mock.patch.object(media_probe.subprocess, 'run', return_value=result), \
-                mock.patch.object(media_probe, 'resolve_case_insensitive', str):
+        with mock.patch.object(media_probe.subprocess, 'run', return_value=result):
             measured = media_probe.measure('ffprobe', 23, 'private.mp4')
         self.assertEqual(measured[0], -1)
         event = next(row for row in self.records() if row['stage'] == 'media-probe')
@@ -1051,11 +1042,9 @@ class ErrorReportingTests(unittest.TestCase):
         return loop
 
     def test_connection_cleanup_completes_socket_close_and_server_detach_once(self):
-        from peach import remote_reporting
         error = ConnectionResetError(10054, 'connection reset')
         error.winerror = 10054
-        with mock.patch.object(remote_reporting, 'send') as send:
-            loop = self.asyncio_callback(error, recoverable=True)
+        loop = self.asyncio_callback(error, recoverable=True)
         transport = loop.diagnostic_transport
         self.assertIsNone(transport._sock)
         self.assertIsNone(transport._server)
@@ -1068,16 +1057,12 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(len(self.records()), 1)
         self.assertEqual(transport._protocol.connection_lost.call_count, 1)
         loop.default_exception_handler.assert_not_called()
-        send.assert_not_called()
 
     def test_socket_cleanup_failure_keeps_the_original_exception_and_reports(self):
-        from peach import remote_reporting
         error = ConnectionResetError(10054, 'connection reset')
         error.winerror = 10054
         close_error = OSError(5, 'close failed')
-        with mock.patch.object(remote_reporting, 'send') as send:
-            loop = self.asyncio_callback(error, recoverable=True, close_error=close_error)
-        send.assert_called_once()
+        loop = self.asyncio_callback(error, recoverable=True, close_error=close_error)
         self.assertFalse(loop.diagnostic_transport._called_connection_lost)
         record = self.records()[-1]
         self.assertEqual(record['classification'], 'connection-cleanup-failed')
@@ -1086,12 +1071,9 @@ class ErrorReportingTests(unittest.TestCase):
         loop.default_exception_handler.assert_called_once()
 
     def test_windows_asyncio_connection_cleanup_stays_local_with_safe_context(self):
-        from peach import remote_reporting
         error = ConnectionResetError(10054, 'connection reset')
         error.winerror = 10054
-        with mock.patch.object(remote_reporting, 'send') as send:
-            loop = self.asyncio_callback(error)
-        send.assert_not_called()
+        loop = self.asyncio_callback(error)
         record = self.records()[0]
         self.assertEqual(record['classification'], 'connection-cleanup')
         self.assertEqual(record['asyncio_callback'],
@@ -1107,7 +1089,6 @@ class ErrorReportingTests(unittest.TestCase):
 
     def test_connection_cleanup_closes_real_socket_and_releases_asyncio_server(self):
         import socket
-        from peach import remote_reporting
 
         async def run():
             server = await asyncio.get_running_loop().create_server(asyncio.Protocol, '127.0.0.1', 0)
@@ -1115,13 +1096,11 @@ class ErrorReportingTests(unittest.TestCase):
             try:
                 error = ConnectionResetError(10054, 'connection reset')
                 error.winerror = 10054
-                with mock.patch.object(remote_reporting, 'send') as send:
-                    loop = self.asyncio_callback(error, recoverable=True,
-                        socket_override=accepted, server_override=server)
+                loop = self.asyncio_callback(error, recoverable=True,
+                    socket_override=accepted, server_override=server)
                 self.assertEqual(accepted.fileno(), -1)
                 self.assertEqual(len(server._clients), 0)
                 loop.default_exception_handler.assert_not_called()
-                send.assert_not_called()
             finally:
                 accepted.close()
                 peer.close()
@@ -1132,12 +1111,9 @@ class ErrorReportingTests(unittest.TestCase):
 
     def test_shutdown_rejected_during_connection_cleanup_is_the_same_cleanup(self):
         """对端先断开时，清理回调里的 `shutdown` 报 WinError 10022（普通 OSError），收尾照常完成。"""
-        from peach import remote_reporting
         error = OSError(22, 'invalid argument')
         error.winerror = 10022
-        with mock.patch.object(remote_reporting, 'send') as send:
-            loop = self.asyncio_callback(error, recoverable=True)
-        send.assert_not_called()
+        loop = self.asyncio_callback(error, recoverable=True)
         record = self.records()[-1]
         self.assertEqual(record['classification'], 'connection-cleanup')
         self.assertTrue(record['cleanup_recovered'])
@@ -1149,21 +1125,18 @@ class ErrorReportingTests(unittest.TestCase):
         """按标准库 `_start_serving` 的形状调处理器：监听套接字仍有效时先报告，随后它会关掉监听。"""
         import socket
         from asyncio import trsock
-        from peach import remote_reporting
         listener = socket.create_server(('127.0.0.1', 0))
         self.addCleanup(listener.close)
         loop = mock.Mock()
-        with mock.patch.object(remote_reporting, 'send') as send:
-            error_reporting.asyncio_handler(loop, {'message': 'Accept failed on a socket', 'exception': error,
-                                                   'socket': trsock.TransportSocket(listener)}, **handler_options)
-        return loop, send
+        error_reporting.asyncio_handler(loop, {'message': 'Accept failed on a socket', 'exception': error,
+                                               'socket': trsock.TransportSocket(listener)}, **handler_options)
+        return loop
 
     def test_a_client_gone_before_accept_completes_is_recorded_locally_with_the_closed_listener(self):
         """WinError 64：客户端在 AcceptEx 完成前断开。处理器返回后标准库会关掉监听套接字，记录要写明。"""
         error = OSError(22, 'The specified network name is no longer available')
         error.winerror = 64
-        loop, send = self.accept_failure(error)
-        send.assert_not_called()
+        loop = self.accept_failure(error)
         loop.default_exception_handler.assert_not_called()
         record = self.records()[-1]
         self.assertEqual(record['stage'], 'unhandled-asyncio')
@@ -1171,11 +1144,10 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertTrue(record['listener_closed'])
         self.assertEqual(record['exception'][0]['winerror'], 64)
 
-    def test_other_accept_failures_keep_remote_evidence_and_the_default_handler(self):
+    def test_other_accept_failures_keep_the_default_handler(self):
         error = OSError(24, 'too many open files')
         error.winerror = 10024
-        loop, send = self.accept_failure(error)
-        send.assert_called_once()
+        loop = self.accept_failure(error)
         self.assertNotIn('classification', self.records()[-1])
         loop.default_exception_handler.assert_called_once()
 
@@ -1183,8 +1155,7 @@ class ErrorReportingTests(unittest.TestCase):
         error = OSError(24, 'too many open files')
         error.winerror = 10024
         uvicorn_server = mock.Mock()
-        loop, send = self.accept_failure(error, uvicorn_server=uvicorn_server)
-        send.assert_called_once()
+        loop = self.accept_failure(error, uvicorn_server=uvicorn_server)
         loop.default_exception_handler.assert_called_once()
         loop.create_task.assert_not_called()
 
@@ -1192,8 +1163,7 @@ class ErrorReportingTests(unittest.TestCase):
         error = OSError(22, 'The specified network name is no longer available')
         error.winerror = 64
         uvicorn_server = mock.Mock(servers=[])
-        loop, send = self.accept_failure(error, uvicorn_server=uvicorn_server)
-        send.assert_not_called()
+        loop = self.accept_failure(error, uvicorn_server=uvicorn_server)
         loop.create_task.assert_not_called()
         record = self.records()[-1]
         self.assertTrue(record['listener_closed'])
@@ -1205,7 +1175,6 @@ class ErrorReportingTests(unittest.TestCase):
         import socket
         import time
         import uvicorn
-        from peach import remote_reporting
 
         async def app(scope, receive, send):
             await send({'type': 'http.response.start', 'status': 204, 'headers': []})
@@ -1245,8 +1214,7 @@ class ErrorReportingTests(unittest.TestCase):
 
             loop._proactor.accept = abort_once
             try:
-                with mock.patch.object(remote_reporting, 'send') as send, \
-                        mock.patch.object(socket, 'create_server', side_effect=bind_failure) \
+                with mock.patch.object(socket, 'create_server', side_effect=bind_failure) \
                         if bind_failure else contextlib.nullcontext():
                     first = await request(port)
                     again = await request(port, within=5)
@@ -1255,38 +1223,33 @@ class ErrorReportingTests(unittest.TestCase):
             finally:
                 server.should_exit = True
                 await asyncio.wait_for(serving, 10)
-            return first, again, server, send
+            return first, again, server
 
         return asyncio.run(run(), loop_factory=asyncio.ProactorEventLoop)
 
     @unittest.skipUnless(os.name == 'nt', 'Proactor 事件循环只在 Windows 上')
     def test_a_listener_closed_by_an_aborted_accept_accepts_connections_again(self):
-        first, again, server, send = self.serve_with_accept_abort()
+        first, again, server = self.serve_with_accept_abort()
         self.assertEqual(first, 204)
         self.assertEqual(again, 204)
         self.assertEqual(len(server.servers), 2)
-        send.assert_not_called()
         record = next(row for row in self.records() if row.get('classification') == 'accept-aborted')
         self.assertTrue(record['listener_closed'])
         self.assertTrue(record['listener_rearm'])
 
     @unittest.skipUnless(os.name == 'nt', 'Proactor 事件循环只在 Windows 上')
     def test_a_listener_that_cannot_be_bound_again_stops_the_service_and_reports(self):
-        first, again, server, send = self.serve_with_accept_abort(bind_failure=OSError(10048, 'address in use'))
+        first, again, server = self.serve_with_accept_abort(bind_failure=OSError(10048, 'address in use'))
         self.assertEqual(first, 204)
         self.assertIsNone(again)
         self.assertTrue(server.should_exit)
-        send.assert_called_once()
         record = self.records()[-1]
         self.assertEqual(record['classification'], 'accept-listener-lost')
 
     def test_asyncio_tls_cleanup_keeps_protocol_class_after_application_detaches(self):
-        from peach import remote_reporting
         error = ConnectionResetError(10054, 'connection reset')
         error.winerror = 10054
-        with mock.patch.object(remote_reporting, 'send') as send:
-            loop = self.asyncio_callback(error, cleared=True)
-        send.assert_not_called()
+        loop = self.asyncio_callback(error, cleared=True)
         record = self.records()[-1]
         self.assertEqual(record['asyncio_protocol'], 'asyncio.sslproto.SSLProtocol')
         self.assertTrue(record['asyncio_tls'])
@@ -1294,7 +1257,6 @@ class ErrorReportingTests(unittest.TestCase):
         loop.default_exception_handler.assert_called_once()
 
     def test_asyncio_connection_faults_require_the_exact_cleanup_signature(self):
-        from peach import remote_reporting
         cases = [
             ({}, 10053, ConnectionResetError),
             ({}, 10054, RuntimeError),
@@ -1306,33 +1268,30 @@ class ErrorReportingTests(unittest.TestCase):
             with self.subTest(options=options, code=code, error_type=error_type):
                 error = error_type(code, 'network failure')
                 error.winerror = code
-                with mock.patch.object(remote_reporting, 'send') as send:
-                    loop = self.asyncio_callback(error, **options)
-                send.assert_called_once()
+                loop = self.asyncio_callback(error, **options)
                 self.assertNotIn('classification', self.records()[-1])
                 loop.default_exception_handler.assert_called_once()
 
-    def test_asyncio_cleanup_with_linked_failure_keeps_remote_evidence(self):
-        from peach import remote_reporting
+    def test_asyncio_cleanup_with_linked_failure_keeps_no_classification(self):
         for attribute in ('__cause__', '__context__'):
             with self.subTest(attribute=attribute):
                 error = ConnectionResetError(10054, 'connection reset')
                 error.winerror = 10054
                 setattr(error, attribute, ValueError('linked failure'))
-                with mock.patch.object(remote_reporting, 'send') as send:
-                    self.asyncio_callback(error)
-                send.assert_called_once()
-                self.assertNotIn('classification', self.records()[-1])
-                self.assertNotIn('asyncio_protocol', json.dumps(send.call_args.args[1]))
+                self.asyncio_callback(error)
+                record = self.records()[-1]
+                self.assertEqual(record['stage'], 'unhandled-asyncio')
+                self.assertNotIn('classification', record)
 
     def test_connection_reset_in_business_stage_is_reported_without_asyncio_metadata(self):
-        from peach import remote_reporting
         error = ConnectionResetError(10054, 'business network failure')
         error.winerror = 10054
-        with mock.patch.object(remote_reporting, 'send') as send:
-            error_reporting.event('background-job', error)
-        send.assert_called_once()
-        self.assertEqual(send.call_args.args[1]['tags']['winerror'], '10054')
+        error_reporting.event('background-job', error)
+        row = self.records()[-1]
+        self.assertEqual(row['stage'], 'background-job')
+        self.assertEqual(row['exception'][0]['winerror'], 10054)
+        self.assertNotIn('asyncio_protocol', row)
+        self.assertNotIn('classification', row)
 
     def test_unraisable_errors_and_logging_exceptions_have_persistent_records(self):
         code = """
@@ -1355,28 +1314,6 @@ except ValueError:
         self.assertEqual(result.returncode, 0, result.stderr)
         stages = {row["stage"] for row in self.records()}
         self.assertTrue({"unraisable", "logging"} <= stages)
-
-    def test_packaged_tray_import_failure_saves_a_report_before_optional_dependencies(self):
-        code = f"""
-import builtins, ctypes, runpy, sys
-from pathlib import Path
-original = builtins.__import__
-def import_module(name, *args, **kwargs):
-    if name == 'pystray':
-        raise ModuleNotFoundError('tray dependency unavailable')
-    return original(name, *args, **kwargs)
-builtins.__import__ = import_module
-if sys.platform == 'win32':
-    ctypes.windll.user32.MessageBoxW = lambda _, message, *rest: Path({str(self.root / 'dialog.txt')!r}).write_text(message, encoding='utf-8')
-sys.argv = ['Peach.exe']
-runpy.run_path({str(ROOT / 'scripts/build_app_entry.py')!r}, run_name='__main__')
-"""
-        result = self.probe(code)
-        self.assertEqual(result.returncode, 1)
-        self.assertTrue(list(self.logs.glob("peach-support-*.zip")))
-        self.assertTrue(any(row["stage"] == "tray-import" for row in self.records()))
-        if sys.platform == "win32":
-            self.assertIn("诊断报告", (self.root / "dialog.txt").read_text(encoding="utf-8"))
 
     def test_offline_export_creates_its_log_directory_on_a_fresh_machine(self):
         result = self.probe("from peach.support_bundle import main; raise SystemExit(main())")

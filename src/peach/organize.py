@@ -1,34 +1,33 @@
-"""按模板整理文件名与目录：生成计划、执行、回滚（ADR-0039）。
+"""按模板整理网盘上的文件名与目录：生成计划、执行、回滚（ADR-0039）。
 
 三件事在一个模块里，因为它们共用同一份判据：什么算「会变的一行」、目标路径怎么算出来、
 哪些行必须跳过。散开写的下场是预览说会改、执行时又按另一套规则跳过，而用户手上那份
 CSV 于是变成一份不准的清单。
 
-顺序是固定的，和 `scripts/flatten_release_dirs.py` 一致：先备份 SQLite，再动文件，最后
-改账本；账本写失败就把文件名改回去。反过来先改账本会留下一批指向不存在路径的行。
+顺序是固定的：先备份 SQLite，再让网盘改名/移动，最后改账本。网盘改成功而账本写失败时
+把名字改回去；反过来先改账本会留下一批指向不存在文件的条目。
 
-路径一律按账本口径（Windows 形态）计算，真正动盘时才由 `platform.translate_ledger_path`
-翻译成本机路径。macOS 上因此也能生成和 Windows 完全一样的计划。
+账本路径一律是展示口径（`gdrive:/Movies/a.mp4`），只由网盘目录名拼出来，不翻译成本机
+路径：这台机器上根本没有那份文件。
 """
 from __future__ import annotations
 
 import json
-import ntpath
-import os
+import posixpath
 import sqlite3
 import time
-from collections.abc import Callable, Iterable, Sequence
-from contextlib import contextmanager
-from pathlib import Path, PureWindowsPath
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from .catalog_rules import is_jav_code, is_uncensored_release, normalise_code_key, part_marker
-from .jobs import ACTIVE_ASSET_SQL
-from .task_retry import transient_delay
-from .organize_templates import MAX_PATH, TemplateError, clean_filename, render, validate_template
-from .platform import (is_windows_path, location_mounts, location_roots, resolve_root, root_online,
-                       translate_ledger_path, within_root)
-from .review_csv import write_rows
+from .drive_provider import (
+    DriveAuthRequired, DriveError, DriveForbidden, DriveNotFound, DriveUnavailable,
+)
 from .fsutil import atomic_write_text
+from .jobs import ACTIVE_ASSET_SQL
+from .organize_templates import MAX_PATH, TemplateError, clean_filename, render, validate_template
+from .review_csv import write_rows
+from .task_retry import transient_delay
 
 #: 计划 CSV 的列。`reason` 只在 `action=skip` 时有值。
 PLAN_FIELDS = ["asset_id", "location", "current_path", "target_path", "action", "reason"]
@@ -47,64 +46,17 @@ PRESETS: tuple[dict[str, str], ...] = (
 )
 
 #: 跳过原因的固定写法。界面按这几个键分组计数，所以它们是契约的一部分。
-SKIP_OFFLINE = "来源未挂载"
+SKIP_NOT_CONNECTED = "网盘未接入"
 SKIP_MISSING_FIELD = "字段缺失"
-SKIP_OUTSIDE_ROOT = "不在来源根内"
+SKIP_OUTSIDE_SCOPE = "不在整理范围内"
 SKIP_TARGET_EXISTS = "目标已存在"
-SKIP_CROSS_VOLUME = "跨盘"
+SKIP_TARGET_FOLDER = "目标目录不存在"
 SKIP_TOO_LONG = "路径过长"
-
-
-#: 挂载上的 `os.rename` 证明不了云端真的改了名的来源：PikPak 挂载对大文件常报 WinError 50，
-#: 回报成功时官方目录也可能没变。这些来源的改名只交给显式注入的官方核验实现。
-VERIFIED_RENAME_LOCATIONS = frozenset({"pikpak"})
-_verified_renames: dict[str, Callable[[str, str], None]] = {}
+SKIP_NO_REMOTE_ID = "资产没有网盘标识"
 
 
 class OrganizeError(ValueError):
     """整理本身拒绝执行。消息直接给用户看；接口按参数错误回 400。"""
-
-
-class UnverifiedRename(OSError):
-    """来源的改名须经官方核验，而当前进程没有注入核验通道。"""
-
-
-@contextmanager
-def verified_renames(location: str, rename: Callable[[str, str], None]):
-    """在这段上下文里，`location` 的改名交给 `rename`（它自己确认云端结果）。"""
-    if location in _verified_renames:
-        raise RuntimeError(f"来源 {location} 已注入核验改名")
-    _verified_renames[location] = rename
-    try:
-        yield
-    finally:
-        _verified_renames.pop(location, None)
-
-
-def _location_of(raw: str) -> str | None:
-    """账本路径或本机挂载路径属于哪个来源。"""
-    location, _index, _tail = resolve_root(raw, location_roots())
-    if location is None and not is_windows_path(raw):
-        local = Path(raw)
-        for name, mounts in location_mounts().items():
-            if any(within_root(local, mount) for mount in mounts):
-                return name
-    return location
-
-
-def unverified_location(location: str | None) -> bool:
-    """这个来源的改名须经官方核验，而当前进程没有注入。"""
-    return location in VERIFIED_RENAME_LOCATIONS and location not in _verified_renames
-
-
-def refuse_unverified(paths: Iterable[str]) -> None:
-    """整批动盘之前的门槛：涉及须核验来源而没有核验通道时整批拒绝，一个文件都不动。"""
-    locations = [_location_of(str(path)) for path in paths]
-    blocked = sorted({location for location in locations
-                      if unverified_location(location)})
-    if blocked:
-        raise OrganizeError(f"来源 {'、'.join(blocked)} 的挂载改名无法核验云端结果，整批未执行；"
-                            "须经官方核验通道（如 organize_library_dirs.py --pikpak-webdav）")
 
 
 def _definition(width, height) -> str:
@@ -127,7 +79,7 @@ def _definition(width, height) -> str:
 def placeholder_values(row, performers: Sequence[str] = ()) -> dict[str, str]:
     """一行资产的占位符取值，全部来自 approved 真相字段。
 
-    候选表一个都不查：整理会改文件系统，而文件系统上没有地方记「这个名字是猜的」。
+    候选表一个都不查：整理会让网盘上的名字变掉，而账本里没有地方记「这个名字是猜的」。
     """
     code = str(row["code"] or "")
     name = str(row["name"] or "")
@@ -188,54 +140,60 @@ def _extension(name: str) -> str:
     return f".{ext}" if dot and stem else ""
 
 
-def scope_path(location: str, path: str = '', roots=None) -> str:
+def _prefix(location: str) -> str:
+    """账本路径的来源前缀：`gdrive:/`。"""
+    return f"{location}:/"
+
+
+def segments_of(location: str, path: str) -> tuple[str, ...]:
+    """账本路径 → 网盘上的目录名与文件名。"""
+    text = str(path or "").strip()
+    head, found, tail = text.partition(":/")
+    if not found or head != location:
+        raise OrganizeError(f"路径不属于 {location}：{text or '(空)'}")
+    parts = tuple(part for part in tail.split("/") if part not in ("", "."))
+    if not parts or ".." in parts:
+        raise OrganizeError(f"路径不合法：{text}")
+    return parts
+
+
+def ledger_path(location: str, segments: Sequence[str]) -> str:
+    """网盘目录名与文件名 → 账本路径。"""
+    return _prefix(location) + "/".join(str(part) for part in segments)
+
+
+def scope_path(location: str, path: str = '') -> str:
     """将指定目录核对并转换为账本路径；空值表示整个来源。"""
     if not isinstance(path, str):
         raise OrganizeError('整理路径必须是目录路径')
-    text = path.strip()
+    text = path.strip().rstrip('/')
     if not text:
         return ''
-    if '..' in PureWindowsPath(text).parts or '\x00' in text:
-        raise OrganizeError('整理路径不能包含上级目录跳转或空字符')
-    declared = location_roots() if roots is None else roots
-    if resolve_root(text, declared)[0] != location:
-        local = Path(text)
-        if local.is_absolute():
-            for index, mount in enumerate(location_mounts().get(location, ())):
-                if within_root(local, mount) and index < len(declared.get(location, ())):
-                    tail = local.resolve().relative_to(mount.resolve())
-                    text = str(PureWindowsPath(declared[location][index], *tail.parts))
-                    break
-    candidate = PureWindowsPath(text)
-    if not candidate.is_absolute() or '..' in candidate.parts:
-        raise OrganizeError('整理路径须为所选来源内的绝对目录路径，不能包含上级目录跳转')
-    canonical = ntpath.normpath(text)
-    if resolve_root(canonical, declared)[0] != location:
-        raise OrganizeError('整理路径不在所选来源内')
-    return canonical
+    if '\x00' in text:
+        raise OrganizeError('整理路径不能包含空字符')
+    return ledger_path(location, segments_of(location, text))
 
 
 def build_plan(connection: sqlite3.Connection, *, location: str,
                file_template: str = "", dir_template: str = "",
-               roots=None, online: bool | None = None,
+               connected: bool = True,
                asset_ids: Sequence[int] | None = None, path: str = '') -> dict:
     """按目录范围与可选模板生成逐文件整理计划。
 
-    返回 `{"rows": [...], "counts": {...}}`：`rows` 只含会变的行与被跳过的行，
-    已经就是目标名字的行只进 `counts["unchanged"]`——几万行原样列出来，用户要找的
-    那几百行反而看不见了。
+    返回 `{"rows": [...], "counts": {...}, "reasons": {...}}`：`rows` 只含会变的行与被
+    跳过的行，已经就是目标名字的行只进 `counts["unchanged"]`——几万行原样列出来，用户
+    要找的那几百行反而看不见了。
 
-    存在性只用挂载判定（`root_online`），不逐行 `stat`：115 与 PikPak 的挂载上那是
-    一次网络往返。撞名在执行那一步 `rename` 之前当场判（ADR-0039）。
+    这里只比账本，不问网盘：目标目录在不在、名字撞不撞车都由执行那一步当场判，
+    因为预览一次要过几万行，逐行列目录是一天的事。
     """
     file_template = validate_template(file_template)
     dir_template = validate_template(dir_template, directory=True)
-    declared = dict(location_roots() if roots is None else roots)
-    selected_path = scope_path(location, path, declared)
+    selected_path = scope_path(location, path)
     rows = _rows(connection, location, asset_ids)
     if selected_path:
-        selected = PureWindowsPath(selected_path)
-        rows = [row for row in rows if PureWindowsPath(row['path']).is_relative_to(selected)]
+        prefix = selected_path.rstrip('/') + '/'
+        rows = [row for row in rows if str(row['path']).startswith(prefix)]
     counts: dict[str, int] = {"total": len(rows), "unchanged": 0, "change": 0, "skip": 0}
     reasons: dict[str, int] = {}
     plan: list[dict] = []
@@ -247,13 +205,11 @@ def build_plan(connection: sqlite3.Connection, *, location: str,
                      "current_path": str(row["path"]), "target_path": target,
                      "action": "skip", "reason": reason})
 
-    root_states = None
-    if online is None:
-        root_states = [root_online(_media_path(root)) for root in declared.get(location, ())]
-        online = any(root_states)
-    if not online:
+    if not rows:
+        return {"rows": plan, "counts": counts, "reasons": reasons}
+    if not connected:
         for row in rows:
-            skip(row, SKIP_OFFLINE)
+            skip(row, SKIP_NOT_CONNECTED)
         return {"rows": plan, "counts": counts, "reasons": reasons}
 
     performers = _performers(connection, location)
@@ -264,16 +220,16 @@ def build_plan(connection: sqlite3.Connection, *, location: str,
 
     for row in rows:
         path = str(row["path"])
-        matched, index, _tail = resolve_root(path, declared)
-        if matched != location or index < 0:
-            skip(row, SKIP_OUTSIDE_ROOT)
+        try:
+            parts = segments_of(location, path)
+        except OrganizeError:
+            skip(row, SKIP_OUTSIDE_SCOPE)
             continue
-        root = declared[location][index]
-        if root_states is not None and not root_states[index]:
-            skip(row, SKIP_OFFLINE)
+        current_dir = parts[:-1]
+        if selected_path and not path.startswith(selected_path.rstrip('/') + '/'):
+            skip(row, SKIP_OUTSIDE_SCOPE)
             continue
         values = placeholder_values(row, performers.get(int(row["id"]), []))
-        current_dir = ntpath.dirname(path)
         target_dir = current_dir
         missing: set[str] = set()
         if dir_template:
@@ -282,8 +238,10 @@ def build_plan(connection: sqlite3.Connection, *, location: str,
             if not rendered:
                 skip(row, SKIP_MISSING_FIELD)
                 continue
-            target_dir = ntpath.join(selected_path or root, *rendered.split("/"))
-        name = str(row["name"] or ntpath.basename(path))
+            # 落在整理范围顶上；没给范围就落在来源的第一层目录里，与扫描起点同名。
+            base = segments_of(location, selected_path) if selected_path else parts[:1]
+            target_dir = (*base, *[part for part in rendered.split("/") if part])
+        name = str(row["name"] or parts[-1])
         target_name = clean_filename(name)
         if file_template:
             rendered, absent = render(file_template, values)
@@ -295,12 +253,9 @@ def build_plan(connection: sqlite3.Connection, *, location: str,
         if missing:
             skip(row, SKIP_MISSING_FIELD)
             continue
-        target = ntpath.join(target_dir, target_name)
+        target = ledger_path(location, (*target_dir, target_name))
         if target == path:
             counts["unchanged"] += 1
-            continue
-        if ntpath.splitdrive(target)[0].casefold() != ntpath.splitdrive(path)[0].casefold():
-            skip(row, SKIP_CROSS_VOLUME, target)
             continue
         if len(target) > MAX_PATH:
             skip(row, SKIP_TOO_LONG, target)
@@ -315,7 +270,7 @@ def build_plan(connection: sqlite3.Connection, *, location: str,
         plan.append({
             "asset_id": row["id"], "location": location, "current_path": path,
             "target_path": target,
-            "action": "rename" if target_dir == current_dir else "move", "reason": "",
+            "action": "rename" if tuple(target_dir) == current_dir else "move", "reason": "",
         })
     return {"rows": plan, "counts": counts, "reasons": reasons}
 
@@ -339,42 +294,95 @@ def latest_batch(root: Path | str) -> Path | None:
     return logs[-1] if logs else None
 
 
-def _media_path(raw):
-    from .smb_media import resolve
-    return resolve(raw) or translate_ledger_path(raw)
+class _Listing:
+    """一个来源的目录列举缓存。
 
-
-def _rename(source: str, target: str) -> None:
-    """按账本路径改名，真正动盘时翻译成本机路径。
-
-    须核验来源（`VERIFIED_RENAME_LOCATIONS`）交给注入的官方改名；没有注入时拒绝。
+    一次执行里同一批文件的父目录往往就那几个（按厂牌、按年建目录之后更是如此），
+    每行都重新列一遍目录会让整批整理多出成百上千次往返。改完一个目录就把它作废。
     """
-    location = _location_of(str(source))
-    if location in VERIFIED_RENAME_LOCATIONS:
-        verified = _verified_renames.get(location)
-        if verified is None:
-            raise UnverifiedRename(f"来源 {location} 的挂载改名无法核验云端结果，须经官方核验通道")
-        verified(str(source), str(target))
-        return
-    from .smb_media import resolve
-    remote_source, remote_target = resolve(source), resolve(target)
-    if remote_source is not None or remote_target is not None:
-        if remote_source is None or remote_target is None:
-            raise OSError('SMB 整理仅支持同一媒体根目录')
-        remote_target.parent.mkdir(parents=True, exist_ok=True)
-        remote_source.rename(remote_target)
-        return
-    local_source = translate_ledger_path(source)
-    local_target = translate_ledger_path(target)
-    local_target.parent.mkdir(parents=True, exist_ok=True)
-    os.rename(local_source, local_target)
+
+    def __init__(self, provider, root_ids: Sequence[str]):
+        self.provider = provider
+        self.root_ids = tuple(str(value) for value in root_ids)
+        self._children: dict[str, list] = {}
+        self._roots: dict[str, str] | None = None
+
+    def children(self, parent_id: str) -> list:
+        cached = self._children.get(parent_id)
+        if cached is None:
+            entries: list = []
+            cursor = None
+            while True:
+                page, cursor = self.provider.list_folder(parent_id, cursor)
+                entries.extend(page)
+                if cursor is None:
+                    break
+            cached = self._children[parent_id] = entries
+        return cached
+
+    def forget(self, parent_id: str) -> None:
+        self._children.pop(parent_id, None)
+
+    def roots(self) -> dict[str, str]:
+        """扫描起点的显示名 → 网盘目录 id。起点 id 只存在设置里，名字得问一次网盘。"""
+        if self._roots is None:
+            self._roots = {}
+            for root_id in self.root_ids:
+                self._roots[self.provider.entry(root_id).name] = root_id
+        return self._roots
+
+    def folder_id(self, parts: Sequence[str]) -> str | None:
+        """目录名 → 目录 id；有一层不存在就返回 None（网盘上没有建目录的通道）。
+
+        `parts` 是账本路径里的目录部分，第一层是扫描起点自己的名字；只有一个起点时
+        名字对不上也认它，免得用户重命名过起点目录之后整个整理都动不了。
+        """
+        roots = self.roots()
+        if not parts:
+            return next(iter(roots.values()), None)
+        parent = roots.get(parts[0])
+        if parent is None and len(roots) == 1:
+            parent = next(iter(roots.values()))
+        if parent is None:
+            return None
+        for part in parts[1:]:
+            found = None
+            for entry in self.children(parent):
+                if entry.folder and entry.name == part:
+                    found = entry.remote_id
+                    break
+            if found is None:
+                return None
+            parent = found
+        return parent
+
+    def occupant(self, parent_id: str, name: str) -> str | None:
+        """这个目录里已经叫这个名字的条目。"""
+        for entry in self.children(parent_id):
+            if entry.name.casefold() == name.casefold():
+                return entry.remote_id
+        return None
+
+
+def _listing(drive, location: str) -> _Listing:
+    """这个来源的目录缓存。没接入网盘或没配起点时，告诉用户缺的是哪一样。"""
+    if drive is None:
+        raise OrganizeError("还没有接入网盘，整理无处执行")
+    try:
+        provider = drive.provider(location)
+        roots = drive.roots(location)
+    except DriveError as error:
+        raise OrganizeError(str(error)) from error
+    if not roots:
+        raise OrganizeError("这个来源还没有指定扫描起点，先到设置页选一个网盘目录")
+    return _Listing(provider, roots)
 
 
 def _update_row(connection: sqlite3.Connection, asset_id: int,
                 old_path: str, new_path: str) -> int:
     return connection.execute(
         "UPDATE asset SET path=?,name=? WHERE id=? AND path=?",
-        (new_path, ntpath.basename(new_path), int(asset_id), old_path),
+        (new_path, posixpath.basename(new_path), int(asset_id), old_path),
     ).rowcount
 
 
@@ -388,30 +396,52 @@ class MoveFailure(str):
         return value
 
 
-def _move_one(connection: sqlite3.Connection, asset_id: int,
-              old_path: str, new_path: str) -> str:
-    """动一个文件并同步账本；返回 `ok` 或跳过／失败原因。
+def _failure(error: DriveError) -> str:
+    """把网盘异常翻成界面上能读的一句，并标出哪些可以重试。"""
+    if isinstance(error, DriveNotFound):
+        return "网盘上已经没有这个文件"
+    if isinstance(error, DriveForbidden):
+        return "网盘账号没有这个文件的权限"
+    if isinstance(error, DriveAuthRequired):
+        return "网盘授权已失效，重新授权后再整理"
+    if isinstance(error, DriveUnavailable):
+        return MoveFailure(f"网盘暂时不可用：{error}", retry_after=transient_delay(error))
+    return f"网盘拒绝了这次改名：{error}"
 
-    账本写失败就把文件改回去：反过来留下的是一条指向不存在路径的行，而它看起来
+
+def _move_one(drive, connection: sqlite3.Connection, asset_id: int,
+              old_path: str, new_path: str, listing: _Listing | None = None) -> str:
+    """把一个文件在网盘上改名/移动并同步账本；返回 `ok` 或跳过／失败原因。
+
+    账本写失败就把名字改回去：反过来留下的是一条指向不存在文件的记录，而它看起来
     和正常的行没有任何区别。
     """
-    if ntpath.splitdrive(old_path)[0].casefold() != ntpath.splitdrive(new_path)[0].casefold():
-        # 计划那一步已经拦过一次。这里再拦是因为执行接受的是一份计划数据，而计划可以
-        # 来自命令行、来自一份被人编辑过的 CSV；跨盘「改名」在这台机器上会退化成
-        # 拷贝加删除，中断就是半个文件。
-        return SKIP_CROSS_VOLUME
-    local_source = _media_path(old_path)
-    local_target = _media_path(new_path)
-    if not local_source.exists():
-        return "源文件不存在"
-    case_only = old_path.casefold() == new_path.casefold()
-    if local_target.exists() and not (
-            case_only and isinstance(local_source, Path) and local_source.samefile(local_target)):
-        return SKIP_TARGET_EXISTS
+    location = str(new_path).partition(":")[0]
+    listing = listing or _listing(drive, location)
+    provider = listing.provider
+    current = connection.execute(
+        "SELECT remote_id,path,disposal FROM asset WHERE id=?", (int(asset_id),)).fetchone()
+    if current is None or current[1] != old_path:
+        return "数据库里这一行已经变了"
+    if current[2] is not None:
+        return "资产已不在馆藏，未执行整理"
+    if not current[0]:
+        return SKIP_NO_REMOTE_ID
     try:
-        _rename(old_path, new_path)
-    except OSError as error:
-        return MoveFailure(f"改名失败：{error.strerror or error}", retry_after=transient_delay(error))
+        target_parts = segments_of(location, new_path)
+        parent = listing.folder_id(target_parts[:-1])
+        if parent is None:
+            return SKIP_TARGET_FOLDER
+        name = target_parts[-1]
+        occupant = listing.occupant(parent, name)
+        if occupant is not None and occupant != current[0]:
+            return SKIP_TARGET_EXISTS
+        provider.move(str(current[0]), parent, name)
+        listing.forget(parent)
+    except DriveError as error:
+        return _failure(error)
+    except OrganizeError as error:
+        return str(error)
     try:
         if not _update_row(connection, asset_id, old_path, new_path):
             raise OrganizeError("数据库里这一行已经变了")
@@ -419,56 +449,73 @@ def _move_one(connection: sqlite3.Connection, asset_id: int,
     except Exception as error:
         connection.rollback()
         try:
-            _rename(new_path, old_path)
+            old_parts = segments_of(location, old_path)
+            back = listing.folder_id(old_parts[:-1])
+            if back is None:
+                raise DriveNotFound(old_path)
+            provider.move(str(current[0]), back, old_parts[-1])
+            listing.forget(back)
             return f"数据库写入失败，已改回原名：{error}"
-        except OSError:
+        except DriveError:
             return f"数据库写入失败且改不回原名，需要人工处理：{error}"
     return "ok"
 
 
-def apply_plan(connection: sqlite3.Connection, rows: Sequence[dict], *,
+def apply_plan(drive, connection: sqlite3.Connection, rows: Sequence[dict], *,
                generated_root: Path | str, progress: Callable[..., None] | None = None,
                stamp: str | None = None) -> dict:
-    """执行计划，逐条动文件并同步账本；失败的行单独报，不影响其余行。
+    """执行计划，逐条让网盘改名/移动并同步账本；失败的行单独报，不影响其余行。
 
     调用方必须在拿到可写连接之前完成 SQLite 备份（`scripting.open_for_write` 与
-    `web_organize` 都是这么做的）。这里只负责动盘、写账本和留下批次日志。
+    `web_organize` 都是这么做的）。这里只负责动网盘、写账本和留下批次日志。
     """
     movable = [row for row in rows if row.get("action") in {"rename", "move"}]
-    refuse_unverified(path for row in movable for path in (row["current_path"], row["target_path"]))
-    log_path = batch_log_dir(generated_root) / (
-        f"organize-{stamp or time.strftime('%Y%m%d-%H%M%S')}.json")
+    stamp = stamp or time.strftime("%Y%m%d-%H%M%S")
+    log_path = batch_log_dir(generated_root) / f"organize-{stamp}.json"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    previous = json.loads(log_path.read_text(encoding='utf-8')) if stamp and log_path.exists() else {}
-    entries = list(previous.get('entries') or [])
+    # 同一个批次号可以再来一次：中断之后重跑，已经改过的行按账本里的现状跳过。
+    previous = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {}
+    entries = list(previous.get("entries") or [])
     failures: list[dict] = []
-    completed = {entry['asset_id'] for entry in entries}
-    def save():
+    done = {int(entry["asset_id"]) for entry in entries}
+    listings: dict[str, _Listing] = {}
+
+    def save() -> None:
         atomic_write_text(log_path, json.dumps(
-            {'stamp': stamp or time.strftime('%Y%m%d-%H%M%S'), 'entries': entries, 'failures': failures},
+            {"stamp": stamp, "entries": entries, "failures": failures},
             ensure_ascii=False, indent=1))
+
     try:
         for index, row in enumerate(movable, 1):
-            if int(row['asset_id']) in completed:
-                continue
-            old_path, new_path = str(row["current_path"]), str(row["target_path"])
-            current = connection.execute('SELECT path,disposal FROM asset WHERE id=?', (int(row['asset_id']),)).fetchone()
-            landed = (current is not None and current[0] == new_path
-                      and _media_path(new_path).is_file()
-                      and (old_path.casefold() == new_path.casefold() or not _media_path(old_path).exists()))
-            if current is None or current[1] is not None:
-                outcome = '资产已不在馆藏，未执行整理'
-            else:
-                outcome = 'ok' if landed else _move_one(connection, int(row["asset_id"]), old_path, new_path)
-            if outcome == "ok":
-                entries.append({"asset_id": int(row["asset_id"]),
-                                "old_path": old_path, "new_path": new_path})
-            else:
-                failures.append({"asset_id": int(row["asset_id"]),
-                                 "path": old_path, "reason": outcome,
-                                 "retryable": isinstance(outcome, MoveFailure) and outcome.retryable,
-                                 "retry_after": outcome.retry_after if isinstance(outcome, MoveFailure) else None})
-            save()
+            asset_id = int(row["asset_id"])
+            if asset_id not in done:
+                old_path, new_path = str(row["current_path"]), str(row["target_path"])
+                current = connection.execute(
+                    "SELECT path,disposal FROM asset WHERE id=?", (asset_id,)).fetchone()
+                if current is None or current[1] is not None:
+                    outcome = "资产已不在馆藏，未执行整理"
+                elif current[0] == new_path:
+                    outcome = "ok"
+                else:
+                    location = new_path.partition(":")[0]
+                    try:
+                        if location not in listings:
+                            listings[location] = _listing(drive, location)
+                        outcome = _move_one(drive, connection, asset_id, old_path, new_path,
+                                            listings[location])
+                    except OrganizeError as error:
+                        outcome = str(error)
+                if outcome == "ok":
+                    entries.append({"asset_id": asset_id, "old_path": old_path,
+                                    "new_path": new_path})
+                    done.add(asset_id)
+                else:
+                    retry_after = outcome.retry_after if isinstance(outcome, MoveFailure) else None
+                    failures.append({"asset_id": asset_id, "path": old_path,
+                                     "reason": str(outcome),
+                                     "retryable": retry_after is not None,
+                                     "retry_after": retry_after})
+                save()
             if progress:
                 progress(checked=index, total=len(movable))
     finally:
@@ -477,49 +524,59 @@ def apply_plan(connection: sqlite3.Connection, rows: Sequence[dict], *,
             "batch": log_path.name, "log_path": str(log_path)}
 
 
-def rollback_batch(connection: sqlite3.Connection, log_path: Path | str, *,
+def rollback_batch(drive, connection: sqlite3.Connection, log_path: Path | str, *,
                    progress: Callable[..., None] | None = None) -> dict:
-    """把一个批次逆序改回去。已经被人手工改过的行改不回来，单独报出来。"""
+    """把一个批次逆序改回去。已经被人手工改过的行改不回来，单独报出来。
+
+    退回一行就从日志里划掉一行，所以回滚进行到一半被打断时，日志里剩下的仍然
+    是「还没退回去的那些」。
+    """
     path = Path(log_path)
     payload = json.loads(path.read_text(encoding="utf-8"))
     entries = list(payload.get("entries") or [])
-    previous_restored = int(payload.get('restored_count') or 0)
-    refuse_unverified(path for entry in entries for path in (entry["new_path"], entry["old_path"]))
-    restored: list[dict] = []
+    restored = int(payload.get("restored_count") or 0)
+    remaining = list(entries)
     failures: list[dict] = []
-    for index, entry in enumerate(reversed(entries), 1):
-        current = connection.execute('SELECT path FROM asset WHERE id=?', (int(entry['asset_id']),)).fetchone()
-        landed = (current is not None and current[0] == entry['old_path']
-                  and _media_path(entry['old_path']).is_file()
-                  and (entry['old_path'].casefold() == entry['new_path'].casefold()
-                       or not _media_path(entry['new_path']).exists()))
-        outcome = 'ok' if landed else _move_one(connection, int(entry["asset_id"]),
-                                                str(entry["new_path"]), str(entry["old_path"]))
-        if outcome == "ok":
-            restored.append(entry)
-        else:
-            failures.append({"asset_id": int(entry["asset_id"]),
-                             "path": str(entry["new_path"]), "reason": outcome})
-        payload['entries'] = [row for row in entries if row not in restored]
-        payload['restored_count'] = previous_restored + len(restored)
-        atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=1))
-        if progress:
-            progress(checked=previous_restored + index, total=previous_restored + len(entries))
-    remaining = [entry for entry in entries
-                 if entry not in restored]
-    if remaining:
+    listings: dict[str, _Listing] = {}
+
+    def save() -> None:
         payload["entries"] = remaining
+        payload["restored_count"] = restored
         atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=1))
-    else:
+
+    for index, entry in enumerate(reversed(entries), 1):
+        old_path, new_path = str(entry["old_path"]), str(entry["new_path"])
+        location = old_path.partition(":")[0]
+        current = connection.execute(
+            "SELECT path FROM asset WHERE id=?", (int(entry["asset_id"]),)).fetchone()
+        if current is not None and current[0] == old_path:
+            outcome = "ok"
+        else:
+            try:
+                if location not in listings:
+                    listings[location] = _listing(drive, location)
+                outcome = _move_one(drive, connection, int(entry["asset_id"]), new_path, old_path,
+                                    listings[location])
+            except OrganizeError as error:
+                outcome = str(error)
+        if outcome == "ok":
+            restored += 1
+            remaining.remove(entry)
+        else:
+            failures.append({"asset_id": int(entry["asset_id"]), "path": new_path,
+                             "reason": str(outcome)})
+        save()
+        if progress:
+            progress(checked=index, total=len(entries))
+    if not remaining:
         # 整批都退回去了，这个批次就不该再出现在「回滚上一批」里。
         path.unlink(missing_ok=True)
-    return {"restored": previous_restored + len(restored), "failed": len(failures), "failures": failures[:50],
+    return {"restored": restored, "failed": len(failures), "failures": failures[:50],
             "batch": path.name}
 
 
 __all__ = [
-    "MAX_PATH", "PLAN_FIELDS", "PRESETS", "VERIFIED_RENAME_LOCATIONS", "OrganizeError",
-    "TemplateError", "UnverifiedRename", "apply_plan", "batch_log_dir", "build_plan",
-    "latest_batch", "placeholder_values", "plan_path", "refuse_unverified", "rollback_batch",
-    "unverified_location", "verified_renames", "write_plan",
+    "MAX_PATH", "PLAN_FIELDS", "PRESETS", "OrganizeError", "TemplateError", "apply_plan",
+    "batch_log_dir", "build_plan", "latest_batch", "ledger_path", "placeholder_values",
+    "plan_path", "rollback_batch", "scope_path", "segments_of", "write_plan",
 ]

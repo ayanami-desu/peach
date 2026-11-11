@@ -19,7 +19,7 @@ from pathlib import Path
 import psutil
 
 from .fsutil import atomic_write_text
-from .update_tasks import state_for
+from .task_state import state_root
 
 CURRENT = ContextVar('peach_task_control', default=None)
 _LIVE = {}
@@ -30,8 +30,26 @@ class Cancelled(KeyboardInterrupt):
     """用户取消整轮任务；领域内的单项失败处理不能吞掉取消。"""
 
 
+_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _mutex(db) -> threading.Lock:
+    """同一账本的控制文件互斥。
+
+    任务登记、请求与清退都发生在服务进程里，一把进程内的锁就够；跨进程闸门是安装
+    事务的东西，随它一起没了。
+    """
+    key = str(Path(db).resolve())
+    with _LOCK:
+        lock = _LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LOCKS[key] = lock
+        return lock
+
+
 def _root(db):
-    return state_for(db).parent / 'task-controls'
+    return state_root(db) / 'task-controls'
 
 
 def _read(path, attempts=20):
@@ -73,9 +91,8 @@ def speed_mode(db, run_id, ancestors=(), *, default='standard'):
 
 def initialize_speed(store, run_id, parent=None):
     from .processing_control import default_mode
-    from .update_tasks import _mutex
     db = store.database.db_path
-    with _mutex(state_for(db)):
+    with _mutex(db):
         path = _root(db) / f'{run_id}.speed.json'
         mode = (speed_mode(db, parent.id, (parent.parent_run_id, parent.root_run_id))
                 if parent is not None else default_mode(store.database))
@@ -95,7 +112,6 @@ def prune_controls(store):
     登记新运行的事务在 `_mutex` 内写速度文件，查库和删控制意图都在锁里；即时状态只由
     已登记的运行写，放到锁外删，首次清退存量时几万次删除不挡任务登记。
     """
-    from .update_tasks import _mutex
     db = store.database.db_path
     files = []
     for path in _root(db).glob('*.json'):
@@ -104,7 +120,7 @@ def prune_controls(store):
             files.append((identity, kind, path))
     if not files:
         return 0
-    with _mutex(state_for(db)):
+    with _mutex(db):
         with store.database.read_connection() as connection:
             active = {str(row[0]): bool(row[1]) for row in connection.execute(
                 "SELECT id,status IN ('pending','running') FROM task_run")}
@@ -154,8 +170,7 @@ def projection(store, run, *, descendants_active=None):
 
 
 def request(store, run_id, action, *, mode=None):
-    from .update_tasks import _mutex
-    with _mutex(state_for(store.database.db_path)):
+    with _mutex(store.database.db_path):
         return _request(store, run_id, action, mode=mode)
 
 
@@ -292,8 +307,6 @@ class Control:
         try:
             while True:
                 self.usage.publish()
-                from .update_tasks import check_pause
-                check_pause(self.db if self.recoverable else None)
                 if self.stopping.is_set():
                     from .jobs import JobPaused
                     if self.recoverable:

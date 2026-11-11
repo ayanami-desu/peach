@@ -1,4 +1,4 @@
-/* 配置页（/settings/library）与诊断页的外壳：正文跟管理区页头钉在同一条中线上（web/board.css 里
+/* 配置页（/settings）与诊断页的外壳：正文跟管理区页头钉在同一条中线上（web/board.css 里
    `.scraping-page` 那一条的说明），配置骨架（`configuration-skeleton.ts`、`ui-kit/skeleton.ts`）也挂这一层。
    分组小标题 `h2.ui-configgroup` 只在外壳里占位，字已经写在页签上，样式里不显示。 */
 .ui-configpage{width:100%;max-width:var(--board-content);margin:0 auto;display:grid;gap:20px}

@@ -341,28 +341,8 @@ def snapshot(config, *, usage=None) -> dict:
             status = None
     except OSError as error:
         return {'policy': policy, 'last_check': None, 'error': f'容量目录未取得：{error}'}
-    from .capacity_history import project
-    history = project(config)
     return {'policy': policy, 'last_check': status, 'recommendation_state': 'population_model_not_available',
-            'history': history, 'error': ''}
-
-
-def _history_due(config):
-    from .capacity_history import sample_due
-    try:
-        return sample_due(config)
-    except (OSError, ValueError) as error:
-        logging.getLogger(__name__).warning('容量历史未取得（%s）', type(error).__name__)
-        return False
-
-
-def record_history(config, *, data_bytes, cache_bytes, cleaned_bytes=0):
-    """研究记录失败独立于容量闸门；不因记录失败取消磁盘保护。"""
-    from .capacity_history import record_sample
-    try:
-        record_sample(config, data_bytes, cache_bytes, cleaned_bytes)
-    except (OSError, ValueError) as error:
-        logging.getLogger(__name__).warning('容量历史未取得（%s）', type(error).__name__)
+            'error': ''}
 
 
 @lru_cache(maxsize=1)
@@ -437,7 +417,7 @@ def _roots(paths):
 def cache_roots(config):
     from .previews import cover_thumb_root, entity_thumb_root
     generated = config.directory('generated')
-    return _roots((generated / 'transcodes', generated / 'stream-segments', generated / 'remote-media',
+    return _roots((generated / 'remote-media',
                    cover_thumb_root(generated / 'covers'), entity_thumb_root(generated / 'avatars')))
 
 
@@ -556,10 +536,6 @@ def _measure_part(config, policy, part) -> dict:
         usage = {'cache_bytes': cache['managed_cache_bytes'], 'external_cache_bytes': cache['external_cache_bytes']}
     if layout(config, policy) != binding:
         raise OSError('容量目录在统计期间发生变化，请重新统计')
-    # 容量历史按天记：数据每天统计一次照记；缓存每 5 分钟一次，只记当天第一份，
-    # 否则清理后回填的每次波动都会被算成增长。
-    if part == 'data' or _history_due(config):
-        record_history(config, data_bytes=usage.get('data_bytes'), cache_bytes=usage.get('cache_bytes'))
     return usage
 
 
@@ -618,26 +594,18 @@ def _existing(path):
 
 
 def _rebuildable(config):
-    """可自动清理的已完成产物，按清理先后分层：HLS 分段、转码副本、本机原图可重算的缩略图。
+    """可自动清理的已完成产物：本机原图还在、能重新缩出来的缩略图。
 
-    分段按需逐段重生成，最便宜，先清；转码副本重建要几分钟；缩略图量多且浏览时马上要用，最后清。
-    转码与分段写入时用 `.tmp.` 临时名，完成后才改名，临时文件不在清理之列；命中时会刷新修改时间，
-    所以「最旧」就是最久没用过。预览图、下载的封面与资料重建代价高或取不回来，不自动清理。
+    一次浏览就会重新缩一遍，所以只在容量真不够时清；命中时会刷新修改时间，
+    「最旧」就是最久没用过。预览图与下载的封面重建代价高或取不回来，不自动清理。
     """
     from . import artifact_rules
-    from .data_storage import _TRANSCODE
     from .previews import cover_thumb_root, entity_thumb_root
     generated = config.directory('generated')
-    for path, info in _files(generated / 'stream-segments'):
-        if path.suffix == '.ts' and not path.name.endswith('.tmp.ts'):
-            yield 0, path, info, False
-    for path, info in _files(generated / 'transcodes'):
-        if _TRANSCODE.match(path.name) and not path.name.endswith('.tmp.mp4'):
-            yield 1, path, info, False
     for root in (cover_thumb_root(generated / 'covers'), entity_thumb_root(generated / 'avatars')):
         for path, info in _files(root):
             if path.suffix.lower() == '.webp' and artifact_rules.current(path, source_required=True):
-                yield 2, path, info, True
+                yield 0, path, info, True
 
 
 def _clean_rebuildable(config, needed):
@@ -742,8 +710,6 @@ class CapacityGuard:
                 _remember_cleanup(self.config, policy, freed)
                 usage = {**usage, **{name: None if usage[name] is None else max(0, usage[name] - freed)
                                      for name in ('cache_bytes', 'data_bytes')}}
-        if freed:
-            record_history(self.config, data_bytes=None, cache_bytes=None, cleaned_bytes=freed)
         return freed, usage
 
     def _clean_later(self, policy):
@@ -770,8 +736,6 @@ class CapacityGuard:
             _LAST_STATUS[:] = [stable, time.time()]
 
     def check(self, force=False, *, required_bytes=0, destination=None):
-        from .update_tasks import check_pause, current_db
-        check_pause(current_db.get())
         now = time.monotonic()
         if not force and not required_bytes and now < self.next_check:
             if self._denied is not None:

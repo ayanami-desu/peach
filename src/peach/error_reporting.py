@@ -131,13 +131,6 @@ def system_facts() -> dict:
             "os_version": platform.version(),
             "architecture": platform.machine(), "frozen": bool(getattr(sys, "frozen", False)),
             "pid": os.getpid(), "parent_pid": os.getppid(), "server_timezone": timezone_facts()}
-    try:
-        from .buildinfo import frozen_build
-        build = frozen_build()
-        if build is not None:
-            facts["build"] = {"commit": build.commit, "built_at": build.built_at, "version": build.version}
-    except Exception:
-        pass
     return facts
 
 
@@ -161,11 +154,7 @@ def exception_facts(error: BaseException) -> dict:
 
 
 def event(stage: str, error: BaseException | None = None, *, local_fields: dict | None = None, **fields) -> Path | None:
-    try:
-        from . import remote_reporting
-        remote_reporting.capture(stage, error, **fields)
-    except Exception:
-        pass
+    """记一条本机脱敏事件。`local_fields` 只进本机日志，不随其它字段一起摊平。"""
     return local_event(stage, error, **{**fields, **(local_fields or {})})
 
 
@@ -276,11 +265,6 @@ def install(log_dir: Path | None = None) -> None:
     event("entry")
     import atexit
     atexit.register(_tidy_process_logs)
-    try:
-        from . import remote_reporting
-        remote_reporting.usage()
-    except Exception:
-        pass
 
 
 def console_ready() -> None:
@@ -300,21 +284,6 @@ def failure_details(stage: str, error: BaseException) -> str:
     except Exception as report_error:
         event("report-failed", report_error)
         return f"{error}\n\n错误日志：{path}" if path else f"{error}\n\n错误日志未能写入，请保留此弹窗。"
-
-
-def tray_main() -> int:
-    install()
-    try:
-        from .tray import main
-        return main()
-    except Exception as error:
-        message = failure_details("tray-import", error)
-        if os.name == "nt":
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(None, message, "Peach 启动失败", 0x10)
-        elif sys.stderr is not None:
-            print(message, file=sys.stderr)
-        return 1
 
 
 def cli_main() -> int:

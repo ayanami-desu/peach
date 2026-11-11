@@ -39,17 +39,14 @@ def _settings(root: Path, page: Path, **overrides) -> "PeachSettings":
     """
     return PeachSettings(
         db_path=root / "ledger.db", token="", page_path=page,
-        vendor_path=root / "vendor", allowed_media_roots=(root / "media",),
-        snapshot_root=root / "snapshots",
+        vendor_path=root / "vendor", drive_roots={},
+        snapshot_root=root / "snapshots", timeline_root=root / "timeline",
         cover_root=root / "covers", poster_root=root / "posters",
         avatar_root=root / "avatars", logo_root=root / "logos",
-        transcode_root=root / "transcodes", stream_root=root / "stream",
         photo_root=root / "photos", candidate_root=root / "generated",
+        secrets_root=root / "secrets",
         ffmpeg_root=root / "ffmpeg", follow_state_root=root / "state",
-        taste_history_store=root / "taste.sqlite",
-        taste_history_import_root=root / "taste-imports",
-        taste_history_output_root=root / "taste-output",
-        taste_history_manifest=root / "taste-manifest.json",
+        entry_links_root=root / "entry-links",
         **overrides,
     )
 

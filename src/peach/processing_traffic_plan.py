@@ -21,7 +21,7 @@ def cached_names(directory):
         return set()
 
 
-def ledger_rows(db_path, asset_ids=None, *, library_roots=()):
+def ledger_rows(db_path, asset_ids=None):
     query = """SELECT asset.*,
         EXISTS(SELECT 1 FROM asset_entity ae JOIN entity e ON ae.entity_id=e.id
                WHERE ae.asset_id=asset.id AND e.kind='performer') AS performers,
@@ -34,7 +34,7 @@ def ledger_rows(db_path, asset_ids=None, *, library_roots=()):
     with closing(sqlite3.connect(db_path, timeout=30)) as connection:
         connection.row_factory = sqlite3.Row
         return [dict(row) for row in connection.execute(query, parameters)
-                if not is_local_extra(row['name'], row['path'], library_roots=library_roots)]
+                if not is_local_extra(row['name'], row['path'])]
 
 
 def typical_size(directory, pattern, fallback):
@@ -115,13 +115,11 @@ class TrafficPlan:
         self.extend(rows)
 
     def extend(self, rows):
-        from .library_processing import _provider_code, _scrapes_as_jav, _missing_fields, preview_readable
+        from .library_processing import _provider_code, _scrapes_as_jav, _missing_fields
         from .catalog_rules import release_code_from_filename
         changed = set()
         for row in rows:
             self.assets.append(row)
-            if self.stage == 'previews' and not preview_readable(row, self.config, allow_metered=self.allow_metered):
-                continue
             key = self.media_key(row['path'], row['location'])
             if key is None:
                 continue
@@ -133,15 +131,14 @@ class TrafficPlan:
                 counts['jav_files'] += 1
                 counts['titles'].add(code)
             path = str(row['path'])
-            if self.stage not in ('scan', 'previews'):
-                # 无发行番号的创作者文件只检查配套文件，不进入 JAV 下载链。
-                if eligible:
-                    self._add('local:' + path, key, self.nfo_bytes)
-                    if not self._ready(code):
-                        self._add('local:' + path, key, self.cover_bytes)
-                    title = self.titles.setdefault(code, dict(row=row, missing=set()))
-                    title['missing'].update(_missing_fields(row))
-                    changed.add(code)
+            # 无发行番号的创作者文件只检查配套文件，不进入 JAV 下载链。
+            if eligible:
+                self._add('local:' + path, key, self.nfo_bytes)
+                if not self._ready(code):
+                    self._add('local:' + path, key, self.cover_bytes)
+                title = self.titles.setdefault(code, dict(row=row, missing=set()))
+                title['missing'].update(_missing_fields(row))
+                changed.add(code)
             self._media(row, key)
         for code in changed:
             token = 'metadata:' + code
@@ -152,21 +149,19 @@ class TrafficPlan:
             self._downloads(code, self.titles[code])
 
     def _media(self, row, key):
-        from .library_processing import preview_readable
         from .media_processing_policy import metadata_only
-        from .media_sources import cost_for
         from .strm import skip_background_read
         path = str(row['path'])
         if skip_background_read(path):
             return
+        # 媒体在网盘上，读一个文件就是一次外网流量：没有免费来源可挑，只有用户明说
+        # 可以用流量、且没关预览时才把这一笔算进预估。
+        if self.stage not in ('all', 'collect') or not self.allow_metered:
+            return
+        if row.get('snapshot_path') or metadata_only(self.config.directory('state')):
+            return
         size = max(0, row.get('size') if row.get('size') is not None else 9 * 8 * MIB)
-        if (self.stage != 'metadata' and row.get('duration') is None
-                and cost_for(row['location'], path, self.config) == 'free'):
-            self._add('media:' + path, key, min(size, self.history.average(key + ':probe', 8 * MIB)))
-        if (self.stage in ('all', 'collect', 'previews')
-                and preview_readable(row, self.config, allow_metered=self.allow_metered)
-                and not row.get('snapshot_path') and not metadata_only(self.config.directory('state'))):
-            self._add('media:' + path, key, min(size, 9 * self.history.average(key + ':frame', 8 * MIB)))
+        self._add('media:' + path, key, min(size, 9 * self.history.average(key + ':frame', 8 * MIB)))
 
     def _downloads(self, code, title):
         from .library_processing import _studio_evidence

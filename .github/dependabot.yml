@@ -19,7 +19,7 @@ updates:
       time: "09:45"
       timezone: Asia/Taipei
 
-  # compose.yaml 里 watchtower profile 固定的 nickfedor/watchtower 版本。
+  # compose.yaml 里的镜像标签。
   - package-ecosystem: docker-compose
     directory: /
     schedule:

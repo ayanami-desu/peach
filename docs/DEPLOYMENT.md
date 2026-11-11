@@ -1,155 +1,102 @@
-# 服务器部署与更新流程
+# 服务器部署与升级
 
-本文档说明 Peach 在 Linux 云服务器与私有服务器上的 Docker 容器化部署架构、镜像体系及标准的版本更新与回滚步骤。
+Peach 只以两种形态分发：Docker 镜像，以及源码树里直接运行。服务器上用镜像。容器内部怎么配（卷、端口、日志、健康检查）见 [Docker 部署](DOCKER.md)，接网盘、备份与排障见[运行与配置](OPERATIONS.md)。
 
-## 一、部署形态与架构
+## 容器里跑什么
 
-Peach 在服务器环境下以独立 Docker 容器形态运行，通过 Docker Compose 进行服务生命周期管理。
+入口是 `python -m peach.server`。这个进程是看护进程：读设置文件、跑数据库迁移，再拉起真正的服务 `peach serve`。设置文件被改动后它重启子进程，所以在浏览器里保存配置不需要重启容器。
 
-### 1. 网络与端口映射
+服务在容器内监听 `0.0.0.0:8900`，宿主机端口由 Compose 映射。Peach 不讲 TLS：容器只提供 HTTP，域名与证书由反向代理负责。镜像里的运行用户是 `peach`（uid/gid 1000），工作目录 `/data`。
 
-* **内部监听**：容器内 Web 服务固定监听 `0.0.0.0:8900`。
-* **端口发布**：宿主机端口默认发布至回环地址 `127.0.0.1:8900:8900`。
-* **外部接入**：公网访问通过反向代理（如 OpenResty 或 Nginx）配置反向代理与 SSL 证书，不直接暴露原始服务端口。
-* **可信代理（反向代理部署必配）**：经 OpenResty 或 Nginx 访问时，把代理那一跳的地址写进 `PEACH_TRUSTED_PROXIES`；容器看到的连接源是 Docker 网关（用 `docker network inspect peach_default` 查到后填入）。公网写入的同源检查、会话 Cookie 的 `Secure` 标记与登录限速都靠它，不配时在公网提交登录会 403。详见 [Docker 部署](DOCKER.md#受信任反向代理)。
+## 要保管的东西
 
-### 2. 存储分界与数据持久化
+| 位置 | 内容 | 丢了的后果 |
+| --- | --- | --- |
+| `/data` | 数据根：`config.toml`、`database/ledger.db`、`secrets/`、`logs/`、`generated/` | 账本、配置与网盘令牌一起没了，重新授权并重扫才能恢复 |
+| 8900 | 容器内监听端口 | — |
 
-* **数据卷 (`peach-data`)**：
-  命名数据卷挂载到容器内部 `/data`，保存 SQLite 数据库、`config.toml` 设置文件、用户凭据与缩略图缓存等状态。该数据卷独立于容器生命周期，更新容器时保留该卷。
-* **媒体挂载 (`/media`)**：
-  宿主机媒体根目录（如网盘挂载点或本地磁盘路径）通过 bind mount 方式挂载至容器内部 `/media`。挂载设为只读模式 (`read_only: true`)，挂载传播模式设置为 `rslave`，以支持宿主机上外部挂载点的变动实时传递给容器。
+Compose 把 `/data` 挂成命名卷 `peach-data`。`docker compose down -v` 会连卷一起删掉；升级做 `pull` 与 `up -d`。
 
-### 3. 标准编排配置 (`compose.yaml`)
+## 准备
 
-服务通常部署在 `/opt/peach/` 目录下，`compose.yaml` 内容形态如下：
+- Docker Engine 与 Compose v2，`docker compose` 子命令可用
+- 磁盘：账本起步一百多 MB，每份备份与账本等大，`generated/` 随浏览增长
+- 一个指向这台机器的域名，以及一层终止 TLS 的反向代理
+- 容器以 uid/gid 1000 运行；挂进容器的宿主目录要让这个用户读得到
 
-```yaml
-services:
-  peach:
-    image: ghcr.io/<owner>/peach:sha-<7 位短 SHA>
-    init: true
-    restart: unless-stopped
-    stop_grace_period: 75s
-    ports:
-      - "127.0.0.1:8900:8900"
-    environment:
-      TZ: Asia/Shanghai
-      # 反向代理那一跳（Docker 网关）的地址；不配时公网登录与配置写入会被同源检查拒绝。
-      PEACH_TRUSTED_PROXIES: "<docker network inspect 查到的网关地址>"
-    volumes:
-      - peach-data:/data
-      - type: bind
-        source: /srv/media
-        target: /media
-        read_only: true
-        bind:
-          propagation: rslave
+## 起容器
 
-volumes:
-  peach-data:
+把 `compose.yaml` 放到服务器上的一个目录，旁边按需放 `.env`：
+
+```sh
+# .env
+PEACH_VERSION=edge
+PEACH_BIND=127.0.0.1
+PEACH_PORT=8900
 ```
 
----
-
-## 二、镜像发布体系
-
-本 fork 只有 `master` 一条分支，既是上游同步目标，也是部署分支。GitHub Actions 只保留它的 `Docker` 自动流程；继承自上游的 Test、Release、项目看板同步、Star History、Windows 覆盖升级验收在同步冲突里删除，任何分支都不保留。仓库级 Actions 保持开启——关闭它会连 `master` 的镜像产线一起停掉。
-
-1. **master → 镜像**：推送到 `master` 且改动落在镜像输入（`src/**`、`web/**`、依赖清单等）时，`Docker` 工作流构建 linux/amd64 镜像，用 `smoke_docker.py` 跑临时容器冒烟，然后推送 `ghcr.io/<owner>/peach:sha-<7 位短 SHA>` 与 `:master`。
-2. **上游同步**：在 `master` 上 `git rebase upstream/master`，继承的流水线在冲突里按 `git rm` 删除；不产生 merge 提交，也不维护只做快照的分支。同步后照常校验、变基推送，镜像随新提交重建。
-3. **版本号与 `edge` 标签**：`release.yml` 只在 `peach-mitao/peach` 运行，本 fork 不产生版本号与 `edge` 标签；部署用提交 SHA 标签锁定。
-4. **版本锁定原则**：生产部署环境的 `compose.yaml` 使用带有精准 commit 标识的 `sha-<7 位短 SHA>` 标签，不使用浮动的 `latest`，以保障服务更新的确定性与可追溯性。
-
-同步上游时在 `master` 上执行：
-
-```bash
-git fetch upstream
-git checkout master
-git rebase upstream/master
-# 冲突：继承工作流一律 git rm；web/dist 每个提交重建后逐文件 git add
-git push --force-with-lease=refs/heads/master:<远端实测 SHA> origin master:refs/heads/master
+```sh
+docker compose up -d
+docker compose logs -f peach
 ```
 
----
+日志里出现 `Peach 服务监听：0.0.0.0:8900。` 与 `首次设置：用浏览器打开服务的地址，按页面完成设置。` 就说明进程起来了。用浏览器打开映射后的地址，按页面完成首次设置；容器里不出数据目录、监听地址与端口这三题，它们在建容器时已经定死。
 
-## 三、标准更新流程
+`/healthz?ready=1` 在设置完成之前返回 200 与 `"setup": true`，所以首次设置期间容器不会因为健康检查失败被标成 unhealthy。各字段怎么读见[运行与配置](OPERATIONS.md#healthz-判读)。
 
-更新容器服务按以下步骤执行。
+## 升级
 
-### 步骤 1：确认前置状态
-
-登录服务器，核验当前容器状态与健康检查接口，确认无正在执行的前台长任务：
-
-```bash
-curl -f -s http://127.0.0.1:8900/healthz
-docker logs --tail 20 peach-peach-1
-```
-
-### 步骤 2：备份编排配置
-
-在更新 `compose.yaml` 之前，保留带有时间戳的备份文件，便于异常时快速恢复：
-
-```bash
-cd /opt/peach
-cp compose.yaml compose.yaml.bak-$(date +%Y%m%d-%H%M%S)
-```
-
-### 步骤 3：更新镜像标签与拉取
-
-修改 `compose.yaml` 中的 `image:` 字段，指向 CI 构建发布的最新镜像 SHA 标签，然后拉取新镜像层：
-
-```bash
-# 修改镜像标签
-sed -i "s|image: ghcr.io/<owner>/peach:sha-.*|image: ghcr.io/<owner>/peach:sha-<new_sha>|" compose.yaml
-
-# 预先拉取新镜像
+```sh
 docker compose pull
-```
-
-### 步骤 4：重建并启动容器
-
-执行容器重建，Docker Compose 会自动替换旧容器并保留命名数据卷挂载：
-
-```bash
 docker compose up -d
 ```
 
-### 步骤 5：验证服务健康状态
+镜像里的看护进程在拉起服务之前先把账本迁到最新结构（`peach migrate upgrade --yes`），迁移前自动留一份 `<数据库目录>/ledger.pre-migrate-<时间>.db`。迁移失败时容器不启动，日志里是 `数据库升级失败，退出码 N；服务未启动`；`restart: unless-stopped` 会让它反复重启，先看日志定位，不要放着不管。
 
-等待容器完成初始化（包含数据库连接建立与媒体挂载探测），核验健康状态：
+升级前先备份：设置 → Peach 配置 → 应用与维护 →「立即备份」，或者在宿主机上整卷打包：
 
-```bash
-# 检查容器状态（确认显示 healthy）
-docker ps --filter name=peach
-
-# 检查业务健康接口
-curl -f -s http://127.0.0.1:8900/healthz
+```sh
+docker run --rm -v peach-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/peach-data-$(date +%F).tgz -C /data .
 ```
 
-当 `/healthz` 返回 JSON 且各核心组件检查状态均为 `"status": "ok"` 时，即代表更新完成。
+## 回滚
 
----
+镜像换回旧标签只需要改一个变量：
 
-## 四、故障回滚流程
+```sh
+# .env
+PEACH_VERSION=sha-3f2a1b4
+docker compose up -d
+```
 
-若新镜像启动失败或在健康检查时返回异常：
+数据库迁移只向前，不随镜像回退。如果新版本已经升级过账本结构，回退镜像之前要先把账本换回升级前的备份：
 
-1. **还原编排配置**：
-   ```bash
-   cd /opt/peach
-   cp compose.yaml.bak-<timestamp> compose.yaml
-   ```
-2. **重启历史版本容器**：
-   ```bash
-   docker compose up -d
-   ```
-3. **核验证实服务恢复**：再次请求 `/healthz` 接口确认旧版本容器已恢复正常服务。
+```sh
+docker compose stop peach
+docker compose run --rm --entrypoint sh peach -c \
+  'rm -f /data/database/ledger.db-wal /data/database/ledger.db-shm && \
+   cp /data/database/ledger.pre-migrate-20261111-101500.db /data/database/ledger.db'
+docker compose up -d
+```
 
----
+备份文件名与库同级，用 `ls /data/database` 看确切时间戳。换完账本再起旧镜像，顺序反了旧进程会先按新结构读一次。
 
-## 五、维护注意事项
+## 镜像发布体系
 
-* **数据卷保护**：命名卷 `peach-data` 包含唯一真相源账本与配置，严禁执行 `docker compose down -v` 或删除数据卷操作。
-* **数据库迁移**：涉及数据库结构调整的改动，先确认迁移步骤；若未声明自动迁移，应在独立操作中按迁移指南执行。
-* **派生产物管理**：缩略图缓存等派生文件存放在数据卷内的 `cover-thumbs/` 目录下。若废弃了某些规格的缓存变体，可在确认无用后在数据卷路径下针对特定文件名通配进行安全清理。
+`.github/workflows/docker.yml` 在推送到 `master` 且改到镜像相关路径时触发，也可以手动 `workflow_dispatch`：
+
+1. 构建候选镜像 `longmeidao/peach:test`
+2. 用 `scripts/smoke_docker.py` 起一个临时容器做启动验收
+3. 推到 `ghcr.io/<仓库所有者>/peach` 的 `master` 与 `sha-<提交前 7 位>` 两个标签
+
+构建平台只有 `linux/amd64`。`compose.yaml` 默认从 Docker Hub 拉 `longmeidao/peach:${PEACH_VERSION:-edge}`；要跟着本仓库的流水线走，把 `image` 行改成 `ghcr.io/<所有者>/peach:${PEACH_VERSION:-master}`，`PEACH_VERSION` 填 `sha-...`。私有仓库的 GHCR 包需要在服务器上先 `docker login ghcr.io`。
+
+每次升级都只改 `PEACH_VERSION`，这一行同时就是回滚开关。
+
+## 公网访问
+
+- 默认只把端口绑在 `127.0.0.1`（`PEACH_BIND`），反代跑在同一台机器上。反代在另一台机器时改成 `0.0.0.0`，并用防火墙限定来源。
+- TLS 终止在反代上。`[drive] public_url` 要填对外域名，网盘后台登记的回调地址就由它拼出来；两者不一致时授权会带着 `redirect_uri_mismatch` 失败。
+- 反代地址要写进 `PEACH_TRUSTED_PROXIES`，否则登录限速按连接源统计，容器看到的所有请求都来自 Docker 网关，等于全站共用一个计数桶。判读规则见 [Docker 部署](DOCKER.md#受信任反向代理)。
+- 访问密码在首次设置时确定，或由建容器时的 `PEACH_ACCESS_PASSWORD` 预置；改密码在设置页「网络与访问」。

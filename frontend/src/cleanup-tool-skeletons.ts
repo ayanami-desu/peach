@@ -4,17 +4,15 @@
  * 说明文字与 React 卡共用这里的常量，写两份的话骨架上那一段会比真卡短一截，接管时整张卡跳一次。
  * 只在跑过一趟任务后才出现的结果区（扫描结论、死链清单）不预画。 */
 import { followCheck, SORT_MARK } from './board-skeleton';
-import { islandButton, islandGlyph, islandSearchInput, islandSelect } from './island-skeleton';
+import { islandButton, islandSearchInput, islandSelect } from './island-skeleton';
 import type { CleanupToolKey } from './cleanup-tools';
 import { cardClass } from './react/components/card';
 import { FIELDSET_BODY, FIELDSET_FOOT, fieldsetClass } from './react/components/fieldset-layout';
-import { repairCardSkeletonHtml } from './management';
 import { t } from './i18n';
 
 export const ORGANIZE_TEXT = t('cleanup:organize.description');
 export const ORGANIZE_SCOPE_HINT = t('cleanup:organize.scopeHint');
 export const ORGANIZE_PARAMETER_HINT = t('cleanup:organize.parameterHint');
-export const RESOURCE_SYNC_TEXT = t('cleanup:resourceSync.description');
 export const ORPHAN_RECORDS_TEXT = t('cleanup:orphans.description');
 export const BATCH_DELETE_TEXT = t('cleanup:performerDelete.description');
 
@@ -43,8 +41,7 @@ function organize(): string {
     <div class="${FIELDSET_BODY.stack}">${title(t('cleanup:organize.title'), 'mb-3')}
       <p class="text-body-regular text-text-secondary">${ORGANIZE_TEXT}</p>
       <div class="mt-3 flex flex-col gap-3">
-        <div class="flex min-w-0 flex-wrap items-start gap-2">${islandSelect(text('3em'), { prefix: t('cleanup:organize.storagePrefix'), className: 'w-fit min-w-25', attrs: 'aria-disabled="true"' })}
-          <div class="flex min-w-0 basis-64 flex-1 items-start gap-2">${input(t('cleanup:organize.pathPlaceholder'), { className: 'min-w-0 flex-1' })}<button type="button" class="relative inline-flex shrink-0 items-center justify-center overflow-visible rounded-2lg bg-background-primary-default text-foreground-icon-primary border border-border-button-default shadow-xs size-9">${islandGlyph('folder-search', 'size-5 shrink-0')}</button></div>
+        <div class="flex min-w-0 flex-wrap items-start gap-2">${islandSelect(text('3em'), { prefix: t('cleanup:organize.storagePrefix'), className: 'w-fit min-w-25', attrs: 'aria-disabled="true"' })}${islandSelect(t('cleanup:organize.wholeDrive'), { prefix: t('cleanup:organize.scopePrefix'), className: 'w-fit min-w-25', attrs: 'aria-disabled="true"' })}
         </div>
         <p class="text-caption-1-regular text-text-secondary">${ORGANIZE_SCOPE_HINT}</p>
         ${input(text('12em'), { label: t('cleanup:organize.fileTemplate') })}${input(text('8em'), { label: t('cleanup:organize.dirTemplate') })}
@@ -57,13 +54,6 @@ function organize(): string {
     <footer class="${FIELDSET_FOOT.stack}">${islandButton({ label: t('cleanup:organize.preview'), attrs: WAITING })}</footer>
   </section>`;
 }
-
-/* 键名跟上一趟扫描走（检查文件／重新扫描），骨架画头一次进来的那一版。 */
-const resourceSync = () => `<section class="flex scroll-mt-20 flex-col gap-4">
-  <section class="${fieldsetClass('split')}"><div class="${FIELDSET_BODY.split}">${title(t('cleanup:tools.resourceSync'), 'mb-2')}
-    <p class="max-w-190 text-body-2-regular leading-5 text-text-secondary">${RESOURCE_SYNC_TEXT}</p></div>
-    <footer class="${FIELDSET_FOOT.split}">${islandButton({ glyph: 'git-compare', label: t('cleanup:resourceSync.checkFiles'), attrs: WAITING })}</footer></section>
-</section>`;
 
 /** 链接管理那张卡：四格读数（总数与三类链接）和三个主要站点等数据，键名同样画头一次的那一版。 */
 const linkStat = (label: string, note = false) => `<div class="flex min-w-0 flex-col gap-0.5"><span class="text-caption-1-regular leading-5 text-text-secondary">${label}</span><b class="text-title-2-semibold font-bold leading-5 tabular-nums text-text-primary">${text('3em')}</b>${note ? `<small class="text-caption-1-regular leading-5 text-text-secondary">${text('14em')}</small>` : ''}</div>`;
@@ -118,9 +108,7 @@ const batchDelete = () => `<section class="flex min-w-0 scroll-mt-20 flex-col ga
 
 const BODIES: Record<CleanupToolKey, { label: string; body: () => string }> = {
   organize: { label: t('cleanup:organize.loading'), body: organize },
-  'resource-sync': { label: t('cleanup:resourceSync.statusLoading'), body: resourceSync },
   'orphan-records': { label: t('cleanup:orphans.loading'), body: orphanRecords },
-  'media-repair': { label: t('cleanup:mediaRepair.loading'), body: repairCardSkeletonHtml },
   links: { label: t('cleanup:links.loading'), body: links },
   'batch-delete': { label: t('cleanup:performerDelete.loadingLabel'), body: batchDelete },
 };

@@ -29,7 +29,7 @@ export function TaskSpeedSettings({ receipt }: { receipt(message: string): void 
   const settings = useQuery({ queryKey: SETTINGS_KEY, queryFn: ({ signal }) => fetchSettings(signal) });
   const save = useSaveSettings();
   const error = save.error || settings.error;
-  return <Section title="后台任务">
+  return <Section guide="speed" title="后台任务">
     <Rows><SettingsRow label="默认处理速度" description="新任务使用此档位。运行中的任务可在活动页单独调整。">
       <ProcessingMode value={settings.data?.taskSpeedMode || 'standard'} busy={!settings.data || save.isPending}
         onChange={(mode) => save.mutate({ taskSpeedMode: mode }, { onSuccess: () => receipt('已保存默认处理速度') })} />

@@ -1,14 +1,15 @@
-"""时间轴预览的档位与采集任务端点。"""
+"""时间轴预览的档位、按需生成与索引端点。"""
 from __future__ import annotations
 
-import json
 import shutil
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from peach import task_runs, timeline_sheets, web_timeline_thumbnails
+from peach import timeline_sheets, web_timeline_thumbnails
 
 
 class ModeFileTests(unittest.TestCase):
@@ -17,12 +18,14 @@ class ModeFileTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.path = self.root / "timeline-thumbnails.json"
 
-    def test_an_unreadable_setting_means_the_job_stays_off(self):
+    def test_an_unreadable_setting_means_nothing_is_generated(self):
         """这条链会写盘也会读片子，不能靠猜来开。"""
         self.assertEqual(web_timeline_thumbnails.read_mode(self.path), "off")
-        self.path.write_text("{", encoding="utf-8")
+        self.path.write_text("不是 JSON", encoding="utf-8")
         self.assertEqual(web_timeline_thumbnails.read_mode(self.path), "off")
-        self.path.write_text(json.dumps({"mode": "hourly"}), encoding="utf-8")
+
+    def test_an_unknown_density_in_the_file_means_off(self):
+        self.path.write_text('{"mode": "every-second"}', encoding="utf-8")
         self.assertEqual(web_timeline_thumbnails.read_mode(self.path), "off")
 
     def test_the_chosen_density_survives_a_restart(self):
@@ -30,77 +33,43 @@ class ModeFileTests(unittest.TestCase):
         self.assertEqual(web_timeline_thumbnails.read_mode(self.path), "coarse")
 
 
-class ThumbnailJobEndpointTests(unittest.TestCase):
+class SettingsEndpointTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="timeline-endpoint-"))
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
         self.contract = MagicMock()
-        self.contract.timeline_root = self.root / "sheets"
-        self.contract.db_path = self.root / "ledger.db"
-        self.contract.thumbnail_job.snapshot.return_value = {}
-        patcher = patch.object(web_timeline_thumbnails, "MODE_PATH",
-                               self.root / "timeline-thumbnails.json")
+        self.contract.follow_state_root = self.root / "state"
+        self.contract.timeline_root = self.root / "timeline"
+        patcher = patch.object(web_timeline_thumbnails, "MODE_PATH", self.root / "mode.json")
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_an_unknown_density_is_refused_before_anything_starts(self):
+    def test_an_unknown_density_is_refused(self):
         with self.assertRaises(ValueError):
             web_timeline_thumbnails.w_thumbnail_jobs(self.contract, {"mode": "every-second"})
-        self.contract.thumbnail_job.start.assert_not_called()
-        self.assertEqual(web_timeline_thumbnails.read_mode(), "off")
+        self.assertEqual(web_timeline_thumbnails.read_mode(self.root / "mode.json"), "off")
 
-    def test_turning_it_off_stops_the_run_and_keeps_the_sheets(self):
-        """几 GB 的产物删不删是另一件事，走数据管理页那条清理链。"""
-        web_timeline_thumbnails.write_mode("precise")
-        made = timeline_sheets.sheet_path(self.contract.timeline_root, 3, 0)
-        made.parent.mkdir(parents=True)
-        made.write_bytes(b"sheet")
-        state = web_timeline_thumbnails.w_thumbnail_jobs(self.contract, {"mode": "off"})
-        self.contract.thumbnail_job.stop.assert_called_once_with(resume=False)
-        self.assertEqual(state["mode"], "off")
-        self.assertTrue(made.is_file())
-
-    def test_choosing_a_density_starts_the_run_and_reports_it(self):
-        resolver = MagicMock()
-        resolver.return_value.ffmpeg.return_value.path = "ffmpeg"
-        with patch.object(web_timeline_thumbnails, "FFmpegResolver", resolver):
+    def test_choosing_a_density_is_remembered_and_reported(self):
+        with patch.object(web_timeline_thumbnails, "metadata_only", return_value=False):
             state = web_timeline_thumbnails.w_thumbnail_jobs(self.contract, {"mode": "coarse"})
         self.assertEqual(state["mode"], "coarse")
-        self.assertEqual(state["intervals"]["coarse"], 30)
-        started = self.contract.thumbnail_job.start.call_args
-        self.assertTrue(started.kwargs["restart"])
-        self.assertEqual(started.kwargs["initial"]["interval"], 30)
+        self.assertEqual(state["intervals"], timeline_sheets.INTERVALS)
+        self.assertEqual(web_timeline_thumbnails.q_thumbnail_jobs(self.contract, {})["mode"], "coarse")
 
-    def test_the_run_reports_its_count_where_the_activity_page_reads_it(self):
-        """进度只在活动页上看：任务中心读 `checked` / `total` 和那一行 `stage`。"""
-        resolver = MagicMock()
-        resolver.return_value.ffmpeg.return_value.path = "ffmpeg"
-        with patch.object(web_timeline_thumbnails, "FFmpegResolver", resolver):
-            web_timeline_thumbnails.w_thumbnail_jobs(self.contract, {"mode": "coarse"})
-        started = self.contract.thumbnail_job.start.call_args
-        self.assertEqual((started.kwargs["initial"]["checked"], started.kwargs["initial"]["stage"]),
-                         (0, "采集缩略图"))
-        work = started.args[0]
-
-        def generate(*_args, report, **_kwargs):
-            report(total=12, done=5, made=5, skipped=0, failed=0, stopped="")
-            return {"total": 12, "done": 12, "made": 11, "skipped": 1, "failed": 0, "stopped": ""}
-
-        with patch.object(timeline_sheets, "generate_library", side_effect=generate), \
-                patch.object(web_timeline_thumbnails, "CapacityGuard"):
-            work("job-1")
-        updates = [call.kwargs for call in self.contract.thumbnail_job.update.call_args_list]
-        self.assertEqual([(u["checked"], u["total"]) for u in updates], [(5, 12), (12, 12)])
-        self.assertEqual(updates[-1]["status"], "complete")
-        self.assertEqual(task_runs.task_label("timeline-thumbnails"), "视频缩略图采集")
-
-    def test_without_ffmpeg_the_density_cannot_be_turned_on(self):
-        resolver = MagicMock()
-        resolver.return_value.ffmpeg.return_value = None
-        with patch.object(web_timeline_thumbnails, "FFmpegResolver", resolver):
+    def test_with_media_processing_off_the_density_cannot_be_turned_on(self):
+        with patch.object(web_timeline_thumbnails, "metadata_only", return_value=True):
             with self.assertRaises(ValueError):
                 web_timeline_thumbnails.w_thumbnail_jobs(self.contract, {"mode": "precise"})
-        self.contract.thumbnail_job.start.assert_not_called()
+            state = web_timeline_thumbnails.w_thumbnail_jobs(self.contract, {"mode": "off"})
+        self.assertEqual(state["mode"], "off")
+
+
+class TimelineIndexTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="timeline-index-"))
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        self.contract = MagicMock()
+        self.contract.timeline_root = self.root
 
     def test_a_video_with_no_sheets_reports_an_empty_index(self):
         """页面据此决定要不要画这一层；空对象就是退回九宫格。"""
@@ -108,13 +77,63 @@ class ThumbnailJobEndpointTests(unittest.TestCase):
         self.assertEqual(web_timeline_thumbnails.q_timeline(self.contract, {}), {})
 
     def test_a_video_with_sheets_reports_the_interval_and_frame_count(self):
-        directory = timeline_sheets.sheet_dir(self.contract.timeline_root, 7)
+        directory = timeline_sheets.sheet_dir(self.root, 7)
         directory.mkdir(parents=True)
         (directory / "meta.json").write_text(
-            json.dumps({"interval": 30, "frames": 120, "sheets": 2, "columns": 10}),
-            encoding="utf-8")
+            '{"interval": 30, "frames": 120, "sheets": 2}', encoding="utf-8")
         index = web_timeline_thumbnails.q_timeline(self.contract, {"id": "7"})
         self.assertEqual((index["interval"], index["frames"]), (30, 120))
+        self.assertEqual(index["source"], "peach")
+
+
+class OnDemandTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="timeline-ondemand-"))
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        self.state = MagicMock()
+        self.state.settings.timeline_root = self.root / "timeline"
+        self.state.settings.ffmpeg_root = self.root / "tools"
+        patcher = patch.object(web_timeline_thumbnails, "MODE_PATH", self.root / "mode.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_with_the_density_off_nothing_is_generated(self):
+        self.assertFalse(web_timeline_thumbnails.ensure_sheet(self.state, 7))
+
+    def test_a_video_that_already_has_sheets_is_not_generated_again(self):
+        web_timeline_thumbnails.write_mode("coarse", self.root / "mode.json")
+        directory = timeline_sheets.sheet_dir(self.state.settings.timeline_root, 7)
+        directory.mkdir(parents=True)
+        (directory / "000.jpg").write_bytes(b"sheet")
+        (directory / "meta.json").write_text(
+            '{"interval": 30, "frames": 120, "sheets": 1}', encoding="utf-8")
+        self.assertFalse(web_timeline_thumbnails.ensure_sheet(self.state, 7))
+
+    def test_the_same_video_asked_twice_is_generated_once(self):
+        """播放页一开就是几个请求，同一个 id 连点几下不能抽出三套帧。"""
+        web_timeline_thumbnails.write_mode("precise", self.root / "mode.json")
+        started, release = threading.Event(), threading.Event()
+
+        def emit(*_args):
+            started.set()
+            release.wait(5)
+
+        with patch.object(web_timeline_thumbnails, "_emit", emit):
+            self.assertTrue(web_timeline_thumbnails.ensure_sheet(self.state, 7))
+            self.assertTrue(started.wait(5))
+            self.assertFalse(web_timeline_thumbnails.ensure_sheet(self.state, 7))
+            release.set()
+            deadline = time.monotonic() + 5
+            while web_timeline_thumbnails._IN_FLIGHT and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertFalse(web_timeline_thumbnails._IN_FLIGHT)
+
+    def test_without_ffmpeg_nothing_is_generated(self):
+        web_timeline_thumbnails.write_mode("coarse", self.root / "mode.json")
+        with patch.object(web_timeline_thumbnails, "FFmpegResolver") as resolver:
+            resolver.return_value.ffmpeg.return_value = None
+            web_timeline_thumbnails._emit(self.state, 7, 30, self.state.settings.timeline_root)
+        self.state.media_engine.asset.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""原目录的来源边界、目录规则预览、撤回与扫描继承。"""
+"""原目录的来源边界、目录规则预览、撤回与扫描继承：路径是账本里的虚拟路径。"""
 import json
 import unittest
 from pathlib import Path
@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from peach import folder_rules, media_folders, scan, web_folders
+from peach import folder_rules, media_folders, media_libraries, web_folders
 from peach.entities import upsert_asset_entity
 from peach.field_owners import write_owned_fields
 from peach.migrations import upgrade
@@ -25,19 +25,20 @@ class MediaFolderTests(unittest.TestCase):
         upgrade(self.path, ROOT / 'migrations')
         self.contract = WebContract(self.path, candidate_root=self.root / 'generated',
                                     follow_state_root=self.root / 'state', snapshot_root=self.root / 'snapshots')
-        self.config = SimpleNamespace(locations={'local': ('R:\\Media',), '115': ('A:\\收藏',)},
-                                      library_names={}, library_icons={})
+        self.config = SimpleNamespace(drive_roots={'gdrive': ('root-1',), 'onedrive': ('root-2',)},
+                                      library_catalog={}, library_names={}, library_icons={})
         self.addCleanup(patch.stopall)
         patch('peach.web_folders.settings_file.active', return_value=self.config).start()
-        self.rows = [('local', 'R:\\Media\\精选\\作者甲\\a.mp4'),
-                     ('local', 'R:\\Media\\精选\\作者甲\\视频\\b.mp4'),
-                     ('local', 'R:\\Media\\精选\\作者甲2\\c.mp4'),
-                     ('115', 'A:\\收藏\\精选\\d.mp4')]
+        self.rows = [('gdrive', 'gdrive:/Media/精选/作者甲/a.mp4', 'root-1'),
+                     ('gdrive', 'gdrive:/Media/精选/作者甲/视频/b.mp4', 'root-1'),
+                     ('gdrive', 'gdrive:/Media/精选/作者甲2/c.mp4', 'root-1'),
+                     ('onedrive', 'onedrive:/收藏/精选/d.mp4', 'root-2')]
         with self.contract.write_transaction() as connection:
-            connection.executemany("INSERT INTO asset(location,path,name,medium) VALUES(?,?,?,'video')",
-                                   [(loc, path, path.rsplit('\\', 1)[1]) for loc, path in self.rows])
+            connection.executemany(
+                "INSERT INTO asset(location,path,name,medium,drive_root) VALUES(?,?,?,'video',?)",
+                [(loc, path, path.rsplit('/', 1)[1], root) for loc, path, root in self.rows])
 
-    def key(self, path='R:\\Media\\精选\\作者甲', location='local'):
+    def key(self, path='gdrive:/Media/精选/作者甲', location='gdrive'):
         return media_folders.folder_id(location, path)
 
     def read(self, **args):
@@ -57,30 +58,31 @@ class MediaFolderTests(unittest.TestCase):
 
     def test_tree_keeps_personal_names_and_separate_source_roots(self):
         result = self.read(folder=self.key())
-        self.assertEqual([row['name'] for row in result['ancestors']], ['Media', '精选', '作者甲'])
+        self.assertEqual([row['name'] for row in result['ancestors']], ['Google Drive', 'Media', '精选', '作者甲'])
         self.assertEqual([row['name'] for row in result['children']], ['视频'])
         self.assertEqual(result['selected']['videos'], 2)
         self.assertEqual(len(result['roots']), 2)
-        self.assertEqual(len(self.read(loc='115')['roots']), 1)
+        self.assertEqual(len(self.read(loc='onedrive')['roots']), 1)
         self.assertEqual(self.read(library='不存在')['roots'], [])
 
     def test_counts_follow_the_parent_directory_whatever_the_path_spelling(self):
-        """同一目录的不同写法计到同一个节点；以分隔符结尾的路径计到上一层，不跟同前缀的文件走。"""
-        spellings = ['R:/Media/精选/作者甲/e.mp4', 'R:\\Media\\精选\\\\作者甲\\f.mp4',
-                     'r:\\media\\精选\\作者甲\\g.mp4', 'R:\\Media\\精选\\作者甲\\']
+        """同一个目录换个大小写或多带分隔符也计到同一个节点上。"""
+        spellings = ['gdrive:/Media/精选/作者甲/e.mp4', 'gdrive:/Media/精选/作者甲/F.MP4']
         with self.contract.write_transaction() as connection:
-            connection.executemany("INSERT INTO asset(location,path,name,medium) VALUES('local',?,'x','video')",
+            connection.executemany("INSERT INTO asset(location,path,name,medium) VALUES('gdrive',?,'x','video')",
                                    [(path,) for path in spellings])
         with self.contract.read_connection() as connection:
             index = media_folders.directory_index(connection, self.config)
-        self.assertEqual(index[self.key()]['files'], 5)
-        self.assertEqual(index[self.key('R:\\Media\\精选')]['files'], 7)
+        self.assertIn(self.key(), index)
+        self.assertEqual(index[self.key()]['files'], 4)
+        self.assertEqual(index[self.key('gdrive:/Media/精选')]['files'], 5)
+        self.assertEqual(index[self.key()]['videos'], 4)
 
     def test_path_scope_is_case_insensitive_and_observes_component_boundary(self):
         with self.contract.read_connection() as connection:
-            clause, args = media_folders.path_predicate('local', 'r:\\media\\精选\\作者甲')
+            clause, args = media_folders.path_predicate('gdrive', 'GDRIVE:/media/精选/作者甲')
             self.assertEqual([row[0] for row in connection.execute('SELECT id FROM asset a WHERE ' + clause, args)], [1, 2])
-            clause, args = media_folders.path_predicate('local', 'R:\\Media\\精选\\作者甲', False)
+            clause, args = media_folders.path_predicate('gdrive', 'gdrive:/Media/精选/作者甲', False)
             self.assertEqual([row[0] for row in connection.execute('SELECT id FROM asset a WHERE ' + clause, args)], [1])
         patch('peach.web_catalog.settings_file.active', return_value=self.config).start()
         self.assertEqual(sorted(row['id'] for row in q_items(self.contract, {'folder': self.key()})['items']), [1, 2])
@@ -88,10 +90,20 @@ class MediaFolderTests(unittest.TestCase):
 
     def test_sql_wildcard_directory_names_are_literal(self):
         with self.contract.write_transaction() as connection:
-            connection.execute("INSERT INTO asset(location,path,name,medium) VALUES('local',?,'e.mp4','video')",
-                               ('R:\\Media\\100%_test\\e.mp4',))
-            clause, args = media_folders.path_predicate('local', 'R:\\Media\\100%_test')
+            connection.execute("INSERT INTO asset(location,path,name,medium) VALUES('gdrive',?,'e.mp4','video')",
+                               ('gdrive:/Media/100%_test/e.mp4',))
+            clause, args = media_folders.path_predicate('gdrive', 'gdrive:/Media/100%_test')
             self.assertEqual(connection.execute('SELECT count(*) FROM asset a WHERE ' + clause, args).fetchone()[0], 1)
+
+    def test_library_filter_keeps_only_its_own_scan_root(self):
+        with self.contract.read_connection() as connection:
+            index = media_folders.directory_index(connection, self.config, library='onedrive:root-2')
+        self.assertEqual({row['location'] for row in index.values()}, {'onedrive'})
+        library = 'gdrive:root-1'
+        clause, args = media_libraries.predicate(self.config, library)
+        with self.contract.read_connection() as connection:
+            ids = [row[0] for row in connection.execute('SELECT id FROM asset a WHERE ' + clause, args)]
+        self.assertEqual(ids, [1, 2, 3])
 
     def test_category_rule_keeps_classification_without_creating_identity(self):
         self.save(purpose='category', name='')
@@ -117,7 +129,7 @@ class MediaFolderTests(unittest.TestCase):
             write_owned_fields(connection, [1], {'creator': '其他人'}, 'user:manual')
         with self.assertRaisesRegex(ValueError, '重新预览'):
             web_folders.w_folder_rule(self.contract, {**body, 'action': 'save', 'expected_revision': 0,
-                                                     'plan_version': preview['plan_version']})
+                                                    'plan_version': preview['plan_version']})
 
     def test_conflicts_keep_manual_and_external_relations(self):
         with self.contract.write_transaction() as connection:
@@ -139,12 +151,12 @@ class MediaFolderTests(unittest.TestCase):
 
     def test_new_files_follow_enabled_rule_and_child_category_stops_inheritance(self):
         self.save(future=True)
-        child = self.key('R:\\Media\\精选\\作者甲\\视频')
+        child = self.key('gdrive:/Media/精选/作者甲/视频')
         self.save(folder=child, purpose='category', name='', future=False)
         with self.contract.write_transaction() as connection:
-            for suffix in ('new.mp4', '视频\\new.mp4'):
-                connection.execute("INSERT INTO asset(location,path,name,medium) VALUES('local',?,'new.mp4','video')",
-                                   ('R:\\Media\\精选\\作者甲\\' + suffix,))
+            for suffix in ('new.mp4', '视频/new.mp4'):
+                connection.execute("INSERT INTO asset(location,path,name,medium) VALUES('gdrive',?,'new.mp4','video')",
+                                   ('gdrive:/Media/精选/作者甲/' + suffix,))
             self.assertEqual(folder_rules.apply_new(connection, [5, 6]), 1)
             self.assertEqual([row[0] for row in connection.execute('SELECT creator FROM asset WHERE id IN (5,6) ORDER BY id')], ['作者甲', None])
 
@@ -175,7 +187,7 @@ class MediaFolderTests(unittest.TestCase):
             write_owned_fields(connection, [2], {'creator': '逐件确认'}, 'user:manual')
         with self.assertRaisesRegex(ValueError, '重新预览'):
             web_folders.w_folder_rule(self.contract, {**body, 'action': 'save', 'expected_revision': 1,
-                                                     'plan_version': preview['plan_version']})
+                                                    'plan_version': preview['plan_version']})
         self.save(recursive=False)
         with self.contract.read_connection() as connection:
             self.assertEqual(connection.execute('SELECT creator FROM asset WHERE id=2').fetchone()[0], '逐件确认')
@@ -197,16 +209,6 @@ class MediaFolderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '目录不存在'):
             self.read(folder=self.key())
 
-    def test_scan_inherits_only_explicitly_enabled_directory_rule(self):
-        self.save(future=True)
-        media = self.root / 'media'
-        target = media / '精选' / '作者甲' / 'scan.mp4'
-        target.parent.mkdir(parents=True)
-        target.write_bytes(b'synthetic media')
-        result = scan.scan_location(self.path, 'local', 'R:\\Media',
-                                    declared_roots={'local': ('R:\\Media',)}, mounts={'local': (media,)},
-                                    windows=False, report=lambda _message: None)
-        self.assertEqual(len(result.new_ids), 1)
-        with self.contract.read_connection() as connection:
-            value = connection.execute('SELECT creator FROM asset WHERE id=?', (result.new_ids[0],)).fetchone()[0]
-        self.assertEqual(value, '作者甲')
+
+if __name__ == '__main__':
+    unittest.main()

@@ -24,14 +24,18 @@ class TestEnvironmentTests(unittest.TestCase):
         for root in (self.main, self.worker):
             root.mkdir()
             (root / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-        (self.main / ".venv").mkdir()
-        (self.main / ".venv" / "pyvenv.cfg").write_text("home = python\n", encoding="utf-8")
+        self.python = (self.main / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+                       / ("python.exe" if os.name == "nt" else "python"))
+        self.python.parent.mkdir(parents=True)
+        self.python.write_text("", encoding="utf-8")
 
-    def prepare(self, root, run, **kwargs):
-        return test_environment.prepare(
-            root, self.main, run=run, which=lambda name: "uv",
-            environ={"VIRTUAL_ENV": str(self.main / ".venv"),
-                     "UV_PROJECT_ENVIRONMENT": str(self.main / ".venv")}, **kwargs)
+    def prepare(self, root, run, *, which=lambda name: "uv",
+                environ=None, **kwargs):
+        if environ is None:
+            environ = {"VIRTUAL_ENV": str(self.main / ".venv"),
+                       "UV_PROJECT_ENVIRONMENT": str(self.main / ".venv")}
+        return test_environment.prepare(root, self.main, run=run, which=which,
+                                        environ=environ, **kwargs)
 
     def test_worktree_sync_creates_its_own_environment_and_ignores_external_overrides(self):
         def install(command, **kwargs):
@@ -42,26 +46,26 @@ class TestEnvironmentTests(unittest.TestCase):
             self.assertNotIn("UV_PROJECT_ENVIRONMENT", kwargs["env"])
             self.assertIn("--locked", command)
             self.assertIn("--all-extras", command)
-            self.assertNotIn("--check", command)
+            self.assertIn("--no-install-project", command)
+            self.assertEqual(kwargs["cwd"], str(self.worker.resolve()))
             return subprocess.CompletedProcess(command, 0)
         self.prepare(self.worker, install)
         self.assertTrue((self.worker / ".venv" / "installed").is_file())
         self.assertFalse((self.main / ".venv" / "installed").exists())
 
-    def test_main_checkout_only_checks_the_running_environment(self):
-        run = mock.Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
-        self.prepare(self.main, run)
-        self.assertEqual(run.call_count, 1)
-        self.assertIn("--check", run.call_args.args[0])
-        self.assertIn("--no-install-project", run.call_args.args[0])
+    def test_main_checkout_is_read_only_and_never_syncs_or_installs(self):
+        run = mock.Mock()
+        # 主检出的 .venv 是部署与本地服务共用的那一份：只确认它能跑，绝不同步。
+        self.prepare(self.main, run, which=lambda name: self.fail("主检出不该去找 uv"))
+        run.assert_not_called()
+        self.assertEqual(self.python.read_text(encoding="utf-8"), "")
 
-    def test_outdated_main_environment_stops_before_any_sync(self):
-        run = mock.Mock(return_value=subprocess.CompletedProcess(
-            [], 1, "The environment is outdated", ""))
-        with self.assertRaisesRegex(RuntimeError, "重启流程"):
+    def test_main_checkout_without_its_environment_stops_before_any_sync(self):
+        run = mock.Mock()
+        self.python.unlink()
+        with self.assertRaisesRegex(RuntimeError, "主检出依赖未就绪"):
             self.prepare(self.main, run)
-        self.assertEqual(run.call_count, 1)
-        self.assertIn("--check", run.call_args.args[0])
+        run.assert_not_called()
 
     def test_failed_sync_does_not_report_ready(self):
         run = mock.Mock(return_value=subprocess.CompletedProcess([], 2))
@@ -70,13 +74,22 @@ class TestEnvironmentTests(unittest.TestCase):
 
     def test_missing_lock_or_uv_stops_before_starting_tests(self):
         run = mock.Mock()
-        (self.worker / "uv.lock").unlink()
+        lock = self.worker / "uv.lock"
+        lock.unlink()
         with self.assertRaisesRegex(RuntimeError, "uv.lock"):
             self.prepare(self.worker, run)
-        with self.assertRaisesRegex(RuntimeError, "uv"):
-            test_environment.prepare(self.main, self.main, run=run,
-                                     which=lambda name: None, environ={})
+        lock.write_text("version = 1\n", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "未取得 uv"):
+            self.prepare(self.worker, run, which=lambda name: None, environ={})
         run.assert_not_called()
+        # Windows 上 uv 常常只有 WinGet 的链接目录里有。
+        winget = self.folder / "winget"
+        (winget / "Microsoft" / "WinGet" / "Links").mkdir(parents=True)
+        (winget / "Microsoft" / "WinGet" / "Links" / "uv.exe").write_text("", encoding="utf-8")
+        self.assertEqual(test_environment.find_uv(which=lambda name: None,
+                                                  environ={"LOCALAPPDATA": str(winget)}),
+                         str(winget / "Microsoft" / "WinGet" / "Links" / "uv.exe"))
+        self.assertIsNone(test_environment.find_uv(which=lambda name: None, environ={}))
 
     def test_entrypoint_requires_successful_preparation_before_loading_the_runner(self):
         shell = shutil.which("pwsh" if os.name == "nt" else "bash")

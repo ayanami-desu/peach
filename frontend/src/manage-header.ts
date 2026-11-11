@@ -9,7 +9,6 @@
 
 /** `[键, 名称, 字形]`，同壳的 `MANAGE_SECTIONS`。 */
 import { CLEANUP_CRUMB_PAGES } from './cleanup-tools';
-import { REPAIR_CENTER_PATH } from './history/settings-route';
 import { MANAGE_MENU_SECTIONS, normalizeManageOrder } from './application/navigation-items';
 
 export type ManageEntry = readonly [key: string, label: string, glyph: string];
@@ -44,16 +43,11 @@ export const MANAGE_CRUMB_PAGES: Readonly<Record<string, string>> = {
   '/trash': '回收站',
   '/quality-goals': '高清版',
   '/sources': '来源和凭证',
-  [REPAIR_CENTER_PATH]: '修复与迁移',
 };
 
-/** 面包屑的上一级：`key` 是管理条上按下的那一项。没写的子页都从数据管理进。 */
+/** 面包屑的上一级：`key` 是管理条上按下的那一项，管理区的子页都从数据管理进。 */
 export interface CrumbParent { key: string; label: string; href: string }
-const CLEANUP_PARENT: CrumbParent = { key: 'cleanup', label: '数据管理', href: '/data-cleanup' };
-const CRUMB_PARENTS: Readonly<Record<string, CrumbParent>> = {
-  [REPAIR_CENTER_PATH]: { key: 'configuration', label: '应用与维护', href: '/settings/maintenance' },
-};
-export const crumbParent = (path: string): CrumbParent => CRUMB_PARENTS[path] ?? CLEANUP_PARENT;
+export const CLEANUP_PARENT: CrumbParent = { key: 'cleanup', label: '数据管理', href: '/data-cleanup' };
 
 /* 窄屏（≤760px）上标题收一档到 22px 的页面：正文是 812px 窄列的数据管理 hub、来源和凭证与配置页。
    其余管理页跟全站页面标题走 24px。 */
@@ -62,7 +56,7 @@ const COMPACT_TITLE_PATHS = new Set(['/data-cleanup', '/sources']);
 /** 管理条上按下哪一项。子页按上一级（多数是数据管理）；
  *  别的页按自己的管理区，管理条上没有这一项时就没有按下项。 */
 export function pressedManageKey(props: Pick<ManageHeaderProps, 'section' | 'path' | 'menu'>): string {
-  const key = MANAGE_CRUMB_PAGES[props.path] ? crumbParent(props.path).key : props.section;
+  const key = MANAGE_CRUMB_PAGES[props.path] ? CLEANUP_PARENT.key : props.section;
   return props.menu.some(([entry]) => entry === key) ? key : '';
 }
 
@@ -87,10 +81,10 @@ export function manageHeaderView(props: ManageHeaderProps): ManageHeaderView | n
   if (!entry) return null;
   const crumb = MANAGE_CRUMB_PAGES[props.path] ?? '';
   return {
-    title: (props.section === crumbParent(props.path).key && crumb) || entry[1],
+    title: (props.section === CLEANUP_PARENT.key && crumb) || entry[1],
     pressed: pressedManageKey(props),
     crumb,
-    parent: crumbParent(props.path),
+    parent: CLEANUP_PARENT,
     compact: COMPACT_TITLE_PATHS.has(props.path) || props.section === 'configuration',
     lede: props.section !== 'trash' ? { kind: 'none' }
       : props.trash ? { kind: 'count', text: trashLedeText(props.trash), total: props.trash.total }

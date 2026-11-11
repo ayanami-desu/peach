@@ -21,6 +21,7 @@ import { tagSkeletonHtml, TAG_PAGE_SIZE, TAG_PAGE_SIZES } from '../../tag-skelet
 import { useTagPagination, useTagPageBounds } from './tag-pagination';
 
 import { IDENTITY_ROW_CLASS } from '../../identity-filter';
+import { DRIVE_SETTINGS_PATH } from '../../history';
 
 import { BoardTabs, type BoardTab } from '../components/board-tabs';
 import { SortableBoardTabs } from '../components/navigation-order';
@@ -327,7 +328,7 @@ function IndexEmpty(
   return (
     <EmptyState icon={spriteGlyph(kind === 'tags' ? 'tags' : 'user-round')} title={`还没有${label}`}
       actions={online ? follow : <>
-        <ButtonLink size="small" href="/settings/library">添加媒体</ButtonLink>
+        <ButtonLink size="small" href={DRIVE_SETTINGS_PATH}>添加媒体</ButtonLink>
         {follow}
       </>}>
       {online ? `添加关注来源并获取内容后，这里会显示来源上的${label}。` : '添加内容并补充资料后，这里会显示对应信息。'}

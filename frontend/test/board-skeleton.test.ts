@@ -9,14 +9,16 @@ vi.mock('@peach/legacy/core', async importOriginal => ({
 
 describe('Board 页面骨架', () => {
   it.each([
-    ['subscriptions', '来源与订阅'], ['downloads', '下载渠道'], ['network', '网络与访问'], ['maintenance', '应用与维护'],
+    ['drives', '网盘'], ['access', '访问与安全'], ['token', 'API 令牌'],
+    ['devices', '设备会话'], ['speed', '任务速度'], ['diagnostics', '系统诊断'],
   ])('配置深链 %s 使用对应分区', (key, label) => {
     const root = document.createElement('div');
     root.innerHTML = boardPageSkeleton(`/settings/${key}`);
-    expect(root.querySelector('.ui-board-local-nav [aria-selected="true"]')?.textContent).toBe(label);
-    expect(root.querySelector('[aria-label="媒体库与目录"]')).toBeNull();
+    const tabs = [...root.querySelectorAll('.ui-board-local-nav button')];
+    expect(tabs).toHaveLength(6);
+    expect(tabs.filter(tab => tab.getAttribute('aria-selected') === 'true').map(tab => tab.textContent)).toEqual([label]);
   });
-  it.each(['/stats', '/taste', '/subscriptions', '/settings/library', '/settings/diagnostics', '/tasks', '/duplicates', '/quality-goals', '/playlists', '/settings/maintenance/repairs'])('为 %s 提供单一等待语义', path => {
+  it.each(['/stats', '/subscriptions', '/settings/diagnostics', '/tasks', '/duplicates', '/quality-goals', '/playlists'])('为 %s 提供单一等待语义', path => {
     const root = document.createElement('div');
     root.innerHTML = boardPageSkeleton(path);
     expect(root.querySelectorAll('[role="status"]')).toHaveLength(1);
@@ -67,7 +69,7 @@ describe('Board 页面骨架', () => {
     ['/duplicates', '[data-duplicate-group] .duplicate-row', 4],
     ['/quality-goals', '.peach-react .card-grid-cover > li', 6],
     ['/subscriptions', '.peach-react .ui-follow-skeleton-surface .follow-skeleton-author', 3],
-    ['/settings/library', '.peach-react .ui-configpage section[aria-label="媒体库与目录"]', 1],
+    ['/settings/diagnostics', '.peach-react .ui-configpage [data-skeleton="diagnostics"]', 1],
     ['/playlists', '.ui-playlistcards > .playlistcard', 6],
   ] as const)('%s 复用最终内容容器', (path, selector, count) => {
     const root = document.createElement('div');
@@ -141,17 +143,6 @@ describe('Board 页面骨架', () => {
     expect([...head.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['', '全选', '收起']);
     expect(root.querySelector('.ui-follow-skeleton-surface > .group')?.textContent).toBe('全选本页');
     expect(root.querySelector('[data-selection-dock]')).toBeNull();
-  });
-  it('口味骨架画在 React 岛里，按浏览器记录那一页排', () => {
-    const root = document.createElement('div');
-    root.innerHTML = boardPageSkeleton('/taste');
-    expect(root.querySelector('.peach-react')).not.toBeNull();
-    expect(root.querySelector('[data-taste-segments] [data-selected]')?.textContent).toBe('浏览器记录');
-    expect([...root.querySelectorAll('[data-taste-metrics] > div > span')].map((span) => span.textContent))
-      .toEqual(['浏览记录', '口味维度', '浏览线索', '私有导出']);
-    expect(root.querySelector('[data-taste-portrait]')?.textContent).toContain('浏览器画像');
-    expect([...root.querySelectorAll('h3')].map((h3) => h3.textContent))
-      .toEqual(['浏览活跃时间', '每日活跃', '创作者线索来源']);
   });
   it('关注表格视图是 Board UI 表格外框，当前排序那一列带方向', () => {
     const root = follow({ followLayout: 'table' });

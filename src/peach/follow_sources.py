@@ -32,7 +32,37 @@ from .follow_secrets import Credential, CredentialError
 from .follow_gofile import GofileExpander, folder_labels
 from .follow_image_dims import positive_dims
 from .http import CurlCffiTransport, HttpRequest, HttpResponse, HttpTransport, HttpxTransport
-from .mp4index import movie_seconds
+
+
+def video_seconds(head: bytes) -> float | None:
+    """MP4 头里 `mvhd` 声明的时长；`moov` 在文件结尾或不是 mp4 时给 None。
+
+    只读已经拿到的那段字节，不落文件也不重开连接：追更取的是每帖最多 64 KB 的
+    文件头，`moov` 不在其中就等于这个站不给时长。
+    """
+    at = head.find(b"mvhd")
+    if at < 0:
+        return None
+    body = head[at + 4:]
+    if len(body) < 20:
+        return None
+    version = body[0]
+    try:
+        if version == 0:
+            timescale = int.from_bytes(body[12:16], "big")
+            duration = int.from_bytes(body[16:20], "big")
+        elif version == 1:
+            if len(body) < 32:
+                return None
+            timescale = int.from_bytes(body[20:24], "big")
+            duration = int.from_bytes(body[24:32], "big")
+        else:
+            return None
+    except IndexError:
+        return None
+    if not timescale or duration in (0, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF):
+        return None
+    return duration / timescale
 
 
 #: 默认连接器共用的 UA。只有 ADR-0019 明确登记的 FANBOX 详情传输例外。
@@ -1849,7 +1879,7 @@ class Rule34XxxConnector(_BaseConnector):
             return None
         if response.status not in (200, 206):
             return None
-        return movie_seconds(response.body[:self._VIDEO_HEAD_BYTES])
+        return video_seconds(response.body[:self._VIDEO_HEAD_BYTES])
 
     #: 自动补全项的形状：`ria-neearts (248)`，括号里是该标签下的帖子数。
     _AUTOCOMPLETE_COUNT_RE = re.compile(r"\((\d[\d,]*)\)\s*$")

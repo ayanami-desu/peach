@@ -77,11 +77,11 @@ class SettingsContract(Protocol):
     def write_transaction(self): ...
 
 
-DEFAULT_MANAGE_ORDER = ('stats', 'taste', 'cleanup', 'follow', 'activity', 'configuration')
+DEFAULT_MANAGE_ORDER = ('stats', 'cleanup', 'follow', 'activity', 'configuration')
 NAVIGATION_ORDERS = {
     'review': ('metadata_fields', 'creator_tags', 'code_creators', 'western_identity', 'performer_avatars',
                'studio_logos', 'fc2_markings', 'fc2_similarity', 'video_endcards'),
-    'configuration': ('library', 'sources', 'downloads', 'network', 'maintenance', 'diagnostics'),
+    'configuration': ('drives', 'access', 'token', 'devices', 'speed', 'diagnostics'),
     'favorites': ('all', 'filters', 'performer', 'creator', 'tag', 'series', 'studio', 'agency'),
     'jav': ('library', 'wants', 'releases', 'discover'),
     'follow': ('list', 'add', 'tags'),

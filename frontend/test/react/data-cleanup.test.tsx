@@ -1,6 +1,6 @@
-/* 数据管理页：顶上那排读数与入口，链接、资源同步和整理三件要在这页上做的事。
+/* 数据管理页：顶上那排读数与入口，链接和整理几件要在这页上做的事。
  *
- * 会写真实 ledger 或删盘上东西的那几步（删失效链接、资源同步清理、整理的执行
+ * 会写真实 ledger 或删盘上东西的那几步（删失效链接、整理的执行
  * 与回滚）都必须先过确认弹层：这里既量「确认了才发」，也量「取消了一个字节都不发」。
  * 外观由 `frontend/e2e/design-*.test.ts` 读 `getComputedStyle` 断言；这里只看结构、文字与请求。 */
 import { notifyManager, QueryClientProvider } from '@tanstack/react-query';
@@ -21,10 +21,6 @@ import { OrganizeCard } from '../../src/react/data-cleanup/organize-card';
 import type { OrganizeData } from '../../src/react/data-cleanup/organize';
 import { OrphanRecordsCard } from '../../src/react/data-cleanup/orphan-records-card';
 import type { OrphanRecordsData } from '../../src/react/data-cleanup/orphan-records';
-import { ResourceSyncCard } from '../../src/react/data-cleanup/resource-sync-card';
-import { hasResourceRoots, RESOURCE_SCAN_KEY, type ResourceScanState } from '../../src/react/data-cleanup/resource-sync';
-import { IDLE_REPAIR } from '../../src/react/media-repair/media-repair';
-import type { MediaSourcesData } from '../../src/react/media-sources';
 import { queryClient } from '../../src/react/query';
 import { actionOrder, buttonNamed, choose, click, mount, settle, type } from './render';
 
@@ -102,14 +98,6 @@ function confirmWith(answer: boolean) {
 
 const wrap = (element: ReactElement) => mount(<QueryClientProvider client={queryClient}>{element}</QueryClientProvider>);
 
-const withRoots: MediaSourcesData = {
-  sources: [{ location: 'local', online: true, roots: [{ online: true }] }, { location: '115', online: false, roots: [{ online: false }] },
-    { location: 'online', online: true }],
-};
-const withoutRoots: MediaSourcesData = {
-  sources: [{ location: 'local', online: true, roots: [] }, { location: 'online', online: true }],
-};
-
 const organizeIdle: OrganizeData = {
   status: 'idle', locations: [{ location: 'local', roots: ['R:\\media'] }],
   templates: { local: { file: '{code}', dir: '' } },
@@ -119,27 +107,23 @@ const organizeIdle: OrganizeData = {
 };
 
 /** 整页首屏要的每一条端点。 */
-const pageRoutes = (sources: MediaSourcesData): Record<string, Route> => ({
+const pageRoutes = (): Record<string, Route> => ({
   '/api/review?counts=1': { counts: { metadata_fields: 12, performer_avatars: 3, studio_logos: 2, creator_tags: 1 } },
   '/api/quality-goals?limit=200': { total: 7, items: [] },
   '/api/duplicates?limit=120': { total: 3, files: 8, reclaimable: 2 * 1073741824, groups: [] },
   '/api/ads?limit=1': { pending_total: 5, dismissed_total: 2, counts: { video: 4, url: 1 } },
   '/api/items?state=trash&limit=1': { total: 9, bytes: 3 * 1073741824 },
-  '/api/sources': sources,
   '/api/library-processing': { status: 'idle' },
-  '/api/media-repair': IDLE_REPAIR,
   '/api/libraries': { libraries: [] },
   '/api/organize': organizeIdle,
   '/api/links': { total: 0, entities: 0, by_kind: {}, top_hosts: [], top_host_link_ids: {} },
   '/api/links/check': { status: 'idle', check_id: '', checked: 0, total: 0, gone: [], unclear: [], scope: '' },
   '/api/links/prune': { status: 'idle' },
   '/api/orphan-records': { total: 0, items: [] },
-  '/api/resource-sync/scan': { status: 'idle', scan_id: '' },
-  '/api/resource-sync/apply': { status: 'idle' },
 });
 
-async function openPage(sources: MediaSourcesData = withRoots, patch: Record<string, Route> = {}) {
-  const server = serve({ ...pageRoutes(sources), ...patch });
+async function openPage(patch: Record<string, Route> = {}) {
+  const server = serve({ ...pageRoutes(), ...patch });
   await prefetchDataCleanup(new AbortController().signal);
   const open = vi.fn<(section: DataCleanupSection) => void>();
   const navigate = vi.fn<(path: string) => void>();
@@ -148,8 +132,8 @@ async function openPage(sources: MediaSourcesData = withRoots, patch: Record<str
   return { host, open, navigate, server };
 }
 
-async function openTool(tool: CleanupToolKey, sources: MediaSourcesData = withRoots, patch: Record<string, Route> = {}) {
-  const server = serve({ ...pageRoutes(sources), ...patch });
+async function openTool(tool: CleanupToolKey, patch: Record<string, Route> = {}) {
+  const server = serve({ ...pageRoutes(), ...patch });
   await prefetchDataCleanupTool(tool, new AbortController().signal);
   const host = await wrap(<DataCleanupToolPage tool={tool} toast={vi.fn()} failure={vi.fn()} />);
   await settle();
@@ -161,11 +145,11 @@ const entry = (host: ParentNode, section: DataCleanupSection) =>
 
 describe('读数卡', () => {
   it('单面板分区的标题只在面板内显示', async () => {
-    serve(pageRoutes(withRoots));
+    serve(pageRoutes());
     const host = await wrap(<><DataCleanupToolPage tool="links" toast={vi.fn()} failure={vi.fn()} />
-      <DataCleanupToolPage tool="resource-sync" toast={vi.fn()} failure={vi.fn()} /></>);
+      <DataCleanupToolPage tool="orphan-records" toast={vi.fn()} failure={vi.fn()} /></>);
     await settle();
-    for (const id of ['link-manager', 'resource-sync']) {
+    for (const id of ['link-manager', 'orphan-records']) {
       const section = host.querySelector(`#${id}`)!;
       const title = section.querySelector(`#${id}-title`)!;
       expect(title.tagName).toBe('H3');
@@ -196,193 +180,22 @@ describe('读数卡', () => {
   });
 
   it('一张卡取不到只把那一张写成「读取失败」', async () => {
-    const { host } = await openPage(withRoots, { '/api/review?counts=1': failWith(500) });
+    const { host } = await openPage({ '/api/review?counts=1': failWith(500) });
     expect(entry(host, 'review')?.textContent).toContain('读取失败');
     expect(entry(host, 'trash')?.textContent).toContain('9 项在回收站');
   });
 
   it('回收站计数跟着侧栏选中的媒体库走', async () => {
     sessionStorage.setItem('peach.library', '网盘');
-    const { server } = await openPage(withRoots, { '/api/items?state=trash&limit=1&library=%E7%BD%91%E7%9B%98': { total: 1, bytes: 0 } });
+    const { server } = await openPage({ '/api/items?state=trash&limit=1&library=%E7%BD%91%E7%9B%98': { total: 1, bytes: 0 } });
     expect(server.calls.map((call) => call.path)).toContain('/api/items?state=trash&limit=1&library=%E7%BD%91%E7%9B%98');
     expect(server.calls.map((call) => call.path)).not.toContain('/api/items?state=trash&limit=1');
   });
 });
 
-describe('资源同步', () => {
-  it('首页不读取资源扫描，进入二级页后才按已配置根目录读取', async () => {
-    expect(hasResourceRoots(withRoots)).toBe(true);
-    expect(hasResourceRoots(withoutRoots)).toBe(false);
-    const server = serve(pageRoutes(withRoots));
-    await prefetchDataCleanup(new AbortController().signal);
-    expect(server.calls.some(call => call.path.startsWith('/api/resource-sync'))).toBe(false);
-    queryClient.clear();
-    const shown = await openTool('resource-sync', withRoots);
-    expect(shown.host.querySelector('#resource-sync')).not.toBeNull();
-    queryClient.clear();
-    const hidden = await openTool('resource-sync', withoutRoots);
-    expect(hidden.host.querySelector('#resource-sync')).toBeNull();
-    expect(hidden.host.textContent).toContain('尚未配置可核对的媒体目录');
-    expect(hidden.server.calls.some((call) => call.path.startsWith('/api/resource-sync'))).toBe(false);
-  });
-
-  const scanned: ResourceScanState = {
-    status: 'complete', scan_id: 'scan-7', missing: 4, empty: 3, unreadable: 0,
-    cache: { files: 2, bytes: 1048576 * 5 },
-    sources: [
-      { location: 'local', online: true, total: 120, missing: 4, empty: 3, unreadable: 0 },
-      { location: '115', online: false, total: 30, missing: 0, empty: 0, unreadable: 0 },
-    ],
-  };
-
-  /** 执行那一条：POST 起任务，之后的 GET 回 `finished`；没起过就是空闲。 */
-  const applyRoute = (finished: object) => {
-    let started = false;
-    return (_body: unknown, method: string) => {
-      if (method === 'POST') {
-        started = true;
-        return { status: 'running', job_id: 'apply-1' };
-      }
-      return started ? { status: 'complete', job_id: 'apply-1', ...finished } : { status: 'idle' };
-    };
-  };
-
-  it('扫完来源一行、待删三样一行；清理是危险确认，正文写明永久删除，确认后才发 apply', async () => {
-    const seen = confirmWith(true);
-    const toast = vi.fn();
-    const server = serve({
-      '/api/resource-sync/scan': scanned,
-      '/api/resource-sync/apply': applyRoute({
-        purged: 4, blocked: [], dirs_removed: 3, dir_errors: 0, cache_removed: 2, bytes_reclaimed: 1048576 * 5,
-        cache_blocked: [],
-      }),
-      '/api/items?state=trash&limit=1': { total: 0, bytes: 0 },
-    });
-    const host = await wrap(<ResourceSyncCard toast={toast} />);
-    await settle();
-    expect(host.textContent).toContain('本地磁盘');
-    expect(host.querySelector('[data-connection-tone="warning"]')?.textContent).toBe('离线');
-    expect(host.textContent).toContain('本次已跳过');
-    expect(host.textContent).toContain('馆藏中有 30 项');
-    expect(host.textContent).toContain('空文件夹 3 个');
-    expect(host.textContent).toContain('待永久删除');
-    expect(host.textContent).toContain('保留来源根目录');
-    expect(server.posts('/api/resource-sync/apply')).toEqual([]);
-    await click(buttonNamed('清理失效条目', host));
-    await settle();
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.title).toBe('清理失效条目');
-    expect(seen[0]!.danger).toBe(true);
-    expect(seen[0]!.body).toBe(
-      '将永久删除 4 条文件已不在的记录（含回收站）和 3 个空文件夹，并清理 2 个闲置缓存。这一步不可撤销。');
-    expect(server.posts('/api/resource-sync/apply')).toEqual([
-      { confirm: true, clean_cache: true, scan_id: 'scan-7', background: true },
-    ]);
-    await settle();
-    expect(toast).toHaveBeenCalledWith('已清理失效条目');
-    expect(host.textContent).toContain('已永久删除 4 条失效记录和 3 个空文件夹，清理 2 个缓存，释放 5 MB。');
-  });
-
-  it('其余来源仍在扫描时显示已确认来源，任务失败也保留这些结果', async () => {
-    const state = { status: 'running', scan_id: 'scan-partial', completed_sources: 1, total_sources: 2,
-      sources: [scanned.sources![0]!] };
-    serve({ '/api/resource-sync/scan': state, '/api/resource-sync/apply': { status: 'idle' } });
-    const host = await wrap(<ResourceSyncCard toast={vi.fn()} />);
-    await settle();
-    expect(host.textContent).toContain('本地磁盘');
-    expect(host.textContent).toContain('空文件夹 3 个');
-    expect(buttonNamed('清理失效条目', host)).toBeNull();
-    expect(host.textContent).not.toContain('可清理的缓存');
-    await act(async () => { queryClient.setQueryData(RESOURCE_SCAN_KEY, {
-      ...state, status: 'failed', error: '第二个来源无法读取',
-    }); });
-    expect(host.textContent).toContain('本地磁盘');
-    expect(host.textContent).toContain('第二个来源无法读取');
-  });
-
-  it('带个人记录的单列一档：读数卡与确认框分开报删除和标为已消失的条数，结果单报接回的', async () => {
-    const seen = confirmWith(true);
-    serve({
-      '/api/resource-sync/scan': {
-        ...scanned, purge: 3, vanish: 2,
-        sources: [{ ...scanned.sources![0]!, vanish: 2 }, scanned.sources![1]!],
-      },
-      '/api/resource-sync/apply': applyRoute({
-        purged: 3, vanished: 1, reattached: 1, blocked: [], dirs_removed: 3, dir_errors: 0, cache_removed: 2,
-        bytes_reclaimed: 0, cache_blocked: [],
-      }),
-      '/api/items?state=trash&limit=1': { total: 0, bytes: 0 },
-    });
-    const host = await wrap(<ResourceSyncCard toast={vi.fn()} />);
-    await settle();
-    expect(host.textContent).toContain('将标为已消失');
-    expect(host.textContent).toContain('2 项带个人记录');
-    await click(buttonNamed('清理失效条目', host));
-    await settle();
-    expect(seen[0]!.body).toBe(
-      '将永久删除 3 条文件已不在的记录（含回收站）和 3 个空文件夹，并清理 2 个闲置缓存。'
-      + '这几样不可撤销。2 条作品记录的文件已丢失，个人记录保留，可在「文件已丢失的记录」中处理。');
-    await settle();
-    expect(host.textContent).toContain(
-      '1 条作品记录已标为文件丢失，可在「文件已丢失的记录」中处理。1 条的记录已接到库里的另一个版本。');
-  });
-
-  it('复核时发现文件还在、目录删不掉的几样留在原地：报警告档，结果条写部分完成', async () => {
-    confirmWith(true);
-    const toast = vi.fn();
-    serve({
-      '/api/resource-sync/scan': scanned,
-      '/api/resource-sync/apply': applyRoute({
-        purged: 3, blocked: [{ id: 9, name: '回来了.mp4', reason: 'present' }], dirs_removed: 2, dir_errors: 1,
-        cache_removed: 2, bytes_reclaimed: 0, cache_blocked: [],
-      }),
-      '/api/items?state=trash&limit=1': { total: 0, bytes: 0 },
-    });
-    const host = await wrap(<ResourceSyncCard toast={toast} />);
-    await settle();
-    await click(buttonNamed('清理失效条目', host));
-    await settle();
-    await settle();
-    expect(toast).toHaveBeenCalledWith('已完成 7 项，2 项没有处理', { warning: true });
-    expect(host.textContent).toContain('部分完成');
-    expect(host.textContent).toContain('1 条记录没有删除（「回来了.mp4」），1 个文件夹没有删除，重新检查后可再试。');
-  });
-
-  it('取消确认就不发 apply', async () => {
-    confirmWith(false);
-    const server = serve({ '/api/resource-sync/scan': scanned, '/api/resource-sync/apply': { status: 'idle' } });
-    const host = await wrap(<ResourceSyncCard toast={vi.fn()} />);
-    await settle();
-    await click(buttonNamed('清理失效条目', host));
-    await settle();
-    expect(server.posts('/api/resource-sync/apply')).toEqual([]);
-  });
-
-  it('没有要清的东西时不给清理键，只说一句', async () => {
-    serve({
-      '/api/resource-sync/scan': { ...scanned, missing: 0, empty: 0, cache: { files: 0, bytes: 0 } },
-      '/api/resource-sync/apply': { status: 'idle' },
-    });
-    const host = await wrap(<ResourceSyncCard toast={vi.fn()} />);
-    await settle();
-    expect(buttonNamed('清理失效条目', host)).toBeNull();
-    expect(host.textContent).toContain('已检查可访问的来源，没有待清理的记录、空文件夹或缓存。');
-  });
-
-  it('只有空文件夹要删时也给清理键', async () => {
-    serve({
-      '/api/resource-sync/scan': { ...scanned, missing: 0, empty: 2, cache: { files: 0, bytes: 0 } },
-      '/api/resource-sync/apply': { status: 'idle' },
-    });
-    const host = await wrap(<ResourceSyncCard toast={vi.fn()} />);
-    await settle();
-    expect(buttonNamed('清理失效条目', host)).not.toBeNull();
-  });
-});
-
 describe('链接管理', () => {
   it('主要站点分别链接到主页并通过本站读取 favicon，图标失败时保留链接', async () => {
-    const { host } = await openTool('links', withRoots, {
+    const { host } = await openTool('links', {
       '/api/links': { total: 8, entities: 3, by_kind: {}, top_hosts: [['example.com', 5], ['example.org', 3]], top_host_link_ids: { 'example.com': 8, 'example.org': 9 } },
     });
     const link = host.querySelector<HTMLAnchorElement>('#link-manager a[href="https://example.com"]')!;
@@ -713,50 +526,45 @@ describe('整理', () => {
     ]);
   });
 
-  it('路径选择与输入共用预览范围；编辑路径后须重新预览', async () => {
+  it('选中的扫描根决定预览范围；换回整个网盘后须重新预览', async () => {
     const seen = confirmWith(true);
     const server = serve({
       '/api/organize': { ...organizeIdle, status: 'running' },
       '/api/organize/preview': plan,
       '/api/organize/apply': { status: 'running', job_id: 'scoped-1' },
-      '/api/pick-folder': { path: 'R:\\media\\合集' },
       '/api/settings': { ok: true },
     });
     queryClient.setQueryData(['organize'], organizeIdle);
     const host = await wrap(<OrganizeCard toast={vi.fn()} failure={vi.fn()} />);
-    const path = host.querySelector<HTMLInputElement>('input[name="organize-path"]');
-    await click(host.querySelector('[aria-label="选择整理路径"]'));
-    await settle();
-    expect(server.posts('/api/pick-folder')).toEqual([{ initial: 'R:\\media' }]);
-    expect(path?.value).toBe('R:\\media\\合集');
+    const scope = host.querySelector('[aria-label="整理范围"]');
+    await choose(scope, 'R:\\media');
     await click(buttonNamed('预览', host));
     await settle();
-    expect(server.posts('/api/organize/preview')[0]).toMatchObject({ path: 'R:\\media\\合集' });
-    await type(path, 'R:\\media\\其他');
+    expect(server.posts('/api/organize/preview')[0]).toMatchObject({ location: 'local', path: 'local:/R:\\media' });
+    await choose(scope, '整个网盘');
     expect(buttonNamed('执行整理', host)).toBeNull();
     await click(buttonNamed('预览', host));
     await settle();
     await click(buttonNamed('执行整理', host));
     await settle();
-    expect(seen[0]?.body).toContain('R:\\media\\其他');
-    expect(server.posts('/api/organize/apply')[0]).toMatchObject({ path: 'R:\\media\\其他', confirm: true });
+    expect(seen[0]?.body).toContain('「本地」上的全部文件');
+    expect(server.posts('/api/organize/apply')[0]).toMatchObject({ location: 'local', path: '', confirm: true });
   });
 
-  it('取消目录选择保留输入；切换来源清空路径和预览', async () => {
+  it('换来源回到整个网盘，范围与预览一起清空', async () => {
     const data = { ...organizeIdle, locations: [...organizeIdle.locations, { location: '115', roots: ['B:\\'] }] };
-    serve({ '/api/organize': data, '/api/organize/preview': plan, '/api/pick-folder': { path: null } });
+    const server = serve({ '/api/organize': data, '/api/organize/preview': plan });
     queryClient.setQueryData(['organize'], data);
     const host = await wrap(<OrganizeCard toast={vi.fn()} failure={vi.fn()} />);
-    const path = host.querySelector<HTMLInputElement>('input[name="organize-path"]');
-    await type(path, 'R:\\media\\合集');
-    await click(host.querySelector('[aria-label="选择整理路径"]'));
-    await settle();
-    expect(path?.value).toBe('R:\\media\\合集');
+    await choose(host.querySelector('[aria-label="整理范围"]'), 'R:\\media');
     await click(buttonNamed('预览', host));
     await settle();
+    expect(buttonNamed('执行整理', host)).not.toBeNull();
     await choose(host.querySelector('[aria-label="整理哪个来源"]'), '115');
-    expect(path?.value).toBe('');
     expect(buttonNamed('执行整理', host)).toBeNull();
+    await click(buttonNamed('预览', host));
+    await settle();
+    expect(server.posts('/api/organize/preview')[1]).toMatchObject({ location: '115', path: '' });
   });
 
   it('底栏回滚在左、预览居中、执行整理在最右；只有执行整理在场时预览才退成次级', async () => {

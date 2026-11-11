@@ -7,22 +7,19 @@
 两个口径都固定，前端据此换算格子位置，不必为每部片子多取一份索引：一张图 10 列
 10 行共 100 帧，帧宽 320。间隔由用户在设置里选，和图一起写进 `meta.json`。
 
-只对本机磁盘上的片子预生成。网盘上的每抽一帧都要拉一次远端读取，实测 115 单文件抽
-九帧约 285 MB；两万部按每 10 秒一帧算，流量按 TB 计，与流量策略冲突。
+只按需生成：第一次打开播放页时给这一部现做一套，之后命中 `meta.json`。整库预生成
+取消了——两万部按每 10 秒一帧算，每帧都要从网盘拉一段远端读取，流量按 TB 计。
 """
 from __future__ import annotations
 
 import json
 import shutil
-import sqlite3
 import tempfile
 import time
 from pathlib import Path
 
 from .frame_capture import capture_with_retry, tile_frames
 from .fsutil import atomic_path
-from .jobs import DiskSpaceDenied
-from .media import resolve_case_insensitive
 
 #: 两档密度，值就是秒数。名字进接口也进设置页，改这里就是改契约。
 INTERVALS = {"precise": 10, "coarse": 30}
@@ -102,15 +99,18 @@ def is_current(root: Path, asset_id: int, interval: int) -> bool:
     页面上则是一片取不到的图。
     """
     meta = read_meta(root, asset_id)
-    if not meta or meta.get('invalidated_by') or int(meta.get("interval") or 0) != int(interval):
+    if not meta or int(meta.get("interval") or 0) != int(interval):
         return False
     return all(sheet_path(root, asset_id, index).is_file()
                for index in range(int(meta.get("sheets") or 0)))
 
 
 def build(ffmpeg: str, source: str, duration: float, root: Path, asset_id: int,
-          interval: int, *, active=lambda: True) -> dict:
+          interval: int, *, headers: dict[str, str] | None = None,
+          active=lambda: True) -> dict:
     """给一部片子生成整套时间轴图，返回写进 `meta.json` 的那份。
+
+    `source` 是网盘给的预授权地址，`headers` 是它要求的请求头：每抽一帧都要带。
 
     `active` 每帧问一次：一部三小时的片子有上千帧，中途按停就该停在这里，而不是
     等这一部跑完。半路停下不写 meta——没有 meta 就是没做过，下一趟从头来，不会
@@ -143,7 +143,7 @@ def build(ffmpeg: str, source: str, duration: float, root: Path, asset_id: int,
                     break
                 slots = offset + 1
                 capture_with_retry(ffmpeg, source, timestamp,
-                                   temporary / f"s{offset:03d}.jpg",
+                                   temporary / f"s{offset:03d}.jpg", headers=headers,
                                    width=FRAME_WIDTH, timeout=20)
             captured = _fill_gaps(temporary, slots)
             if captured < 2:
@@ -176,114 +176,30 @@ def build(ffmpeg: str, source: str, duration: float, root: Path, asset_id: int,
     return meta
 
 
-#: 本机磁盘上的片子才预生成。这个清单是判据也是文案依据，改它就是改功能范围。
-LOCAL_LOCATIONS = ("local",)
+def ensure(ffmpeg: str, engine, asset, duration: float, interval: int, root: Path,
+           *, active=None) -> Path | None:
+    """这一部的时间轴图：已经按这个间隔做好就直接用，没有就现做一套。
 
-#: 用户按停时写进 `stopped` 的那句话。调用方按它区分「人停的」和「机器停的」：
-#: 前者不是故障，后者要把原因摆到页面上。
-STOPPED_BY_USER = "已按停"
-
-
-def pending(db_path: Path | str, interval: int, *, limit: int = 0) -> list[tuple]:
-    """待办队列：本机磁盘上、时长够两帧的视频，最近看过的排前面。
-
-    排序不是装饰。这条链随时可能被磁盘闸门或用户按停，跑到哪算哪，所以先做的必须是
-    最可能被悬停扫到的那些。
+    `asset` 是资产 id 或 `MediaAsset`；地址与请求头由 `engine.ffmpeg_input` 给。
+    网盘侧拿不到字节（授权失效、文件被删、限流）就没有图，返回 None，不抛——
+    播放本身照常走，页面退回九宫格。
     """
-    placeholders = ",".join("?" for _ in LOCAL_LOCATIONS)
-    # 回收站里的不做：那一批等着被删，为它们各抽一百帧是白花的时间和磁盘。
-    sql = ("SELECT id, path, duration FROM asset WHERE medium='video' "
-           f"AND location IN ({placeholders}) AND duration >= ? "
-           "AND disposal IS NULL "
-           "ORDER BY (last_played IS NULL), last_played DESC, id")
-    parameters: tuple = (*LOCAL_LOCATIONS, float(interval) * 2)
-    if limit:
-        sql += " LIMIT ?"
-        parameters += (int(limit),)
-    connection = sqlite3.connect(f"file:{Path(db_path)}?mode=ro", uri=True)
+    from .media import MediaUnavailable
+    asset_id = int(asset) if isinstance(asset, int) else int(asset.id)
+    if is_current(root, asset_id, interval):
+        return sheet_path(root, asset_id, 0)
+    record = engine.asset(asset_id) if isinstance(asset, int) else asset
+    duration = float(duration or getattr(record, 'duration', 0) or 0)
+    if frame_count(duration, interval) < 2:
+        return None
     try:
-        return connection.execute(sql, parameters).fetchall()
-    finally:
-        connection.close()
-
-
-def generate_library(db_path: Path | str, root: Path, interval: int, *, ffmpeg: str,
-                     report=lambda **fields: None, active=lambda: True,
-                     guard=None, limit: int = 0, resume_state=None, checkpoint=lambda **fields: None) -> dict:
-    """按队列逐部生成，返回这一趟的计数。
-
-    失败不中断：一部片子解不出来（源坏了、时长记错、编码器不认）是它自己的事，
-    队列后面还有几千部。磁盘触线是另一回事——那说明整台机器写不下了，立刻停手并
-    把原因带出去，不能继续跑成「完成」。
-    """
-    tasks = pending(db_path, interval, limit=limit)
-    state = {"total": len(tasks), "done": 0, "made": 0, "skipped": 0,
-             "failed": 0, "stopped": ""}
-    completed = set((resume_state or {}).get('completed_assets') or [])
-    for key in ('done', 'made', 'skipped', 'failed'):
-        state[key] = (resume_state or {}).get(key, 0)
-    def save(asset_id):
-        completed.add(asset_id)
-        checkpoint(completed_assets=sorted(completed), **state)
-    report(**state)
-    for asset_id, path, duration in tasks:
-        if asset_id in completed and is_current(root, asset_id, interval):
-            continue
-        from .strm import skip_background_read
-        if skip_background_read(path):
-            state['done'] += 1
-            state['skipped'] += 1
-            report(**state)
-            continue
-        if not active():
-            state["stopped"] = STOPPED_BY_USER
-            break
-        if guard is not None:
-            try:
-                guard.check()
-            except DiskSpaceDenied as exc:
-                state["stopped"] = str(exc)
-                break
-        state["done"] += 1
-        if is_current(root, asset_id, interval):
-            state["skipped"] += 1
-            save(asset_id)
-            report(**state)
-            continue
-        # 账本路径是 Windows 形态，而挂载层可能是大小写敏感的：这一步同时管翻译和
-        # 大小写救回，和抽帧脚本走的是同一份判据。
-        source = Path(resolve_case_insensitive(path))
-        if not source.is_file():
-            state["failed"] += 1
-            report(**state)
-            continue
-        from .timeline_sources import discover
-        if discover(source, float(duration or 0)) is not None:
-            state['skipped'] += 1
-            save(asset_id)
-            report(**state)
-            continue
-        def frame_active():
-            if not active():
-                return False
-            if guard is not None:
-                guard.check()
-            return True
-        try:
-            made = build(ffmpeg, str(source), float(duration or 0), root, int(asset_id),
-                         interval, active=frame_active)
-        except DiskSpaceDenied as exc:
-            state['done'] -= 1
-            state['stopped'] = str(exc)
-            report(**state)
-            break
-        if made:
-            state["made"] += 1
-            save(asset_id)
-        else:
-            state["failed"] += 1
-        report(**state)
-    return state
+        url, headers = engine.ffmpeg_input(record)
+    except MediaUnavailable:
+        return None
+    if not build(ffmpeg, url, duration, root, asset_id, interval,
+                 headers=headers, active=active or (lambda: True)):
+        return None
+    return sheet_path(root, asset_id, 0)
 
 
 def discard(root: Path, asset_id: int) -> None:

@@ -210,6 +210,5 @@ export function CatalogMatch() {
 export function CatalogChrome() {
   const actions = useContext(ShellActionsContext);
   const host = document.getElementById('javLibraryHeader');
-  return host && actions ? createPortal(<JavLibraryHeader navigate={actions.navigate}
-    receipt={message => actions.receipt(message)} />, host) : null;
+  return host && actions ? createPortal(<JavLibraryHeader navigate={actions.navigate} />, host) : null;
 }

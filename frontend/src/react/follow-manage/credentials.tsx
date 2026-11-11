@@ -2,7 +2,7 @@
  *
  * 值不回显。服务端只报存在性，保存成功之后这一栏清空，看得到的只有字段名——凭据回到
  * 浏览器里就等于又多一处会被翻出来的副本。 */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { confirmModal } from '@peach/legacy/ui';
 
@@ -11,7 +11,6 @@ import { Chip } from '@/components/base/badges/chip';
 import { Input } from '@/components/base/input/input';
 
 import { errorMessage } from '../../api';
-import { rememberShape } from '../../configuration-skeleton';
 import { cardClass } from '../components/card';
 import { EmptyState } from '../components/empty-state';
 import { Note } from '../components/note';
@@ -147,8 +146,6 @@ export function Credentials(
 ) {
   const rows = data.providers || [];
   const pending = rows.filter((row) => row.requirement === 'required' && !credentialDone(row));
-  /* 记下哪些来源已配好：配置页骨架据此画每行的徽章位与展开态（站点清单本身是静态登记）。 */
-  useEffect(() => { rememberShape('credentials', { done: rows.filter(credentialDone).map(row => row.provider) }) }, [data]);
   if (!rows.length) {
     return <EmptyState size="compact" icon={RiKey2Line} title="没有可配置的来源">已接入的站点及其凭据状态会显示在这里。</EmptyState>;
   }

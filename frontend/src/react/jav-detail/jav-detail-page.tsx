@@ -4,10 +4,9 @@ import { RiChat3Line, RiExternalLinkLine } from '@remixicon/react';
 import { entityPath, icon } from '@peach/legacy/core';
 import { tagLabel } from '@peach/legacy/tags';
 import { mountPreviewPlayer } from '../../player';
-import { apiGet, errorMessage } from '../../api';
+import { errorMessage } from '../../api';
 import { textLang } from '../../core/text-lang';
 import { Button, ButtonLink } from '@/components/base/buttons/button';
-import { CloudDownloadDialog, type DownloadPrefill } from '../activity/cloud-download-dialog';
 import { Note } from '../components/note';
 import { RetryNote } from '../components/grid-reveal';
 import { IdentityCell, IdentitySeries } from '../components/identity-cell';
@@ -21,8 +20,6 @@ import { busyProps, useAction } from '../settings/use-action';
 import { Disclosure } from '../settings/section';
 import { addWant, invalidateWants, removeWants } from '../wants/wants';
 import { WantMagnets } from '../wants/want-magnets';
-import type { DownloadsSnapshot } from '../bundle';
-import { DOWNLOADS_KEY, DOWNLOADS_URL } from '../activity/downloads-panel';
 import { queryClient } from '../query';
 import { fetchJavDetail, fetchJavReviews, javDetailKey, nextReviewPage, type JavDetail, type JavDetailProps, type JavEntityRef, type JavReviews } from './jav-detail';
 import { cachedReviews, rememberReviews, reviewsFresh } from './review-cache';
@@ -52,7 +49,6 @@ function Work({ code, item, actions, readOnly, retry, retrying }: JavDetailProps
   const [preview, setPreview] = useState(-1);
   const media = [{ index: -1, label: '封面' }, ...Array.from({ length: item.preview_count }, (_, index) => ({ index, label: `预览 ${index + 1}` })),
     ...(item.preview_video_url ? [{ index: -2, label: '视频预览', video: true }] : [])];
-  const [download, setDownload] = useState<DownloadPrefill | null>(null);
   const [wantId, setWantId] = useState(item.want_id);
   const want = useAction();
   const toggleWant = () => { void want.run('want', async signal => {
@@ -97,14 +93,11 @@ function Work({ code, item, actions, readOnly, retry, retrying }: JavDetailProps
         {item.source_url ? <ButtonLink data-button-link="" variant="secondary" trailingIcon={RiExternalLinkLine}
           href={item.source_url} target="_blank" rel="noopener noreferrer">作品来源</ButtonLink> : null}
         <Button variant="secondary" disabled={readOnly} aria-pressed={!!wantId} {...busyProps(!!want.busy)} onClick={toggleWant}>{wantId ? '取消想要' : '想要'}</Button>
-        <Button variant="primary" onClick={() => setDownload({ code: item.code, title: item.title, performers: item.performers,
-          studio: item.studio, release_date: item.release_date, origin: `jav:${item.code}` })}>查找资源</Button>
       </div>
       {want.error ? <Note tone="error">{want.error}</Note> : null}
       <Reviews code={item.code} count={item.comments_count} released={item.release_date} />
-      <Resources item={item} actions={actions} readOnly={readOnly} />
+      <Resources item={item} actions={actions} />
     </div></aside>
-    <CloudDownloadDialog prefill={download} close={() => setDownload(null)} receipt={actions.receipt} />
   </>;
 }
 
@@ -208,17 +201,12 @@ function Reviews({ code, count, released }: { code: string; count: number; relea
   </section>;
 }
 
-function Resources({ item, actions, readOnly }: { item: JavDetail; actions: JavDetailProps['actions']; readOnly: boolean }) {
-  const [opened, setOpened] = useState(false);
-  const downloads = useQuery({ queryKey: DOWNLOADS_KEY, enabled: opened,
-    queryFn: ({ signal }) => apiGet<DownloadsSnapshot>(`${DOWNLOADS_URL}?limit=50`, signal) });
-  const provider = downloads.data?.providers.find(row => row.configured)?.key || '';
+function Resources({ item, actions }: { item: JavDetail; actions: JavDetailProps['actions'] }) {
   const [loaded, setLoaded] = useState(false);
   return <section data-jav-resources="">
-    <Disclosure trailing summary={<><Glyph name="link" />资源</>} onOpenChange={value => { setOpened(value); if (value) setLoaded(true) }}>
+    <Disclosure trailing summary={<><Glyph name="link" />资源</>} onOpenChange={value => { if (value) setLoaded(true) }}>
     {loaded ? <WantMagnets want={{ id: 0, code: item.code, title: item.title, release_date: item.release_date || null }}
-      queryUrl={`/api/jav/resources?code=${encodeURIComponent(item.code)}`} readOnly={readOnly}
-      downloads={downloads.data} provider={provider} toast={actions.receipt} />
+      queryUrl={`/api/jav/resources?code=${encodeURIComponent(item.code)}`} toast={actions.receipt} />
       : null}
     </Disclosure>
   </section>;

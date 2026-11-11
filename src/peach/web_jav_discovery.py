@@ -1,4 +1,4 @@
-"""只读 JAV 发现：库外已知作品与少看的馆藏共用口味和展示契约。"""
+"""只读 JAV 发现：库外已知作品与少看的馆藏共用展示契约，按所选字段排序。"""
 from __future__ import annotations
 
 import hashlib
@@ -6,8 +6,7 @@ import re
 import time
 
 from . import entities, feed_followup, web_catalog, web_feeds, wants
-from .related import rank_related
-from .taste_preferences import preference_profile, preference_score
+
 from .genre_decisions import load_genre_decisions
 from .jav_discovery_metadata import discovery_metadata, source_number
 from .web_state import path_version
@@ -180,70 +179,67 @@ def _metadata_message(job):
     return reasons.get(job.get("stop_reason"), messages.get(job["status"], "作品资料未取得"))
 
 
-DISCOVERY_SORTS = ("taste", "release_date", "source_score", "duration", "code")
+DISCOVERY_SORTS = ("release_date", "source_score", "duration", "code")
+#: 候选上限：超过这个数先按查询顺序截断，排序只在这批里做。
+CANDIDATE_LIMIT = 4000
 #: 打分读的账本之外、又写得很勤的表：在线播放心跳、播放记录与搜索历史。打分不读它们。
 RANKING_UNREAD_TABLES = ("follow_playback", "activity_event", "search_history")
 
 
 def _ranking_args(args):
     limit = max(1, min(int(args.get("limit") or 60), 100))
-    sort = args.get("sort") if args.get("sort") in DISCOVERY_SORTS else "taste"
+    sort = args.get("sort") if args.get("sort") in DISCOVERY_SORTS else DISCOVERY_SORTS[0]
     return limit, sort, args.get("direction") != "asc"
 
 
 def _ranking_inputs(contract, scope):
-    """打分读的账本之外的输入：口味浏览库、资料边车与封面目录（封面决定「官方还没出图」的
+    """排序读的账本之外的输入：资料边车与封面目录（封面决定「官方还没出图」的
     收起）。`peek()` 的「已过期」随时钟变，另带一个小时档。"""
     external = scope == "external"
-    return (path_version(contract.taste_history_store),
-            discovery_metadata(contract).revision if external else 0,
+    return (discovery_metadata(contract).revision if external else 0,
             path_version(contract.cover_root) if external else None,
             int(time.time() // 3600))
 
 
 def _scored(contract, scope):
-    """候选、口味打分与限定：每个范围一份，各种排序共用。"""
+    """候选与去重：每个范围一份，各种排序共用。
+
+    同一部作品在库里可能有多行，按番号只留第一行；超过 `CANDIDATE_LIMIT` 的按查询顺序截断，
+    排序在 `_ranked` 里对这批准候选做，不再为打分另排一遍。
+    """
     def compute():
         with contract.read_connection() as connection, entities.memoized_resolution():
-            strengths, names, evidence = preference_profile(connection, contract.taste_history_store)
-            profile = {"id": 0, "entities": {kind: set(values) for kind, values in strengths.items()}}
             candidates = _library(connection) if scope == "library" else _external(connection, contract)
         unique = {}
         for row in candidates:
             key = web_catalog.normalise_code_key(row["code"]) or row["id"]
             unique.setdefault(key, row)
         candidates = list(unique.values())
-        # 已知候选按匹配维度排序后再限定计算量，不以发行时间裁掉旧作。
-        for row in candidates:
-            row["preference_score"], row["reasons"] = preference_score(row, strengths, names, evidence)
-        candidates.sort(key=lambda row: (-row["preference_score"], row["id"]))
-        return {"total": len(candidates), "bounded": candidates[:4000], "profile": profile}
+        return {"total": len(candidates), "bounded": candidates[:CANDIDATE_LIMIT]}
 
     return contract.cached_until_changed(
         repr(("jav-discoveries", scope)), compute, *_ranking_inputs(contract, scope),
         tables=contract.ledger_tables_except(RANKING_UNREAD_TABLES), allow_stale=False)
 
 
-def _ranked(contract, scope, sort, descending, limit):
-    """一页推荐：MMR 或按字段排序，按与候选相同的输入版本缓存。
+def _field_order(rows, field, descending):
+    """按所选字段稳定排序；取不到值的排在末尾，不随方向翻转。"""
+    known = [row for row in rows if row.get(field) not in (None, "")]
+    known.sort(key=lambda row: row[field], reverse=descending)
+    return known + [row for row in rows if row.get(field) in (None, "")]
 
-    任务进行中页面会反复来取，原来每次都对几千个候选重做一遍纯 Python 打分。结果是共享对象，
-    调用方先复制再改。
+
+def _ranked(contract, scope, sort, descending, limit):
+    """一页推荐：按所选字段排序后取前 `limit` 条，与候选相同的输入版本缓存。
+
+    任务进行中页面会反复来取，结果是共享对象，调用方先复制再改。
     """
     def compute():
         scored = _scored(contract, scope)
-        picked = rank_related(scored["profile"], scored["bounded"], limit, seed=f"jav:{scope}",
-                              order_by=None if sort == "taste" else sort, descending=descending,
-                              relevance_for=lambda row: row["preference_score"])
-        for row in picked:
-            row["score"] = row.pop("related_score")
-            row["taste_score"] = row["score"]
-            row.pop("preference_score", None)
-            row.pop("why", None)
-            row.pop("entities", None)
-        if sort == "taste":
-            picked.sort(key=lambda row: (row["taste_score"], row["id"]), reverse=descending)
+        picked = _field_order(scored["bounded"], sort, descending)[:limit]
         for rank, row in enumerate(picked, 1):
+            row.pop("entities", None)
+            row.pop("why", None)
             row["rank"] = rank
         return {"total": scored["total"], "bounded": scored["bounded"], "picked": picked}
 
@@ -253,7 +249,7 @@ def _ranked(contract, scope, sort, descending, limit):
 
 
 def q_jav_discoveries(contract, args):
-    """口味采用 IDF/MMR；只读，资料补齐由 `w_jav_discovery_metadata` 起，进度另有轮询。"""
+    """按所选字段排序取一页；只读，资料补齐由 `w_jav_discovery_metadata` 起，进度另有轮询。"""
     scope = "library" if args.get("scope") == "library" else "external"
     limit, sort, descending = _ranking_args(args)
     ranked = _ranked(contract, scope, sort, descending, limit)
@@ -285,9 +281,8 @@ def q_jav_discoveries(contract, args):
             row["poster_box"] = contract.poster_box(row["code"])
             row.update(web_feeds.cover_state_fields(states, row["code"]))
     response = {"scope": scope, "items": picked, "candidate_total": total, "sort": sort,
-                "ranking_method": "mmr" if sort == "taste" else "field-sort",
                 "direction": "asc" if args.get("direction") == "asc" else "desc",
-                "limited": total > 4000, "source": "library" if scope == "library" else "known-works"}
+                "limited": total > CANDIDATE_LIMIT, "source": "library" if scope == "library" else "known-works"}
     response.update(_metadata_response(contract, args, bounded, picked, limit, scope))
     return response
 
@@ -297,8 +292,8 @@ RELEASE_PAGE_SIZE = 24
 RELEASE_FACETS = ("performer", "studio", "tag")
 
 
-#: 新作的排序：发行时间（默认）、来源评分、时长、番号、口味，`random` 是「换一批」。
-RELEASE_SORTS = ("release_date", "source_score", "duration", "code", "taste", "random")
+#: 新作的排序：发行时间（默认）、来源评分、时长、番号，`random` 是「换一批」。
+RELEASE_SORTS = ("release_date", "source_score", "duration", "code", "random")
 
 
 def _release_values(row, facet):
@@ -319,17 +314,14 @@ def _release_order(rows, sort, descending, seed):
         return sorted(rows, key=lambda row: hashlib.sha1(f"{seed}\0{row['code']}".encode("utf-8")).hexdigest())
     if sort == "release_date":
         return rows if descending else rows[::-1]
-    field = "taste_score" if sort == "taste" else sort
-    known = [row for row in rows if row.get(field) not in (None, "")]
-    known.sort(key=lambda row: row[field], reverse=descending)
-    return known + [row for row in rows if row.get(field) in (None, "")]
+    return _field_order(rows, sort, descending)
 
 
 def q_jav_releases(contract, args):
     """订阅发现的全部未入库新作：默认按发行日期倒序分页，可按女优、厂牌、标签与文字筛选，
-    排序见 `RELEASE_SORTS`（口味分只在按口味排时现算）。
+    排序见 `RELEASE_SORTS`。
 
-    候选与「发现」同一批（`_external`），只换成时间顺序、不按口味截断。筛选项只取这批新作里
+    候选与「发现」同一批（`_external`），只换成时间顺序、不做截断。筛选项只取这批新作里
     出现过的女优、厂牌与标签；每个维度的计数按「文字与其他维度已生效、本维度不计」的行集算，
     计数为 0 的不列。
 
@@ -365,7 +357,7 @@ def _release_listing(contract, connection, args):
     descending = args.get("direction") != "asc"
     matches = _release_matcher({facet: str(args.get(facet) or "").strip() for facet in RELEASE_FACETS},
                                str(args.get("q") or "").strip().casefold())
-    rows = _release_order(_release_rows(contract, connection, taste=sort == "taste"), sort, descending,
+    rows = _release_order(_release_rows(contract, connection), sort, descending,
                           str(args.get("seed") or ""))
     return rows, [row for row in rows if matches(row)], matches, sort, descending
 
@@ -400,16 +392,12 @@ def w_jav_release_metadata(contract, body):
     return _job_response(job) if job else {"metadata_job": None}
 
 
-def _release_rows(contract, connection, *, taste):
-    """新作候选：「发现」那批去重，出演换成解析后的规范名、厂牌换成规范名；按口味排时现算口味分。"""
+def _release_rows(contract, connection):
+    """新作候选：「发现」那批去重，出演换成解析后的规范名、厂牌换成规范名。"""
     unique = {}
     for row in _external(connection, contract):
         unique.setdefault(web_catalog.normalise_code_key(row["code"]) or row["id"], row)
     rows = list(unique.values())
-    if taste:
-        strengths, names, evidence = preference_profile(connection, contract.taste_history_store)
-        for row in rows:
-            row["taste_score"], row["reasons"] = preference_score(row, strengths, names, evidence)
     refs = web_feeds._discovery_performers(connection, contract, rows)
     studios = {name: web_feeds._studio_name(connection, name) for name in {row["studio"] for row in rows if row["studio"]}}
     for row in rows:

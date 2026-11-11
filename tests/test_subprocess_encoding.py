@@ -10,8 +10,7 @@ Windows 上 Python 的文本 I/O 不写 `encoding` 时按本机 ANSI 解码（�
     AttributeError: 'NoneType' object has no attribute 'strip'
 
 这个坑修过一次（`282f8d9`，改的正是 `tests/test_job_status.py`），但只覆盖了
-同文件里的一个调用，其余 5 处照旧——包括 `src/peach/versioning.py` 这段生产
-代码，它读 git 输出，而本仓库的提交信息就是中文的。
+同文件里的一个调用，其余 5 处照旧。
 
 显式写父进程的 `encoding="utf-8"` 仍不保证正确：如果子进程是 Peach 自己的
 Python CLI，Windows 管道默认输出 GBK，父进程强制按 UTF-8 解码仍会产生乱码。
@@ -58,6 +57,28 @@ def offenders() -> list[str]:
     return found
 
 
+def wrapper_offenders() -> list[str]:
+    """经 `task_control.run` 的文本模式调用：同一套关键字判据。"""
+    found = []
+    for folder in SCANNED:
+        for path in sorted((ROOT / folder).rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            aliases = {alias.asname or alias.name
+                       for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+                       and node.module == "task_control"
+                       for alias in node.names if alias.name == "run"}
+            if not aliases:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or ast.unparse(node.func) not in aliases:
+                    continue
+                keywords = {kw.arg: ast.unparse(kw.value) for kw in node.keywords if kw.arg}
+                text_mode = any(keywords.get(flag) == "True" for flag in TEXT_FLAGS)
+                if text_mode and not keywords.get("encoding"):
+                    found.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
+    return found
+
+
 class SubprocessEncodingTests(unittest.TestCase):
     def test_no_text_mode_subprocess_without_an_explicit_encoding(self):
         found = offenders()
@@ -72,16 +93,13 @@ class SubprocessEncodingTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertNotIn("encoding", calls[0][1])
 
-    def test_the_wrapper_blind_spot_is_covered_by_hand(self):
-        """守卫只认 `subprocess.*` 字面调用，包装器调用它看不见。
+    def test_a_wrapper_call_in_text_mode_carries_its_own_encoding(self):
+        """守卫只认 `subprocess.*` 字面调用，经包装器的调用它看不见。
 
-        `VersionManager._git` 走的是注入的 `self._execute`，AST 里没有
-        `subprocess` 字样，所以这条守卫抓不到它——而它恰恰是暴露最大的一处：
-        读 git 输出，本仓库的提交信息是中文的。盲点用一条显式断言补上。
+        `task_control.run` 也是这条路径：拿到 `text=True` 就直接继承调用方的编码
+        决定，所以走它的地方必须自己写 `encoding`。盲点用同一套关键字判据补上。
         """
-        source = (ROOT / "src" / "peach" / "versioning.py").read_text(encoding="utf-8")
-        self.assertIn('encoding="utf-8"', source)
-        self.assertIn('errors="replace"', source)
+        self.assertEqual(wrapper_offenders(), [], "这些调用经包装器进文本模式却没写 encoding")
 
     def test_the_guard_accepts_a_locked_encoding(self):
         tree = ast.parse("import subprocess\n"

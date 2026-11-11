@@ -1,6 +1,6 @@
 /* 管理区的页面元素（`src/react/router/pages/managed.tsx`）：页面组按匹配挂上它就打开那一页。先报换页，
  * 再铺骨架（与壳冷启动铺的同键就不重画）、取首屏；没人认领的历史变化一次就是打开一次，认领的写地址与详情压上来都不重开；
- * 卸载时这一页还露在 `#stats` 上才收；`/resource-sync` 与配置页的 `#libraryProcessing` 改写地址、不加历史条目。
+ * 卸载时这一页还露在 `#stats` 上才收；关注管理的旧 `tab=source` 地址改写成采集页、不加历史条目。
  *
  * 历史对象与壳的内存状态都是模块级的，每条用例重新装载。 */
 import { act } from 'react';
@@ -232,61 +232,17 @@ it('等 `/healthz` 期间走开：读请求中止，这一页不再打开', asyn
   expect(api.fetched.mock.calls.map(([input]) => input.split('?')[0])).toEqual(['/healthz']);
 });
 
-it('口味页打开时清掉目录筛选与搜索框，引导标记交出一次就清', async () => {
-  const r = await load('/taste');
-  r.shell.writeShell({
-    state: { creator: 'a', studio: 'b', tag: 'c', tag_match: 'any', q: 'd', jav: '1', sort: 'seed' } as never,
-    cameFromSetup: true,
-  });
-  surface(r, '/taste');
-  serve({});
-  const { actions } = await boot(r);
-  await until(() => vi.mocked(actions.clearSearch).mock.calls.length > 0, '清搜索框');
-  expect(r.shell.state).toMatchObject({
-    creator: '', studio: '', tag: '', tag_match: 'all', len: '', dur_min: '', dur_max: '', orient: '', region: '',
-    state: '', q: '', jav: '', sort: 'seed',
-  });
-  expect(r.shell.cameFromSetup).toBe(false);
-});
-
-it('旧直达地址 `/resource-sync` 改写成资源同步工具页，不加历史条目', async () => {
-  const r = await load('/resource-sync');
-  surface(r, '/resource-sync');
-  serve({});
+it('关注管理的旧 `tab=source` 入口改成采集页，替换历史条目而不是多一条', async () => {
+  const r = await load('/subscriptions?tab=source');
+  surface(r, '/subscriptions');
+  serve({ '/healthz': {}, '/api/configuration': configuration });
   const length = window.history.length;
   const { actions } = await boot(r);
-  await until(() => location.pathname === '/data-cleanup/resource-sync', '改写到资源同步');
-  await until(() => vi.mocked(actions.surfaceChanged).mock.calls.length > 0, '数据管理页打开');
-  expect([location.hash, window.history.length - length]).toEqual(['', 0]);
+  await until(() => vi.mocked(actions.surfaceChanged).mock.calls.some(([, path]) => path === '/sources'), '目标正文打开');
+  expect(location.pathname).toBe('/sources');
+  expect(window.history.length).toBe(length);
   expect(r.peachHistory.navigation.claimed).toBe(false);
-  expect(vi.mocked(actions.surfaceChanged).mock.calls).toEqual([['management', '/data-cleanup/resource-sync']]);
 });
-
-it('配置页带 `#libraryProcessing` 进来：画上之后改写到数据管理页的那一块，不加历史条目', async () => {
-  const r = await load('/settings/library#libraryProcessing');
-  const { stats } = surface(r, '/settings/library');
-  serve({ '/api/configuration': configuration });
-  const length = window.history.length;
-  const { actions } = await boot(r);
-  await until(() => vi.mocked(actions.surfaceChanged).mock.calls.length > 1, '数据管理页打开');
-  expect([location.pathname, location.hash, window.history.length - length]).toEqual(['/data-cleanup', '#libraryProcessing', 0]);
-  expect(vi.mocked(actions.surfaceChanged).mock.calls.map(([, path]) => path)).toEqual(['/settings/library', '/data-cleanup']);
-  expect(stats.hidden).toBe(false);
-});
-
-for (const [tab, target] of [['wants', '/jav'], ['source', '/settings/subscriptions']] as const) {
-  it(`关注管理的旧 ${tab} 入口打开目标页面并替换历史条目`, async () => {
-    const r = await load(`/subscriptions?tab=${tab}`);
-    surface(r, '/subscriptions');
-    serve({ '/healthz': {}, '/api/configuration': configuration });
-    const length = window.history.length;
-    const { actions } = await boot(r);
-    await until(() => vi.mocked(actions.surfaceChanged).mock.calls.some(([, path]) => path === target), '目标正文打开');
-    expect(location.pathname).toBe(target);
-    expect(window.history.length).toBe(length);
-    expect(r.peachHistory.navigation.claimed).toBe(false);
-  });
-}
 
 it('诊断页的标题、管理区身份与换一批由路由元数据登记', async () => {
   const r = await load();

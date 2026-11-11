@@ -23,10 +23,8 @@
 补别名后继只写账本里还没有的写法，补女优资料后继只写自动来源的那一行，补样张后继只给还没有
 样张的番号写，写下的就是那一格的全部，删掉就回到它写之前的样子。
 
-已消失作品的个人记录接到新文件（ADR-0087）不是删除能撤的：搬运删了旧行，`record_rehome` 存着
-旧行快照与搬动的键，批次号 `<source>@<id>`。撤回按快照重建旧行、把搬走的记录改回去，旧行的
-id 或路径已被别的行占用时那一批拒绝撤回。登记时自动接回记 `auto:vanished-reattach`，孤儿记录
-列表里由人接回记 `user:reattach`。
+已消失作品的个人记录接到新文件（ADR-0087）不可撤回：`record_rehome` 不再存旧行快照，搬运只
+留下一条日志。要回到搬运前，只能回到账本备份。
 
 「想要」清单的入库对账记在 `want_item.acquired_source` 与 `acquired_batch`（批次号
 `auto:want-acquired@<登记时刻>`）。撤回把那几条改回待找，查找计数原样留着。
@@ -57,7 +55,7 @@ import json
 from pathlib import Path
 
 from . import (company_profiles, fc2_sellers, follow_creators, jav_poster_crop, metadata_text_repair,
-               record_rehome, sample_images, seed_pack, wants, western_artwork)
+               sample_images, seed_pack, wants, western_artwork)
 from .metadata_auto_apply import UNION_TAGS_SOURCE, planned_verified_revert, revert_verified
 
 SIDECARS = (".ct", ".provenance.json")
@@ -277,18 +275,10 @@ def plan(connection, source: str, batch: str = "", *, logo_root: Path, cover_roo
         "samples": sample_images.planned_revert(connection, source, batch),
         "rejections": planned_rejections(connection, source, batch),
         "tags": planned_tags(connection, source, batch),
-        "rehomes": record_rehome.planned_revert(connection, source, batch),
         "acquired": wants.planned_revert(connection, source, batch),
         "verified": planned_verified_revert(connection, source, batch, item_keys),
         "garbled": metadata_text_repair.planned_revert(connection, source, batch),
-        "javdb_records": _planned_javdb_records(connection, source, batch),
     }
-
-
-def _planned_javdb_records(connection, source: str, batch: str) -> list[dict]:
-    # 升级补修模块带着调度器与任务通道，只在用到时才载入。
-    from .upgrade_repairs import planned_javdb_records_revert
-    return planned_javdb_records_revert(connection, source, batch)
 
 
 def counts(planned: dict) -> dict:
@@ -301,10 +291,9 @@ def counts(planned: dict) -> dict:
             "标识文件": len(planned["files"]), "封面": len(planned["covers"]),
             "样张": sum(sample["count"] for sample in planned["samples"]),
             "否决": len(planned["rejections"]), "标签": len(planned["tags"]),
-            "接回": len(planned["rehomes"]), "想要入库": len(planned["acquired"]),
+            "想要入库": len(planned["acquired"]),
             "中文名": len(planned["names"]), "核查结算": len(planned["verified"]),
-            "乱码人物": len(planned["garbled"]),
-            "JavDB 类型与订阅": len(planned.get("javdb_records", []))}
+            "乱码人物": len(planned["garbled"])}
 
 
 def apply(connection, planned: dict) -> dict:
@@ -348,25 +337,21 @@ def apply(connection, planned: dict) -> dict:
         "DELETE FROM asset_tag WHERE asset_id=? AND tag=? AND source=?",
         (tag["asset_id"], tag["tag"], tag["source"])).rowcount or 0 for tag in tags)
     reopened = reopen_extended_decisions(connection, {tag["item_key"] for tag in tags})
-    restored = record_rehome.revert(connection, source, batch)
     reopened_wants = wants.revert(connection, source, batch)
     removed_seller_relations = fc2_sellers.revert(connection, planned["sellers"])
     # 链接与别名已在上面按批次删掉，剩下没有别的引用的实体才删得掉。
     creator_revert = follow_creators.revert(connection, planned["creators"])
     verified_revert = revert_verified(connection, planned["verified"])
     restored_garbled = metadata_text_repair.revert(connection, planned.get("garbled", []))
-    from .upgrade_repairs import revert_javdb_records
-    restored_javdb = revert_javdb_records(connection, planned.get("javdb_records", []))
     return {"删除链接": len(links), "删除别名": len(aliases), "删除资料": len(profiles),
             "删除断言": len(claims), "删除编号": len(refs), "删除归属": len(memberships),
             "删除片商": len(makers), "删除样张": removed_samples, "删除否决": len(rejections),
             "删除标签": len(tags), "删除扁平标签": removed_tag_rows, "重开决定": reopened,
-            "撤回接回": restored, "想要回到待找": reopened_wants, "卖家关系": removed_seller_relations,
+            "想要回到待找": reopened_wants, "卖家关系": removed_seller_relations,
             "解绑关注来源": creator_revert["unbound"], "删除建档实体": creator_revert["removed"],
             "还原中文名": restored_names, "还原核查覆盖": verified_revert["restored"],
             "删除核查并集标签": verified_revert["removed_tags"],
-            "删除核查决定": verified_revert["decisions"], "插回乱码人物行": restored_garbled,
-            "还原 JavDB 类型与订阅": restored_javdb}
+            "删除核查决定": verified_revert["decisions"], "插回乱码人物行": restored_garbled}
 
 
 def remove_files(planned: dict) -> int:

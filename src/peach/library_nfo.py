@@ -5,19 +5,14 @@ import re
 import xml.etree.ElementTree as ET
 
 from .catalog_rules import release_code_from_filename, release_code_from_text, same_release_code
-from .scan import VIDEO
+from .media import VIDEO_SUFFIXES
 
 
 def directory_files(directory: Path) -> dict[str, Path]:
     """目录里的普通文件，按 casefold 文件名索引。
 
-    走 `os.scandir`：Windows 的目录列表自带类型，`is_file()` 不再逐个 stat。网盘挂载上
-    一次 stat 就是一趟往返，几百个文件的文件夹用 `iterdir()` 要付几百趟。
+    走 `os.scandir`：Windows 的目录列表自带类型，`is_file()` 不再逐个 stat。
     """
-    from .smb_media import SmbResource
-    if isinstance(directory, SmbResource):
-        return {entry.name.casefold(): directory / entry.name for entry in directory.scandir()
-                if not entry.is_dir and not entry.is_symlink}
     with os.scandir(directory) as entries:
         return {entry.name.casefold(): Path(entry.path) for entry in entries if entry.is_file()}
 
@@ -36,7 +31,7 @@ class SidecarIndex:
         self.nfos = []
         for path in files.values():
             suffix = path.suffix.lower()
-            if suffix in VIDEO:
+            if suffix in VIDEO_SUFFIXES:
                 self.videos.append(path)
             elif suffix == '.nfo':
                 self.nfos.append((path, release_code_from_filename(path.stem)))

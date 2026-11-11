@@ -47,35 +47,23 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 75s
-    environment:
-      PEACH_IMAGE_TAG: ${PEACH_VERSION:-edge}
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
     ports:
       - "${PEACH_BIND:-127.0.0.1}:${PEACH_PORT:-8900}:8900"
     volumes:
       - peach-data:/data
-      - peach-update:/update
-      - type: bind
-        source: ${PEACH_MEDIA_ROOT:?Set PEACH_MEDIA_ROOT in .env to an existing media folder}
-        target: /media
-        read_only: true
-        bind:
-          propagation: rslave
-          create_host_path: false
 
 volumes:
   peach-data:
-  peach-update:
 ```
 
-Save `.env` next to it and replace the path with the absolute media path on your host:
+Save `.env` next to it:
 
 ```dotenv
-PEACH_MEDIA_ROOT=/absolute/path/to/media
 PEACH_BIND=127.0.0.1
 PEACH_PORT=8900
 ```
+
+Your videos stay in your own Google Drive or OneDrive; the container mounts only its data volume.
 
 Pull the image:
 
@@ -95,7 +83,7 @@ Show the first sign-in token. It is private, so run this in your own terminal on
 docker compose exec peach peach token
 ```
 
-Open `http://127.0.0.1:8900` on the host, or reach it through a private VPN or SSH tunnel. Sign in, set an access password, then add a media folder inside the container, such as `/media`, on the settings page.
+Open `http://127.0.0.1:8900` on the host, or reach it through a private VPN or SSH tunnel. Sign in, set an access password, then open the settings page, paste your own OAuth client into the drive account section, authorize Google Drive or OneDrive, and pick the folders to scan. Your videos stay on the drive; the container only mounts its data volume.
 
 ## NAS and LAN access
 
@@ -107,9 +95,9 @@ On NAS container UIs, run `peach token` in the Peach container's terminal to get
 
 Run `docker compose pull` and `docker compose up -d` again. Keep the `peach-data` volume: deleting it removes your settings, database and watch history.
 
-To update from the settings page instead, use the repository's [`compose.yaml`](https://github.com/peach-mitao/peach/blob/master/compose.yaml) and start it with `docker compose --profile watchtower up -d`. It adds an optional Watchtower container that Peach configures itself; the settings page then offers a one-click update when a new image is published. Watchtower mounts the Docker socket, which gives it root-level control of the host; read the [one-click update section](https://github.com/peach-mitao/peach/blob/master/docs/DOCKER.md#一键更新可选-watchtower) before enabling it.
+Nothing inside Peach replaces the image for you: run the two commands above. Pin `PEACH_VERSION` to a release tag when you want to upgrade deliberately instead of following `edge`.
 
-Hardware transcoding, CloudDrive2 networking, path mapping and diagnostics are covered in the [Docker guide](https://github.com/peach-mitao/peach/blob/master/docs/DOCKER.md).
+Drive accounts, volumes, reverse proxies and diagnostics are covered in the [Docker guide](https://github.com/peach-mitao/peach/blob/master/docs/DOCKER.md).
 
 ## License
 

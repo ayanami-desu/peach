@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from peach import (avatar_face, follow_assets, follow_discovery, follow_identity,
-                   follow_store, web_follow, web_stats)
+                   follow_store, web_follow)
 from peach.follow import FollowHistoryEnd
 from peach.follow import FollowSourceError
 from peach.follow_discovery import Discovery, ExternalSearch
@@ -46,7 +46,8 @@ class FollowContractTests(unittest.TestCase):
         job = self.contract.follow_job
         run = self.contract.task_runs.start('follow-check', trigger='manual', total=2)
         self.contract.task_runs.suspend(run.id)
-        job_recovery.save(self.db, 'follow-check', 'original', {'background': True}, run_id=run.id, waiting=True)
+        job_recovery.save(self.db, 'follow-check', 'original', {'background': True}, run_id=run.id)
+        job_recovery.waiting(self.db, 'follow-check', 'original')
         job_recovery.checkpoint(self.db, 'follow-check', 'original', dict(
             source_ids=[first, second], checked=1, total=2, results=[{'source': first, 'ok': True, 'added': 4}]))
         seen = []
@@ -67,7 +68,8 @@ class FollowContractTests(unittest.TestCase):
         from peach import job_recovery
         source = self._seed()
         job_recovery.save(self.db, 'follow-check', 'original',
-            {'background': True, 'older': True, 'rewind': True, 'backfill_all': True}, waiting=True)
+            {'background': True, 'older': True, 'rewind': True, 'backfill_all': True})
+        job_recovery.waiting(self.db, 'follow-check', 'original')
         job_recovery.checkpoint(self.db, 'follow-check', 'original',
                                 {'source_ids': [source], 'backfill_pages': {str(source): 7}})
         seen = []
@@ -154,18 +156,6 @@ class FollowContractTests(unittest.TestCase):
         self.assertIn('test failure', state['error'])
         self.assertFalse(self.contract.follow_check_lock.locked())
 
-    def test_background_taste_refresh_has_a_readable_result(self):
-        self.contract.taste_history_store = self.root / 'missing-history.sqlite'
-        with mock.patch.object(web_stats, 'enabled_history_sources', return_value=[]), \
-             mock.patch.object(web_stats, 'enabled_bookmark_sources', return_value=[]), \
-             mock.patch.object(web_stats, 'q_taste', return_value={'demo': True}):
-            started = self._post('/api/taste/refresh', {'background': True})
-            self.contract.taste_refresh_job.thread.join(5)
-        final = dispatch_api_get(self.contract, '/api/taste/refresh', {})
-        self.assertEqual(final['job_id'], started['job_id'])
-        self.assertEqual(final['status'], 'complete')
-        self.assertEqual(final['dashboard'], {'demo': True})
-
     def test_selected_sources_do_not_expand_to_the_whole_follow_list(self):
         selected = self._seed(ref='selected')
         self._seed(ref='unrelated')
@@ -220,25 +210,6 @@ class FollowContractTests(unittest.TestCase):
         final = dispatch_api_get(self.contract, '/api/links/prune', {})
         self.assertEqual(final['status'], 'failed')
         self.assertFalse(final['ok'])
-
-    def test_background_resource_apply_has_a_queryable_receipt(self):
-        from peach import web_resource_sync
-        with mock.patch.object(web_resource_sync, 'LOCATION_ROOT_DECLARATIONS',
-                               {'local': (str(self.root),)}), \
-             mock.patch.object(web_resource_sync, '_scan_sources',
-                               return_value={'sources': [], 'vanished_ids': [], 'keep_ids': set(),
-                                             'empty_dirs': {}}), \
-             mock.patch.object(web_resource_sync, 'clean_resource_orphans',
-                               return_value={'cache_removed': 0, 'bytes_reclaimed': 0}):
-            scan = self._post('/api/resource-sync/scan', {'background': True, 'restart': True})
-            self.contract.resource_scan.thread.join(5)
-            started = self._post('/api/resource-sync/apply', {
-                'background': True, 'confirm': True, 'scan_id': scan['scan_id']})
-            self.contract.resource_apply_job.thread.join(5)
-        final = dispatch_api_get(self.contract, '/api/resource-sync/apply', {})
-        self.assertEqual(final['job_id'], started['job_id'])
-        self.assertEqual(final['status'], 'complete')
-        self.assertEqual(final['purged'], 0)
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -2029,7 +2000,7 @@ class FollowContractTests(unittest.TestCase):
         ))
         full = self._get()
         summary = self._get(summary="1")
-        for key in ("sources", "author_aliases", "alias_suggestions", "suggestions", "counts"):
+        for key in ("sources", "author_aliases", "alias_suggestions", "counts"):
             self.assertEqual(summary[key], full[key], key)
         self.assertEqual(summary["counts"]["new"], 2)
         self.assertEqual(summary["groups"], [])
@@ -2531,51 +2502,6 @@ class FollowContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self._post("/api/follow/credential", body)
         self.assertFalse((self.root / "secrets").exists())
-
-    def _write_taste(self, rows):
-        root = self.root / "taste"
-        root.mkdir(exist_ok=True)
-        lines = ["candidate,kind,visits,distinct_urls,source_count,sources,status"]
-        lines += [f"{n},creator,{v},1,1,safari:iCloud,candidate" for n, v in rows]
-        (root / "taste-creator-candidates-20260826-193252.csv").write_text(
-            "\n".join(lines) + "\n", encoding="utf-8")
-        self.contract.taste_history_root = root
-
-    def test_suggestions_come_from_the_browsing_taste_analysis(self):
-        """真正的信号是浏览历史分析，不是账本里已有什么。
-
-        `facets.creators` 是「他有谁的文件」，`location='online'` 的资产是「他关注过谁」，
-        两者都不是「他常搜谁」——用户举的名字在前两者里要么没有、要么在目标站上找不到。
-        """
-        self._write_taste([("lazyprocrastinator", 28), ("ffxivinitiala", 13)])
-        with self.contract.database.write_transaction() as connection:
-            connection.execute(
-                "INSERT INTO asset(location,path,name,medium) VALUES"
-                "('local','R:/x.mp4','SomeLocalCreator','video')")
-        suggestions = self._get()["suggestions"]
-        self.assertEqual([s["name"] for s in suggestions],
-                         ["lazyprocrastinator", "ffxivinitiala"])
-        self.assertEqual(suggestions[0]["visits"], 28)
-        self.assertNotIn("SomeLocalCreator", [s["name"] for s in suggestions])
-
-    def test_suggestions_are_ordered_by_how_often_he_looked(self):
-        self._write_taste([("rarely", 2), ("often", 40), ("sometimes", 9)])
-        self.assertEqual([s["name"] for s in self._get()["suggestions"]],
-                         ["often", "sometimes", "rarely"])
-
-    def test_no_analysis_means_no_suggestions_rather_than_a_substitute(self):
-        self.contract.taste_history_root = self.root / "never-run"
-        self.assertEqual(self._get()["suggestions"], [])
-
-    def test_suggestions_skip_sources_already_followed(self):
-        self._write_taste([("lazyprocrastinator", 28), ("bewyx", 21)])
-        with self.contract.database.write_transaction() as connection:
-            FollowStore(lambda: connection).register(
-                provider="kemono", ref="fanbox/30917150",
-                label="lazyprocrastinator", url="https://kemono.cr/fanbox/30917150",
-                moment=MOMENT)
-        names = [s["name"] for s in self._get()["suggestions"]]
-        self.assertEqual(names, ["bewyx"], "已经在追的不该再建议")
 
     def test_credentials_endpoint_reports_fields_but_never_values(self):
         secrets = self.root / "secrets" / "follow"

@@ -24,7 +24,6 @@ from .web_activity import (
 from .web_batch import q_ads, q_duplicates, w_batch, w_empty_trash
 from .web_performer_delete import q_performer_delete_candidates, q_performer_delete_plan, w_performer_delete
 from .web_tags import q_tag_management, w_tag_management, w_tag_preview
-from .taste_history import history_source_count
 from .web_catalog import (
     FACETS_TABLES,
     catalog_filter,
@@ -54,9 +53,6 @@ from .web_entity import (
     w_entity_alias,
     w_entity_name,
 )
-from .web_downloads import (q_downloads, w_download_cancel, w_download_postprocess,
-                            w_download_submit)
-from .web_resource_search import q_resource_search
 from .web_search import q_search_recommendations
 from .web_jav_detail import q_jav_detail, q_jav_resources, q_jav_reviews, w_jav_cover
 from .web_jav_discovery import (q_jav_discoveries, q_jav_discovery_metadata, q_jav_releases,
@@ -98,16 +94,13 @@ from .web_follow import (
 )
 from .web_links import w_links, w_links_check, w_links_prune
 from .web_library_processing import q_library_processing, q_library_processing_issues, w_library_processing
-from .web_media_repair import q_media_repair, w_media_repair
 from .web_organize import (
     q_organize, q_organize_example, w_organize_apply, w_organize_preview, w_organize_rollback,
 )
-from .web_orphan_records import q_orphan_records, w_orphan_attach
+from .web_orphan_records import q_orphan_records
 from .web_playlists import q_playlist, q_playlists, w_playlist
 from .web_custom_metadata import q_custom_metadata, w_custom_metadata
-from .web_resource_sync import w_purge_missing, w_resource_sync_apply, w_resource_sync_scan
 from .web_review import REVIEW_TABLES, q_review, q_review_counts, w_review_decision, w_review_genre
-from .web_auto_landings import q_auto_landings, w_auto_landing_revert
 from .web_settings import q_settings, w_settings
 from .web_library_shortcuts import q_library_shortcuts, w_library_shortcuts
 from .web_tutorial import q_tutorial_progress, w_tutorial_progress
@@ -121,15 +114,12 @@ from .web_tasks import q_result_updates, q_tasks
 from .web_timeline_thumbnails import (
     q_media_processing, q_thumbnail_jobs, q_timeline, w_media_processing, w_thumbnail_jobs,
 )
-from .web_wants import q_wants, q_want_magnets, w_wants
+from .web_wants import q_wants, w_wants
 from .web_stats import (
     q_quality_goals,
     q_search_history,
     q_stats,
-    taste_snapshot,
     w_search_history,
-    w_taste_refresh,
-    w_taste_source,
 )
 
 
@@ -281,11 +271,6 @@ def _get_search_history(contract, args):
     return q_search_history(contract, int(args.get("limit", "10")))
 
 
-def _get_taste(contract, args):
-    return taste_snapshot(contract, str(args.get("window") or "all"),
-                          retry=str(args.get("retry") or "") == "1")
-
-
 def _get_review(contract, args):
     if str(args.get("counts") or "") in {"1", "true"}:
         return q_review_counts(contract)
@@ -334,7 +319,6 @@ def _post_setup_tutorial_progress(contract):
         "library": {"total": int(total)},
         "scraping": {"sources": [{key: source[key] for key in POST_SETUP_SCRAPING_FIELDS}
                                  for source in q_scraping(contract, {})["sources"]]},
-        "taste": {"history_sources": history_source_count(contract.taste_history_store)},
         "follow": {"sources": follow_sources},
         "credentials": {"providers": [{key: row[key] for key in POST_SETUP_CREDENTIAL_FIELDS}
                                       for row in q_follow_credentials(contract, {})["providers"]]},
@@ -367,8 +351,6 @@ GET_HANDLERS = {
     "/api/folders": q_folders,
     "/api/tasks": q_tasks,
     "/api/result-updates": q_result_updates,
-    "/api/downloads": q_downloads,
-    "/api/resources/search": q_resource_search,
     "/api/jav/detail": q_jav_detail,
     "/api/jav/reviews": q_jav_reviews,
     "/api/jav/resources": q_jav_resources,
@@ -399,10 +381,7 @@ GET_HANDLERS = {
     "/api/follow/check": q_follow_check,
     "/api/follow/suggest": _get_follow_suggest,
     "/api/follow/resolve": lambda contract, args: contract.follow_resolve_job.snapshot() or {"status": "idle"},
-    "/api/taste/refresh": lambda contract, args: contract.taste_refresh_job.snapshot() or {"status": "idle"},
     "/api/links/prune": lambda contract, args: contract.link_prune_job.snapshot() or {"status": "idle"},
-    "/api/resource-sync/apply": lambda contract, args: contract.resource_apply_job.snapshot() or {"status": "idle"},
-    "/api/media-repair": q_media_repair,
     "/api/orphan-records": q_orphan_records,
     "/api/organize": q_organize,
     "/api/organize/example": q_organize_example,
@@ -422,7 +401,6 @@ GET_HANDLERS = {
     "/api/duplicates": q_duplicates,
     "/api/quality-goals": q_quality_goals,
     "/api/wants": q_wants,
-    "/api/wants/magnets": q_want_magnets,
     "/api/stats": _get_stats,
     "/api/tops": _get_tops,
     "/api/ads": _get_ads,
@@ -434,9 +412,7 @@ GET_HANDLERS = {
     "/api/suggest": _get_suggest,
     "/api/search-history": _get_search_history,
     "/api/search/recommendations": q_search_recommendations,
-    "/api/taste": _get_taste,
     "/api/review": _get_review,
-    "/api/review/auto-landings": q_auto_landings,
     "/api/post-setup-tutorial": _get_post_setup_tutorial,
 }
 
@@ -446,9 +422,6 @@ POST_HANDLERS = {
     "/api/media-processing": w_media_processing,
     "/api/folders/preview": w_folder_preview,
     "/api/folders/rule": w_folder_rule,
-    "/api/downloads": w_download_submit,
-    "/api/downloads/cancel": w_download_cancel,
-    "/api/downloads/postprocess": w_download_postprocess,
     "/api/library-processing": w_library_processing,
     "/api/thumbnail-jobs": w_thumbnail_jobs,
     "/api/scraping/settings": w_scraping_settings,
@@ -491,22 +464,14 @@ POST_HANDLERS = {
     "/api/item-tag": w_item_tag,
     "/api/batch": w_batch,
     "/api/search-history": w_search_history,
-    "/api/taste/refresh": w_taste_refresh,
-    "/api/taste/source": w_taste_source,
     "/api/trash/empty": _post_empty_trash,
     "/api/organize/preview": w_organize_preview,
     "/api/organize/apply": w_organize_apply,
     "/api/organize/rollback": w_organize_rollback,
-    "/api/purge-missing": w_purge_missing,
-    "/api/orphan-records/attach": w_orphan_attach,
     "/api/links/check": w_links_check,
     "/api/links/prune": w_links_prune,
-    "/api/resource-sync/scan": w_resource_sync_scan,
-    "/api/resource-sync/apply": w_resource_sync_apply,
-    "/api/media-repair": w_media_repair,
     "/api/review/decision": w_review_decision,
     "/api/review/genre": w_review_genre,
-    "/api/review/auto-landings/revert": w_auto_landing_revert,
     "/api/settings": w_settings,
     "/api/library-shortcuts": w_library_shortcuts,
     "/api/tutorial-progress": w_tutorial_progress,
@@ -527,18 +492,12 @@ READ_ONLY_POST_ROUTES = frozenset({
     "/api/custom-metadata",
     "/api/scraping/settings", "/api/scraping/check",
     "/api/follow/resolve", "/api/follow/credential",
-    "/api/taste/refresh", "/api/taste/source", "/api/resource-sync/scan",
     "/api/links/check",
-    # 修复只写 `transcode_root` 里的边车，那是本机缓存，不是账本。
-    "/api/media-repair",
     # 整理的预览只出一份计划 CSV，不动文件也不改账本；执行与回滚不在这里。
     "/api/organize/preview",
     # 人脸模型存在本机 tools 目录，取一次不碰账本。
     "/api/face-models",
 })
-# `/api/resource-sync/apply` 不在上面：它永久删除文件已不在盘上的账本行，走的是
-# `purge_assets`。检查那一步只读盘，候选留在进程内存里；它在任务中心的那一行
-# 在只读端本来就不写。
 
 
 def dispatch_api_get(contract: WebContract, path, args):

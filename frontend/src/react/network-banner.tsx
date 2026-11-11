@@ -25,7 +25,7 @@ export function NetworkBanner() {
   return createPortal(
     <aside className="ui-project-banner ui-project-banner-warning" role="status" data-network-offline="">
       <div><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-alert" /></svg><p>{NETWORK_OFFLINE_TEXT}</p></div>
-      <a href="/settings/network#peachProxy">检查 Peach 代理</a>
+      <a href="/settings/diagnostics">查看系统诊断</a>
     </aside>,
     host,
   );

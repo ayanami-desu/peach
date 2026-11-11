@@ -160,20 +160,17 @@ class TokenCommandTests(unittest.TestCase):
 
 
 class InitProvisionsTokenTests(unittest.TestCase):
-    """两条 init 路径都要留下口令文件——现有部署走的正是 `--from-existing`。"""
+    """非交互初始化也要留下口令文件，并且不把它写进终端输出。"""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve() / "peach-data"
-        patcher = mock.patch.object(cli.onboarding.certs, "bootstrap_certificates")
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
-    def _init(self, *extra):
+    def _init(self):
         output = io.StringIO()
         with redirect_stdout(output):
-            code = cli.main(["init", "--data-root", str(self.root), *extra])
+            code = cli.main(["init", "--data-root", str(self.root)])
         return code, output.getvalue()
 
     def test_a_fresh_init_leaves_a_token_behind(self):
@@ -184,11 +181,6 @@ class InitProvisionsTokenTests(unittest.TestCase):
         # 口令本身不进终端输出：那条路通向日志、截图和 issue。
         self.assertNotIn(token, output)
         self.assertIn("peach token", output)
-
-    def test_from_existing_leaves_a_token_behind(self):
-        code, _output = self._init("--from-existing")
-        self.assertEqual(code, 0)
-        self.assertTrue(auth.read_token(self.root / "secrets"))
 
 
 if __name__ == "__main__":

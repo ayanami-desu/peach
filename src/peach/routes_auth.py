@@ -17,9 +17,8 @@ from functools import lru_cache
 import threading
 import time
 from urllib.parse import urlsplit
-from . import access, distribution, tunnel
+from . import access
 from .web_entry import page_shell
-from .web_local_access import first_access_client
 from starlette.concurrency import run_in_threadpool
 from urllib.parse import parse_qs
 
@@ -54,26 +53,15 @@ def trusted_proxy(request: Request) -> bool:
     return any(peer in network for network in networks)
 
 
-def _tunnel_service_peer(request: Request) -> bool:
-    """连接来自回环或服务自己绑定的地址：隧道与本机转发都是这样连进来的。"""
-    peer = request.client.host if request.client else "unknown"
-    server = request.scope.get("server")
-    return peer in ("127.0.0.1", "::1") or bool(
-        server and peer == server[0] and peer not in ("0.0.0.0", "::"))
-
-
 def _attempt_key(request: Request) -> str:
     """限速按真实来源分桶。
 
-    受信代理（`PEACH_TRUSTED_PROXIES`，默认回环）转发的请求读它写的来源地址；隧道运行
-    且连接来自回环或服务自己的地址时读边缘给出的客户端地址。其余一律按连接源计数，
-    转发地址必须有效并归一化。
+    受信代理（`PEACH_TRUSTED_PROXIES`，默认回环）转发的请求读它写的来源地址；其余
+    一律按连接源计数，转发地址必须有效并归一化。
     """
     peer = request.client.host if request.client else "unknown"
     if trusted_proxy(request):
         forwarded = request.headers.get("x-forwarded-for") or request.headers.get("cf-connecting-ip", "")
-    elif _tunnel_service_peer(request) and tunnel.running(getattr(request.app.state, "tunnel", None)):
-        forwarded = request.headers.get("cf-connecting-ip", "")
     else:
         return peer
     try:
@@ -174,31 +162,6 @@ def _origin_key(value: str) -> tuple[str, str, int | None] | None:
     return scheme, parsed.hostname.rstrip(".").lower(), port
 
 
-def _tunnel_origin(request: Request) -> tuple[str, str, int | None] | None:
-    """返回当前进程实际拿到的隧道 origin，而不是信任请求头。"""
-    manager = getattr(request.app.state, "tunnel", None)
-    if manager is None:
-        return None
-    try:
-        url = manager.snapshot().url
-    except (AttributeError, OSError, ValueError):
-        return None
-    return _origin_key(url) if url else None
-
-
-def _named_origin(request: Request) -> tuple[str, str, int | None] | None:
-    """命名隧道的公开主机名。
-
-    它来自本次启动注入的运行设置，不是请求头，也不随隧道握手完成才出现：连接刚建立
-    那几秒页面就已经能提交，这时 manager 的快照还没进入 running。
-    """
-    settings = getattr(request.app.state, "settings", None)
-    if getattr(settings, "tunnel_mode", "") != tunnel.NAMED_MODE:
-        return None
-    hostname = (getattr(settings, "tunnel_hostname", "") or "").strip()
-    return _origin_key(tunnel.public_url(hostname)) if hostname else None
-
-
 _FETCH_SITES = frozenset({"same-origin", "same-site", "cross-site", "none"})
 _FETCH_MODES = frozenset({"cors", "navigate", "no-cors", "same-origin", "websocket"})
 _FETCH_DESTS = frozenset({"empty", "document", "iframe", "frame", "script", "worker"})
@@ -254,13 +217,13 @@ def _record_origin_mismatch(request, guard: str, origin: str | None,
     local_event("origin-mismatch", **fields)
 
 
-def origin_allowed(request, *, guard: str, tunnels: bool = True) -> bool:
+def origin_allowed(request, *, guard: str) -> bool:
     """浏览器写请求的来源判定，`same_origin` 与首启提交共用。
 
     浏览器自己标的 ``Sec-Fetch-Site: same-origin`` 直接放行：这个头页面脚本改不了，
     本机代理或安全软件改写 Host、``X-Forwarded-Proto`` 翻转协议、浏览器发 ``Origin: null``
     时它仍然准确。标成 ``cross-site`` 一律拒绝。其余情况比较 Origin：没带就放行（非浏览器
-    客户端），带了就要和本机地址或当前隧道地址一致。受信代理（`PEACH_TRUSTED_PROXIES`）
+    客户端），带了就要和本机地址一致。受信代理（`PEACH_TRUSTED_PROXIES`）
     后面的请求可以按它声明的 ``X-Forwarded-Proto`` 另算一个地址，别的连接声明的协议不算数。
     比较对不上时写一条取证，放行的也记。
     """
@@ -272,8 +235,6 @@ def origin_allowed(request, *, guard: str, tunnels: bool = True) -> bool:
     supplied = _origin_key(origin) if origin else None
     local = _origin_key(str(request.base_url))
     allowed = {local}
-    if tunnels:
-        allowed |= {_tunnel_origin(request), _named_origin(request)}
     if trusted_proxy(request):
         scheme = headers.get("x-forwarded-proto", "").strip().lower()
         if scheme in {"http", "https"}:
@@ -286,13 +247,11 @@ def origin_allowed(request, *, guard: str, tunnels: bool = True) -> bool:
 
 
 def same_origin(request: Request) -> None:
-    """浏览器写请求只接受 Peach 页面或当前隧道页面发来的请求，判据见 `origin_allowed`。
+    """浏览器写请求只接受 Peach 自己页面发来的请求，判据见 `origin_allowed`。
 
-    独立包的 origin 是回环 HTTP，cloudflared 转发时 Host 仍可能是本机地址，
-    所以不能单纯把 ``Origin`` 和 ASGI 的 ``base_url`` 比较。临时链接的随机入口由当前
-    TunnelManager 产生并保存在进程内，命名隧道的公开主机名来自本次启动的运行设置。
-    受信任代理可通过 ``X-Forwarded-Proto`` 声明外部协议，Host 应保留公开地址；
-    不可信连接的转发头不参与同源判定。
+    独立包的 origin 是回环 HTTP，反向代理转发时 Host 仍可能是本机地址，所以不能单纯把
+    ``Origin`` 和 ASGI 的 ``base_url`` 比较。受信任代理可通过 ``X-Forwarded-Proto``
+    声明外部协议，Host 应保留公开地址；不可信连接的转发头不参与同源判定。
     """
     if not origin_allowed(request, guard="same-origin"):
         raise HTTPException(403, "请从 Peach 配置页提交")
@@ -369,23 +328,14 @@ def set_auth_cookie(response: Response, request: Request, *, days: int = 30, log
         response.delete_cookie("tok", path="/")
 
 
-#: Docker 首次设置或访问设置的来源不满足时给的那句话；页面上的同一句写在页面包里。
-FIRST_ACCESS_DENIED = "请从部署 Peach 的机器或同一局域网打开 Peach 完成设置，或在启动容器时设置 PEACH_ACCESS_PASSWORD。"
-
-
 def login_mode(request: Request) -> str:
     """登录页画哪一种，由服务端判定后交给页面，页面不自己猜。
 
-    有访问策略时是 `password`，框里填访问密码。没有策略（`legacy`）时，非 Docker 部署
-    填自动生成的访问口令；Docker 已经配置过（全新部署走首次设置页）时改在这里设访问密码或选免登录
-    （`setup`），来源须过 `first_access_client`：本机或私有网络、不带代理转发头。来源不满足的是
-    `denied`，只能用口令登录（ADR-0149）。
+    有访问策略时是 `password`，框里填访问密码。没有策略（`legacy`）时填自动生成的访问口令。
     """
     if access.load(request.app.state.settings.access_path)["mode"] != "legacy":
         return "password"
-    if not distribution.docker():
-        return "legacy"
-    return "setup" if first_access_client(request) else "denied"
+    return "legacy"
 
 
 def login_html(next_path: str, *, mode: str = "password", invalid: bool = False, error: str = "") -> str:
@@ -397,7 +347,7 @@ def login_html(next_path: str, *, mode: str = "password", invalid: bool = False,
         data["invalid"] = "true"
     if error:
         data["error"] = error
-    return page_shell("Peach · 访问设置" if mode == "setup" else "登录 Peach", "login", data)
+    return page_shell("登录 Peach", "login", data)
 
 
 def safe_next(value: str) -> str:

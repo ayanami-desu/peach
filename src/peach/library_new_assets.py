@@ -6,11 +6,11 @@ import sqlite3
 
 from filelock import FileLock
 from .fsutil import atomic_write_text
-from .update_tasks import state_for
+from .task_state import state_root
 
 
 def _path(db):
-    return state_for(Path(db)).parent/'library-new-assets.json'
+    return state_root(Path(db))/'library-new-assets.json'
 
 
 def _read(db):

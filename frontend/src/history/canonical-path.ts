@@ -15,7 +15,7 @@ export function canonicalPath(path: string): string {
     url.searchParams.set(queue[1] === 'playlists' ? 'playlist' : queue[1]!, queue[2]!);
   }
   const pages: Record<string, string> = { '/activity': '/tasks', '/scraping': '/sources',
-    '/follow-manage': '/subscriptions', '/configuration': '/settings/library', '/diagnostics': '/settings/diagnostics' };
+    '/follow-manage': '/subscriptions', '/configuration': '/settings', '/diagnostics': '/settings/diagnostics' };
   url.pathname = pages[url.pathname] || url.pathname;
   const cleanup = url.pathname === '/data-cleanup' ? CLEANUP_HASH_REDIRECTS[url.hash] : undefined;
   if (cleanup) {

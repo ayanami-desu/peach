@@ -70,7 +70,7 @@ export function ApiTokenSettings({ initial, mode, receipt }: {
   });
 
   return (
-    <Section title="访问口令">
+    <Section guide="token" title="访问口令">
       <Stack>
         <Help>脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在这台电脑上，页面不显示。</Help>
         {rotated ? (

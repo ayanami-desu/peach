@@ -2,10 +2,9 @@
 
 不碰数据库、不碰 HTTP、不依赖任何 Peach 模块，是最底下那层纯策略。
 
-文件名必须指着内容说话：这里没有一行是 web 的，而依赖它的四个模块里有三个不在
-web 层——`repository`（数据层）取 `is_jav_code`，`taste_history` 取 `LENGTH_TAGS`，
-`fc2_similarity` 取重复判据。数据层 import 一个叫 web 的模块，读代码的人会以为
-分层反了。
+文件名必须指着内容说话：这里没有一行是 web 的，而依赖它的模块大多不在 web 层——`repository`
+（数据层）取 `is_jav_code`、`is_fc2_code` 判重复。数据层 import 一个叫 web 的模块，读代码的
+人会以为分层反了。
 """
 from __future__ import annotations
 

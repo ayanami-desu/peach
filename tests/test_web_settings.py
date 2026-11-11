@@ -98,11 +98,17 @@ class SettingsRoundTripTests(unittest.TestCase):
     def test_manage_order_persists_independently_and_appends_missing_entries(self):
         original_sidebar = q_settings(self.contract)['sidebarOrder']
         saved = w_settings(self.contract, {'manageOrder': ['activity', 'stats', 'activity', 'invalid', 3]})
-        self.assertEqual(saved['manageOrder'], ['activity', 'stats', 'taste', 'cleanup', 'follow', 'configuration'])
+        expected = ['activity', 'stats'] + [key for key in web_settings.DEFAULT_MANAGE_ORDER
+                                            if key not in ('activity', 'stats')]
+        self.assertEqual(saved['manageOrder'], expected)
         self.assertEqual(q_settings(self.contract)['manageOrder'], saved['manageOrder'])
         self.assertEqual(q_settings(self.contract)['sidebarOrder'], original_sidebar)
         self.assertEqual(w_settings(self.contract, {'manageOrder': []})['manageOrder'],
                          list(web_settings.DEFAULT_MANAGE_ORDER))
+
+    def test_configuration_navigation_accepts_the_current_sections(self):
+        saved = w_settings(self.contract, {'navigationOrders': {'configuration': ['diagnostics', 'drives']}})
+        self.assertEqual(saved['navigationOrders']['configuration'][:2], ['diagnostics', 'drives'])
 
     def test_navigation_groups_keep_independent_orders_and_fixed_first_item(self):
         w_settings(self.contract, {'navigationOrders': {'review': ['studio_logos', 'metadata_fields']}})

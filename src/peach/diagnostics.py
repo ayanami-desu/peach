@@ -1,4 +1,4 @@
-"""CLI 与 API 共用的分项诊断；不修复账本、配置、工具或挂载。"""
+"""CLI 与 API 共用的分项诊断；不修复账本、配置或工具。"""
 from __future__ import annotations
 
 import ipaddress
@@ -7,15 +7,12 @@ import platform
 import shutil
 import socket
 import sqlite3
-import sys
 import tempfile
-import time
 from contextlib import closing
 
-from . import __version__, access, distribution, settings_file
+from . import __version__, access, settings_file
 from .ffmpeg import FFmpegResolver, binary_diagnostics
 from .health import inspect_database
-from .mount_reachability import MountReachability, PROBE_TIMEOUT
 
 
 def item(label, status, reason, *, action="", target=None, details=None):
@@ -24,21 +21,8 @@ def item(label, status, reason, *, action="", target=None, details=None):
 
 
 def doctor_endpoint(config):
-    """选择配置端口或具有 TLS 材料的源码托盘入口。"""
-    configured = (config.server.host, config.server.port)
-    if distribution.standalone():
-        return configured
-    tls = config.directory("secrets") / "tls"
-    if not all((tls / name).is_file() for name in ("peach-local-ca.crt", "peach.crt", "peach.key")):
-        return configured
-    if sys.platform == "darwin":
-        return "0.0.0.0", 8443
-    from .mdns import lan_ipv4
-    try:
-        address = os.environ.get("PEACH_LAN_ADDRESS") or lan_ipv4()
-    except (OSError, RuntimeError):
-        address = "0.0.0.0"
-    return address, 443
+    """诊断要连的地址就是配置里监听的那个：TLS 与局域网发现都已随形态删除。"""
+    return config.server.host, config.server.port
 
 
 def configuration(config, configured, *, validate=True):
@@ -50,7 +34,7 @@ def configuration(config, configured, *, validate=True):
     except settings_file.SettingsFileError:
         return item("配置", "failed", "配置文件无法读取", action="在本机修复配置文件")
     if not configured:
-        return item("配置", "failed", "尚未完成首次配置", action="完成首次配置", target="/settings/library")
+        return item("配置", "failed", "尚未完成首次配置", action="完成首次配置", target="/settings#drives")
     return item("配置", "ok", "配置可读取")
 
 
@@ -88,7 +72,7 @@ def tools(settings, *, inspect=True):
     problems += ['FFmpeg 缺少 AV1 软件解码器'] if incomplete else []
     return item("FFmpeg／OpenSSL", 'warning' if problems else 'ok',
                 '；'.join(problems) or ('媒体工具可执行，AV1 软件解码器可用' if inspect else '工具路径已找到'),
-                action='更新媒体工具' if problems else '', target='/settings/maintenance' if problems else None, details=found)
+                action='更新媒体工具' if problems else '', target='/settings/diagnostics' if problems else None, details=found)
 
 
 def security(settings):
@@ -98,31 +82,41 @@ def security(settings):
     except ValueError:
         loopback = False
     protected = policy["mode"] == "password" or (policy["mode"] == "legacy" and bool(settings.token))
-    exposed = not loopback or settings.tunnel_enabled
+    exposed = not loopback
     if policy["mode"] == "locked":
         return item("访问安全", "failed", "访问密码配置无法读取", action="在本机检查访问密码配置")
     if exposed and not protected:
         return item("访问安全", "warning", "局域网或公网入口未开启访问密码",
-                    action="在配置中开启访问密码", target="/settings/network", details={"exposed": True, "protected": False})
+                    action="在配置中开启访问密码", target="/settings/access", details={"exposed": True, "protected": False})
     return item("访问安全", "ok", "已开启访问密码" if protected else "仅监听本机",
                 details={"exposed": exposed, "protected": protected})
 
 
-def media_mounts(snapshot):
-    if not snapshot["sources"]:
-        return item("媒体挂载", "disabled", "没有已配置的本地来源")
-    states = {"ok": "ok", "degraded": "warning", "checking": "unknown"}
-    reason = "来源可读取" if snapshot["state"] == "ok" else "；".join(snapshot["warnings"]) or "挂载检测尚未完成"
-    return item("媒体挂载", states[snapshot["state"]], reason,
-                action="检查媒体目录与挂载状态" if snapshot["state"] != "ok" else "", target="/settings/library",
-                details=snapshot)
+def drives(snapshot):
+    """网盘接入状态：连上没有、上次同步什么时候、最近一次错误。
+
+    健康检查传进来的快照可能只有 `locations`：这里只读它，不去问网盘——诊断本身不该联网。
+    """
+    rows = list(snapshot.get("locations") or ())
+    if not rows:
+        return item("网盘", "unknown", "还没有接入网盘", action="在设置里接入 Google Drive 或 OneDrive",
+                    target="/settings#drives")
+    broken = [row for row in rows if not row.get("connected") or row.get("last_error")]
+    states = {row["location"]: row for row in rows}
+    if broken:
+        return item("网盘", "warning",
+                    "；".join(f"{row.get('label') or row['location']}：{row.get('last_error') or '未授权'}"
+                             for row in broken),
+                    action="重新授权或刷新", target="/settings#drives", details={"locations": states})
+    return item("网盘", "ok", "已接入：" + "、".join(str(row.get("label") or row["location"]) for row in rows),
+                details={"locations": states})
 
 
 def component_checks(settings, snapshot, *, config=None, validate_config=True, inspect_tools=True):
     config = config or settings_file.active()
     database, schema = database_checks(settings)
     checks = {"database": database, "schema": schema, "configured": configuration(config, settings.configured, validate=validate_config),
-              "media_mounts": media_mounts(snapshot), "security": security(settings)}
+              "drives": drives(snapshot), "security": security(settings)}
     checks["ffmpeg"] = tools(settings, inspect=inspect_tools)
     return checks
 
@@ -172,20 +166,6 @@ def recent_failure(path):
     safe_time = moment if len(moment) <= 32 and all(c in "0123456789-:+.TZ " for c in moment) else None
     return item("后台任务", "warning", "存在已记录的任务失败", action="在任务中心查看失败任务",
                 target="/tasks", details={"id": row[0], "finished_at": safe_time})
-
-
-def probe_mounts(roots):
-    monitor = MountReachability(roots)
-    deadline = time.monotonic() + PROBE_TIMEOUT + 1.5
-    try:
-        while True:
-            monitor.tick()
-            snapshot = monitor.summary()
-            if all(row["state"] != "checking" for row in snapshot["sources"]) or time.monotonic() >= deadline:
-                return snapshot
-            time.sleep(0.05)
-    finally:
-        monitor.stop()
 
 
 def report(settings, snapshot, *, config=None):

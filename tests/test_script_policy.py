@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import ast
 import re
-import subprocess
-import sys
 import unittest
 from pathlib import Path
 
@@ -39,11 +37,6 @@ DML_CLAUSE = re.compile(r"\b(INTO|FROM|SET)\b", re.I)
 #: 判据是「这个脚本是不是把既有账本行按复核结论改掉」。是的话必须有 `--apply`：
 #: 复核产物和真实写入之间必须有一道人为闸门。下面这些不是那种形态。
 APPLY_ALLOWLIST = {
-    # 常驻批处理，由 `peach.jobs.job_main` + PidFileLock 驱动，没有「先出复核表再决定
-    # 写不写」这一步：它们写的是自己刚生成的探测结果与九宫格产物。停不停由任务控制，
-    # 不由一个命令行开关控制。
-    "probe.py",
-    "sheets.py",
     # 摄取入口。它新增行而不是按复核结论改既有行，整个用途就是写：把 115 服务端
     # 算好的 SHA1 灌进来。目前还没有备份闸门，是后续该补的，不是本门槛要管的形态。
     "sync_sha1_115.py",
@@ -150,33 +143,6 @@ class ScriptWriteGatePolicyTests(unittest.TestCase):
         self.assertTrue(DML.search("INSERT OR IGNORE INTO asset_tag(asset_id,tag)"))
         self.assertTrue(DML.search("UPDATE asset SET path=? WHERE id=?"))
         self.assertIsNone(DML.search("SELECT count(*) FROM asset"))
-
-
-class ReleaseEntryImportTests(unittest.TestCase):
-    """门槛（d）：发布入口导入时只靠标准库。
-
-    Release 工作流核对标签提交那一步只有 `setup-python` 装的裸解释器，依赖要到后面的
-    构建步骤才装——次序是故意的：不给一个没过 CI 的提交花十分钟构建。入口只要多引一条
-    第三方依赖，那一步就 `ModuleNotFoundError`，而此时标签已经推上去了：版本有标签、却没有
-    任何可下载的制品，而发布流程的全部意义就是「每个 X.Y.Z 对应一份制品」。
-    """
-
-    def test_the_release_entry_imports_with_a_bare_interpreter(self):
-        base = Path(sys.base_prefix)
-        interpreter = next((path for path in (base / "python.exe",
-                                              base / "bin" / "python3",
-                                              base / "bin" / "python") if path.is_file()), None)
-        if interpreter is None:
-            self.skipTest(f"找不到不带 site-packages 的基底解释器：{base}")
-        # `-S` 不载入 site：基底解释器自己的 site-packages 里也可能装着 filelock，
-        # 载入了就会让重依赖混过这道门槛。`-E` 不认 PYTHONPATH，理由相同。
-        done = subprocess.run(
-            [str(interpreter), "-S", "-E", "-X", "utf8", "-c",
-             "import scripts.release_tag as entry; print(entry.MASTER_WRITER)"],
-            cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
-            errors="replace", check=False)
-        self.assertEqual(done.returncode, 0,
-                         "发布入口得能裸解释器导入：" + (done.stderr or done.stdout).strip())
 
 
 if __name__ == "__main__":

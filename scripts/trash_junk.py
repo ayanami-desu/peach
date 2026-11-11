@@ -8,10 +8,10 @@
 `--backup`。
 
 `--purge --review-csv` 只处理清单里 decision=delete 的确认项。每项须带路径、体积、
-证据与至少 0.95 的确认置信度；执行时核对文件未变化、来源在线且路径在根内，保护字幕与 NFO。
-以下几类整条跳过、不删，并在结果的 `skipped` 里逐条回报：已不在垃圾复核队列里的行、
-用户点过「不是垃圾」的行、带个人记录（播放、评分、偏好、稍后看、播放列表等，判据同
-`personal_records.record_holders`）的行，以及登记了字幕或盘上有同名字幕、NFO 的行。
+证据与至少 0.95 的确认置信度；执行时核对账本行与清单一致。以下几类整条跳过、不删，
+并在结果的 `skipped` 里逐条回报：已不在垃圾复核队列里的行、用户点过「不是垃圾」的行、
+带个人记录（播放、评分、偏好、稍后看、播放列表等，判据同 `personal_records.record_holders`）
+的行。媒体只在网盘上，删除只动账本行，不碰任何文件，因此不核对盘上文件、也不清目录。
 删除只走 `purge_assets()`。
 
 用法:
@@ -32,18 +32,14 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from peach.config import DATABASE_PATH, GENERATED_DIR, LOCATION_ROOT_DECLARATIONS
+from peach.config import DATABASE_PATH, GENERATED_DIR
 from peach.media_sources import SCANNABLE_LOCATIONS
 from peach.personal_records import record_holders
-from peach.platform import root_online, translate_ledger_path, within_root
 from peach.review_csv import read_rows, write_rows
 from peach.scripting import (
     add_ledger_write_args, counts_of, open_for_write, open_readonly, verify_after_write,
 )
-from peach.web_batch import (
-    AUTO_TRASH_SCORE, MEDIA_SIDECAR_SUFFIXES, q_ads, purge_assets, _finish_purge,
-    _restore_staged_media,
-)
+from peach.web_batch import AUTO_TRASH_SCORE, q_ads, purge_assets, _finish_purge
 from peach.web_contract import WebContract
 
 FIELDS = ["id", "score", "location", "medium", "size_mb", "name", "why", "path"]
@@ -74,15 +70,7 @@ def candidate_ids(db_path: Path) -> set[int]:
     return {int(item["id"]) for item in result["items"]}
 
 
-def sidecar_files(path: Path) -> list[str]:
-    """盘上与该文件同名的字幕与 NFO（`片名.srt`、`片名.zh.ass`、`片名.nfo` 等）。"""
-    prefix = path.stem.casefold() + "."
-    return sorted(entry.name for entry in path.parent.iterdir()
-                  if entry != path and entry.name.casefold().startswith(prefix)
-                  and entry.suffix.casefold() in MEDIA_SIDECAR_SUFFIXES)
-
-
-def skip_reason(connection, row, path: Path, candidates: set[int], holders: set[int]) -> str:
+def skip_reason(connection, row, candidates: set[int], holders: set[int]) -> str:
     """不能永久删除的原因；空串表示可以删。"""
     if connection.execute(
             "SELECT 1 FROM review_decision WHERE category='junk_file' AND status='rejected' "
@@ -92,18 +80,14 @@ def skip_reason(connection, row, path: Path, candidates: set[int], holders: set[
         return "已不在垃圾复核队列里"
     if int(row["id"]) in holders:
         return "带个人记录"
-    if connection.execute("SELECT 1 FROM asset_subtitle WHERE asset_id=?", (row["id"],)).fetchone():
-        return "登记了字幕"
-    sidecars = sidecar_files(path)
-    if sidecars:
-        return "盘上有同名字幕或资料：" + "、".join(sidecars)
     return ""
 
 
 def purge_reviewed(connection, reviews: list[dict], candidates: set[int]) -> dict:
-    """核对清单与文件后，复用批量永久删除的隔离、提交与清退流程。
+    """核对清单与账本行后，复用批量永久删除的复核与提交流程。
 
-    `candidates` 是删除前只读算出的垃圾复核队列 id；不在其中的行跳过。
+    `candidates` 是删除前只读算出的垃圾复核队列 id；不在其中的行跳过。媒体只在网盘上，
+    这里只删账本行，不核对也不改动任何文件。
     """
     baseline = {tuple(row) for row in connection.execute("PRAGMA foreign_key_check")}
     outcome = None
@@ -116,15 +100,9 @@ def purge_reviewed(connection, reviews: list[dict], candidates: set[int]) -> dic
             row = connection.execute("SELECT * FROM asset WHERE id=?", (int(review["id"]),)).fetchone()
             if row is None or row["location"] not in TRASHABLE_LOCATIONS or row["path"] != review["path"]:
                 raise ValueError("删除清单已失效：资产来源或路径不一致")
-            path = translate_ledger_path(row["path"])
-            roots = [translate_ledger_path(root) for root in LOCATION_ROOT_DECLARATIONS.get(row["location"], ())]
-            if not any(root_online(root) and within_root(path, root) for root in roots):
-                raise ValueError("删除路径不在已挂载的来源根内")
-            if path.suffix.casefold() in MEDIA_SIDECAR_SUFFIXES:
-                raise ValueError("媒体资料与字幕不能进入垃圾永久删除")
-            if path.is_symlink() or not path.is_file() or path.stat().st_size != int(review["size"]):
-                raise ValueError("删除清单已失效：文件不存在、类型或体积变化")
-            reason = skip_reason(connection, row, path, candidates, holders)
+            if int(row["size"] or 0) != int(review["size"]):
+                raise ValueError("删除清单已失效：账本里的体积变了")
+            reason = skip_reason(connection, row, candidates, holders)
             if reason:
                 skipped.append({"id": row["id"], "path": row["path"], "reason": reason})
                 continue
@@ -137,8 +115,6 @@ def purge_reviewed(connection, reviews: list[dict], candidates: set[int]) -> dic
         connection.commit()
     except BaseException:
         connection.rollback()
-        if outcome is not None:
-            _restore_staged_media(outcome["_staged"])
         raise
     return {**_finish_purge(outcome), "skipped": skipped, "existing_foreign_keys": len(baseline)}
 
@@ -210,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         report = args.out or args.review_csv.with_suffix(".result.json")
         report.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(result, ensure_ascii=False))
-        return 1 if result["blocked"] or result["cleanup_pending"] or result["skipped"] else 0
+        return 1 if result["blocked"] or result["skipped"] else 0
     locations = tuple(args.location or ())
     selected = select_candidates(args.db, min_score=args.min_score,
                                  locations=locations, kind=args.kind)

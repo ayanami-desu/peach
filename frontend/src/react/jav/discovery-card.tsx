@@ -9,13 +9,8 @@ import { busyProps, useAction } from '../settings/use-action';
 import { DiscoveryFaces } from './discovery-faces';
 import { useJavSelection } from './jav-selection';
 import { suppressShiftTextSelection } from '../components/row-click';
-import { COVER_STATE_TITLE, coverFetchingHtml, coverStateAction, coverUrl } from '@peach/card-art';
-import type { DownloadPrefill } from '../activity/cloud-download-dialog';
+import { COVER_STATE_TITLE, coverFetchingHtml, coverStateAction } from '@peach/card-art';
 import { coverArrived, coverFetching, discoveryArtwork, fetchCoverNow, type Discovery } from './jav';
-
-/** 「查找资源」弹窗的预填：本机有封面用本机那张，否则用来源地址。 */
-export const resourcePrefill = (item: Discovery): DownloadPrefill =>
-  ({ ...item, cover: item.has_cover ? coverUrl(item, true) : item.cover_url, origin: `${item.asset_id ? 'asset' : 'feed'}:${item.id}` });
 
 const COVER_BOX = 'relative inline-grid place-items-center overflow-hidden rounded-2lg bg-background-tertiary-default';
 
@@ -43,11 +38,11 @@ function CoverWait({ item, readOnly }: { item: Discovery; readOnly: boolean }) {
   </div>;
 }
 
-/** 「发现」与「新作」共用的库外作品卡：封面、出演、发行日、标签与想要／查找资源。
+/** 「发现」与「新作」共用的库外作品卡：封面、出演、发行日、标签与想要。
  *  `badge` 是标签行最前面那一枚（发现分区放推荐分），没有就不占位。 */
-export function DiscoveryCard({ item, layout, javImage, readOnly, navigate, tag, onTag, wanting, onWant, onResource, badge }: {
+export function DiscoveryCard({ item, layout, javImage, readOnly, navigate, tag, onTag, wanting, onWant, badge }: {
   item: Discovery; layout: 'big' | 'small'; javImage: unknown; readOnly: boolean; navigate(path: string): void;
-  tag: string; onTag(tag: string): void; wanting: boolean; onWant(): void; onResource(): void; badge?: ReactNode;
+  tag: string; onTag(tag: string): void; wanting: boolean; onWant(): void; badge?: ReactNode;
 }) {
   const selection = useJavSelection();
   const selected = selection?.selected.has(item.code);
@@ -97,7 +92,6 @@ export function DiscoveryCard({ item, layout, javImage, readOnly, navigate, tag,
         trailingIcon={compact ? undefined : RiExternalLinkLine} href={item.link} target="_blank" rel="noopener noreferrer">{compact ? null : '作品来源'}</ButtonLink> : null}
       <Button variant="ghost" size={compact ? 'small' : 'medium'} disabled={readOnly || item.wanted || !!item.asset_id} {...busyProps(wanting)} onClick={onWant}>
         {item.asset_id ? '已入库' : item.wanted ? '已想要' : '想要'}</Button>
-      <Button variant="secondary" size={compact ? 'small' : 'medium'} onClick={onResource}>查找资源</Button>
     </div> : null}
   </article>;
 }

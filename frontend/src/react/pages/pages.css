@@ -17,7 +17,6 @@
 @import "./setup/setup.css";
 
 @source "./";
-@source "../settings/folder-rows.tsx";
 @source "../settings/password-pair.tsx";
 @source "../settings/section.tsx";
 @source "../components/note.tsx";

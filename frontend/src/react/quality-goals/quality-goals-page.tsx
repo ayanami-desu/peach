@@ -5,7 +5,6 @@
  *
  * 番号标题与来源徽标由遗留层以 HTML 字符串传进来：它们是全站语义契约的唯一实现，
  * 在这里重写一份就会漂。时长、体积、来源名走 `src/core/index.ts` 同一套格式化口径，同理。 */
-import { useState } from 'react';
 import { RiSparklingLine } from '@remixicon/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -14,7 +13,6 @@ import { LOC, fmtDur, fmtSize } from '@peach/legacy/core';
 import { Button } from '@/components/base/buttons/button';
 
 import { errorMessage } from '../../api';
-import { CloudDownloadDialog, type DownloadPrefill } from '../activity/cloud-download-dialog';
 import type { QualityGoalsProps } from '../bundle';
 import { cardClass } from '../components/card';
 import { CollectionSummary } from '../components/collection-summary';
@@ -26,8 +24,7 @@ import {
 } from './quality-goals';
 
 /** 一部待升级的作品一张卡。 */
-function GoalCard({ item, openItem, searchResources, javTitleHtml, javDisplayName, srcBadge }: { item: QualityGoal }
-  & Omit<QualityGoalsProps, 'toast'> & { searchResources(prefill: DownloadPrefill): void }) {
+function GoalCard({ item, openItem, javTitleHtml, javDisplayName, srcBadge }: { item: QualityGoal } & QualityGoalsProps) {
   const open = () => openItem(item.id);
   return (
     <li data-goal-id={item.id}
@@ -67,18 +64,13 @@ function GoalCard({ item, openItem, searchResources, javTitleHtml, javDisplayNam
         </div>
       </div>
       <footer className="flex flex-wrap justify-end gap-2">
-        {item.code ? <Button variant="secondary" size="small" onClick={() => searchResources({
-          code: item.code!, title: javDisplayName(item), origin: `asset:${item.id}`, searchReason: item.reason || '',
-          duration: item.duration, cover: previewUrl(item),
-        })}>查找资源</Button> : null}
         <Button variant="secondary" size="small" onClick={open}>查看版本</Button>
       </footer>
     </li>
   );
 }
 
-export function QualityGoalsPage({ toast, ...props }: QualityGoalsProps) {
-  const [download, setDownload] = useState<DownloadPrefill | null>(null);
+export function QualityGoalsPage(props: QualityGoalsProps) {
   const goals = useQuery({ queryKey: QUALITY_GOALS_KEY, queryFn: ({ signal }) => fetchQualityGoals(signal) });
   const data = goals.data;
   if (!data) {
@@ -104,7 +96,7 @@ export function QualityGoalsPage({ toast, ...props }: QualityGoalsProps) {
           而这一行要回答的是「一共还欠多少部」。 */}
       <CollectionSummary label="待升级" figure={`${Number(data.total || 0).toLocaleString()} 部作品`} flush />
       <ul className="card-grid-cover gap-5">
-        {items.map((item) => <GoalCard key={item.id} item={item} {...props} searchResources={setDownload} />)}
+        {items.map((item) => <GoalCard key={item.id} item={item} {...props} />)}
       </ul>
       {/* 列表只取前 200 部；总数比这多时说清楚这一页不是全部。 */}
       {Number(data.total || 0) > items.length
@@ -112,7 +104,6 @@ export function QualityGoalsPage({ toast, ...props }: QualityGoalsProps) {
             {`显示前 ${items.length.toLocaleString()} 部，共 ${Number(data.total).toLocaleString()} 部。`}
           </p>
         : null}
-      <CloudDownloadDialog prefill={download} close={() => setDownload(null)} receipt={toast} />
     </Page>
   );
 }

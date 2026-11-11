@@ -10,6 +10,7 @@ import { formModal } from '@peach/legacy/ui';
 import { useMovingSurface } from '../components/use-moving-surface';
 import { busyProps } from '../settings/use-action';
 import { errorMessage } from '../../api';
+import { DRIVE_SETTINGS_PATH } from '../../history';
 import { fetchProcessingEstimate, type LibraryProcessingCommand, type ProcessingSpeed, type ProcessingTraffic } from './library-processing';
 import { ProcessingEffort } from './processing-effort';
 import { TrafficProgress } from './processing-traffic';
@@ -158,7 +159,7 @@ export function ProcessingActions({ busy, occupied = false, scan = false, metada
   return <>
     {promptView ? createPortal(<ProcessingPrompt libraryName={libraryName} command={promptView.command} dialog={promptView.dialog}
       speed={speedMode} busy={blocked} onSpeed={value => { selectedSpeed.current = value }} />, promptView.host) : null}
-    {promptView ? createPortal(<LinkButton href="/settings/library" size="small" variant="primary" trailingIcon={RiArrowRightLine} disabled={blocked}
+    {promptView ? createPortal(<LinkButton href={DRIVE_SETTINGS_PATH} size="small" variant="primary" trailingIcon={RiArrowRightLine} disabled={blocked}
       onClick={event => {
         if (promptView.dialog.confirmButton.getAttribute('aria-busy') === 'true') { event.preventDefault(); return }
         promptView.dialog.close();

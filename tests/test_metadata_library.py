@@ -8,7 +8,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import DEFAULT, Mock, patch
 from contextlib import closing, contextmanager
@@ -17,7 +17,7 @@ from filelock import FileLock
 from PIL import Image
 from peach import artifact_rules, library_processing, upgrade_rules
 
-from peach.field_owners import auto_owner, owner_of, review_owner
+from peach.catalog_rules import normalise_code_key, release_code_from_filename
 from peach.genre_taxonomy import map_genres
 from peach.jav_cover_fetch import NotFound
 from peach.http import HttpResponse
@@ -25,11 +25,9 @@ from peach.library_nfo import read_nfo, sidecars, local_art
 from peach.library_processing import (STALL_AFTER_SECONDS, ProcessingBusy, _candidate_identity, _save,
                                       decorate, issues_path, _merge_local_performer_profiles,
                                       process_library, snapshot, state_path, _fields)
-from peach.metadata_auto_apply import _apply_metadata_candidate
 from peach.repository import LedgerDatabase
 from peach.review_csv import read_rows
 from peach.settings_file import PeachConfig
-from support.conditions import windows_ledger_roots
 from support.ledger import fresh_ledger
 
 
@@ -87,6 +85,57 @@ def _archive_pages(url):
             f'<div class="fisrst_sc"><img src="{_ARCHIVE_COVER}" alt="x" /></div>'
             f'<img itemprop="image" src="{_ARCHIVE_COVER_SECOND}" alt="x" />'
             '<div class="news">标签：素人 <br />日期：2023/03/23 <br />时长：45:12 <br /></div>').encode()
+
+
+#: 账本把这些后缀的文件当视频行：扫描只登记它们，测试目录里别的文件是边车。
+VIDEO_SUFFIXES = ('.mp4', '.mkv', '.mpg', '.mpeg', '.avi', '.mov', '.wmv', '.flv', '.iso', '.ts', '.m2ts')
+
+
+def drive_config(root, *roots):
+    """处理任务只认网盘扫描根：账本里的媒体行是 `gdrive:`/`onedrive:` 的远端文件。"""
+    return PeachConfig(root, root / 'config.toml', present=True,
+                       drive_roots={'gdrive': tuple(roots) if roots else ('root-1',)})
+
+
+def register_assets(db, *names, root='root-1', location='gdrive'):
+    """按网盘扫描结果的形状登记资产：远端文件 id 加扫描根，没有本机路径。
+
+    `code` 是账本里的编目写法（`LAF-41.mp4` 记成 `LAF-041`）：自动落库与候选人按这一列
+    找同号资产，网盘扫描登记时一并写好。
+    """
+    ids = []
+    with closing(sqlite3.connect(db)) as connection, connection:
+        for name in names:
+            cursor = connection.execute(
+                'INSERT INTO asset(location,path,name,medium,remote_id,drive_root,code) '
+                'VALUES(?,?,?,?,?,?,?)',
+                (location, f'{location}:/Media/{name}', name, 'video', f'{root}-{name}', root,
+                 _code_of(name)))
+            ids.append(cursor.lastrowid)
+    return ids
+
+
+def register_media(db, media, root='root-1', location='gdrive'):
+    """把测试目录里的视频文件按网盘扫描结果的形状登记进账本，返回新行 id。"""
+    media = Path(media)
+    files = sorted(path for path in media.rglob('*')
+                   if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES)
+    ids = []
+    with closing(sqlite3.connect(db)) as connection, connection:
+        for path in files:
+            relative = path.relative_to(media).as_posix()
+            cursor = connection.execute(
+                'INSERT INTO asset(location,path,name,medium,remote_id,drive_root,code) '
+                'VALUES(?,?,?,?,?,?,?)',
+                (location, f'{location}:/Media/{relative}', path.name, 'video',
+                 f'{root}-{relative}', root, _code_of(path.name)))
+            ids.append(cursor.lastrowid)
+    return ids
+
+
+def _code_of(name):
+    """文件名里的番号按编目规则归一化；认不出的文件（`holiday.mp4`）没有番号。"""
+    return normalise_code_key(release_code_from_filename(name) or '') or None
 
 
 class LibraryNfoTests(unittest.TestCase):
@@ -224,22 +273,15 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual((candidate['source_id'], candidate['source_url']),
                          ('XeYkdb', 'https://javdb.com/v/XeYkdb'))
 
-    @windows_ledger_roots
     def test_targeted_recheck_asks_a_source_despite_old_miss_but_normal_collection_keeps_it(self):
         from peach.library_processing import _MissCache, misses_path
         for recheck in (False, True):
             with self.subTest(recheck=recheck):
                 root = self.root / ('recheck' if recheck else 'normal')
-                media = root / 'media'
-                media.mkdir(parents=True)
-                video = media / 'DASS-468.mp4'
-                video.write_bytes(b'video')
+                root.mkdir(parents=True)
                 db = fresh_ledger(root)
-                config = PeachConfig(root, root / 'config.toml', present=True,
-                                     locations={'local': (str(media),)})
-                with closing(sqlite3.connect(db)) as connection, connection:
-                    connection.execute('INSERT INTO asset(id,location,path,name,medium,code) VALUES(1,?,?,?,?,?)',
-                                       ('local', str(video), video.name, 'video', 'DASS-468'))
+                config = drive_config(root)
+                register_assets(db, 'DASS-468.mp4')
                 misses = _MissCache(misses_path(config))
                 misses.record('javdb', 'DASS-468')
                 misses.record('javdb', 'DASS-469')
@@ -289,93 +331,10 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(exported['issues.json']['records'][0]['diagnostics'], recorded['diagnostics'])
         self.assertEqual(exported['issues.json']['records'][0]['job_id'], 'cover-job')
 
-    def test_collection_keeps_local_and_smb_resources_in_their_online_roots(self):
-        from peach.library_processing import _collection_rows, _online_source_root
-        from peach.smb_media import SmbResource
-
-        db = fresh_ledger(self.root)
-        remote = SmbResource('nas', 'R:/Films', 'smb://files.invalid/films', (), None)
-        outside = SmbResource('other', 'R:/Films', 'smb://other.invalid/films', (), None)
-        local = self.root / 'local'
-        names = ['ABC-101.mp4', 'ABC-102.mp4', 'ABC-103.mp4']
-        paths = ['R:/Films/' + names[0], str(local / names[1]), 'R:/Other/' + names[2]]
-        resources = [remote / names[0], local / names[1], outside / names[2]]
-        translated = dict(zip(paths, resources))
-        translated['R:/Films'] = remote
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.executemany('INSERT INTO asset(location,path,name,medium) VALUES(?,?,?,?)',
-                                   [('local', path, name, 'video') for path, name in zip(paths, names)])
-        before = db.read_bytes()
-        with patch('peach.library_processing.translate_ledger_path', side_effect=translated.__getitem__), \
-                patch('peach.library_processing.root_online', return_value=True):
-            for roots in ([remote, local], [local, remote]):
-                rows, _ = _collection_rows(db, locations={'local': ('R:/Films', str(local))},
-                                            online_roots=roots, asset_ids=None)
-                self.assertEqual([row['name'] for row in rows], names[:2])
-            rows, _ = _collection_rows(db, locations={'local': ('R:/Films',)},
-                                        online_roots=[remote], asset_ids=[1, 3])
-            self.assertEqual([row['name'] for row in rows], names[:1])
-            self.assertIsNone(_online_source_root('local', 'R:/Films', {'local': [local / names[1]]},
-                                                 retrying=True, issue=Mock()))
-            self.assertEqual(_online_source_root('local', 'R:/Films', {'local': [remote / names[0]]},
-                                                retrying=True, issue=Mock()), remote)
-        self.assertEqual(db.read_bytes(), before)
-
-    def test_collection_selects_main_video_and_preserves_registered_trailer(self):
-        from peach.library_processing import _collection_rows
-        db = fresh_ledger(self.root)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            for name in ('ABC-123.mp4', 'ABC-123-trailer.mp4'):
-                connection.execute('INSERT INTO asset(location,path,name,medium) VALUES(?,?,?,?)',
-                                   ('local', str(self.root / name), name, 'video'))
-        before = db.read_bytes()
-        rows, _ = _collection_rows(db, locations={'local': (str(self.root),)},
-                                    online_roots=[self.root], asset_ids=None)
-        self.assertEqual([row['name'] for row in rows], ['ABC-123.mp4'])
-        self.assertEqual(db.read_bytes(), before)
-
-    def test_collection_preserves_directory_extras_and_selects_only_the_feature(self):
-        from peach.library_processing import _collection_rows
-        db = fresh_ledger(self.root)
-        names = ('Film/Film.mp4', 'Film/Extras/Disc 1/Making of.mkv', 'Film/Actor-interview2.mp4')
-        with closing(sqlite3.connect(db)) as connection, connection:
-            for name in names:
-                connection.execute('INSERT INTO asset(location,path,name,medium) VALUES(?,?,?,?)',
-                                   ('local', str(self.root / name), Path(name).name, 'video'))
-        before = db.read_bytes()
-        rows, _ = _collection_rows(db, locations={'local': (str(self.root),)},
-                                    online_roots=[self.root], asset_ids=None)
-        self.assertEqual([row['name'] for row in rows], ['Film.mp4'])
-        self.assertEqual(db.read_bytes(), before)
-
-    def test_task_sidecar_index_does_not_walk_the_folder_for_each_video(self):
-        from peach.library_nfo import SidecarIndex
-        class CountedFiles(dict):
-            walks = 0
-            def values(self):
-                self.walks += 1
-                return super().values()
-        files = CountedFiles()
-        for index in range(100):
-            for suffix in ('.mp4', '.jpg'):
-                name = f'合集-{index}{suffix}'
-                files[name.casefold()] = self.root / name
-        listing = SidecarIndex(files)
-        for index in range(100):
-            nfo, posters = listing.for_video(self.root / f'合集-{index}.mp4')
-            self.assertIsNone(nfo)
-            self.assertEqual(posters, [self.root / f'合集-{index}.jpg'])
-        self.assertEqual(files.walks, 1)
-
-    @windows_ledger_roots
     def test_retry_assets_with_one_code_share_a_fresh_source_answer(self):
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('ABW-101-CD1.mp4', 'ABW-101-CD2.mp4'):
-            (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
-        process_library(config, db, self.root / 'generated', self.root / 'covers', stage='scan')
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-101-CD1.mp4', 'ABW-101-CD2.mp4')
         provider = stub_provider()
         provider.query.return_value = {'id': 'ABW-101', 'title': '同一作品', 'maker': '厂牌',
             'release_date': '2026-01-01', 'actresses': [{'japanese_name': '测试演员'}]}
@@ -390,17 +349,11 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual({row['asset_id'] for row in titles}, {'1', '2'})
         self.assertEqual(result['checked'], 2)
 
-    @windows_ledger_roots
-    def test_a_later_source_only_adds_tags_to_a_field_filled_during_the_run(self):
-        """本轮先补上的标签，后来的来源只按并集补新增的（ADR-0139），一个不删、不进复核页。"""
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'SSIS-057.mp4').write_bytes(b'video')
-        (media / 'SSIS-057.nfo').write_text(
-            '<movie><id>SSIS-057</id><title>本地标题</title></movie>', encoding='utf-8')
+    def test_a_confirmed_censored_title_takes_its_tags_from_the_community_source(self):
+        """有码作品的标签以 JavDB 社区类别为准：官方来源给的那组被换下，记进复核留痕。"""
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'SSIS-057.mp4')
         database = LedgerDatabase(db)
         provider = stub_provider()
         provider.cover.return_value = False
@@ -412,11 +365,10 @@ class LibraryNfoTests(unittest.TestCase):
 
         def query(code, source='r18dev', **kwargs):
             if source == 'javdb':
-                self.assertIn('巨乳', tags())
                 return {'id': code, 'genres': ['高跟鞋', '絲襪'], 'javdb_rule': 2, 'source_id': 'Ssis057'}
             if source == 'dmm':
                 raise NotFound('没有')
-            return {'id': code, 'title': '本地标题', 'maker': 'Prestige', 'release_date': '2023-05-26',
+            return {'id': code, 'title': 'MSIS-057 的标题', 'maker': 'Prestige', 'release_date': '2023-05-26',
                     'actresses': [{'japanese_name': '涼森れむ'}], 'genres': ['巨乳']}
 
         provider.query.side_effect = query
@@ -425,30 +377,25 @@ class LibraryNfoTests(unittest.TestCase):
             process_library(config, db, self.root / 'generated', self.root / 'covers',
                             provider_factory=lambda: provider, database=database,
                             route_overrides='censored=r18dev,javdb')
-        self.assertEqual(tags(), {'巨乳', '高跟', '丝袜'})
-        group = next(row for row in read_rows(self.root / 'generated/library-metadata-field-candidates.csv')
-                     if row['field'] == 'tags')
-        choice = next(item for item in json.loads(group['candidates_json']) if item['source'] == 'javdb')
-        self.assertTrue(choice['requires_review'])
+        self.assertEqual(tags(), {'高跟', '丝袜'})
+        with database.read_connection() as connection:
+            note = json.loads(connection.execute(
+                "SELECT note FROM review_decision WHERE item_key='asset:1:tags'").fetchone()[0])
+        self.assertEqual(note['rule'], 'metadata-censored-javdb-tags')
+        self.assertEqual(note['tag_policy'], 'censored-javdb')
+        self.assertEqual(note['overruled'], [{'source': 'r18dev', 'value': '巨乳'}])
         from peach.web_contract import WebContract
         from peach.web_review import q_review
         contract = WebContract(db, candidate_root=self.root / 'generated', database=database)
         pending = q_review(contract)['sections']['metadata_fields']
         self.assertNotIn('tags', [item['field'] for item in pending])
 
-    @windows_ledger_roots
     def test_a_confirmed_site_is_visible_before_another_site_reaches_its_deadline(self):
         from peach.library_processing import LibraryMetadataProvider
         from peach.jav_cover_fetch import DeadlineExceeded
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.execute("INSERT INTO asset(path,name,location,medium,code) VALUES(?,?,'local','video','ABW-358')",
-                               (str(media / 'ABW-358.mp4'), 'ABW-358.mp4'))
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4')
         provider = LibraryMetadataProvider.__new__(LibraryMetadataProvider)
         provider.cover = Mock(return_value=False)
         provider.transport = Mock()
@@ -474,17 +421,10 @@ class LibraryNfoTests(unittest.TestCase):
         candidates = read_rows(self.root / 'generated/library-metadata-field-candidates.csv')
         self.assertEqual(json.loads(candidates[0]['candidates_json'])[0]['source'], 'avbase')
 
-    @windows_ledger_roots
     def test_metadata_checkpoint_is_saved_when_evidence_was_flushed_before_cover_finished(self):
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.execute("INSERT INTO asset(path,name,location,medium,code) VALUES(?,?,'local','video','ABW-358')",
-                               (str(media / 'ABW-358.mp4'), 'ABW-358.mp4'))
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4')
         provider = stub_provider()
         provider.query.return_value = {'id': 'ABW-358', 'title': '已保存资料'}
         provider.cover.return_value = False
@@ -498,19 +438,11 @@ class LibraryNfoTests(unittest.TestCase):
                         provider_factory=lambda: provider, resume_state=result)
         provider.query.assert_not_called()
 
-    @windows_ledger_roots
     def test_a_slow_candidate_file_is_rewritten_no_more_often_than_its_cost_allows(self):
         """候选表整份写一次越久，两次写之间隔得越开：处理线程不能一半时间都在写文件。"""
-        media = self.root / 'media'
-        media.mkdir()
         db = fresh_ledger(self.root)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            for number in range(1, 9):
-                (media / f'ABW-35{number}.mp4').write_bytes(b'video')
-                connection.execute("INSERT INTO asset(path,name,location,medium,code) VALUES(?,?,'local','video',?)",
-                                   (str(media / f'ABW-35{number}.mp4'), f'ABW-35{number}.mp4', f'ABW-35{number}'))
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, *(f'ABW-35{number}.mp4' for number in range(1, 9)))
         provider = stub_provider()
         provider.query.side_effect = lambda code, *args, **kwargs: {'id': code, 'title': f'{code} 资料'}
         provider.cover.return_value = False
@@ -533,53 +465,12 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertLessEqual(len(writes), 5, writes)
         self.assertTrue(read_rows(self.root / 'generated/library-metadata-field-candidates.csv'))
 
-    @windows_ledger_roots
-    def test_library_policy_decides_which_network_steps_run(self):
-        from dataclasses import replace
-        from peach import media_identity
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.execute("INSERT INTO asset(path,name,location,medium,code) VALUES(?,?,'local','video','ABW-358')",
-                               (str(media / 'ABW-358.mp4'), 'ABW-358.mp4'))
-        base = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
-        libraries, roots = media_identity.catalog(base)
-
-        def run(**policy):
-            for value in libraries.values():
-                value.update(policy)
-            provider = stub_provider()
-            provider.query.return_value = {'id': 'ABW-358', 'title': '外部资料'}
-            provider.cover.return_value = False
-            config = media_identity.project(replace(base), libraries, roots)
-            process_library(config, db, self.root / 'generated', self.root / 'covers', stage='metadata',
-                            provider_factory=lambda: provider)
-            return provider
-
-        local = run(policy='local')
-        local.query.assert_not_called()
-        local.cover.assert_not_called()
-        metadata_only = run(policy='custom', stages='metadata')
-        metadata_only.query.assert_called()
-        metadata_only.cover.assert_not_called()
-        run(policy='', stages='').cover.assert_called()
-
-    @windows_ledger_roots
     def test_user_pause_keeps_published_fields_and_resumes_the_same_collection(self):
         import threading
         from peach.processing_control import control_for
-        media = self.root / 'media'
-        media.mkdir()
-        video = media / 'ABW-358.mp4'
-        video.write_bytes(b'video')
         db = fresh_ledger(self.root)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.execute("INSERT INTO asset(path,name,location,medium,code) VALUES(?,?,'local','video','ABW-358')",
-                               (str(video), video.name))
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4')
         provider = stub_provider()
         provider.query.return_value = {'id': 'ABW-358', 'title': '已确认资料'}
         provider.cover.return_value = False
@@ -624,45 +515,10 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual((results[0]['job_id'], results[0]['status']), ('one', 'complete'))
         self.assertGreater(results[0]['auto_applied'], 0)
 
-    @windows_ledger_roots
-    def test_all_local_titles_are_committed_before_the_first_online_request(self):
-        media = self.root / 'media'
-        media.mkdir()
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        for code in ('ABW-358', 'ABW-359'):
-            (media / f'{code}.mp4').write_bytes(b'video')
-            (media / f'{code}.nfo').write_text(
-                f'<movie><id>{code}</id><title>本地 {code}</title></movie>', encoding='utf-8')
-        seen = []
-
-        def query(*args, **kwargs):
-            with closing(sqlite3.connect(db)) as connection:
-                seen.append(connection.execute('SELECT catalog_title FROM asset ORDER BY id').fetchall())
-            raise KeyboardInterrupt()
-
-        provider = stub_provider()
-        provider.query.side_effect = query
-        def previews(*args, **kwargs):
-            with closing(sqlite3.connect(db)) as connection:
-                self.assertEqual(connection.execute('SELECT catalog_title FROM asset ORDER BY id').fetchall(),
-                                 [('本地 ABW-358',), ('本地 ABW-359',)])
-
-        with self.assertRaises(KeyboardInterrupt), patch('peach.library_processing._generate_previews', side_effect=previews):
-            process_library(config, db, self.root / 'generated', self.root / 'covers',
-                            provider_factory=lambda: provider, database=LedgerDatabase(db))
-        self.assertEqual(seen, [[('本地 ABW-358',), ('本地 ABW-359',)]])
-        self.assertTrue(read_rows(self.root / 'generated/library-metadata-field-candidates.csv'))
-
-    @windows_ledger_roots
     def test_confirmed_online_fields_are_committed_while_cover_fetch_is_pending(self):
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4')
         provider = stub_provider()
         provider.query.return_value = {'id': 'ABW-358', 'title': '已确认标题', 'maker': 'Prestige',
             'release_date': '2023-05-26', 'actresses': [{'japanese_name': '涼森れむ'}]}
@@ -679,24 +535,14 @@ class LibraryNfoTests(unittest.TestCase):
                             provider_factory=lambda: provider, database=LedgerDatabase(db))
         self.assertEqual(visible, ['已确认标题'])
 
-    @windows_ledger_roots
     def test_targeted_collection_keeps_global_progress_and_unrelated_candidates(self):
-        media = self.root / 'media'
-        media.mkdir()
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
         db = fresh_ledger(self.root)
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4', 'ABW-359.mp4')
         database = LedgerDatabase(db)
-        with database.write_transaction() as connection:
-            for aid, code in ((1, 'ABW-358'), (2, 'ABW-359')):
-                video = media / f'{code}.mp4'
-                video.write_bytes(b'video')
-                video.with_suffix('.nfo').write_text(
-                    f'<movie><title>作品 {aid}</title><sorttitle>{code}</sorttitle></movie>', encoding='utf-8')
-                connection.execute('INSERT INTO asset(id,location,path,name,medium,code) VALUES(?,?,?,?,?,?)',
-                                   (aid, 'local', str(video), video.name, 'video', code))
         provider = stub_provider()
-        provider.query.return_value = {}
+        provider.query.side_effect = lambda code, *args, **kwargs: (
+            {'id': code, 'title': f'作品 {code}'} if code == 'ABW-358' else {})
         generated = self.root / 'generated'
         covers = self.root / 'covers'
         with patch('peach.library_processing._enrich_finished_performers',
@@ -720,20 +566,13 @@ class LibraryNfoTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
 
-    @windows_ledger_roots
     def test_amane_preparation_failure_preserves_the_unprocessed_selection_for_retry(self):
         from peach import metadata_amane
-        media = self.root / 'media'
-        media.mkdir()
-        for code in ('SSIS-057', 'SSIS-058', 'FC2-PPV-1234567'):
-            (media / f'{code}.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        expected = set(register_assets(db, 'SSIS-057.mp4', 'SSIS-058.mp4'))
+        register_assets(db, 'FC2-PPV-1234567.mp4')
         generated, covers = self.root / 'generated', self.root / 'covers'
-        process_library(config, db, generated, covers, stage='scan')
-        with closing(sqlite3.connect(db)) as connection:
-            expected = {row[0] for row in connection.execute("SELECT id FROM asset WHERE name LIKE 'SSIS%'")}
         with patch.object(metadata_amane, 'ensure',
                           side_effect=metadata_amane.PreparationError('下载未完成')) as prepare, \
                 patch('peach.library_processing._RemoteSession.collect', return_value=([], 0)) as collect:
@@ -754,18 +593,12 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(retried['checked'], 2)
         self.assertTrue(provider.query.called)
 
-    @windows_ledger_roots
     def test_filename_code_families_enter_metadata_collection(self):
-        media = self.root / 'media'
-        media.mkdir()
         codes = {'LAF-41.mpg': 'LAF-041', 'MKBD-S94.mkv': 'MKBD-S94',
                  'MKD-S118.iso': 'MKD-S118', '040221_0012.flv': '040221_0012'}
-        for name in codes:
-            (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        process_library(config, db, self.root / 'generated', self.root / 'covers', stage='scan')
+        config = drive_config(self.root)
+        register_assets(db, *codes)
         provider = stub_provider()
         provider.query.side_effect = lambda code, *args, **kwargs: {
             'id': code, 'title': f'测试作品 {code}', 'maker': '测试厂牌',
@@ -848,104 +681,6 @@ class LibraryNfoTests(unittest.TestCase):
         (self.root / 'ABC-124.mp4').touch()
         self.assertIsNone(sidecars(video)[0])
 
-    @windows_ledger_roots
-    def test_shared_nfo_fills_parts_and_verifies_cached_remote_metadata(self):
-        media = self.root / 'media'
-        media.mkdir()
-        for part in (1, 2):
-            (media / f'ABW-358-CD{part}.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text(
-            '<movie><id>ABW-358</id><title>本地标题</title><studio>本地厂牌</studio>'
-            '<premiered>2023-05-26</premiered><actor><name>本地演员</name></actor>'
-            '<tag>主观视角</tag></movie>', encoding='utf-8')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        provider = stub_provider()
-        provider.query.return_value = {
-            'id': 'ABW-358', 'title': '本地标题', 'maker': '本地厂牌',
-            'release_date': '2023-05-26', 'actresses': [{'japanese_name': '本地演员'}],
-            'genres': ['主觀視角'],
-        }
-        factory = Mock(return_value=provider)
-        with patch('peach.library_processing._asks_cover', return_value=False), \
-                patch('peach.library_processing._generate_previews', return_value=0), \
-                patch('peach.library_processing._enrich_finished_performers',
-                      return_value={'aliases': 0, 'avatars': 0, 'conflicts': 0, 'failed': 0}):
-            result = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                     provider_factory=factory, database=LedgerDatabase(db),
-                                     route_overrides='censored=r18dev')
-        self.assertEqual(result['status'], 'complete')
-        provider.query.assert_called_once()
-        with closing(sqlite3.connect(db)) as connection:
-            self.assertEqual(connection.execute(
-                'SELECT code,catalog_title,studio FROM asset ORDER BY name').fetchall(),
-                [('ABW-358', '本地标题', '本地厂牌')] * 2)
-            self.assertEqual(connection.execute(
-                "SELECT count(*) FROM review_decision WHERE status='approved'").fetchone()[0], 10)
-
-    @windows_ledger_roots
-    def test_nfo_errors_allow_remote_fill_and_existing_values_require_review(self):
-        from peach.web_contract import WebContract
-        from peach.web_review import q_review, w_review_decision
-        documents = (
-            '<movie><title>未闭合',
-            '<metadata><title>其他格式</title></metadata>',
-            '<movie><id>ABW-359</id><title>其他作品</title></movie>',
-            '<movie><id>ABW-358</id><title>本地标题</title><premiered>2023-99-99</premiered></movie>',
-        )
-        for index, document in enumerate(documents):
-            with self.subTest(document=index):
-                root = self.root / str(index)
-                root.mkdir()
-                media = root / 'media'
-                media.mkdir()
-                (media / 'ABW-358.mp4').write_bytes(b'video')
-                (media / 'ABW-358.nfo').write_text(document, encoding='utf-8')
-                db = fresh_ledger(root)
-                config = PeachConfig(root, root / 'config.toml', present=True,
-                                     locations={'local': (str(media),)})
-                provider = stub_provider()
-                provider.query.return_value = {
-                    'id': 'ABW-358', 'title': '在线标题', 'maker': '片商', 'release_date': '2023-05-26',
-                    'actresses': [{'japanese_name': '测试演员'}], 'genres': ['主觀視角'],
-                }
-                generated = root / 'generated'
-                covers = root / 'covers'
-                with patch('peach.library_processing._asks_cover', return_value=False), \
-                        patch('peach.library_processing._generate_previews', return_value=0), \
-                        patch('peach.library_processing._enrich_finished_performers',
-                              return_value={'aliases': 0, 'avatars': 0, 'conflicts': 0, 'failed': 0}):
-                    for _ in range(2):
-                        process_library(config, db, generated, covers, provider_factory=Mock(return_value=provider),
-                                        database=LedgerDatabase(db), route_overrides='censored=r18dev')
-                provider.query.assert_called_once()
-                with closing(sqlite3.connect(db)) as connection:
-                    title, date = connection.execute('SELECT catalog_title,release_date FROM asset').fetchone()
-                self.assertEqual(date, '2023-05-26')
-                self.assertEqual(title, '本地标题' if index == 3 else '在线标题')
-                contract = WebContract(db, candidate_root=generated, cover_root=covers)
-                queue = q_review(contract)['sections']['metadata_fields']
-                self.assertEqual([row['field'] for row in queue], ['title'] if index == 3 else [])
-                if queue:
-                    row = queue[0]
-                    choice = next(candidate for candidate in row['candidates'] if candidate['source'] == 'r18dev')
-                    w_review_decision(contract, {
-                        'category': 'metadata_fields', 'item_key': row['item_key'], 'status': 'approved',
-                        'candidate_key': choice['candidate_key'],
-                        'expected_revision': row['asset_mutation_revision'],
-                    })
-                    self.assertEqual(q_review(contract)['sections']['metadata_fields'], [])
-                    with closing(sqlite3.connect(db)) as connection:
-                        self.assertEqual(connection.execute('SELECT catalog_title FROM asset').fetchone()[0], '在线标题')
-                    with patch('peach.library_processing._asks_cover', return_value=False), \
-                            patch('peach.library_processing._generate_previews', return_value=0), \
-                            patch('peach.library_processing._enrich_finished_performers',
-                                  return_value={'aliases': 0, 'avatars': 0, 'conflicts': 0, 'failed': 0}):
-                        process_library(config, db, generated, covers, provider_factory=Mock(return_value=provider),
-                                        database=LedgerDatabase(db), route_overrides='censored=r18dev')
-                    self.assertEqual(q_review(contract)['sections']['metadata_fields'], [])
-
     def test_releases_sharing_a_folder_keep_their_same_name_posters(self):
         for code in ('ABC-123', 'ABC-124'):
             (self.root / f'{code}.mp4').touch()
@@ -981,38 +716,6 @@ class LibraryNfoTests(unittest.TestCase):
         (self.root / 'outside.jpg').touch()
         self.assertIsNone(local_art(folder / 'film.mp4', {'local_art': '../outside.jpg'}))
         self.assertIsNone(local_art(folder / 'film.mp4', {'local_art': 'https://example.com/poster.jpg'}))
-
-    @windows_ledger_roots
-    def test_scan_import_and_explicit_review_use_exact_asset(self):
-        media = self.root / 'media'
-        media.mkdir()
-        video = media / 'film.mp4'
-        video.write_bytes(b'video')
-        (media / 'movie.nfo').write_text('<movie><title>Local title</title><tag>自定义标签</tag></movie>', encoding='utf-8')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
-        factory = Mock()
-        result = process_library(config, db, self.root / 'generated', self.root / 'covers', provider_factory=factory)
-        self.assertEqual(result['status'], 'complete')
-        factory.assert_not_called()
-        groups = read_rows(self.root / 'generated/library-metadata-field-candidates.csv')
-        title = next(row for row in groups if row['field'] == 'title')
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.row_factory = sqlite3.Row
-            self.assertIsNone(connection.execute('SELECT catalog_title FROM asset WHERE medium="video"').fetchone()[0])
-            candidate = json.loads(title['candidates_json'])[0]
-            owner = review_owner('local_nfo')
-            self.assertEqual(
-                _apply_metadata_candidate(connection, title, candidate, '2026-09-06', owner), 1)
-            written = connection.execute(
-                'SELECT catalog_title,field_owners FROM asset WHERE medium="video"').fetchone()
-            self.assertEqual(written['catalog_title'], 'Local title')
-            # 批准写下的值要答得出是谁写的，否则下一轮自动落库分不清该不该覆盖它。
-            self.assertEqual(owner_of(written['field_owners'], 'catalog_title'), owner)
-            title['asset_path'] = 'moved.mp4'
-            with self.assertRaises(ValueError):
-                _apply_metadata_candidate(connection, title, candidate, '2026-09-06', owner)
-        self.assertEqual(snapshot(config)['status'], 'complete')
 
     def test_status_reads_do_not_start_processing(self):
         from peach.web_library_processing import q_library_processing
@@ -1056,81 +759,37 @@ class LibraryNfoTests(unittest.TestCase):
             self.assertIs(retry_after_network_recovery(contract, writer), False)
         start.assert_not_called()
 
-    @windows_ledger_roots
-    def test_processing_auto_applies_safe_nfo_fields_before_it_finishes(self):
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text(
-            '<movie><title>涼森れむ流</title><sorttitle>ABW-358</sorttitle></movie>',
-            encoding='utf-8')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        provider = stub_provider()
-        provider.query.return_value = {'id': 'ABW-358'}
-
-        result = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                 provider_factory=Mock(return_value=provider),
-                                 database=LedgerDatabase(db))
-
-        self.assertGreaterEqual(result['auto_applied'], 1)
-        self.assertEqual(result['auto_rejected'], 0)
-        with closing(sqlite3.connect(db)) as connection:
-            title, owners = connection.execute(
-                "SELECT catalog_title,field_owners FROM asset WHERE code='ABW-358'").fetchone()
-            decision = connection.execute(
-                "SELECT status,note FROM review_decision WHERE category='metadata_fields' "
-                "AND item_key='asset:1:title'").fetchone()
-        self.assertEqual(title, '涼森れむ流')
-        self.assertEqual(owner_of(owners, 'catalog_title'), auto_owner('local_nfo'))
-        self.assertEqual(decision[0], 'approved')
-        self.assertEqual(json.loads(decision[1])['rule'], 'adr-0029-empty-field-local-nfo')
-
-    @windows_ledger_roots
     def test_stop_preserves_committed_fields_and_prevents_followup_writes(self):
         """停止保留已提交资料，禁止后续写入与头像下载。"""
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text(
-            '<movie><title>涼森れむ流</title><sorttitle>ABW-358</sorttitle>'
-            '<actor><name>涼森れむ</name></actor></movie>', encoding='utf-8')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        transport = Mock()
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4', 'ABW-359.mp4')
         provider = stub_provider()
-        provider.query.return_value = {'id': 'ABW-358'}
-        # 采集跑完、收尾还没开始的那一刻按下停止。
+        # 第二个视频开始采集的那一刻按下停止：第一个已经落库，第二个不再写。
         alive = {'value': True}
+
+        def answer(code, *args, **kwargs):
+            if code == 'ABW-359':
+                alive['value'] = False
+            return {'id': code, 'title': f'{code} 的标题'}
+
+        provider.query.side_effect = answer
         commits = []
         database = LedgerDatabase(db)
         database.after_commit = lambda: commits.append(alive['value'])
 
-        def report(state):
-            if state.get('stage') == '保存待确认资料':
-                alive['value'] = False
-
         with self.assertRaises(InterruptedError):
             process_library(config, db, self.root / 'generated', self.root / 'covers',
                             provider_factory=Mock(return_value=provider),
-                            database=database, report=report,
-                            active=lambda: alive['value'])
+                            database=database, active=lambda: alive['value'])
 
         with closing(sqlite3.connect(db)) as connection:
-            decisions = connection.execute(
-                "SELECT count(*) FROM review_decision").fetchone()[0]
-            title = connection.execute(
-                "SELECT catalog_title FROM asset WHERE code='ABW-358'").fetchone()[0]
-        self.assertEqual(decisions, 2)
-        self.assertEqual(title, '涼森れむ流')
+            titles = dict(connection.execute('SELECT code, catalog_title FROM asset').fetchall())
+        self.assertEqual(titles, {'ABW-358': 'ABW-358 的标题', 'ABW-359': None})
         self.assertTrue(commits)
         self.assertTrue(all(commits))
-        transport.assert_not_called()
         self.assertFalse((self.root / 'generated' / 'avatars').exists())
 
-    @windows_ledger_roots
     def test_profile_evidence_gives_the_candidate_a_new_identity(self):
         """把资料页证据并进 NFO 那条候选之后，`candidate_key` 换成新取值的那一个。
 
@@ -1156,177 +815,15 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(candidate['candidate_key'],
                          _candidate_identity('local_nfo', candidate['value']))
 
-    @windows_ledger_roots
-    def test_new_import_normalizes_nfo_tags_and_enriches_the_same_performer(self):
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text(
-            '<movie><title>涼森れむ流</title><sorttitle>ABW-358</sorttitle>'
-            '<actor><name>涼森れむ</name></actor><tag>主觀視角</tag><tag>苗條</tag>'
-            '<tag>單體作品</tag><tag>フルハイビジョン(FHD)</tag></movie>',
-            encoding='utf-8')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        image = io.BytesIO()
-        Image.new('RGB', (125, 125), '#795548').save(image, format='JPEG')
-        transport = Mock(return_value=HttpResponse(
-            200, {'content-type': 'image/jpeg'}, image.getvalue(),
-            'https://pics.dmm.co.jp/mono/actjpgs/suzumori_remu.jpg'))
-        provider = stub_provider()
-        provider.transport = transport
-        provider.query.return_value = {
-            'id': 'ABW-358',
-            'actresses': [{
-                'dmm_id': 1051912, 'japanese_name': '涼森れむ',
-                'name_kana': 'すずもりれむ', 'name_romaji': 'Remu Suzumori',
-                'thumb_url': 'https://pics.dmm.co.jp/mono/actjpgs/suzumori_remu.jpg',
-                'profile_source': 'r18dev',
-            }],
-        }
-        provider.cover.return_value = False
-
-        with patch('peach.scraping_access.SourceTransport', return_value=transport), \
-                patch('peach.avatar_provider.FaceProbe') as face, \
-                patch('peach.library_processing._generate_previews', return_value=0):
-            face.return_value.return_value = None
-            result = process_library(
-                config, db, self.root / 'generated', self.root / 'covers',
-                provider_factory=Mock(return_value=provider),
-                database=LedgerDatabase(db))
-
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['performer_aliases'], 2)
-        self.assertEqual(result['performer_avatars'], 1)
-        with closing(sqlite3.connect(db)) as connection:
-            entity_id = connection.execute(
-                "SELECT id FROM entity WHERE kind='performer' AND canonical_name='涼森れむ'").fetchone()[0]
-            aliases = {row[0] for row in connection.execute(
-                'SELECT alias FROM entity_alias WHERE entity_id=?', (entity_id,))}
-            tags = {row[0] for row in connection.execute(
-                "SELECT tag FROM asset_tag WHERE tag NOT LIKE '演员:%'")}
-        self.assertEqual(aliases, {'すずもりれむ', 'Remu Suzumori'})
-        self.assertEqual(tags, {'主观视角', '苗条'})
-        self.assertTrue((self.root / 'generated' / 'avatars'
-                         / f'performer-{entity_id}.img').is_file())
-        transport.assert_called_once()
-
-    @windows_ledger_roots
-    def test_no_code_video_pairs_with_its_sibling_image_without_nfo(self):
-        """无番号、无 NFO 的视频也拿同目录图片当海报，落在 `{id}_4.jpg`。"""
-        from PIL import Image
-        media = self.root / 'media'
-        media.mkdir()
-        (media / '梓怡-背著老公.mp4').write_bytes(b'video')
-        Image.new('RGB', (24, 36), (180, 120, 90)).save(media / '梓怡-背著老公.png')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        result = process_library(config, db, self.root / 'generated',
-                                 self.root / 'covers', provider_factory=Mock())
-        with closing(sqlite3.connect(db)) as connection:
-            asset_id = connection.execute(
-                "SELECT id FROM asset WHERE name='梓怡-背著老公.mp4'").fetchone()[0]
-        self.assertEqual(result['covers'], 1)
-        self.assertTrue(
-            (self.root / 'generated' / 'posters' / f'{asset_id}_4.jpg').is_file())
-
-    @windows_ledger_roots
-    def test_slow_sibling_cover_is_retryable_and_the_next_file_is_processed(self):
-        import subprocess
-        from peach.local_poster import read_jpeg
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('合集一', '合集二'):
-            (media / f'{name}.mp4').write_bytes(b'video')
-            Image.new('RGB', (24, 36), 'teal').save(media / f'{name}.png')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
-        def read(source, **options):
-            if source.stem == '合集一':
-                raise subprocess.TimeoutExpired('local-image', 20)
-            return read_jpeg(source, **options)
-        reports = []
-        with patch('peach.local_poster.read_jpeg', side_effect=read):
-            result = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                     report=lambda state: reports.append(dict(state)))
-        self.assertEqual((result['checked'], result['total'], result['covers']), (2, 2, 1))
-        self.assertEqual(result['issue_count'], 1)
-        self.assertEqual(result['issue_preview'][0]['message'], '读取配套图片超时，可稍后重试')
-        self.assertEqual(len(result['retryable_asset_ids']), 1)
-        reading = next(state for state in reports if state['current_action'] == 'reading_local_cover')
-        self.assertAlmostEqual(reading['current_deadline_at'] - reading['current_started_at'], 20, places=2)
-
-    def test_reader_cannot_scan_or_create_candidates(self):
-        from peach.settings_file import ReplicationSettings
-        config = PeachConfig(self.root, self.root / 'config.toml', replication=ReplicationSettings(enabled=True))
-        with self.assertRaisesRegex(ValueError, '只读端'):
-            process_library(config, self.root / 'ledger.db', self.root / 'generated', self.root / 'covers')
-        self.assertFalse((self.root / 'generated').exists())
-        self.assertFalse((self.root / 'ledger.db').exists())
-
-    @windows_ledger_roots
-    def test_local_metadata_remote_completion_and_repeat_are_one_pipeline(self):
-        from PIL import Image
-        media = self.root / 'media'
-        media.mkdir()
-        video = media / 'ABW-358.mp4'
-        video.write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text('<movie><title>Local title</title><sorttitle>ABW-358</sorttitle>'
-            '<premiered>2023-05-26</premiered><actor><name>涼森れむ</name></actor><tag>自定义标签</tag></movie>', encoding='utf-8')
-        # 本地海报按长边判断可用尺寸。
-        Image.new('RGB', (600, 900), 'blue').save(media / 'ABW-358-poster.jpg')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
-        provider = stub_provider()
-        provider.query.return_value = {'maker': 'Studio', 'id': 'ABW-358', 'director': 'Director', 'runtime': 210}
-        factory = Mock(return_value=provider)
-        result = process_library(config, db, self.root / 'generated', self.root / 'covers', provider_factory=factory)
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['identified'], 1)
-        self.assertEqual(result['covers'], 1)
-        provider.cover.assert_not_called()
-        self.assertEqual([call.args for call in provider.query.call_args_list],
-                         [('ABW-358', 'r18dev'), ('ABW-358', 'dmm')])
-        self.assertIn('deadline', provider.query.call_args.kwargs)
-        groups = read_rows(self.root / 'generated/library-metadata-field-candidates.csv')
-        studio = next(row for row in groups if row['field'] == 'studio')
-        self.assertEqual(json.loads(studio['candidates_json'])[0]['catalog_evidence']['runtime']['value'], 210)
-        # 成功快照和未取得记录均在有效期内，重复核查直接复用。
-        second = process_library(config, db, self.root / 'generated', self.root / 'covers', provider_factory=factory)
-        self.assertEqual(second['status'], 'complete')
-        self.assertEqual(second['candidates'], result['candidates'])
-        self.assertEqual([call.args for call in provider.query.call_args_list],
-                         [('ABW-358', 'r18dev'), ('ABW-358', 'dmm')])
-        asked = (provider.query.call_count, provider.community.call_count, provider.amane.call_count)
-        process_library(config, db, self.root / 'generated', self.root / 'covers', provider_factory=factory)
-        self.assertEqual((provider.query.call_count, provider.community.call_count, provider.amane.call_count),
-                         asked)
-
-    @windows_ledger_roots
     def test_offline_scan_finishes_locally_and_leaves_only_remote_rows_for_retry(self):
-        """断网首扫：NFO 资料照落，要出网的行记成可重试，一个来源都不问；联网后重试补齐。
+        """断网那一趟：要出网的行记成可重试，一个来源都不问；联网后重试补齐。
 
-        有 NFO 的作品联网时也要拿外部来源核对一遍，所以它同样留给重试；不出网的行不记。"""
-        from PIL import Image
+        文件名读不出番号的行没有来源可问，不进重试集合。"""
         from peach.library_processing import OFFLINE_MESSAGE
         from peach.network_reachability import NetworkReachability
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text(
-            '<movie><title>Local title</title><sorttitle>ABW-358</sorttitle><studio>Studio</studio>'
-            '<premiered>2023-05-26</premiered><actor><name>涼森れむ</name></actor><tag>自定义标签</tag></movie>',
-            encoding='utf-8')
-        Image.new('RGB', (600, 900), 'blue').save(media / 'ABW-358-poster.jpg')
-        (media / 'SSIS-057.mp4').write_bytes(b'video')
-        # 文件名读不出番号的本地作品：有 NFO 也不问外部来源，断网时不进重试。
-        (media / 'holiday.mp4').write_bytes(b'video')
-        (media / 'holiday.nfo').write_text('<movie><title>假期</title></movie>', encoding='utf-8')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4', 'SSIS-057.mp4', 'holiday.mp4')
         provider = stub_provider()
         provider.query.return_value = {'id': 'SSIS-057', 'title': '作品资料'}
         provider.cover.return_value = False
@@ -1335,8 +832,6 @@ class LibraryNfoTests(unittest.TestCase):
         offline = NetworkReachability(check=lambda: False, retry_delay=0)
         self.addCleanup(offline.stop)
 
-        # 只看资料：测试里的假视频生成不了预览，那一步的失败会混进重试集合。
-        process_library(config, db, generated, covers, stage='scan')
         result = process_library(config, db, generated, covers, provider_factory=factory, stage='metadata',
                                  database=LedgerDatabase(db), network=offline)
 
@@ -1344,8 +839,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual((result['status'], result['offline_skipped']), ('failed', 2))
         with closing(sqlite3.connect(db)) as connection:
             ids = dict(connection.execute('SELECT name,id FROM asset'))
-            title = connection.execute("SELECT catalog_title FROM asset WHERE code='ABW-358'").fetchone()[0]
-        self.assertEqual(title, 'Local title')
         self.assertEqual(sorted(result['retryable_asset_ids']), sorted([ids['ABW-358.mp4'], ids['SSIS-057.mp4']]))
         self.assertIn('holiday.mp4', ids)
         self.assertEqual({issue['message'] for issue in result['issue_preview']}, {OFFLINE_MESSAGE})
@@ -1358,16 +851,12 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(retried['offline_skipped'], 0)
         self.assertEqual({call.args[0] for call in provider.query.call_args_list}, {'ABW-358', 'SSIS-057'})
 
-    @windows_ledger_roots
     def test_spent_source_budget_stops_remote_rows_with_one_summary(self):
         """整趟采集预算到顶后，后面要出网的行一家都不问，只记一条汇总，留给重试接着采。"""
         from peach.scraping_access import BUDGET_SPENT
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('ABW-358', 'SSIS-057', 'SSIS-058'):
-            (media / f'{name}.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4', 'SSIS-057.mp4', 'SSIS-058.mp4')
         provider = stub_provider()
         provider.query.return_value = {'id': 'ABW-358', 'title': '作品资料'}
         provider.cover.return_value = False
@@ -1375,7 +864,6 @@ class LibraryNfoTests(unittest.TestCase):
         provider.budget_spent.side_effect = lambda: BUDGET_SPENT['seconds'] if provider.query.called else ''
         generated, covers = self.root / 'generated', self.root / 'covers'
 
-        process_library(config, db, generated, covers, stage='scan')
         result = process_library(config, db, generated, covers, provider_factory=Mock(return_value=provider),
                                  stage='metadata', database=LedgerDatabase(db))
 
@@ -1401,37 +889,14 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertLessEqual({code for code in ('ABW-358', 'SSIS-057', 'SSIS-058') if code not in asked},
                              {call.args[0] for call in fresh.query.call_args_list})
 
-    @windows_ledger_roots
-    def test_local_nfo_fields_keep_remote_differences_for_review(self):
-        """本地字段优先补空，在线不同值保留为覆盖复核候选。"""
-        from PIL import Image
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text('<movie><title>涼森れむ流</title><sorttitle>ABW-358</sorttitle>'
-            '<actor><name>涼森れむ</name></actor></movie>', encoding='utf-8')
-        Image.new('RGB', (40, 60), 'blue').save(media / 'ABW-358-poster.jpg')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
-        provider = stub_provider()
-        provider.query.return_value = {'id': 'ABW-358', 'title': 'Remu Style', 'maker': 'Prestige',
-                                       'actresses': [{'japanese_name': 'Remu Suzumori'}]}
-        process_library(config, db, self.root / 'generated', self.root / 'covers',
-                        provider_factory=Mock(return_value=provider))
-        groups = {row['field']: [entry['source'] for entry in json.loads(row['candidates_json'])]
-                  for row in read_rows(self.root / 'generated/library-metadata-field-candidates.csv')}
-        self.assertEqual(groups['title'], ['local_nfo', 'r18dev'])
-        self.assertEqual(groups['performers'], ['local_nfo', 'r18dev'])
-        self.assertEqual(groups['studio'], ['r18dev'])
-
-    @windows_ledger_roots
     def test_online_sources_only_offer_fields_the_ledger_has_no_value_for(self):
         """账本有日文原题，r18 的英文机翻不是分歧，只是写法。"""
         media = self.root / 'media'
         media.mkdir()
         (media / 'DASS-468.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.query.return_value = {'id': 'DASS-468', 'title': 'I Was Spoiled To Death', 'maker': 'Das',
                                        'series': 'Spoiled To Death', 'release_date': '2024-09-10',
@@ -1459,7 +924,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(list(read_rows(candidates, missing_ok=True)), [])
         self.assertEqual([call.args[1] for call in provider.query.call_args_list], ['r18dev', 'javdb'])
 
-    @windows_ledger_roots
     def test_a_performer_marker_is_not_a_content_tag_the_ledger_already_has(self):
         """`演员:` 是出演者在 `asset_tag` 上的扁平投影，算成标签就再也采不回 genre。
         """
@@ -1467,7 +931,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'MIDE-612.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.query.return_value = {'id': 'MIDE-612', 'title': '痴女秘書', 'maker': 'MOODYZ',
                                        'release_date': '2018-01-01', 'genres': ['淫語'],
@@ -1491,7 +956,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / f'{code}.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.amane.side_effect = None
         provider.amane.return_value = [(maker, {'id': code, 'content_id': code, 'source': maker, **payload})]
@@ -1512,7 +978,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / f'{code}.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         if performer:
             # 先扫一遍入库，再把标量与演员写进账本：这一行只剩列表字段可补。第一遍桩出来的「没有」
             # 记忆一并清掉，第二遍问不问 Wiki 只看这一行缺不缺演员。
@@ -1547,7 +1014,6 @@ class LibraryNfoTests(unittest.TestCase):
                         provider_factory=Mock(return_value=provider))
         return provider, read_rows(self.root / 'generated/library-metadata-field-candidates.csv', missing_ok=True)
 
-    @windows_ledger_roots
     def test_a_missing_amateur_cast_asks_the_name_wikis_after_mgstage_and_stops_at_the_first_answer(self):
         """MGStage 只给素人名义，缺演员的素人片接着问认人 Wiki；素人系総合 Wiki 没有就问 av_neme，
         有一个给出艺名就停，不再落到综合索引（ADR-0145）。"""
@@ -1558,7 +1024,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual({candidate['source'] for candidate in json.loads(performers['candidates_json'])},
                          {'mgstage', 'av_neme'})
 
-    @windows_ledger_roots
     def test_an_amateur_code_neither_wiki_knows_settles_on_mgstage_without_the_community_sites(self):
         provider, rows = self._collect_amateur('259LUXU-1378', {})
         self.assertEqual([call.args[0] for call in provider.wiki.call_args_list], ['sougouwiki', 'av_neme'])
@@ -1567,12 +1032,10 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual({candidate['source'] for candidate in json.loads(performers['candidates_json'])},
                          {'mgstage'})
 
-    @windows_ledger_roots
     def test_an_amateur_row_that_already_has_its_cast_does_not_ask_the_wikis(self):
         provider, _ = self._collect_amateur('259LUXU-1378', {'sougouwiki': '優梨まいな'}, performer='優梨まいな')
         provider.wiki.assert_not_called()
 
-    @windows_ledger_roots
     def test_javdb_tags_are_collected_with_their_community_identity_after_maker_scalars(self):
         provider, rows = self._collect_with_maker('SSIS-057', 'makers', {
             'title': '標題', 'maker': 'エスワン ナンバーワンスタイル', 'release_date': '2021-05-07',
@@ -1586,7 +1049,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(candidate['unmapped_genres'], ['待收錄分類'])
         self.assertEqual((candidate['source_kind'], candidate['official']), ('community', False))
 
-    @windows_ledger_roots
     def test_a_maker_site_answering_every_scalar_settles_the_chain_before_r18dev(self):
         """片商官网给齐标量后，只额外请求 JavDB 内容类别。"""
         provider, rows = self._collect_with_maker('SSIS-057', 'makers', {
@@ -1598,7 +1060,6 @@ class LibraryNfoTests(unittest.TestCase):
         title = next(row for row in rows if row['field'] == 'title')
         self.assertEqual([candidate['source'] for candidate in json.loads(title['candidates_json'])], ['makers'])
 
-    @windows_ledger_roots
     def test_a_maker_site_without_tags_leaves_them_to_r18dev_but_not_to_the_indexes(self):
         """FALENO 官网不给类别：继续请求 r18.dev 与 JavDB。"""
         provider, rows = self._collect_with_maker('FSDSS-437', 'faleno', {
@@ -1625,18 +1086,13 @@ class LibraryNfoTests(unittest.TestCase):
         root = session.provider().transport.inner.root
         self.assertTrue(list(scraping_access.cookie_jar(scraping_access.values_for(root, 'javbus'), 'javbus')))
 
-    @windows_ledger_roots
     def test_a_candidate_repeating_the_current_value_is_not_a_question(self):
-        """连本地 NFO 也一样：值和账本里那个字一模一样时没有什么可判断的。"""
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-358.mp4').write_bytes(b'video')
-        (media / 'ABW-358.nfo').write_text('<movie><title>涼森れむ流</title><sorttitle>ABW-358</sorttitle>'
-            '<studio>Prestige</studio></movie>', encoding='utf-8')
+        """来源给的取值和账本里那个字一模一样时没有什么可判断的。"""
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_assets(db, 'ABW-358.mp4')
         provider = stub_provider()
-        provider.query.return_value = {'id': 'ABW-358'}
+        provider.query.return_value = {'id': 'ABW-358', 'title': '涼森れむ流'}
         factory = Mock(return_value=provider)
         candidates = self.root / 'generated/library-metadata-field-candidates.csv'
         process_library(config, db, self.root / 'generated', self.root / 'covers', provider_factory=factory)
@@ -2131,7 +1587,6 @@ class LibraryNfoTests(unittest.TestCase):
                 provider.cover(code, covers)
             self.assertEqual((covers / f'{code}.jpg').read_bytes(), screenshot[2])
 
-    @windows_ledger_roots
     def test_codes_r18_does_not_know_are_collected_from_the_community_sources(self):
         """r18.dev 没有的番号问 AVBase 与 javdb，两家各留一条候选；免不免复核由落库那道闸按几家一致判。"""
         from peach.jav_cover_fetch import NotFound
@@ -2139,7 +1594,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'ORETD-615.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = Mock()
         provider.amane.side_effect = NotFound('片商官网没有这个番号')
         provider.query.side_effect = NotFound('HTTP 404')
@@ -2161,7 +1617,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(rows['title']['source_profile'], 'library')
         self.assertEqual(len(json.loads(rows['release_date']['candidates_json'])), 2)
 
-    @windows_ledger_roots
     def test_korean_mib_codes_ask_no_jav_source_for_metadata_or_cover(self):
         """`HA-101` 是 MIB 的编号，也是一部日本片的番号：问了就取回那部日本片。"""
         media = self.root / 'media'
@@ -2169,7 +1624,8 @@ class LibraryNfoTests(unittest.TestCase):
         for name in ('HA-101.mp4', 'ABW-001.mp4'):
             (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.query.return_value = {'maker': 'Studio', 'id': 'ABW-001', 'source_url': ''}
         provider.cover.return_value = False
@@ -2182,7 +1638,6 @@ class LibraryNfoTests(unittest.TestCase):
                          [('ABW-001', 'r18dev'), ('ABW-001', 'dmm')])
         self.assertEqual([item.args[0] for item in provider.cover.call_args_list], ['ABW-001'])
 
-    @windows_ledger_roots
     def test_codes_of_other_systems_ask_nobody_and_misread_ones_ask_only_the_indexes(self):
         """国产的 `兔子先生TZ-105` 形状和有码一样，按有码链问是每一家都白问一遍、封面还可能取回同号日本片。
 
@@ -2193,11 +1648,10 @@ class LibraryNfoTests(unittest.TestCase):
         (media / '兔子先生TZ-105' / '兔子先生TZ-105K杯.mp4').write_bytes(b'video')
         (media / 'UWFr85dczsVeysGg.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.cover.return_value = False
-        process_library(config, db, self.root / 'generated', self.root / 'covers', stage='scan',
-                        provider_factory=lambda: provider)
         with closing(sqlite3.connect(db)) as connection, connection:
             connection.execute("UPDATE asset SET code='TZ-105' WHERE name LIKE '%TZ-105%'")
             connection.execute("UPDATE asset SET code='UWFR-085' WHERE name LIKE 'UWF%'")
@@ -2208,7 +1662,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual([item.args[0] for item in provider.community.call_args_list], ['UWFR-085'])
         self.assertEqual([item.args[0] for item in provider.cover.call_args_list], ['UWFR-085'])
 
-    @windows_ledger_roots
     def test_fc2_codes_ask_the_shop_itself_and_never_r18(self):
         """r18.dev 没有 FC2，问一次就是白等一次主机间隔；发行方自己那一页才有这批番号。"""
         media = self.root / 'media'
@@ -2216,7 +1669,8 @@ class LibraryNfoTests(unittest.TestCase):
         for name in ('FC2-PPV-1239052.mp4', 'ABW-001.mp4'):
             (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.query.return_value = {'maker': 'Studio', 'id': 'ABW-001', 'source_url': ''}
         provider.fc2.return_value = [('fc2', {
@@ -2242,7 +1696,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(json.loads(rows[('FC2-PPV-1239052', 'studio')]['candidates_json'])[0]['value'],
                          'FC2-PPV')
 
-    @windows_ledger_roots
     def test_a_dated_code_asks_1pondo_only_when_this_file_says_it_is_theirs(self):
         """一本道与カリビアンコム 的番号同形：问错那家，答回来的是同一天发行的另一部片。
 
@@ -2255,7 +1708,8 @@ class LibraryNfoTests(unittest.TestCase):
         (media / '1pon' / '112312_478-1pon-whole1_hd.mp4').write_bytes(b'video')
         (media / 'Carib-040221-001-FHD' / '040221-001-carib-1080p.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.one_pondo.return_value = [('1pondo', {
             'id': '112312_478', 'content_id': '112312_478', 'maker': '一本道',
@@ -2283,53 +1737,30 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(performers[0]['display_value'], '飯岡かなこ')
         self.assertEqual(result['issue_count'], 0)
 
-    @windows_ledger_roots
     def test_files_without_a_code_are_registered_but_not_reported(self):
         """账本里两万多行创作者作品本来就没有番号，逐行报问题只会淹掉真正要处理的几十条。"""
         media = self.root / 'media'
         media.mkdir()
         (media / '某创作者的作品.mp4').write_bytes(b'video')
-        from PIL import Image
-        Image.new('RGB', (4, 6), 'teal').save(media / '某创作者的作品.png')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         factory = Mock()
         reports = []
         result = process_library(config, db, self.root / 'generated', self.root / 'covers',
                                  provider_factory=factory, report=lambda state: reports.append(dict(state)))
         factory.assert_not_called()
         self.assertEqual((result['status'], result['issue_count'], result['checked']), ('complete', 0, 1))
-        self.assertTrue((self.root / 'generated' / 'posters' / '1_4.jpg').is_file(), '本地海报照常登记')
-        local = next(state for state in reports if state.get('current_action') == 'reading_local')
-        self.assertEqual(local['stage'], '检查配套文件')
-        self.assertEqual(local['eta_scope'], '整趟任务')
-        prepared = next(state for state in reports if state.get('estimate_pending', {}).get('metadata') == 0)
-        self.assertNotIn('local', prepared['estimate_pending'])
+        self.assertEqual(reports[-1]['issue_preview'], [])
 
-    @windows_ledger_roots
     def test_a_directory_name_sitting_in_the_code_column_counts_as_no_code(self):
-        """`asset.code` 里的创作者自编号不是发行番号：问不到来源，也不该报成格式无效。"""
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'DTW003-放课后.mp4').write_bytes(b'video')
-        from PIL import Image
-        Image.new('RGB', (4, 6), 'teal').save(media / 'DTW003-放课后.png')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
-        provider = stub_provider()
-        provider.query.return_value = {'id': 'DTW003', 'maker': 'Studio', 'source_url': ''}
-        provider.cover.return_value = False
-        process_library(config, db, self.root / 'generated', self.root / 'covers',
-                        stage='scan', provider_factory=lambda: provider)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.execute("UPDATE asset SET code='DTW003'")
-        result = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                 stage='collect', provider_factory=lambda: provider)
-        provider.query.assert_not_called()
-        self.assertEqual((result['status'], result['issue_count'], result['checked']), ('complete', 0, 1))
-        self.assertTrue((self.root / 'generated' / 'posters' / '1_4.jpg').is_file(), '本地海报照常登记')
+        """`asset.code` 里的创作者自编号不是发行番号，拿去问来源的写法是空串。"""
+        from peach.library_processing import _provider_code
+        self.assertEqual(_provider_code('DTW003'), '')
+        self.assertEqual(_provider_code('某创作者的作品'), '')
+        self.assertEqual(_provider_code('TOKYO-HOT-N0762'), 'n0762')
+        self.assertEqual(_provider_code('ABW-358'), 'ABW-358')
 
-    @windows_ledger_roots
     def test_a_tokyo_hot_code_written_with_the_site_name_is_asked_for(self):
         """账本里按目录名落的 `TOKYO-HOT-N0762` 是真番号，要按规范写法去问来源。
 
@@ -2339,7 +1770,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'n0762.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.community.side_effect = None
         provider.community.return_value = [('javdb', {
@@ -2347,8 +1779,6 @@ class LibraryNfoTests(unittest.TestCase):
             'release_date': '2011-09-30', 'actresses': [{'japanese_name': '倉本すみれ'}],
             'source_url': 'https://javdb.com/v/n0762'})]
         provider.cover.return_value = False
-        process_library(config, db, self.root / 'generated', self.root / 'covers',
-                        stage='scan', provider_factory=lambda: provider)
         with closing(sqlite3.connect(db)) as connection, connection:
             connection.execute("UPDATE asset SET code='TOKYO-HOT-N0762'")
         result = process_library(config, db, self.root / 'generated', self.root / 'covers',
@@ -2357,7 +1787,6 @@ class LibraryNfoTests(unittest.TestCase):
         provider.query.assert_not_called()
         self.assertEqual(result['issue_count'], 0)
 
-    @windows_ledger_roots
     def test_a_throttled_source_reads_as_waiting_not_as_a_thing_that_went_wrong(self):
         """限流和取不到分开报：一个等一会儿就有，一个再点多少次都是同一句。"""
         from peach.jav_cover_fetch import NotFound
@@ -2366,8 +1795,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'STP-26232.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.query.side_effect = NotFound('HTTP 404')
         provider.community.side_effect = SourcePaused('来源正在冷却，请稍后重试；已有图片保留')
@@ -2391,7 +1820,6 @@ class LibraryNfoTests(unittest.TestCase):
                          '3 项需要处理，其中 1 项是来源限流，等一会儿再跑；其余可重试未完成的部分。')
         self.assertEqual(issue_summary(3, 3), '3 项都卡在来源限流上，等一会儿再跑一次。')
 
-    @windows_ledger_roots
     def test_a_source_that_said_no_is_not_asked_again_for_a_week(self):
         """r18.dev 不认识的番号每轮都重问、每条卡一次 2 秒的主机间隔，答案永远一样。
 
@@ -2404,7 +1832,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'STP-26232.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.query.side_effect = NotFound('HTTP 404')
         provider.community.side_effect = NotFound('社区来源都没有这个番号')
@@ -2458,7 +1887,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertFalse(cache.fresh('r18dev', 'STP-26232'), '7 天后再问一次')
         self.assertFalse(_MissCache(self.root / 'missing.json').fresh('r18dev', 'STP-26232'))
 
-    @windows_ledger_roots
     def test_a_source_that_already_answered_within_the_week_is_not_asked_again(self):
         """上一趟存下的原始快照还新鲜就直接用，不发请求。
 
@@ -2469,8 +1897,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'DASS-468.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         snapshot_path = config.directory('sources') / 'library-metadata' / 'DASS-468-r18dev.json'
         snapshot_path.parent.mkdir(parents=True, exist_ok=True)
         snapshot_path.write_text(json.dumps({
@@ -2504,14 +1932,13 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual([entry['source'] for entry in rows['title']], ['r18dev'])
         self.assertEqual(rows['title'][0]['value'], '甘やかされて')
 
-    @windows_ledger_roots
     def test_fresh_official_and_javdb_snapshots_supply_scalars_and_tags_without_queries(self):
         media = self.root / 'media'
         media.mkdir()
         (media / 'DASS-468.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         directory = config.directory('sources') / 'library-metadata'
         directory.mkdir(parents=True)
         documents = {
@@ -2592,7 +2019,7 @@ class LibraryNfoTests(unittest.TestCase):
         provider.query.return_value = {'id': 'DASS-468', 'genres': ['高跟鞋']}
         session = _RemoteSession(config, Mock(return_value=provider),
                                  _MissCache(misses_path(config)), retrying=False)
-        options = dict(update=Mock(), issue=Mock(), deadline=time.monotonic() + 60)
+        options = dict(issue=Mock(), deadline=time.monotonic() + 60)
         try:
             entries = session._preferred_tags({}, 'DASS-468', ['tags'], ('r18dev', 'javdb'),
                                               [], set(), **options)
@@ -2622,7 +2049,7 @@ class LibraryNfoTests(unittest.TestCase):
         session = _RemoteSession(config, Mock(return_value=provider),
                                  _MissCache(misses_path(config)), retrying=False)
         issue = Mock()
-        options = dict(update=Mock(), issue=issue, deadline=time.monotonic() + 60)
+        options = dict(issue=issue, deadline=time.monotonic() + 60)
         official = [('makers', {'id': 'MIAB-086', 'genres': ['痴女', '护士']}, None)]
         try:
             self.assertEqual(session._preferred_tags({}, 'MIAB-086', ['tags'], ('makers', 'javdb'),
@@ -2634,15 +2061,14 @@ class LibraryNfoTests(unittest.TestCase):
         finally:
             session.close()
 
-    @windows_ledger_roots
     def test_a_cached_product_page_still_sends_the_row_to_the_mirror_for_its_cast(self):
         """缓存里只有官方商品页、那一页没有演员栏：这一行缺的演员照样去镜像站要，官方页不再问。"""
         media = self.root / 'media'
         media.mkdir()
         (media / 'FC2-PPV-2851534.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         product = {'id': 'FC2-PPV-2851534', 'title': 'キュートなバニーメイド', 'maker': 'rina_vlog',
                    'release_date': '2022-04-28', 'actresses': [], 'source_url': 'https://adult.contents.fc2.com/'}
         snapshot_path = config.directory('sources') / 'library-metadata' / 'FC2-PPV-2851534-fc2.json'
@@ -2664,7 +2090,6 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual([(entry['source'], entry['display_value']) for entry in rows['performers']],
                          [('fc2cmadb', '梨奈')])
 
-    @windows_ledger_roots
     def test_a_pending_candidate_skips_only_the_source_that_gave_it(self):
         """演员栏只有 fc2cmadb 一条待批候选：重跑时照样去问演员，只是不再问 fc2cmadb。
 
@@ -2674,8 +2099,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'FC2-PPV-2851534.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.fc2.return_value = [
             ('fc2', {'id': 'FC2-PPV-2851534', 'title': 'キュートなバニーメイド', 'maker': 'rina_vlog',
@@ -2824,7 +2249,6 @@ class LibraryNfoTests(unittest.TestCase):
                 self.assertRaises(Unavailable):
             provider.cover('ORETD-704', self.root / 'covers')
 
-    @windows_ledger_roots
     def test_a_challenge_on_a_source_of_its_own_is_listed_as_not_yet_reached(self):
         """r18.dev 撞上验证页、其余几档说没有：这一行在问题清单里是「本趟没轮到」，不是失败。"""
         from peach.sources.base import FailureReason, SourceFailure
@@ -2832,8 +2256,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'DASS-468.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
 
         def answer(code, source='r18dev', **_):
@@ -2849,53 +2273,14 @@ class LibraryNfoTests(unittest.TestCase):
                          [('外部资料本趟没轮到：r18.dev：撞上了验证页', 'paused')])
         self.assertEqual(state['paused_count'], 1)
 
-    def test_waiting_for_someone_to_click_a_verification_is_not_charged_to_the_title(self):
-        """浏览器来源第一次弹验证窗口要等两分多钟，那段时间不算进这部片的预算：下一站照样有预算可问。
-
-        ADR-0065 第二条：弹窗那一段从弹出起算、不受请求时限约束，一部片 90 秒的资料预算装不下它。
-        """
-        from peach.library_processing import LibraryMetadataProvider
-        from peach.sources.base import FailureReason, SourceFailure
-        clock = [100.0]
-        seen = {}
-
-        class Challenged:
-            def records(self, code, *, session):
-                seen['fc2ppvdb'] = session.deadline
-                clock[0] += 45 + 120
-                raise SourceFailure(FailureReason.NOT_FOUND, '没有')
-
-        class Next:
-            def records(self, code, *, session):
-                seen['javten'] = session.deadline
-                return [SimpleNamespace(payload=lambda: {'id': code, 'title': '日本語タイトル'})]
-
-        provider = LibraryMetadataProvider.__new__(LibraryMetadataProvider)
-        provider.transport = Mock()
-        with patch.dict('peach.sources.SITE_SOURCES', {'fc2ppvdb': Challenged, 'javten': Next}), \
-                patch('peach.library_processing.time', SimpleNamespace(monotonic=lambda: clock[0])):
-            found = provider.fc2('FC2-PPV-1234567', deadline=190.0, route=('fc2ppvdb', 'javten'), covers=True)
-        self.assertEqual([name for name, _ in found], ['javten'])
-        self.assertEqual((seen['fc2ppvdb'], seen['javten']), (190.0, 310.0))
-        self.assertEqual(provider.excused, 120.0)
-
-    def test_a_browser_source_gets_the_whole_automatic_verification_window(self):
-        """浏览器来源一条请求给 45 秒，不按剩余预算往下裁：自动过验证最多要 40 秒。"""
-        from peach.jav_cover_fetch import BROWSER_REQUEST_TIMEOUT, request_timeout
-        self.assertEqual(request_timeout('https://fc2ppv-db.com/ja/articles/1', 10.0), BROWSER_REQUEST_TIMEOUT)
-        self.assertEqual(request_timeout('https://javten.com/video/1', None), BROWSER_REQUEST_TIMEOUT)
-        self.assertEqual(request_timeout('https://r18.dev/videos/1', 10.0), 10.0)
-        self.assertEqual(request_timeout('https://r18.dev/videos/1', None), 30.0)
-
-    @windows_ledger_roots
     def test_a_route_override_decides_who_gets_asked(self):
         """用户把有码那条链换成只问综合索引，r18.dev 就一次都不问。"""
         media = self.root / 'media'
         media.mkdir()
         (media / 'DASS-468.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         provider = stub_provider()
         provider.community.side_effect = None
         provider.community.return_value = [('javdb', {
@@ -2983,7 +2368,6 @@ class LibraryNfoTests(unittest.TestCase):
                 saved = json.loads(path.read_text(encoding='utf-8'))
                 self.assertEqual(saved['cover_catalog_rules'], upgrade_rules.OFFICIAL_COVER_CATALOG_MISSES)
 
-    @windows_ledger_roots
     def test_a_stage_asks_only_the_sites_that_have_not_said_no(self):
         """综合索引那一档里 AVBase 与 JavBus 说过没有，javdb 没说过：这一档只问 javdb。"""
         from peach.library_processing import _MissCache, misses_path
@@ -2991,8 +2375,8 @@ class LibraryNfoTests(unittest.TestCase):
         media.mkdir()
         (media / 'DASS-468.mp4').write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (str(media),)})
+        config = drive_config(self.root)
+        register_media(db, media)
         misses = _MissCache(misses_path(config))
         for site in ('avbase', 'javbus'):
             misses.record(site, 'DASS-468')
@@ -3112,8 +2496,7 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.root = Path(temporary.name).resolve()
 
     def _config(self, media):
-        return PeachConfig(self.root, self.root / 'config.toml', present=True,
-                           locations={'local': (str(media),)})
+        return drive_config(self.root)
 
     def _provider(self):
         provider = stub_provider()
@@ -3121,25 +2504,14 @@ class LibraryWatchdogTests(unittest.TestCase):
         provider.cover.return_value = False
         return provider
 
-    @windows_ledger_roots
-    def test_library_selection_limits_scan_collection_and_completion(self):
-        from dataclasses import replace
+    def test_library_selection_limits_collection_and_completion(self):
         from peach.media_libraries import libraries
-        first, second = self.root / 'first', self.root / 'second'
-        first.mkdir()
-        second.mkdir()
-        (first / 'ABW-204.mp4').write_bytes(b'video')
-        (second / 'ABW-205.mp4').write_bytes(b'video')
-        config = replace(self._config(first), locations={'local': (str(first), str(second))})
+        config = drive_config(self.root, 'root-1', 'root-2')
         library_id = libraries(config)[0]['id']
         db = fresh_ledger(self.root)
         provider = self._provider()
-        scanned = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                  stage='scan', library_id=library_id, provider_factory=lambda: provider)
-        with closing(sqlite3.connect(db)) as connection:
-            self.assertEqual([row[0] for row in connection.execute('SELECT name FROM asset')], ['ABW-204.mp4'])
-        self.assertEqual(scanned['library_id'], library_id)
-        self.assertEqual(len(scanned['asset_ids']), 1)
+        register_assets(db, 'ABW-204.mp4', root='root-1')
+        register_assets(db, 'ABW-205.mp4', root='root-2')
         collected = process_library(config, db, self.root / 'generated', self.root / 'covers',
                                     stage='collect', library_id=library_id, provider_factory=lambda: provider)
         self.assertEqual(collected['total'], 1)
@@ -3147,16 +2519,13 @@ class LibraryWatchdogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '媒体库'):
             process_library(config, db, self.root / 'generated', self.root / 'covers', library_id='missing')
 
-    @windows_ledger_roots
     def test_empty_incremental_sync_completes_without_metadata_queries(self):
-        media = self.root/'media'
-        media.mkdir()
         db = fresh_ledger(self.root)
         provider = self._provider()
-        result = process_library(self._config(media),db,self.root/'generated',self.root/'covers',
-                                 incremental=True,provider_factory=lambda:provider)
-        self.assertEqual(result['status'],'complete')
-        self.assertEqual(result['asset_ids'],[])
+        result = process_library(self._config(self.root), db, self.root / 'generated', self.root / 'covers',
+                                 incremental=True, provider_factory=lambda: provider)
+        self.assertEqual(result['status'], 'complete')
+        self.assertFalse(result['asset_ids'])
         provider.query.assert_not_called()
 
     def test_state_save_waits_for_a_reader_holding_the_file(self):
@@ -3173,7 +2542,6 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text(encoding='utf-8'))['checked'], 2)
         self.assertEqual(sorted(item.name for item in path.parent.iterdir()), [path.name])
 
-    @windows_ledger_roots
     def test_reports_carry_current_asset_action_and_rising_sequence(self):
         media = self.root / 'media'
         media.mkdir()
@@ -3181,13 +2549,13 @@ class LibraryWatchdogTests(unittest.TestCase):
             (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
         config = self._config(media)
+        register_media(db, media)
         reports = []
         result = process_library(config, db, self.root / 'generated', self.root / 'covers',
                                  provider_factory=lambda: self._provider(), report=reports.append)
         actions = [row['current_action'] for row in reports]
         names = {row['current_asset_name'] for row in reports if row['current_asset_name']}
         self.assertEqual(names, {'ABW-001.mp4', 'ABW-002.mp4'})
-        self.assertIn('reading_local', actions)
         self.assertIn('querying_metadata', actions)
         self.assertIn('fetching_cover', actions)
         sequences = [row['progress_seq'] for row in reports]
@@ -3196,31 +2564,6 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.assertEqual(result['status'], 'complete')
         self.assertIsNone(result['current_asset_id'])
         self.assertEqual(result['current_action'], '')
-
-    @windows_ledger_roots
-    def test_issue_preview_is_capped_while_the_log_keeps_every_row(self):
-        media = self.root / 'media'
-        media.mkdir()
-        for index in range(25):
-            (media / f'样品{index:02d}.mp4').write_bytes(b'video')
-            (media / f'样品{index:02d}.nfo').write_text('<movie><title>没闭合', encoding='utf-8')
-        db = fresh_ledger(self.root)
-        config = self._config(media)
-        result = process_library(config, db, self.root / 'generated', self.root / 'covers')
-        self.assertEqual(result['issue_count'], 25)
-        self.assertEqual(len(result['issue_preview']), 20)
-        self.assertTrue(result['issues_truncated'])
-        log = issues_path(config, result['job_id'])
-        self.assertEqual(len([line for line in log.read_text(encoding='utf-8').splitlines() if line]), 25)
-        from peach.web_library_processing import q_library_processing_issues
-        contract = Mock()
-        contract.library_processing_job.snapshot.return_value = {'status': 'running', 'job_id': result['job_id']}
-        with patch('peach.web_library_processing.settings_file.active', return_value=config):
-            page = q_library_processing_issues(contract, {'job_id': result['job_id'], 'offset': 20, 'limit': 5})
-        self.assertEqual(page['total'], 25)
-        self.assertEqual(len(page['rows']), 5)
-        logged = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines() if line]
-        self.assertEqual(page['rows'], logged[20:25])
 
     def test_status_read_recovers_the_log_path_left_by_an_earlier_job(self):
         """上一趟任务的状态文件里没有这个字段，它那份完整清单却还在磁盘上。"""
@@ -3271,27 +2614,6 @@ class LibraryWatchdogTests(unittest.TestCase):
             for field in ('asset_ids', 'completed_metadata', 'local_metadata', 'progress_seq'):
                 self.assertNotIn(field, response)
             self.assertNotIn('secret', json.dumps(response))
-
-    @windows_ledger_roots
-    def test_each_issue_names_the_item_its_path_and_where_the_full_log_is(self):
-        """一句「NFO 无法解析」加一个链接，是哪个文件得逐个点开才知道；改名或去磁盘上
-        确认时要用的是路径。完整清单的地址跟着状态一起给出，不让人按 job_id 自己去拼。
-        """
-        media = self.root / 'media'
-        media.mkdir()
-        (media / '样品.mp4').write_bytes(b'video')
-        (media / '样品.nfo').write_text('<movie><title>没闭合', encoding='utf-8')
-        db = fresh_ledger(self.root)
-        config = self._config(media)
-        result = process_library(config, db, self.root / 'generated', self.root / 'covers')
-        preview = result['issue_preview'][0]
-        self.assertEqual(preview['title'], '样品.mp4')
-        self.assertTrue(preview['path'].endswith('样品.mp4'), preview['path'])
-        self.assertEqual(result['issues_log'], str(issues_path(config, result['job_id'])))
-        log = issues_path(config, result['job_id'])
-        logged = json.loads(log.read_text(encoding='utf-8').splitlines()[0])
-        self.assertEqual(logged['title'], '样品.mp4')
-        self.assertEqual(logged['path'], preview['path'])
 
     def test_stalled_warning_never_flips_a_live_task_to_failed(self):
         config = self._config(self.root / 'media')
@@ -3347,15 +2669,6 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.assertEqual(current, issues_path(config, 'current'))
         self.assertEqual(previous.read_text(encoding='utf-8'), 'previous evidence\n')
 
-    def test_interleaved_folders_share_the_same_task_directory_index(self):
-        from peach.library_processing import _DirectoryIndex
-        folders = [self.root / str(index) for index in range(10)]
-        listing = _DirectoryIndex()
-        with patch('peach.library_processing.directory_files', side_effect=lambda path: {'video.mp4': path / 'video.mp4'}) as read:
-            for folder in folders + folders:
-                self.assertIn('video.mp4', listing.files(folder))
-        self.assertEqual(read.call_count, 10)
-
     def test_legacy_issue_list_projects_into_count_and_preview(self):
         legacy = [{'asset_id': index, 'message': '未识别到番号'} for index in range(1, 26)]
         state = decorate({'status': 'failed', 'job_id': 'old', 'issues': legacy})
@@ -3381,15 +2694,11 @@ class LibraryWatchdogTests(unittest.TestCase):
                       issues=[{'asset_id': 1, 'message': '视频抽帧超时'}])
         self.assertEqual(decorate(legacy)['outcome'], 'partial')
 
-    @windows_ledger_roots
     def test_deadline_skips_one_asset_and_keeps_processing(self):
         from peach.jav_cover_fetch import DeadlineExceeded
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('ABW-101.mp4', 'ABW-102.mp4'):
-            (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
-        config = self._config(media)
+        config = self._config(self.root)
+        register_assets(db, 'ABW-101.mp4', 'ABW-102.mp4')
         provider = self._provider()
         # ABW-101 在 r18.dev 那一问就用尽预算；ABW-102 的 r18.dev 只答厂牌，接着问 DMM 兜底。
         provider.query.side_effect = [DeadlineExceeded('预算'), provider.query.return_value, NotFound('HTTP 404')]
@@ -3404,14 +2713,10 @@ class LibraryWatchdogTests(unittest.TestCase):
                          [('ABW-101', 'r18dev'), ('ABW-102', 'r18dev'), ('ABW-102', 'dmm')])
         self.assertEqual(provider.reset.call_count, 1)
 
-    @windows_ledger_roots
-    def test_retry_skips_rescan_and_touches_only_listed_assets(self):
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('ABW-201.mp4', 'ABW-202.mp4'):
-            (media / name).write_bytes(b'video')
+    def test_retry_touches_only_listed_assets(self):
         db = fresh_ledger(self.root)
-        config = self._config(media)
+        config = self._config(self.root)
+        register_assets(db, 'ABW-201.mp4', 'ABW-202.mp4')
         provider = self._provider()
         first = process_library(config, db, self.root / 'generated', self.root / 'covers',
                                 provider_factory=lambda: provider)
@@ -3419,170 +2724,23 @@ class LibraryWatchdogTests(unittest.TestCase):
         with closing(sqlite3.connect(db)) as connection:
             ids = {name: row_id for name, row_id in connection.execute('SELECT name, id FROM asset')}
         provider.reset_mock()
-        with patch('peach.library_processing.scan_location') as scan:
-            retried = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                      retry_ids=[ids['ABW-202.mp4']],
-                                      provider_factory=lambda: provider)
-        scan.assert_not_called()
+        retried = process_library(config, db, self.root / 'generated', self.root / 'covers',
+                                  retry_ids=[ids['ABW-202.mp4']],
+                                  provider_factory=lambda: provider)
         self.assertEqual(retried['total'], 1)
         self.assertEqual(retried['checked'], 1)
         self.assertEqual(retried['status'], 'complete')
 
-    @windows_ledger_roots
-    def test_retry_ignores_an_unrelated_offline_source(self):
-        missing = self.root / 'missing-local'
-        cloud = self.root / 'cloud'
-        cloud.mkdir()
-        (cloud / 'ABW-203.mp4').write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(
-            self.root, self.root / 'config.toml', present=True,
-            locations={'local': (str(missing),), '115': (str(cloud),)})
-        first = process_library(
-            config, db, self.root / 'generated', self.root / 'covers', stage='scan',
-            provider_factory=lambda: self._provider())
-        self.assertEqual(first['status'], 'failed')
-        self.assertEqual(first['issue_preview'][0]['message'], 'local 来源离线')
-        with closing(sqlite3.connect(db)) as connection:
-            asset_id = connection.execute(
-                "SELECT id FROM asset WHERE name='ABW-203.mp4'").fetchone()[0]
-        retried = process_library(
-            config, db, self.root / 'generated', self.root / 'covers',
-            retry_ids=[asset_id], stage='collect', provider_factory=lambda: self._provider())
-        self.assertEqual(
-            (retried['status'], retried['total'], retried['checked'], retried['issue_count']),
-            ('complete', 1, 1, 0))
-
-    @windows_ledger_roots
-    def test_retry_still_reports_the_target_source_offline(self):
-        cloud = self.root / 'cloud'
-        cloud.mkdir()
-        (cloud / 'ABW-204.mp4').write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        config = PeachConfig(
-            self.root, self.root / 'config.toml', present=True,
-            locations={'115': (str(cloud),)})
-        process_library(
-            config, db, self.root / 'generated', self.root / 'covers', stage='scan',
-            provider_factory=lambda: self._provider())
-        with closing(sqlite3.connect(db)) as connection:
-            asset_id = connection.execute(
-                "SELECT id FROM asset WHERE name='ABW-204.mp4'").fetchone()[0]
-        cloud.rename(self.root / 'offline-cloud')
-        retried = process_library(
-            config, db, self.root / 'generated', self.root / 'covers',
-            retry_ids=[asset_id], stage='collect', provider_factory=lambda: self._provider())
-        self.assertEqual((retried['status'], retried['issue_count']), ('failed', 1))
-        self.assertEqual(retried['issue_preview'][0]['message'], '115 来源离线')
-
-    @windows_ledger_roots
-    def test_scanning_alone_registers_the_files_and_asks_no_source(self):
-        """只扫描那一段登记完文件就收工，不读本地资料也不联网。
-
-        新盘刚接上时要的就是这个：几万个文件进了馆藏就能用，采集可以留到夜里。
-        """
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-203.mp4').write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        provider = self._provider()
-        state = process_library(self._config(media), db, self.root / 'generated',
-                                self.root / 'covers', stage='scan',
-                                provider_factory=lambda: provider)
-        self.assertEqual(state['status'], 'complete')
-        self.assertEqual(state['scanned'], 1)
-        self.assertEqual(state['checked'], 0)
-        self.assertEqual(state['candidates'], 0)
-        provider.query.assert_not_called()
-        with closing(sqlite3.connect(db)) as connection:
-            self.assertEqual(connection.execute('SELECT count(*) FROM asset').fetchone()[0], 1,
-                             "文件要进馆藏，只是没往下走采集")
-
-    @windows_ledger_roots
-    def test_collecting_alone_walks_the_library_without_touching_the_disk_again(self):
-        """只采集那一段不再扫一遍来源目录，处理的仍是整个馆藏。
-
-        采集被网络拖住时重跑的就是它：几万个文件的目录遍历没有必要再走一趟。
-        """
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-204.mp4').write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        config = self._config(media)
-        provider = self._provider()
-        process_library(config, db, self.root / 'generated', self.root / 'covers',
-                        stage='scan', provider_factory=lambda: provider)
-        with patch('peach.library_processing.scan_location') as scan:
-            state = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                    stage='collect', provider_factory=lambda: provider)
-        scan.assert_not_called()
-        self.assertEqual(state['status'], 'complete')
-        self.assertEqual(state['total'], 1)
-        self.assertEqual(state['checked'], 1)
-
-    @windows_ledger_roots
-    def test_media_is_checked_for_local_metadata_when_sources_are_settled(self):
-        """目录列表用于核对媒体与 NFO；媒体消失时记录问题，在线来源缓存仍然有效。"""
-        from peach import metadata_routes
-        from peach.library_processing import FIELDS, _MissCache, misses_path
-        from peach.review_csv import write_rows
-        media = self.root / 'media'
-        media.mkdir()
-        (media / 'ABW-205.mp4').write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        config = self._config(media)
-        provider = self._provider()
-        process_library(config, db, self.root / 'generated', self.root / 'covers',
-                        stage='scan', provider_factory=lambda: provider)
-        with closing(sqlite3.connect(db)) as connection, connection:
-            asset_id = connection.execute("UPDATE asset SET code='ABW-205', catalog_title='t', studio='s', "
-                                          "release_date='2024-01-01' RETURNING id").fetchone()[0]
-        (self.root / 'covers').mkdir()
-        Image.new('RGB', (800, 538), 'gray').save(self.root / 'covers' / 'ABW-205.jpg', format='JPEG')
-        blank = {field: '' for field in FIELDS}
-        write_rows(self.root / 'generated' / 'library-metadata-field-candidates.csv', FIELDS,
-                   [dict(blank, item_key=f'asset:{asset_id}:{field}') for field in ('performers', 'tags')])
-        misses = _MissCache(misses_path(config))
-        for site in metadata_routes.route_for_code('ABW-205'):
-            misses.record(site, 'ABW-205')
-        (media / 'ABW-205.mp4').unlink()
-        with patch('peach.library_processing.sidecars') as listing:
-            state = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                    stage='collect', provider_factory=lambda: provider)
-        listing.assert_not_called()
-        provider.query.assert_not_called()
-        self.assertEqual((state['status'], state['checked'], state['issue_count']), ('failed', 1, 1))
-
-    @windows_ledger_roots
-    def test_one_directory_is_listed_once_for_all_the_videos_in_it(self):
-        """同一个文件夹里的片子共用一次目录列表，找 NFO 和找海报也不各列一遍。"""
-        from peach import library_nfo
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('ABW-206.mp4', 'ABW-207.mp4', 'ABW-208.mp4'):
-            (media / name).write_bytes(b'video')
-        db = fresh_ledger(self.root)
-        provider = self._provider()
-        with patch('peach.library_processing.directory_files', wraps=library_nfo.directory_files) as listed:
-            state = process_library(self._config(media), db, self.root / 'generated', self.root / 'covers',
-                                    provider_factory=lambda: provider)
-        self.assertEqual(state['checked'], 3)
-        self.assertEqual(listed.call_count, 1)
-
-    @windows_ledger_roots
     def test_candidates_are_written_once_for_a_short_batch_not_once_per_asset(self):
         """候选 CSV 按时间节流落盘，结束时写全；三条资产不该重写三遍整份文件。"""
         from peach import review_csv
-        media = self.root / 'media'
-        media.mkdir()
-        for name in ('ABW-209.mp4', 'ABW-210.mp4', 'ABW-211.mp4'):
-            (media / name).write_bytes(b'video')
         db = fresh_ledger(self.root)
+        register_assets(db, 'ABW-209.mp4', 'ABW-210.mp4', 'ABW-211.mp4')
         provider = self._provider()
         with patch('peach.library_processing.time', wraps=time) as clock, \
                 patch('peach.library_processing.write_rows', wraps=review_csv.write_rows) as written:
             clock.monotonic.return_value = 100.0
-            state = process_library(self._config(media), db, self.root / 'generated', self.root / 'covers',
+            state = process_library(self._config(self.root), db, self.root / 'generated', self.root / 'covers',
                                     provider_factory=lambda: provider)
         self.assertEqual(state['status'], 'complete')
         self.assertEqual(written.call_count, 1)
@@ -3590,25 +2748,16 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.assertEqual(len({row['asset_id'] for row in rows}), 3)
 
     def test_metadata_refresh_rechecks_existing_fields_without_fetching_a_cover(self):
-        media = self.root / 'media'
-        media.mkdir()
-        video = media / 'ABW-358.mp4'
-        video.write_bytes(b'video')
         db = fresh_ledger(self.root)
+        register_assets(db, 'ABW-358.mp4')
         with closing(sqlite3.connect(db)) as connection, connection:
-            connection.execute(
-                "INSERT INTO asset(id,path,name,location,medium,code,catalog_title) "
-                "VALUES(1,?,?,'local','video','ABW-358','旧标题')",
-                (r'R:\Media\ABW-358.mp4', video.name))
+            connection.execute("UPDATE asset SET code='ABW-358', catalog_title='旧标题' WHERE id=1")
         provider = self._provider()
         provider.query.return_value = {'id': 'ABW-358', 'title': '新标题'}
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': (r'R:\Media',)},
-                             mounts={'local': (str(media),)})
-        with patch('peach.platform.settings_file.active', return_value=config):
-            result = process_library(config, db, self.root / 'generated', self.root / 'covers',
-                                     stage='metadata', asset_ids=[1], refresh_metadata=True,
-                                     provider_factory=lambda: provider)
+        config = drive_config(self.root)
+        result = process_library(config, db, self.root / 'generated', self.root / 'covers',
+                                 stage='metadata', asset_ids=[1], refresh_metadata=True,
+                                 provider_factory=lambda: provider)
         self.assertFalse(provider.cover.called)
         self.assertTrue((self.root / 'generated/library-metadata-field-candidates.csv').is_file(),
                         result.get('issue_preview'))
@@ -3685,8 +2834,8 @@ class LibraryWatchdogTests(unittest.TestCase):
                 w_library_processing(contract, {'library_id': 'missing'})
             with self.assertRaisesRegex(ValueError, '开关值'):
                 w_library_processing(contract, {'incremental':'true'})
-            with self.assertRaisesRegex(ValueError, '只支持扫描或同步'):
-                w_library_processing(contract, {'stage':'metadata','incremental':True})
+            with self.assertRaises(ValueError):
+                w_library_processing(contract, {'stage': 'metadata', 'incremental': True, 'asset_ids': [1]})
             with self.assertRaises(ValueError):
                 w_library_processing(contract, {'stage': 'thumbnails'})
 
@@ -3756,542 +2905,6 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.assertGreater(timeout, 4)
         self.assertLessEqual(timeout, 5)
 
-
-class LibraryPreviewCompletionTests(unittest.TestCase):
-    def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name).resolve()
-        self.media = self.root / 'media'
-        self.media.mkdir()
-        self.ledger_roots = {
-            'local': str(self.media) if os.name == 'nt' else 'R:\\Media',
-            'pikpak': str(self.root / 'unmounted-cloud') if os.name == 'nt' else 'A:\\Media',
-        }
-        self.config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                                  locations={key: (root,) for key, root in self.ledger_roots.items()},
-                                  mounts={'local': (str(self.media),),
-                                          'pikpak': (str(self.root / 'unmounted-cloud'),)})
-        self.enterContext(patch('peach.settings_file.active', return_value=self.config))
-        directory = self.root / 'database'
-        directory.mkdir()
-        self.db = fresh_ledger(directory)
-        self.database = LedgerDatabase(self.db)
-        self.resolver = Mock()
-        self.resolver.ffmpeg.return_value = SimpleNamespace(path=Path('test-ffmpeg'))
-        with self.database.write_transaction() as connection:
-            for aid, location, medium, disposal in ((1, 'local', 'video', None),
-                                                    (2, 'pikpak', 'video', None),
-                                                    (3, 'local', 'photo', None),
-                                                    (4, 'local', 'video', 'trash')):
-                video = self.media / f'clip-{aid}.mp4'
-                video.write_bytes(b'video')
-                connection.execute(
-                    'INSERT INTO asset(id,location,path,name,medium,duration,disposal) VALUES(?,?,?,?,?,?,?)',
-                    (aid, location, str(PureWindowsPath(self.ledger_roots[location]) / video.name),
-                     video.name, medium, 30, disposal))
-
-    def run_processing(self, **options):
-        return process_library(self.config, self.db, self.root / 'candidates', self.root / 'covers',
-                               database=self.database, **options)
-
-    @staticmethod
-    def make_tile(_ffmpeg, _pattern, _columns, _rows, destination, **_options):
-        Image.new('RGB', (1440, 810), 'green').save(destination, format='JPEG')
-        return True
-
-    def test_selected_completion_generates_a_snapshot_without_scanning_or_cloud_reads(self):
-        reports = []
-        with patch('peach.library_processing.scan_location') as scan, \
-                patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True) as capture, \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile), \
-                patch('peach.library_processing._finish_collection', return_value={}), \
-                patch('peach.library_processing.root_online', return_value=True) as online:
-            result = self.run_processing(asset_ids=[1], report=reports.append)
-        scan.assert_not_called()
-        self.assertEqual(capture.call_count, 9)
-        online.assert_called_once_with(self.media)
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['previews'], 1)
-        self.assertEqual(result['requested_stage'], 'all')
-        self.assertEqual(result['asset_ids'], [1])
-        self.assertTrue(any(row.get('current_action') == 'generating_preview' for row in reports))
-        with self.database.read_connection() as connection:
-            snapshot = connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0]
-            self.assertIsNone(connection.execute('SELECT snapshot_path FROM asset WHERE id=2').fetchone()[0])
-        self.assertTrue(Path(snapshot).is_relative_to(self.root / 'generated' / 'snapshots'))
-        self.assertTrue(Path(snapshot).is_file())
-        with patch('peach.frame_capture.capture_with_retry') as capture:
-            second = self.run_processing(stage='previews')
-        self.assertEqual(second['previews'], 0)
-        self.assertEqual(second['status'], 'complete')
-        capture.assert_not_called()
-
-    def cloud_clip(self, *, cost):
-        """把 2 号放进真实可读的网盘挂载目录，目录的流量保护按 `cost` 设。"""
-        from dataclasses import replace
-        mount = self.root / 'unmounted-cloud'
-        mount.mkdir(exist_ok=True)
-        (mount / 'clip-2.mp4').write_bytes(b'video')
-        self.config = replace(self.config, media_costs={self.ledger_roots['pikpak']: cost})
-        self.enterContext(patch('peach.settings_file.active', return_value=self.config))
-
-    def test_unprotected_cloud_directory_gets_previews_like_local(self):
-        self.cloud_clip(cost='free')
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True), \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile):
-            result = self.run_processing(stage='previews')
-        self.assertEqual((result['status'], result['previews']), ('complete', 2))
-        with self.database.read_connection() as connection:
-            snapshot = connection.execute('SELECT snapshot_path FROM asset WHERE id=2').fetchone()[0]
-        self.assertTrue(Path(snapshot).is_relative_to(self.root / 'generated' / 'snapshots' / 'pikpak'))
-
-    def test_protected_directory_is_read_only_with_an_explicit_grant(self):
-        self.cloud_clip(cost='metered')
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True) as capture, \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile):
-            skipped = self.run_processing(stage='previews', asset_ids=[2])
-            self.assertEqual((skipped['previews'], capture.call_count), (0, 0))
-            granted = self.run_processing(stage='previews', asset_ids=[2], allow_metered=True)
-        self.assertEqual((granted['status'], granted['previews']), ('complete', 1))
-        self.assertTrue(granted['allow_metered'])
-
-    def test_metered_grant_only_covers_named_videos_for_previews(self):
-        from peach.web_library_processing import _metered_grant
-        self.assertTrue(_metered_grant({'allow_metered': True}, 'previews', [2]))
-        self.assertFalse(_metered_grant({}, 'previews', None))
-        for body, stage, ids in (({'allow_metered': True}, 'collect', [2]),
-                                 ({'allow_metered': True}, 'all', [2]),
-                                 ({'allow_metered': True}, 'previews', None),
-                                 ({'allow_metered': 'yes'}, 'previews', [2])):
-            with self.subTest(stage=stage, ids=ids), self.assertRaises(ValueError):
-                _metered_grant(body, stage, ids)
-
-    def test_one_video_reuses_decode_probe_for_all_nine_frames(self):
-        from peach import frame_capture, hardware_transcode
-        from peach.media_io import file_stat
-        ffmpeg = self.root / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
-        ffmpeg.write_bytes(b'fixture')
-        ffmpeg.with_name('ffprobe' + ffmpeg.suffix).write_bytes(b'fixture')
-        self.resolver.ffmpeg.return_value = SimpleNamespace(path=ffmpeg)
-        timestamps = []
-
-        def capture(_ffmpeg, _source, timestamp, destination, **options):
-            timestamps.append(timestamp)
-            self.assertEqual(options['input_options'], ('-hwaccel', 'd3d11va'))
-            Image.new('RGB', (480, 270), 'green').save(destination, format='JPEG')
-            return True, ''
-
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.hardware_transcode.sys.platform', 'win32'), \
-                patch.object(hardware_transcode, '_d3d11va_ready', return_value=True), \
-                patch.object(hardware_transcode, '_frame_codec', return_value='hevc'), \
-                patch('peach.media_processing_policy.acceleration', return_value='auto'), \
-                patch('peach.media_io.file_stat', wraps=file_stat) as reads, \
-                patch.object(frame_capture, 'capture_frame', side_effect=capture), \
-                patch.object(frame_capture, 'tile_frames', side_effect=self.make_tile):
-            result = self.run_processing(stage='previews')
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['previews'], 1)
-        self.assertEqual(len(set(timestamps)), 9)
-        self.assertEqual(reads.call_count, 1)
-        with self.database.read_connection() as connection:
-            snapshot = connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0]
-        self.assertTrue(Path(snapshot).is_file())
-
-    def test_preview_only_leaves_candidates_and_sources_untouched(self):
-        factory = Mock(side_effect=AssertionError('外部资料不属于预览任务'))
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True), \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile), \
-                patch('peach.library_processing._finish_collection') as finish:
-            result = self.run_processing(stage='previews', provider_factory=factory)
-        self.assertEqual(result['total'], 1)
-        self.assertEqual(result['previews'], 1)
-        self.assertFalse((self.root / 'candidates').exists())
-        finish.assert_not_called()
-        factory.assert_not_called()
-        self.assertEqual([(step['id'], step['status']) for step in result['steps']],
-                         [('sources', 'complete'), ('inspect', 'complete'), ('media', 'complete')])
-
-    def test_missing_ffmpeg_is_retryable_and_collection_can_finish_its_work(self):
-        self.resolver.ffmpeg.return_value = None
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.library_processing._finish_collection', return_value={'auto_applied': 2}) as finish:
-            result = self.run_processing(stage='collect', asset_ids=[1])
-        finish.assert_called_once()
-        self.assertEqual(result['auto_applied'], 2)
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(result['retryable_asset_ids'], [1])
-        issue = json.loads(Path(result['issues_log']).read_text(encoding='utf-8').splitlines()[0])
-        self.assertEqual(issue['failed_action'], 'generating_preview')
-        self.assertIn('FFmpeg', result['issue_preview'][0]['message'])
-
-    def test_metadata_only_never_extracts_frames(self):
-        with patch('peach.library_processing._generate_previews') as generate, \
-                patch('peach.library_processing._finish_collection', return_value={}):
-            result = self.run_processing(stage='metadata', asset_ids=[1])
-        generate.assert_not_called()
-        self.assertEqual(result['previews'], 0)
-        self.assertEqual(result['status'], 'complete')
-
-    def test_management_mode_keeps_collection_and_suppresses_automatic_previews(self):
-        from peach.media_processing_policy import save
-        save(self.config.directory('state'), True)
-        with patch('peach.library_processing._generate_previews', side_effect=AssertionError('不应抽帧')), \
-                patch('peach.library_processing._finish_collection', return_value={}) as finish:
-            result = self.run_processing(stage='collect', asset_ids=[1])
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['previews'], 0)
-        finish.assert_called_once()
-        with self.assertRaisesRegex(ValueError, '视频预览生成已关闭'):
-            self.run_processing(stage='previews', asset_ids=[1])
-
-    def test_local_preview_is_available_when_online_collection_starts(self):
-        with self.database.write_transaction() as connection:
-            connection.execute("UPDATE asset SET code='ABW-358' WHERE id=1")
-        def collect(*_args, **_kwargs):
-            with self.database.read_connection() as connection:
-                path = connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0]
-            self.assertTrue(Path(path).is_file())
-            return [], 0
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True), \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile), \
-                patch('peach.metadata_amane.ensure'), \
-                patch('peach.library_processing._RemoteSession.collect', side_effect=collect) as online, \
-                patch('peach.library_processing._finish_collection', return_value={}):
-            result = self.run_processing(stage='collect', asset_ids=[1])
-        online.assert_called_once()
-        self.assertEqual(result['previews'], 1)
-        with self.database.read_connection() as connection:
-            path = connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0]
-        self.assertTrue(Path(path).is_file())
-
-    def test_inspection_uses_measured_rows_and_removes_ads_before_preview_or_metadata(self):
-        events = []
-        with self.database.write_transaction() as connection:
-            connection.execute("UPDATE asset SET duration=NULL,code='ABW-358' WHERE id=1")
-            connection.execute("INSERT INTO asset(id,location,path,name,medium,size,duration,creator,code) "
-                "VALUES(5,'local',?,'附件.mp4','video',1048576,NULL,'bbsxv.xyz','ABC-123')",
-                (str(PureWindowsPath(self.ledger_roots['local']) / 'bbsxv.xyz-ABC-123' / '附件.mp4'),))
-        def probe(_ffprobe, path, _timeout):
-            events.append('probe')
-            return (10 if path.endswith('附件.mp4') else 1800), 1920, 1080, 'h264', 30, None
-        def previews(_config, rows, *_args, **_options):
-            events.append('preview')
-            self.assertEqual([(row['id'], row['duration']) for row in rows], [(1, 1800)])
-        def collect(*_args, **_options):
-            events.append('metadata')
-            return [], 0
-        self.resolver.ffprobe.return_value = SimpleNamespace(path=Path('test-ffprobe'))
-        with patch('peach.media_probe.probe_file', side_effect=probe), \
-                patch('peach.media_probe.resolve_case_insensitive', str), \
-                patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.library_processing._generate_previews', side_effect=previews), \
-                patch('peach.metadata_amane.ensure'), \
-                patch('peach.library_processing._RemoteSession.collect', side_effect=collect), \
-                patch('peach.library_processing._finish_collection', return_value={}):
-            result = self.run_processing(stage='collect', asset_ids=[1, 5])
-        self.assertEqual(events, ['probe', 'probe', 'preview', 'metadata'])
-        self.assertEqual((result['status'], result['junk_isolated']), ('complete', 1))
-        with self.database.read_connection() as connection:
-            self.assertEqual(connection.execute('SELECT disposal FROM asset WHERE id=5').fetchone()[0], 'trash')
-
-    def test_metadata_stage_inspects_known_evidence_without_reading_video(self):
-        with self.database.write_transaction() as connection:
-            connection.execute("UPDATE asset SET name='点击进入.mp4',size=1000 WHERE id=1")
-        with patch('peach.library_processing.probe_unmeasured') as probe, \
-                patch('peach.library_processing._generate_previews') as previews, \
-                patch('peach.library_processing._RemoteSession.collect') as collect, \
-                patch('peach.library_processing._finish_collection', return_value={}):
-            result = self.run_processing(stage='metadata', asset_ids=[1])
-        self.assertEqual((result['status'], result['junk_isolated']), ('complete', 1))
-        probe.assert_not_called()
-        previews.assert_not_called()
-        collect.assert_not_called()
-
-    def test_failed_tiling_leaves_no_registered_or_partial_snapshot(self):
-        import subprocess
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True), \
-                patch('peach.frame_capture.tile_frames', side_effect=subprocess.TimeoutExpired('ffmpeg', 60)):
-            result = self.run_processing(stage='previews')
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(result['retryable_asset_ids'], [1])
-        self.assertIn('超时', result['issue_preview'][0]['message'])
-        self.assertFalse(list((self.root / 'generated').rglob('*.jpg')))
-        with self.database.read_connection() as connection:
-            self.assertIsNone(connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0])
-
-    def test_frame_failure_evidence_is_saved_and_included_in_the_support_zip(self):
-        import io
-        import zipfile
-        from peach import support_bundle
-
-        def fail(_ffmpeg, video, _timestamp, _destination, *, diagnostics, timeout, decode_options):
-            self.assertEqual(decode_options, ())
-            self.assertGreater(timeout, 0)
-            self.assertLessEqual(timeout, 45)
-            diagnostics.update(reason='ffmpeg_error', returncode=69, timestamp_seconds=2.4667,
-                               timeout_seconds=timeout, attempts=[],
-                               stderr=f'Error decoding {video}\nInvalid data token=private-token')
-            return False
-
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', side_effect=fail):
-            result = self.run_processing(stage='previews', asset_ids=[1])
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(result['retryable_asset_ids'], [1])
-        issue = json.loads(Path(result['issues_log']).read_text(encoding='utf-8').splitlines()[0])
-        detail = issue['diagnostics']
-        self.assertEqual(detail['returncode'], 69)
-        self.assertEqual(detail['frame_index'], 0)
-        self.assertEqual(detail['duration_seconds'], 30)
-        self.assertIn('Invalid data', detail['stderr'])
-        self.assertNotIn(str(self.media), detail['stderr'])
-        self.assertNotIn('private-token', detail['stderr'])
-        self.assertIn('导出诊断报告', issue['message'])
-        with patch.object(support_bundle.error_reporting, 'log_directories', return_value=[]):
-            payload = support_bundle.bundle_bytes(config=self.config)
-        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-            evidence = json.loads(archive.read('processing/' + Path(result['issues_log']).name))
-            state = json.loads(archive.read('processing/library-processing.json'))
-        self.assertEqual(evidence['diagnostics'], detail)
-        self.assertEqual(evidence['asset_id'], 1)
-        self.assertEqual(evidence['title'], '<media>')
-        self.assertNotIn(str(self.media), evidence['path'])
-        self.assertEqual(state['retryable_asset_ids'], [1])
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True), \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile):
-            retried = self.run_processing(stage='previews', asset_ids=[1])
-        self.assertEqual(retried['status'], 'complete')
-        self.assertEqual(retried['issue_count'], 0)
-        self.assertEqual(retried['retryable_asset_ids'], [])
-
-    def test_cells_in_an_undecodable_tail_take_earlier_frames(self):
-        # 容器写 30 秒，实际只有前 9 秒解得出：靠后的格子先失败，再往前找到好帧。
-        calls = []
-
-        def capture(_ffmpeg, _video, timestamp, _destination, *, diagnostics, timeout, decode_options):
-            calls.append(timestamp)
-            if timestamp < 9:
-                diagnostics.update(reason='success', returncode=0)
-                return True
-            diagnostics.update(reason='ffmpeg_error', returncode=234, attempts=[],
-                               stderr='Could not open encoder before EOF')
-            return False
-
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', side_effect=capture), \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile):
-            result = self.run_processing(stage='previews', asset_ids=[1])
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['previews'], 1)
-        planned = [30 * (0.03 + 0.94 * (index + 0.5) / 9) for index in range(9)]
-        healthy = [value for value in planned if value < 9]
-        taken = [value for value in calls if value < 9]
-        self.assertEqual(len(taken), 9)
-        self.assertEqual(taken[:len(healthy)], healthy)
-        self.assertGreater(len(calls), 9)
-        with self.database.read_connection() as connection:
-            snapshot = connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0]
-        self.assertTrue(Path(snapshot).is_file())
-
-    def test_healthy_video_extracts_each_cell_once(self):
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', return_value=True) as capture, \
-                patch('peach.frame_capture.tile_frames', side_effect=self.make_tile):
-            result = self.run_processing(stage='previews', asset_ids=[1])
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(capture.call_count, 9)
-
-    def test_undecodable_video_still_fails_after_earlier_attempts(self):
-        calls = []
-
-        def fail(_ffmpeg, _video, timestamp, _destination, *, diagnostics, timeout, decode_options):
-            calls.append(timestamp)
-            diagnostics.update(reason='no_frame', returncode=0, attempts=[], stderr='')
-            return False
-
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', side_effect=fail):
-            result = self.run_processing(stage='previews', asset_ids=[1])
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(result['retryable_asset_ids'], [1])
-        detail = json.loads(Path(result['issues_log']).read_text(encoding='utf-8').splitlines()[0])['diagnostics']
-        self.assertEqual((detail['frame_index'], detail['reason']), (0, 'no_frame'))
-        earlier = [attempt['timestamp_seconds'] for attempt in detail['earlier_attempts']]
-        self.assertTrue(earlier)
-        self.assertEqual(calls[1:], earlier)
-        self.assertEqual(earlier, sorted(earlier, reverse=True))
-        self.assertLess(earlier[0], calls[0])
-        with self.database.read_connection() as connection:
-            self.assertIsNone(connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0])
-
-    def test_timed_out_cell_does_not_retry_earlier_points(self):
-        def slow(_ffmpeg, _video, timestamp, _destination, *, diagnostics, timeout, decode_options):
-            diagnostics.update(reason='timeout', returncode=None, attempts=[], stderr='')
-            return False
-
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', side_effect=slow) as capture:
-            result = self.run_processing(stage='previews', asset_ids=[1])
-        self.assertEqual(result['status'], 'failed')
-        self.assertEqual(capture.call_count, 1)
-
-    def test_earlier_points_stay_inside_the_clip_and_move_backwards(self):
-        from peach.library_processing import _earlier_timestamps
-        self.assertEqual(_earlier_timestamps(27.5, 30), [13.75, 6.875, 1.5])
-        # 0.1 秒的短片：0.5 秒那个保底点已经越过片尾，不再尝试。
-        self.assertEqual(_earlier_timestamps(0.08, 0.1), [0.04, 0.02])
-        # 首格本来就靠前：保底点不比上一次更早就跳过。
-        self.assertEqual(_earlier_timestamps(2.4, 30), [1.2, 0.6])
-
-    def test_selected_assets_fit_the_connection_parameter_limit(self):
-        from peach.library_processing import _asset_selection
-        connect = sqlite3.connect
-        def limited_connection(*args, **kwargs):
-            connection = connect(*args, **kwargs)
-            connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 1)
-            return connection
-        with patch('peach.library_processing.sqlite3.connect', side_effect=limited_connection):
-            self.assertEqual(_asset_selection(self.db, [2, 1, 2]), [2, 1])
-            for invalid in (3, 4, 99):
-                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                    _asset_selection(self.db, [2, 1, invalid])
-
-    def test_selected_processing_queries_fit_the_connection_parameter_limit(self):
-        from peach.library_processing import _chosen_asset_paths, _collection_rows
-        from peach.processing_control import initial_estimate
-        from peach.processing_traffic_plan import ledger_rows
-        connect = sqlite3.connect
-        def limited_connection(*args, **kwargs):
-            connection = connect(*args, **kwargs)
-            connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 3)
-            return connection
-        selection = [2, 1] * 4
-        with patch('peach.library_processing.sqlite3.connect', side_effect=limited_connection):
-            with self.subTest(query='paths'):
-                self.assertEqual(set(_chosen_asset_paths(self.db, selection)), {'local', 'pikpak'})
-            with self.subTest(query='collection'):
-                rows, _ = _collection_rows(self.db, locations=self.config.locations,
-                                           online_roots=(self.media,), asset_ids=selection)
-                self.assertEqual([row['id'] for row in rows], [1])
-            with self.subTest(query='estimate'):
-                estimate = initial_estimate(self.config, self.db, 'all', selection, mode='high')
-                self.assertEqual(estimate['estimate_file_count'], 2)
-            with self.subTest(query='traffic'):
-                self.assertEqual({row['id'] for row in ledger_rows(self.db, selection)}, {1, 2})
-                self.assertEqual(ledger_rows(self.db, []), [])
-
-    def test_selected_assets_require_active_videos(self):
-        for selection in ([], [True], [0], [-1], ['1'], '1', [99], [3], [4]):
-            with self.subTest(selection=selection), self.assertRaises(ValueError), \
-                    patch('peach.library_processing.scan_location') as scan:
-                self.run_processing(asset_ids=selection)
-            scan.assert_not_called()
-        with self.assertRaises(ValueError):
-            self.run_processing(asset_ids=[1], retry_ids=[1])
-
-    def test_stop_during_extraction_registers_no_snapshot(self):
-        alive = [True]
-        def capture(*_args, **_kwargs):
-            alive[0] = False
-            return True
-        with patch('peach.library_processing.FFmpegResolver', return_value=self.resolver), \
-                patch('peach.frame_capture.capture_with_retry', side_effect=capture), \
-                self.assertRaises(InterruptedError):
-            self.run_processing(stage='previews', active=lambda: alive[0])
-        with self.database.read_connection() as connection:
-            self.assertIsNone(connection.execute('SELECT snapshot_path FROM asset WHERE id=1').fetchone()[0])
-        self.assertFalse(list((self.root / 'generated').rglob('*.jpg')))
-
-    def test_web_request_preserves_preview_scope_when_retrying(self):
-        from peach.web_library_processing import w_library_processing
-        previous = {'job_id': 'old', 'status': 'failed', 'requested_stage': 'previews',
-                    'retryable_asset_ids': [1]}
-        job = SimpleNamespace(snapshot=lambda: None, update=lambda *_args, **_kwargs: None,
-                              start=lambda work, restart, initial, recovery: (work('new'), initial)[1])
-        contract = SimpleNamespace(db_path=self.db, database=self.database,
-                                   candidate_root=self.root / 'candidates', cover_root=self.root / 'covers',
-                                   library_processing_job=job, cache_bust=lambda: None)
-        with patch('peach.web_library_processing.settings_file.active', return_value=self.config), \
-                patch('peach.web_library_processing.snapshot', return_value=previous), \
-                patch('peach.web_library_processing.process_library', return_value={'status': 'complete'}) as run:
-            result = w_library_processing(contract, {'job_id': 'old', 'retry': []})
-            self.assertEqual(result['requested_stage'], 'previews')
-            self.assertEqual(run.call_args.kwargs['stage'], 'previews')
-            self.assertEqual(run.call_args.kwargs['retry_ids'], [1])
-            w_library_processing(contract, {'stage': 'collect', 'asset_ids': [1, 1]})
-            self.assertEqual(run.call_args.kwargs['asset_ids'], [1])
-            for selection in ([], None, [99], [True]):
-                with self.subTest(selection=selection), self.assertRaises(ValueError):
-                    w_library_processing(contract, {'asset_ids': selection})
-
-    def test_preview_checkpoint_restarts_only_unfinished_movies(self):
-        from peach import library_processing
-        with self.database.write_transaction() as connection:
-            video = self.media / 'clip-5.mp4'
-            video.write_bytes(b'video')
-            connection.execute(
-                "INSERT INTO asset(id,location,path,name,medium,duration) VALUES(5,'local',?,?, 'video',30)",
-                (str(PureWindowsPath(self.ledger_roots['local']) / video.name), video.name))
-        seen = []
-        def capture(_config, row, _database, _resolver, *, progress):
-            seen.append(row['id'])
-            progress()
-            if row['id'] == 5:
-                raise InterruptedError('模拟服务退出')
-            return True
-        with patch.object(library_processing, '_generate_preview', side_effect=capture):
-            with self.assertRaises(InterruptedError):
-                self.run_processing(stage='previews', asset_ids=[1, 5])
-        saved = snapshot(self.config)
-        self.assertEqual(saved['completed_previews'],
-                         [f'1:{PureWindowsPath(self.ledger_roots["local"]) / "clip-1.mp4"}'])
-        seen.clear()
-        with patch.object(library_processing, '_generate_preview',
-                          side_effect=lambda _c, row, *_a, **_k: seen.append(row['id']) or True):
-            result = self.run_processing(stage='previews', asset_ids=[1, 5], resume_state=saved)
-        self.assertEqual(seen, [5])
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['previews'], 2)
-
-    def test_real_local_video_produces_a_snapshot_and_card_poster(self):
-        import subprocess
-        from peach.ffmpeg import FFmpegResolver
-        from peach.previews import PreviewService
-        from peach.repository import LedgerRepository
-        resolver = FFmpegResolver(self.config.directory('tools') / 'ffmpeg')
-        choice = resolver.ffmpeg()
-        if choice is None or resolver.ffprobe() is None:
-            self.skipTest('需要 FFmpeg 和 ffprobe')
-        video = self.media / 'clip-1.mp4'
-        subprocess.run([str(choice.path), '-y', '-v', 'error', '-f', 'lavfi',
-                        '-i', 'testsrc2=size=320x180:rate=10', '-t', '3', '-an',
-                        '-c:v', 'mpeg4', str(video)], capture_output=True, check=True, timeout=30)
-        with self.database.write_transaction() as connection:
-            connection.execute('UPDATE asset SET duration=NULL WHERE id=1')
-        result = self.run_processing(stage='previews')
-        self.assertEqual(result['status'], 'complete')
-        self.assertEqual(result['previews'], 1)
-        with self.database.read_connection() as connection:
-            row = connection.execute('SELECT snapshot_path,duration FROM asset WHERE id=1').fetchone()
-        self.assertGreater(row['duration'], 0)
-        with Image.open(row['snapshot_path']) as image:
-            self.assertEqual(image.size, (1440, 810))
-        generated = self.root / 'generated'
-        service = PreviewService(LedgerRepository(self.database), resolver, generated / 'snapshots',
-                                 generated / 'posters', generated / 'avatars', generated / 'logos')
-        with Image.open(service.poster(1)) as image:
-            self.assertEqual(image.size, (480, 270))
-
-
 class ProcessingLockTests(unittest.TestCase):
     """全库处理锁：用户发起的处理等锁，后台定向任务让路而不是报错。"""
 
@@ -4299,21 +2912,14 @@ class ProcessingLockTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
-        media = self.root / 'media'
-        media.mkdir()
-        prefix = str(media) if os.name == 'nt' else 'R:\\Media'
-        self.config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                                  locations={'local': (prefix,)}, mounts={'local': (str(media),)})
+        self.config = drive_config(self.root)
         self.enterContext(patch('peach.settings_file.active', return_value=self.config))
         self.db = fresh_ledger(self.root)
         self.database = LedgerDatabase(self.db)
+        register_assets(self.db, 'ABW-358.mp4', 'ABW-359.mp4')
         with self.database.write_transaction() as connection:
             for aid, code in ((1, 'ABW-358'), (2, 'ABW-359')):
-                video = media / f'{code}.mp4'
-                video.write_bytes(b'video')
-                connection.execute('INSERT INTO asset(id,location,path,name,medium,code) VALUES(?,?,?,?,?,?)',
-                                   (aid, 'local', str(PureWindowsPath(prefix) / video.name), video.name,
-                                    'video', code))
+                connection.execute('UPDATE asset SET code=? WHERE id=?', (code, aid))
 
     def test_a_user_can_cancel_while_waiting_for_the_processing_lock(self):
         stopped = threading.Event()

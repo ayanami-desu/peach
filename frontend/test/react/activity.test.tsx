@@ -8,13 +8,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { ActivityPage } from '../../src/react/activity/activity-page';
 import { BACKGROUND_ISSUES_URL, type BackgroundIssue } from '../../src/react/activity/background-issues';
-import { DOWNLOADS_URL } from '../../src/react/activity/downloads-panel';
 import { ErrorExcerpt } from '../../src/react/activity/error-excerpt';
 import {
   elapsedText, errorHeadline, followupDetail, hasResultProblems, isRoutine, prefetchTasks, progressText, summaryItems, summaryText, TASKS_URL,
 } from '../../src/react/activity/tasks';
 import type { ActivityData, TaskResourcesPayload, TaskRunPayload } from '../../src/react/activity/tasks';
-import type { DownloadsSnapshot } from '../../src/react/bundle';
 import { queryClient } from '../../src/react/query';
 
 import { buttonNamed, choose, click, mount, mountRoot, pending, settle } from './render';
@@ -73,15 +71,13 @@ const resources = (overrides: Partial<TaskResourcesPayload> = {}): TaskResources
   sampled_at: '2026-10-31T08:00:00Z', ...overrides,
 });
 
-/* 云下载段自己取 `/api/downloads`，「需要处理」自己取 `/api/background-issues`。这里的用例只数
-   任务中心的请求，那两路另答：云下载回空表、后台问题回 `issues` 当前那一份（默认没有），两段就不画。 */
-const DOWNLOADS_IDLE: DownloadsSnapshot = { available: true, providers: [], tasks: [] };
+/* 「需要处理」自己取 `/api/background-issues`。这里的用例只数任务中心的请求，那一路另答：
+   后台问题回 `issues` 当前那一份（默认没有），这一段就不画。 */
 let issues: BackgroundIssue[] = [];
 const issuePosts: string[] = [];
 afterEach(() => { issues = []; issuePosts.length = 0 });
 function stubFetch(tasks: (input: string, init?: RequestInit) => Promise<unknown>) {
   vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
-    if (input.startsWith(DOWNLOADS_URL)) return Promise.resolve({ ok: true, status: 200, json: async () => DOWNLOADS_IDLE });
     if (input.startsWith(BACKGROUND_ISSUES_URL)) return Promise.resolve({ ok: true, status: 200, json: async () => ({ issues }) });
     if (input.endsWith('/schedule/run')) {
       issuePosts.push(input);
@@ -886,7 +882,7 @@ it('父任务不在这一屏上时，后继照常单独摆出来', async () => {
 it('一条记录都没有时给空态，不是一片白', async () => {
   const { host } = await open(payload());
   expect(host.querySelector('h3')?.textContent).toBe('还没有任务记录');
-  // 任务中心那三段都不画；云下载没有任务，也不画。
+  // 任务中心那三段都不画。
   expect(sections(host)).toEqual([]);
 });
 

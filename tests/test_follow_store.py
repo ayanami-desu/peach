@@ -1405,7 +1405,7 @@ class ImageDimsTests(_StoreCase):
         metadata = self._record(source_id, self._image(width=1600, height=1200)).metadata
         self.assertEqual((metadata["width"], metadata["height"]), (1600, 1200))
 
-    def test_a_full_refetch_keeps_learned_media_dims_by_media_identity(self):
+    def test_a_full_refetch_keeps_learned_media_dims_by_stable_key(self):
         """清单里每张图学到的尺寸按媒体稳定键对回：作者在前面插了一张，尺寸不串位。"""
         source_id = self._source(provider="kemono", ref="a")
         item = self._record(source_id, self._image(media_items=[
@@ -1611,7 +1611,7 @@ def _old_snapshot(directory: Path, index: int, size: int = 10) -> Path:
 
 
 class EvidenceRetentionTests(_StoreCase):
-    """原始快照：相同的不重写，每个来源只留最近 3 份和被条目引用的，存量等用户确认才删。"""
+    """原始快照：相同的不重写，每个来源只留最近 3 份和被条目引用的，存量只在显式清退时删。"""
 
     def _evidence(self):
         return [row[0] for row in self.connection.execute("SELECT evidence_path FROM follow_item")]
@@ -1651,7 +1651,7 @@ class EvidenceRetentionTests(_StoreCase):
         self.assertTrue(all(path.exists() for path in untouched), "只清这次写入的那个来源目录")
 
     def test_a_new_snapshot_only_offsets_its_own_growth_and_leaves_the_stock(self):
-        """升级后第一次检查不能把存量一口气删光：那在写事务里，也绕过了「修复与迁移」的确认。"""
+        """升级后第一次检查不能把存量一口气删光：那在写事务里，也绕过了显式清退。"""
         source_id = self._source()
         fetch = _fetch([_candidate("1", "A")])
         directory = (self.root / "sources" / Path(self.store.record(source_id, fetch, moment=MOMENT)
@@ -1666,9 +1666,7 @@ class EvidenceRetentionTests(_StoreCase):
         self.assertEqual(sum(not raw.exists() for raw in stock), 1, "去重命中时没写新的，也不删")
 
     def test_stock_snapshots_wait_for_the_user_and_keep_what_items_reference(self):
-        from peach import repair_center
-        from peach.follow_evidence import Reclaim
-        from peach.repository import LedgerDatabase
+        from peach.follow_evidence import referenced_names, remove, surplus
         source_id = self._source()
         directory = self.root / "sources" / "follow" / "rule34video" / "legacy"
         raws = [_old_snapshot(directory, index, size=100) for index in range(6)]
@@ -1678,100 +1676,32 @@ class EvidenceRetentionTests(_StoreCase):
             "last_seen_at) VALUES(?,?,?,'old',?,?,?)", (source_id, "old", "Old", "D:\\peach-data\\sources\\follow\\rule34video"
                                      f"\\legacy\\{raws[1].name}", "2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z"))
         self.connection.commit()
-        from peach.task_runs import TaskRunStore
-        database = LedgerDatabase(self.root / "ledger.db")
-        runs = TaskRunStore(database)
-        reclaim = Reclaim(self.root / "sources" / "follow", database, runs=runs)
-
-        def settle():
-            while reclaim.worker is not None and reclaim.worker.is_alive():
-                reclaim.worker.join(10)
-
-        def item():
-            with database.read_connection() as connection:
-                center = repair_center.snapshot(connection, {}, cloud_pending=0,
-                                                follow_evidence_status=reclaim.status())
-            return next((row for row in center["items"] if row["id"] == "follow-evidence"), None), center
-
-        self.assertTrue(item()[0]["estimating"])
-        settle()
-        waiting, _ = item()
-        # 留 3、4、5 三份最近的和被引用的 1，删 0、2 两份，每份 100 + 2 字节。
-        self.assertEqual((waiting["mode"], waiting["state"], waiting["files"], waiting["bytes"]),
-                         ("confirm", "waiting", 4, 204))
-        self.assertTrue(all(raw.exists() for raw in raws), "估算不删文件")
-        reclaim.start()
-        settle()
+        referenced = referenced_names(self.connection, source_id)
+        # 留 3、4、5 三份最近的和被引用的 1，删 0、2 两份，每份的 .raw 100 字节加 .json 2 字节。
+        doomed = surplus(directory, referenced)
+        self.assertEqual(len(doomed), 4)
+        self.assertEqual(sum(size for _, size in doomed), 204)
+        self.assertTrue(all(raw.exists() for raw in raws), "算出来的只是候选，文件还在")
+        self.assertEqual(remove(doomed), (4, 204))
         self.assertEqual([raw.exists() for raw in raws], [False, True, False, True, True, True])
-        done, center = item()
-        self.assertEqual((done["state"], done["changed"]), ("done", 4))
-        self.assertEqual([(row["title"], row["changed"]) for row in center["history"]],
-                         [("清理关注抓取的旧快照", 4)])
-        # 删除这一轮在活动页登记：计数、结算与摘要都在任务中心。
-        run = runs.query(task_key="follow-evidence-reclaim")[0]
-        self.assertEqual((run.status, run.progress_current, run.progress_total, run.result_summary),
-                         ("succeeded", 4, 4, {"files_removed": 4, "bytes_reclaimed": 204}))
+        self.assertEqual(surplus(directory, referenced), [], "清完再算，没有可删的了")
 
-    def test_stock_cleanup_pauses_and_cancels_from_the_task_center(self):
-        """活动页的暂停停在两份快照之间，继续前不再删；取消结束这一轮，删了多少照实记，剩下的重新等确认。"""
-        import threading
-        import time
-        from unittest.mock import patch
-        from peach import follow_evidence, task_control
-        from peach.follow_evidence import Reclaim
-        from peach.repository import LedgerDatabase
-        from peach.task_runs import TaskRunStore
-        root = self.root / "sources" / "follow" / "rule34video"
-        first = [_old_snapshot(root / "a", index) for index in range(5)]
-        second = [_old_snapshot(root / "b", index) for index in range(5)]
-        database = LedgerDatabase(self.root / "ledger.db")
-        runs = TaskRunStore(database)
-        reclaim = Reclaim(self.root / "sources" / "follow", database, runs=runs)
-        reclaim.status()
-        reclaim.worker.join(10)
-        # 删完第一个目录后停在闸门前，等测试发出暂停再放行。
-        reached, release = threading.Event(), threading.Event()
-        listing = follow_evidence.directories
+    def test_removal_takes_each_snapshot_with_its_json(self):
+        """一份快照的 `.raw` 与同名 `.json` 一起删，返回值只算删成的那些。"""
+        from peach.follow_evidence import remove, surplus
+        directory = self.root / "sources" / "follow" / "rule34video" / "legacy"
+        raws = [_old_snapshot(directory, index) for index in range(5)]
+        doomed = surplus(directory, frozenset(), keep=2)
+        self.assertEqual(len(doomed), 6)
+        self.assertEqual(remove(doomed), (6, 36))
+        self.assertEqual([raw.exists() for raw in raws], [False, False, False, True, True])
 
-        def gated(path):
-            for index, directory in enumerate(listing(path)):
-                if index == 1:
-                    reached.set()
-                    release.wait(10)
-                yield directory
-
-        def wait_for(predicate):
-            deadline = time.monotonic() + 10
-            while not predicate():
-                self.assertLess(time.monotonic(), deadline)
-                time.sleep(0.02)
-
-        with patch.object(follow_evidence, "directories", gated):
-            reclaim.start()
-            self.assertTrue(reached.wait(10))
-            run = runs.query(task_key="follow-evidence-reclaim")[0]
-            self.assertEqual(task_control.projection(runs, run)["actions"], ["pause", "cancel", "set_speed"])
-            task_control.request(runs, run.id, "pause")
-            release.set()
-            wait_for(lambda: task_control.projection(runs, runs.get(run.id))["state"] == "paused")
-            self.assertEqual([raw.exists() for raw in first], [False, False, True, True, True])
-            self.assertTrue(all(raw.exists() for raw in second), "暂停后不再删")
-            task_control.request(runs, run.id, "cancel")
-            reclaim.worker.join(10)
-        run = runs.get(run.id)
-        self.assertEqual((run.status, run.result_summary["files_removed"]), ("cancelled", 4))
-        self.assertTrue(all(raw.exists() for raw in second))
-        wait_for(lambda: reclaim.status()["phase"] == "ready")
-        self.assertEqual(reclaim.status()["files"], 4, "剩下的重新等确认")
-
-    def test_a_library_without_follow_snapshots_does_not_list_the_item(self):
-        from peach import repair_center
-        from peach.follow_evidence import Reclaim
-        reclaim = Reclaim(self.root / "sources" / "follow", None)
-        self.assertEqual(reclaim.status(), {"phase": "idle"})
-        center = repair_center.snapshot(self.connection, {}, cloud_pending=0,
-                                        follow_evidence_status=reclaim.status())
-        self.assertNotIn("follow-evidence", [row["id"] for row in center["items"]])
+    def test_a_library_without_follow_snapshots_has_nothing_to_clean(self):
+        from peach import follow_evidence
+        root = self.root / "sources" / "follow"
+        self.assertEqual(list(follow_evidence.directories(root)), [])
+        self.assertEqual(follow_evidence.surplus(root, frozenset()), [])
+        self.assertEqual(follow_evidence.prune(root, frozenset()), (0, 0))
 
 
 if __name__ == "__main__":

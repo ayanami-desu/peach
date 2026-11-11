@@ -7,6 +7,7 @@
  * 数据管理页那张「重复文件」卡片读的是同一份真相的 `total`／`files`／`reclaimable`，
  * 所以它接下面这个 `DUPLICATES_KEY`，不另发一次 `?limit=1`：服务端两种 limit 都要把整张
  * 表扫一遍分完组，省下的只是回程字节，换来的却是两处读数可能对不上。 */
+import { LOC } from '@peach/legacy/core';
 import { apiGet, apiSend } from '../../api';
 import { prefetchMediaSources } from '../media-sources';
 import { queryClient } from '../query';
@@ -94,11 +95,14 @@ export async function prefetchDuplicates(signal: AbortSignal): Promise<void> {
 /** 每组保留哪一个的口径。`all` 是一个不留——整组都是广告时才用得上。其余是网盘代号。 */
 export type KeepRule = 'largest' | 'longest' | 'all' | (string & {});
 
-/** 确认弹层里「每组保留……」那半句。 */
-export const KEEP_LABELS: Record<string, string> = {
-  largest: t('cleanup:duplicates.keepRuleLargest'), longest: t('cleanup:duplicates.keepRuleLongest'),
-  '115': t('cleanup:duplicates.keepRule115'), pikpak: t('cleanup:duplicates.keepRulePikpak'), all: t('cleanup:duplicates.keepRuleNone'),
-};
+/** 确认弹层里「每组保留……」那半句。三种口径照原话写；其余是网盘代号，换成来源名再说
+ *  「那里没有就留最大」——不认识的代号原样写出来，别退回「最大的一个」。 */
+export function keepRuleLabel(keep: KeepRule): string {
+  if (keep === 'largest') return t('cleanup:duplicates.keepRuleLargest');
+  if (keep === 'longest') return t('cleanup:duplicates.keepRuleLongest');
+  if (keep === 'all') return t('cleanup:duplicates.keepRuleNone');
+  return t('cleanup:duplicates.keepRuleStorage', { storage: LOC[keep] || keep });
+}
 
 /** 这一批文件里真正出现过的网盘来源。 */
 export const cloudPreferenceLocations = (

@@ -12,6 +12,7 @@ import { Input } from '@/components/base/input/input';
 import { Checkbox } from '@/components/base/checkbox/checkbox';
 import { isCatalogPath } from '@peach/legacy/core';
 import { errorMessage } from '../../api';
+import { DRIVE_SETTINGS_PATH } from '../../history';
 import { ModalFrame } from '../components/modal-frame';
 import { SettingsDialogClose } from '../components/settings-dialog-close';
 import { Note } from '../components/note';
@@ -177,7 +178,7 @@ function FolderTree({ scope, selected, current, go, reportedError }: {
             onClick={() => { setSearch(''); go(node.id) }}>{node.name}</Button>) : <EmptyState size="compact" icon={RiSearchLine} title="没有匹配的文件夹"
               actions={<Button size="small" onClick={() => setSearch('')}>清除搜索</Button>}>换个目录名称试试。</EmptyState>}</div>
         : !roots.data?.roots.length ? <EmptyState size="compact" icon={RiFolder3Line} title="尚未添加媒体目录"
-          actions={<ButtonLink size="small" href="/settings/library">添加媒体</ButtonLink>}>在媒体库设置中添加目录并扫描。</EmptyState>
+          actions={<ButtonLink size="small" href={DRIVE_SETTINGS_PATH}>添加媒体</ButtonLink>}>在网盘设置里添加扫描起点并同步。</EmptyState>
         : <TreeView aria-label="媒体目录" size="sm" expandedKeys={expanded} onExpandedChange={setExpanded}
           selectedKeys={new Set(selected ? [selected] : [])} onSelectionChange={choose}
           >

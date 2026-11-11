@@ -46,9 +46,9 @@ MODEL_URL = ZOO_MEDIA + "face_detection_yunet/face_detection_yunet_2023mar.onnx"
 MODEL_SHA256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
 MODEL_PATH = TOOLS_DIR / "yunet" / "face_detection_yunet_2023mar.onnx"
 
-#: 随包模型目录的环境变量。Docker 镜像经它指到镜像里那份；桌面包不设，读程序目录。
+#: 随包模型目录的环境变量。Docker 镜像经它指到镜像里那份；不设时读数据目录下的 `tools/`。
 BUNDLE_ENV = "PEACH_FACE_MODELS"
-#: 桌面包里随包模型所在的工具目录名，与 `update_packages.TOOL_PATHS` 的 `face-models` 同名。
+#: 随包模型所在的工具目录名。
 BUNDLE_TOOL = "face-models"
 
 #: 低于这个分数的检出不算数。YuNet 会给出置信度，不必再靠「落在左半边就是假阳性」

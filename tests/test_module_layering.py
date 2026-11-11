@@ -4,7 +4,7 @@ Peach 是模块化单体，分层靠约定而不是包结构，所以约定必�
 **web 层之外的模块不许 import web 层。**
 
 这条规则不是凭空立的。`catalog_rules.py` 原名 `web_logic.py`，而 `repository.py`
-（数据层）要用它的 `is_jav_code`，`taste_history.py` 要用 `LENGTH_TAGS`——数据层
+（数据层）要用它的 `is_jav_code`，`library_processing.py` 要用 `normalise_code_key`——数据层
 import 一个叫 web 的模块，读代码的人只会得出「分层反了」的结论。实际反的是名字，
 但名字骗人和结构错了一样难查。改名之后加这条断言，让下一次真反了的时候直接报错。
 """

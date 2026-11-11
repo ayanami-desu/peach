@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
-from peach import taste_history, taste_preferences, web_batch, web_follow, web_state, web_stats
+from peach import web_batch, web_follow, web_state, web_stats
 from peach.follow_sources import FollowCandidate, SourceFetch
 from peach.follow_store import FollowStore
 from peach.previews import entity_image_key, logo_key
@@ -185,14 +185,10 @@ class LedgerRevisionTests(unittest.TestCase):
         self.contract.task_runs.heartbeat(run.id, throttle=0)
         self.assertEqual(self.contract.cached_until_changed("review", self.compute), 1)
 
-    def test_catalog_cache_survives_download_progress_and_commit_notifications(self):
-        from peach.downloads import DownloadStore, DownloadTask, POSTPROCESS_RUNNING
+    def test_catalog_cache_survives_commit_notifications(self):
+        """别的进程提交通知不算这张表变了；账本真变了才重算。"""
         tables = ('asset', 'asset_entity', 'entity')
         self.assertEqual(self.contract.cached_until_changed('catalog', self.compute, tables=tables), 1)
-        task = DownloadStore(self.contract.database).save(DownloadTask(
-            id=0, info_hash='a' * 40, provider='115', source_uri='', display_name='',
-            target='/115/test', state='ingested'))
-        DownloadStore(self.contract.database).postprocess(task.id, POSTPROCESS_RUNNING)
         self.contract.cache_bust()
         self.assertEqual(self.contract.cached_until_changed('catalog', self.compute, tables=tables), 1)
         insert_asset(self.db_path, 1)
@@ -370,20 +366,15 @@ class DeclaredTablesTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name).resolve()
         self.db_path = fresh_ledger(self.root)
-        store_root = self.root / "taste-history"
-        store_root.mkdir()
         self.contract = WebContract(
             self.db_path, cover_root=self.root / "covers", avatar_root=self.root / "avatars",
             logo_root=self.root / "logos", candidate_root=self.root / "generated",
             follow_sources_root=self.root / "sources", follow_secrets_root=self.root / "secrets",
             follow_shared_root=self.root / "shared", follow_state_root=self.root / "state",
-            entry_links_root=self.root / "state", taste_history_store=store_root / "history.sqlite",
-            taste_history_import_root=store_root / "imports",
-            taste_history_manifest=store_root / "manifest.json")
+            entry_links_root=self.root / "state")
         self.addCleanup(self.contract.stop_background_jobs)
         self.contract.followups.stop()
         self._seed_ledger()
-        self._seed_history(store_root / "history.sqlite")
         with closing(sqlite3.connect(self.db_path)) as connection:
             virtual = {row[0] for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE sql LIKE 'CREATE VIRTUAL TABLE%'")}
@@ -499,27 +490,10 @@ class DeclaredTablesTests(unittest.TestCase):
                 "source,created_at,updated_at) VALUES('alice2','Alice2','alice','Alice','manual',"
                 "'2026-01-01','2026-01-01')")
 
-    @staticmethod
-    def _seed_history(path: Path):
-        with closing(sqlite3.connect(path)) as store, store:
-            taste_history._prepare_store(store)
-            store.execute("INSERT INTO history_source VALUES('s','chrome','Default','host','h',"
-                          "'2026-08-01T00:00:00+00:00','2026-08-20T00:00:00+00:00')")
-            store.executemany(
-                "INSERT INTO history_visit VALUES('s',?,?,?,?)",
-                [("1", "2026-08-10T10:00:00+00:00", "https://onlyfans.com/alice", "Alice"),
-                 ("2", "2026-08-11T10:00:00+00:00", "https://rule34.xxx/index.php?tags=feet", "Canonical Alice"),
-                 ("3", "2026-08-12T10:00:00+00:00", "https://example.com/Canonical-Creator", "Canonical Creator")])
-            store.execute("INSERT INTO history_bookmark VALUES('s','https://onlyfans.com/alice','Alice',"
-                          "'2026-08-10T10:00:00+00:00')")
-
     def _fresh(self):
         """清掉契约与模块级的结果缓存，下一次计算从账本读起。"""
         self.contract.cache.clear()
         self.contract.keyed_cache.clear()
-        for cache in (taste_history._HISTORY_ROWS, taste_history._LINKED_SIGNALS,
-                      taste_history._PREFERENCE_VISITS, taste_preferences._PROFILES):
-            cache.clear()
 
     def _get(self, path, **args):
         self._fresh()
@@ -551,22 +525,12 @@ class DeclaredTablesTests(unittest.TestCase):
         self._fresh()
         web_follow.cover_alternatives(self.contract, int(item_id))
         self._fresh()
-        self.reads.measure("taste", web_stats.TASTE_TABLES,
-                           lambda: web_stats.q_taste(self.contract, {"window": "all"}))
-        self._fresh()
-        with self.contract.database.read_connection() as connection:
-            self.reads.measure("preference-profile", taste_preferences.PROFILE_TABLES,
-                               lambda: taste_preferences.preference_profile(
-                                   connection, self.contract.taste_history_store, cache=False))
-
         declarations = {
             "GROUP_TABLES": GROUP_TABLES, "TOPS_TABLES": TOPS_TABLES,
             "FACETS_TABLES": FACETS_TABLES, "INDEX_TABLES": INDEX_TABLES,
             "STATS_TABLES": web_stats.STATS_TABLES,
             "CATALOG_TOTAL_TABLES": CATALOG_TOTAL_TABLES,
             "FOLLOW_GROUP_TABLES": web_follow.FOLLOW_GROUP_TABLES,
-            "TASTE_TABLES": web_stats.TASTE_TABLES,
-            "PROFILE_TABLES": taste_preferences.PROFILE_TABLES,
             "JUNK_SCORE_TABLES": web_batch.JUNK_SCORE_TABLES,
             "DUPLICATE_TABLES": web_batch.DUPLICATE_TABLES}
         names = {tuple(tables): name for name, tables in declarations.items()}
@@ -724,7 +688,6 @@ class ResultVersionTablesTests(unittest.TestCase):
         "catalog-totals": ("catalog", "follow"),
         "index": ("catalog", "follow", "discoveries"),
         "stats": ("catalog", "follow"),
-        "taste": ("catalog", "follow"),
         "follow-feed": ("catalog", "follow"),
     }
     #: 刻意不刷新的组合：在线播放每十秒写一次 `follow_playback`，跟着它刷新的话，看片
@@ -736,7 +699,7 @@ class ResultVersionTablesTests(unittest.TestCase):
         declared = {
             "catalog-grid": GROUP_TABLES, "index": INDEX_TABLES, "stats": web_stats.STATS_TABLES,
             "catalog-totals": CATALOG_TOTAL_TABLES,
-            "taste": web_stats.TASTE_TABLES, "follow-feed": web_follow.FOLLOW_GROUP_TABLES,
+            "follow-feed": web_follow.FOLLOW_GROUP_TABLES,
         }
         missing = {}
         for page, keys in self.REFRESHED_BY.items():

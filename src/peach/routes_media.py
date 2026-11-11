@@ -1,9 +1,8 @@
 """媒体字节的出口：播放、分片、字幕、缩图、封面、头像与外链圆标。
 
-这一层只做取路径与拼响应头，不做媒体判断——能不能播、走 Range 还是 HLS、要不要
-转码，全在 `media`／`transcodes`／`segments` 里。三个媒体异常（`MediaNotFound`、
-`MediaOffline`、`MediaUnavailable`）由 `api.py` 的异常处理器统一收口，路由里不要
-再手抄同一组 try/except。
+这一层只做取路径与拼响应头，不做媒体判断——能不能播、302 还是转发 Range，全在
+`media`／`drive_stream` 里。两个媒体异常（`MediaNotFound`、`MediaUnavailable`）由
+`api.py` 的异常处理器统一收口，路由里不要再手抄同一组 try/except。
 
 有一条贯穿整层的规矩：**上游地址一律不外露**。`/follow-stream`、`/follow-cover`、
 `/link-mark` 都只接受账本里的 id，自己去查地址；接受前端递过来的 URL 就等于开了一个
@@ -12,7 +11,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import re
@@ -30,13 +28,12 @@ from fastapi.responses import (
     FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
 )
 from starlette.staticfiles import StaticFiles
-from starlette.requests import ClientDisconnect
 
 from . import (
     avatar_face, avatar_online, avatar_picker, avatar_provider, error_reporting,
     follow_assets, follow_providers, images,
-    jav_poster_crop, link_marks, link_status, scraping_access, site_icons, social_links, subtitles,
-    taste_history, timeline_sheets, web_follow, web_timeline_thumbnails,
+    jav_poster_crop, link_marks, link_status, scraping_access, site_icons, social_links,
+    timeline_sheets, web_follow, web_timeline_thumbnails,
 )
 from .config import GENERATED_DIR, PROJECT_ROOT
 from .entities import resolve_entity_id
@@ -49,20 +46,12 @@ from .follow_store import FollowStore
 from .follow_stream import (
     FollowMediaUnavailable, FollowProxyError, ResolvedFollowMedia, open_upstream,
 )
-from .media import MediaOffline, MediaUnavailable, normalized_path
-from .platform import within_root
+from .media import MediaUnavailable
 from .previews import ENTITY_THUMB_TYPE, PreviewUnavailable, entity_image_key
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, FAVICON_REFRESH_SECONDS, cache_for
 from .preview_cache import PreviewCache
 from .routes_auth import require_auth
-from .scan import VIDEO
-from .segments import SegmentCancelled, SegmentUnavailable, build_hls_playlist
-from .streaming import (
-    _cancel_and_wait, _wait_for_disconnect,
-    BufferedFileResponse, CancellableFileResponse, SplicedMp4Response, run_until_disconnect,
-)
 from .remote_media_cache import MEDIA_SECURITY_HEADERS
-from .transcodes import TranscodeCancelled, TranscodeNeedsSession, TranscodeUnavailable
 
 router = APIRouter()
 
@@ -111,10 +100,6 @@ LOGGER = logging.getLogger(__name__)
 
 def _image_response(request: Request, path: Path, media_type: str | None = None):
     """固定图片 URL 使用私有缓存，并按文件 ETag 复验。"""
-    from .smb_media import SmbResource
-    if isinstance(path, SmbResource):
-        from .smb_response import SmbResponse
-        return SmbResponse(path, media_type=media_type)
     response = FileResponse(path, media_type=media_type, stat_result=path.stat())
     response.headers.update(MEDIA_SECURITY_HEADERS)
     response.headers["Cache-Control"] = "private, no-cache"
@@ -146,89 +131,19 @@ def _attachment_disposition(title: str, url: str) -> str:
     return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"
 
 
-def _repaired_header(state, asset_id: int, source: Path, stat=None):
-    """已经修好的 MP4 头；没有就是 None。只查不算，算是 `_needs_conversion` 的事。"""
-    store = getattr(state, "header_repairs", None)
-    return None if store is None else store.lookup(asset_id, source, stat=stat)
-
-
-def _needs_conversion(state, asset_id: int, source: Path, session: str) -> bool:
-    """起播时要不要转码。只有 `/api/stream-plan` 问这一句。
-
-    缺 ctts 的片子只是时间戳错乱，重建一份头就能直接按 Range 播，不必重编码。头还没
-    算出来时先照旧走 HLS，同时在后台补上；补好之后同一部片下次起播就走 Range。
-
-    HLS 那两个端点不问：一次播放的分片计划要在整段会话里保持同一个形状，边车中途落地
-    会让固定 6 秒的计划换成按关键帧切的，剩下的分片索引全对不上。
-    """
-    if not state.transcode_service.requires_conversion(
-            source, session=session, registry=state.stream_sessions):
-        return False
-    store = getattr(state, "header_repairs", None)
-    if store is None or not state.transcode_service.decode_order_timestamps(
-            source, session=session, registry=state.stream_sessions):
-        return True
-    if store.lookup(asset_id, source) is not None:
-        return False
-    store.request(asset_id, source)
-    return True
-
-
-def _hls_plan(state, asset_id: int, session: str = "", conversion: bool | None = None):
-    """解析 HLS 的片源路径与分片计划；任何一步不成立就返回 None 走 Range。
-
-    要重编码的片源按固定 6 秒切，时长先看账本，账本没记或记成负数就用 ffprobe 报的；
-    探测也拿不到才放弃，否则浏览器只能退回 `/stream`，那条路要先把整部片转完才出第一个字节。
-    原样封装的 HLS 仍要账本时长与关键帧表。
-
-    `conversion` 是起播时已经得出的结论。给不出时按片源本身判：播放列表和分片端点走的
-    就是这条，它们不看重建好的 MP4 头，理由见 `_needs_conversion`。
-    """
-    asset = state.media_engine.asset(asset_id)
-    # 播放列表和分片端点本身就是 HLS 路径，按 ADR-0016 显式要计划，不受默认值影响。
-    choice = state.media_engine.stream_plan(asset_id, mode="hls")
-    source = state.media_engine.filesystem.file_for(asset, thumbnail=False)
-    duration = asset.duration if asset.duration and asset.duration > 0 else 0.0
-    if conversion if conversion is not None else state.transcode_service.requires_conversion(
-            source, session=session, registry=state.stream_sessions):
-        duration = duration or state.transcode_service.media_duration(
-            source, session=session, registry=state.stream_sessions)
-        plan = state.hls_service.conversion_plan(duration) if duration > 0 else []
-        return (asset, source, plan, True) if plan else None
-    if choice.protocol != "hls" or duration <= 0:
-        return None
-    plan = state.hls_service.plan(source, duration)
-    return None if not plan else (asset, source, plan, False)
-
-
-def _session_plan(state, asset_id: int, session: str):
-    """这次播放的分片计划：播放列表算出来记在会话上，分片端点直接取（`SessionPlans`）。
-
-    重启后续播的分片没有记录，当场再算一次并记下。
-    """
-    plans = getattr(state, "hls_session_plans", None)
-    if plans is not None and (known := plans.get(session, asset_id)) is not None:
-        return known
-    resolved = _hls_plan(state, asset_id, session)
-    if plans is not None and resolved is not None:
-        plans.put(session, asset_id, resolved)
-    return resolved
-
-
 @router.post("/api/external-playback")
 def external_playback(request: Request, id: int, args: dict[str, str] = Depends(require_auth)):
     from .external_playback import TTL_SECONDS, issue
-    from .routes_auth import _named_origin, _origin_key, _tunnel_origin
+    from .routes_auth import _origin_key
     from fastapi import HTTPException
     state = request.app.state
-    asset = state.media_engine.asset(id)
-    state.media_engine.filesystem.file_for(asset, thumbnail=False)
+    state.media_engine.plan(id)
     supplied = request.headers.get('origin')
     raw = supplied or str(request.base_url)
     parsed = urlsplit(raw)
     if any(ord(char) <= 32 or ord(char) == 127 for char in raw) or parsed.username or parsed.password:
         raise HTTPException(400, '播放地址无效')
-    key = _origin_key(raw) if supplied else (_tunnel_origin(request) or _named_origin(request) or _origin_key(raw))
+    key = _origin_key(raw)
     if key is None:
         raise HTTPException(400, '播放地址无效')
     scheme, host, port = key
@@ -242,81 +157,19 @@ def external_playback(request: Request, id: int, args: dict[str, str] = Depends(
                         headers={"Cache-Control": "no-store"})
 
 
-@router.get('/api/local-players')
-def local_players(request: Request, args=Depends(require_auth)):
-    from . import local_playback
-    players = []
-    if local_playback.available() and _local_playback_client(request):
-        players = [{'id': 'default', 'label': '系统默认播放器'}, *[
-            {'id': key, 'label': value[0]} for key, value in local_playback.installed().items()]]
-    return JSONResponse({'players': players}, headers={'Cache-Control': 'no-store'})
-
-
-def _local_playback_client(request: Request) -> bool:
-    from .web_local_access import local_client
-    return local_client(request) and not any(
-        key.startswith('x-forwarded-') or key in {'forwarded', 'cf-connecting-ip'} for key in request.headers)
-
-
-@router.post('/api/local-playback')
-def local_playback(request: Request, id: int, player: str = 'default', args=Depends(require_auth)):
-    from . import local_playback as launcher
-    from .routes_auth import same_origin
-    from fastapi import HTTPException
-    import subprocess
-    same_origin(request)
-    if not launcher.available() or not _local_playback_client(request):
-        raise HTTPException(403, '请使用网络播放地址或 M3U 播放列表在此设备打开')
-    asset = request.app.state.media_engine.asset(id)
-    path = request.app.state.media_engine.filesystem.file_for(asset, thumbnail=False)
-    try:
-        launcher.open_media(path, player, track=_playback_tracker(request.app.state, id))
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from None
-    except (OSError, subprocess.SubprocessError) as exc:
-        LOGGER.warning('本地播放器启动失败：player=%s type=%s errno=%s winerror=%s',
-                       player, type(exc).__name__, getattr(exc, 'errno', None), getattr(exc, 'winerror', None))
-        raise HTTPException(503, '无法打开播放器，请检查系统文件关联或选择其他播放器') from None
-    return {'opened': True}
-
-
-def _playback_tracker(state, asset_id: int):
-    """外部播放器回报的进度按网页播放器同一口径写：首次前进计一次播放，其余进活动记录。"""
-    from .playback_tracking import Session
-    from .web_activity import w_activity, w_play
-    trackers, contract = state.playback_trackers, state.web_contract
-    if not trackers.has_room():
-        return None
-
-    def report(body: dict, first: bool) -> None:
-        if first:
-            w_play(contract, {'id': asset_id})
-        w_activity(contract, body)
-
-    return lambda connect, alive: trackers.start(Session(asset_id, connect, alive, report))
-
-
 def _external_asset(request: Request, asset_id: int, ticket: str, origin: str):
     from .external_playback import valid
     from fastapi import HTTPException
     state = request.app.state
     if not origin or not valid(state.external_playback_key, asset_id, ticket, origin=origin):
         raise HTTPException(401, "播放链接已失效，请在作品详情重新打开")
-    asset = state.media_engine.asset(asset_id)
-    return state.media_engine.filesystem.file_for(asset, thumbnail=False)
+    return state.media_engine.asset(asset_id)
 
 
 @router.api_route("/external-stream/{id}", methods=["GET", "HEAD"])
 def external_stream(request: Request, id: int, ticket: str, origin: str = ''):
-    path = _external_asset(request, id, ticket, origin)
-    from . import strm, strm_stream
-    if strm.is_pointer(path):
-        return strm_stream.proxy(request, id, path)
-    from .smb_media import SmbResource
-    if isinstance(path, SmbResource):
-        from .smb_response import SmbResponse
-        return SmbResponse(path)
-    return BufferedFileResponse(path, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+    asset = _external_asset(request, id, ticket, origin)
+    return request.app.state.media_engine.response(request, asset)
 
 
 @router.get("/external-playlist/{id}.m3u")
@@ -330,351 +183,44 @@ def external_playlist(request: Request, id: int, ticket: str, origin: str = ''):
 
 @router.api_route("/stream", methods=["GET", "HEAD"])
 def stream(request: Request, id: int, session: str = "", args: dict[str, str] = Depends(require_auth)):
+    """播放出口：能 302 的交给浏览器直连网盘，必须带鉴权的由 Peach 转发 Range。
+
+    `session` 只用于前端把这次播放和活动记录对上，取字节不需要它。
+    """
     state = request.app.state
     from .error_reporting import local_event
     local_event('playback-request', asset_id=id, method=request.method,
                 range=request.headers.get('range', '')[:80], user_agent=request.headers.get('user-agent', '')[:512])
     asset = state.media_engine.asset(id)
-    # 拖一次进度条就是一串 Range 请求，片源在网盘上时每次 stat 都是一趟网络往返：确认存在时
-    # 取到的那一次 stat 一路传给头修复查询、画像缓存和文件响应，一个请求只问一次。
-    path, source_stat = state.media_engine.filesystem.located(asset)
-    from . import strm, strm_stream
-    if strm.is_pointer(path):
-        return strm_stream.proxy(request, id, path, session)
-    if path.suffix.lower() in strm.DISC_SUFFIXES:
-        return JSONResponse({'error': 'ISO 原盘请使用作品详情中的外部播放器打开'}, status_code=415)
-    header = _repaired_header(state, id, path, source_stat)
-    if header is not None:
-        return SplicedMp4Response(
-            path, header, session=session, registry=state.stream_sessions,
-        )
-    try:
-        # 不带会话的只有卡片悬停预览：取消不了，也看不到浏览器断开，不能为它起整片转码。
-        path, transcoded = state.transcode_service.browser_path(
-            id, path, session=session, registry=state.stream_sessions, convert=bool(session),
-            stat=source_stat,
-        )
-    except TranscodeCancelled:
-        return Response(status_code=410, headers={"Cache-Control": "no-store"})
-    except TranscodeNeedsSession:
-        return JSONResponse({"error": "conversion needs a stream session"}, status_code=415,
-                            headers={"Cache-Control": "no-store"})
-    except TranscodeUnavailable:
-        LOGGER.exception("browser transcode failed for asset %s", id)
-        return JSONResponse({"error": "transcode unavailable"}, status_code=503)
-    media_type = "video/mp4" if transcoded else None
-    from .smb_media import SmbResource
-    if isinstance(path, SmbResource):
-        from .smb_response import SmbResponse
-        return SmbResponse(path, session=session, registry=state.stream_sessions, media_type=media_type)
-    known = None if transcoded else source_stat
-    response = (
-        CancellableFileResponse(
-            path, session=session, registry=state.stream_sessions, media_type=media_type,
-            stat_result=known,
-        )
-        if session else BufferedFileResponse(path, media_type=media_type, stat_result=known)
-    )
-    if transcoded:
-        response.headers["X-Peach-Transcoded"] = "1"
+    response = state.media_engine.response(request, asset)
+    response.headers.update(MEDIA_SECURITY_HEADERS)
     response.headers["Cache-Control"] = "no-store"
-    local_event('playback-source', asset_id=id, mime_type=response.headers.get('content-type', ''),
-                transcoded=transcoded, session_present=bool(session))
+    response.headers["Referrer-Policy"] = "no-referrer"
+    local_event('playback-source', asset_id=id, mime_type=response.headers.get('content-type', ''))
     return response
 
 
 @router.get("/api/stream-plan")
-def stream_plan(request: Request, id: int, session: str = "", mode: str = "", args: dict[str, str] = Depends(require_auth)):
+def stream_plan(request: Request, id: int, session: str = "", args: dict[str, str] = Depends(require_auth)):
+    """播放计划：`protocol` 是 `redirect` 或 `proxy`，`src` 永远是 `/stream`。
+
+    预授权地址不在此处下发：一次播放期间它会过期，而 `/stream` 每次重新问一次。
+    """
     state = request.app.state
-    if session and len(session) > 128:
-        return JSONResponse({"error": "invalid session"}, status_code=400)
-    if session and state.stream_sessions.is_cancelled(session):
-        return JSONResponse({"error": "stream cancelled"}, status_code=410)
     asset = state.media_engine.asset(id)
-    plan = state.media_engine.stream_plan(id, mode=mode or "auto")
-    # 只有真的能读出关键帧才宣告 HLS，否则客户端会拿到一个必然 404 的播放列表。
-    source_path = state.media_engine.filesystem.file_for(asset, thumbnail=False)
-    from . import strm, strm_stream
-    if strm.is_pointer(source_path):
-        try:
-            target = strm.read_target(source_path)
-        except ValueError as error:
-            return JSONResponse({'error': str(error)}, status_code=400)
-        mime = strm_stream.mime_type(target)
-        return _record_stream_plan(state, id, source_path, {'id': id, 'protocol': 'hls' if mime in strm_stream.PLAYLIST_TYPES else 'range',
-                'mime_type': mime, 'duration': asset.duration,
-                'src': f'/stream?id={id}&session={quote(session, safe="")}', 'reason': 'strm-pointer'})
-    if source_path.suffix.lower() in strm.DISC_SUFFIXES:
-        return JSONResponse({'error': 'ISO 原盘请使用作品详情中的外部播放器打开'}, status_code=415)
-    conversion = _needs_conversion(state, id, source_path, session)
-    resolved = (_hls_plan(state, id, session, conversion)
-                if conversion or plan.protocol == "hls" else None)
-    if resolved and session:
-        return _record_stream_plan(state, id, source_path, {
-            "id": id,
-            "protocol": "hls",
-            "mime_type": "application/vnd.apple.mpegurl",
-            "duration": round(sum(length for _, length in resolved[2]), 3),
-            "segment_seconds": plan.segment_seconds,
-            "segments": len(resolved[2]),
-            "src": f"/stream/hls/{id}/index.m3u8?session={quote(session, safe='')}",
-            "reason": plan.reason,
-        })
+    plan = state.media_engine.plan(id)
+    from .error_reporting import local_event
     source = f"/stream?id={id}"
     if session:
         source += f"&session={quote(session, safe='')}"
-    return _record_stream_plan(state, id, source_path, {
-        "id": id,
-        "protocol": "range",
-        "mime_type": plan.mime_type,
-        "duration": asset.duration,
-        "src": source,
-        "reason": plan.reason,
-    })
-
-
-def _record_stream_plan(state, asset_id: int, source: Path, plan: dict) -> dict:
-    from .error_reporting import local_event
+    payload = {"id": id, "protocol": plan.protocol, "mime_type": plan.mime_type,
+               "duration": asset.duration, "src": source, "reason": plan.reason}
     try:
-        local_event('playback-plan', asset_id=asset_id,
-                    plan={key: plan.get(key) for key in ('protocol', 'mime_type', 'duration', 'reason', 'segments')},
-                    media_profile=state.transcode_service.diagnostic_profile(source),
-                    hardware=state.transcode_service.hardware.diagnostic_snapshot())
+        local_event('playback-plan', asset_id=id,
+                    plan={key: payload.get(key) for key in ('protocol', 'mime_type', 'duration', 'reason')})
     except Exception:
         LOGGER.debug('播放诊断未取得', exc_info=True)
-    return plan
-
-
-@router.api_route('/strm-resource/{id}/{key}', methods=['GET', 'HEAD'])
-def strm_resource(request: Request, id: int, key: str, session: str = '',
-                  ticket: str = '', origin: str = ''):
-    from . import strm, strm_stream
-    if ticket:
-        path = _external_asset(request, id, ticket, origin)
-    else:
-        require_auth(request)
-        path = request.app.state.media_engine.file_for(id)
-    if not strm.is_pointer(path):
-        return Response(status_code=404)
-    return strm_stream.proxy(request, id, path, session, key)
-
-
-@router.get("/stream/hls/{id}/index.m3u8")
-def hls_playlist(request: Request, id: int, session: str = "", args: dict[str, str] = Depends(require_auth)):
-    state = request.app.state
-    # 分片必须带 session 才能被取消，播放列表这层就要求它；
-    # 否则会生成一份每个分片都必然 400 的目录。
-    if not session or len(session) > 128:
-        return PlainTextResponse("session required", status_code=400)
-    if state.stream_sessions.is_cancelled(session):
-        return PlainTextResponse("stream cancelled", status_code=410)
-    try:
-        resolved = _session_plan(state, id, session)
-    except (MediaUnavailable, TranscodeUnavailable):
-        return PlainTextResponse("hls unavailable", status_code=404)
-    if resolved is None:
-        return PlainTextResponse("hls unavailable", status_code=404)
-    query = f"?session={quote(session, safe='')}"
-    playlist = build_hls_playlist(
-        resolved[2], lambda index: f"/stream/hls/{id}/{index}.ts{query}",
-    )
-    response = PlainTextResponse(playlist, media_type="application/vnd.apple.mpegurl")
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@router.get("/stream/hls/{id}/{index}.ts")
-async def hls_segment(request: Request, id: int, index: int, session: str = "", args: dict[str, str] = Depends(require_auth)):
-    state = request.app.state
-    if not session or len(session) > 128:
-        return JSONResponse({"error": "invalid session"}, status_code=400)
-    if state.stream_sessions.is_cancelled(session):
-        return Response(status_code=410, headers={"Cache-Control": "no-store"})
-    try:
-        return await run_until_disconnect(_hls_segment(request, id, index, session), request.receive)
-    except ClientDisconnect:
-        return Response(status_code=410, headers={"Cache-Control": "no-store"})
-
-
-async def _hls_segment(request: Request, id: int, index: int, session: str):
-    state = request.app.state
-    try:
-        plans = getattr(state, "hls_session_plans", None)
-        resolved = plans.get(session, id) if plans is not None else None
-        if resolved is None:
-            resolved = await asyncio.get_running_loop().run_in_executor(
-                state.hls_plan_executor, partial(_session_plan, state, id, session),
-            )
-        if resolved is None:
-            return JSONResponse({"error": "hls unavailable"}, status_code=404)
-        _, source, plan, conversion = resolved
-        if index < 0 or index >= len(plan):
-            return JSONResponse({"error": "invalid segment"}, status_code=416)
-        start, duration = plan[index]
-        generation = asyncio.create_task(state.hls_service.generate(
-            source, start, duration, asset_id=id, index=index,
-            session=session, registry=state.stream_sessions,
-            **({"transcode": True} if conversion else {}),
-        ))
-        disconnect = asyncio.create_task(_wait_for_disconnect(request.receive))
-        try:
-            done, _ = await asyncio.wait({generation, disconnect}, return_when=asyncio.FIRST_COMPLETED)
-            if disconnect in done:
-                disconnect.result()
-                return Response(status_code=204)
-            path = await generation
-        finally:
-            await _cancel_and_wait(generation, disconnect)
-    except asyncio.CancelledError:
-        if state.stream_sessions.is_cancelled(session):
-            return Response(status_code=410, headers={'Cache-Control':'no-store'})
-        raise
-    except SegmentCancelled:
-        return Response(status_code=410, headers={"Cache-Control": "no-store"})
-    except TranscodeCancelled:
-        return Response(status_code=410, headers={"Cache-Control": "no-store"})
-    except TranscodeUnavailable:
-        LOGGER.exception("browser transcode failed for asset %s", id)
-        return JSONResponse({"error": "transcode unavailable"}, status_code=503)
-    except SegmentUnavailable:
-        LOGGER.exception("HLS segment failed for asset %s", id)
-        return JSONResponse({"error": "segment unavailable"}, status_code=503)
-    # 片段现在留在缓存里而不是随响应删除：回放、重连和多设备都会重复请求同一段，
-    # 每次重跑 FFmpeg 等于让 CloudDrive 再预取一次块。
-    response = FileResponse(path, media_type="video/mp2t")
-    response.headers["Cache-Control"] = f"private, max-age={MEDIA_CACHE_SECONDS}"
-    response.headers["X-Peach-HLS-Segment"] = "1"
-    return response
-
-
-@router.post("/api/stream-cancel")
-async def stream_cancel(request: Request, session: str, args: dict[str, str] = Depends(require_auth)):
-    if not session or len(session) > 128:
-        return JSONResponse({"error": "invalid session"}, status_code=400)
-    cancelled = request.app.state.stream_sessions.cancel(session)
-    plans = getattr(request.app.state, "hls_session_plans", None)
-    if plans is not None:
-        plans.forget(session)
-    return JSONResponse({"ok": True, "cancelled": cancelled})
-
-
-#: 单份字幕的读取上限。两小时的片子字幕撑死几百 KB；比这更大的多半不是字幕，
-#: 整份读进内存的代价不该由播放器那一次请求承担。
-SUBTITLE_BYTE_LIMIT = 4 * 1024 * 1024
-
-
-def _subtitle_rows(state, asset_id: int):
-    """资产本身加它的字幕行。资产不存在时抛 `MediaNotFound`，由 `api.py` 收口。"""
-    asset = state.media_engine.asset(asset_id)
-    with state.database.read_connection() as connection:
-        rows = [dict(row) for row in subtitles.subtitles_for(connection, asset_id)]
-    if asset.path:
-        video = normalized_path(asset.path)
-        if any(within_root(video, root) for root in state.media_engine.filesystem.allowed_roots):
-            known = {str(normalized_path(row["path"])).casefold() for row in rows}
-            # 列表一次、每条轨各一次都走这里；目录列举按视频路径缓存，网盘目录不每次列一遍。
-            listings = getattr(state, "sidecar_listings", None)
-            found = (listings.discover(video, VIDEO) if listings is not None
-                     else subtitles.discover_sidecars(video, VIDEO))
-            rows.extend(row for row in found if row["path"].casefold() not in known)
-    return asset, rows
-
-
-def _subtitle_path(state, asset, row) -> Path | None:
-    """字幕文件在本机的位置；逃出正片所在目录或授权根一律拒绝。
-
-    路径来自账本或同目录发现，这一层仍核对当前媒体授权根。
-    """
-    if not asset.path:
-        return None
-    directory = normalized_path(asset.path).parent
-    path = normalized_path(row["path"])
-    if str(path.parent).casefold() != str(directory).casefold():
-        return None
-    if not any(within_root(path, root)
-               for root in state.media_engine.filesystem.allowed_roots):
-        return None
-    return path
-
-
-def _subtitle_bytes(state, asset, row) -> tuple[bytes | None, str]:
-    """字幕文件的内容，以及取不到时的原因。原因直接进列表给人看。"""
-    path = _subtitle_path(state, asset, row)
-    if path is None:
-        return None, "不在正片所在目录"
-    try:
-        if path.stat().st_size > SUBTITLE_BYTE_LIMIT:
-            return None, "文件过大"
-        return path.read_bytes(), ""
-    except OSError:
-        return None, "文件未找到"
-
-
-def _subtitle_note(state, asset, row) -> str:
-    """这一条为什么不能播；能播返回空串。"""
-    if not subtitles.is_playable_format(row["format"]):
-        return "图形字幕，播放器里不显示"
-    data, note = _subtitle_bytes(state, asset, row)
-    if data is None:
-        return note
-    try:
-        subtitles.decode(data)
-    except subtitles.SubtitleUndecodable:
-        return "编码未识别"
-    return ""
-
-
-@router.get("/api/assets/{id}/subtitles")
-def asset_subtitles(request: Request, id: int, args: dict[str, str] = Depends(require_auth)):
-    """这个资产有哪些字幕轨，以及每一条能不能播。
-
-    返回的 src 通过 track 参数绑定文件身份，序号用于无参数的按序读取。
-    不能播的也列出来并说明原因：界面上「有三条字幕、只挂上两条」要能解释得清。
-    """
-    state = request.app.state
-    asset, rows = _subtitle_rows(state, id)
-    tracks = []
-    for index, row in enumerate(rows):
-        note = _subtitle_note(state, asset, row)
-        tracks.append({
-            "id": f"sidecar:{subtitles.file_key(row['name'])}",
-            "legacy_id": f"sidecar:{row['id']}" if isinstance(row["id"], int) else None,
-            "index": index,
-            "name": row["name"],
-            "format": row["format"],
-            "language": row["language"],
-            "label": subtitles.track_label(row["name"], row["language"], asset.name),
-            "pairing": row["pairing"],
-            "note": note,
-            "playable": not note,
-            "src": f"/api/assets/{id}/subtitles/{index}?track={subtitles.file_key(row['name'])}",
-        })
-    return {"id": id, "subtitles": tracks}
-
-
-@router.api_route("/api/assets/{id}/subtitles/{index}", methods=["GET", "HEAD"])
-def asset_subtitle_track(request: Request, id: int, index: int,
-                         track: str = "",
-                         args: dict[str, str] = Depends(require_auth)):
-    """一条字幕的 WebVTT。浏览器的 text track 只认这一种格式。"""
-    state = request.app.state
-    asset, rows = _subtitle_rows(state, id)
-    if track:
-        index = next((n for n, row in enumerate(rows)
-                      if subtitles.file_key(row["name"]) == track), -1)
-    if index < 0 or index >= len(rows):
-        return JSONResponse({"error": "no such subtitle"}, status_code=404)
-    row = rows[index]
-    data, _note = _subtitle_bytes(state, asset, row)
-    if data is None:
-        return JSONResponse({"error": "subtitle unavailable"}, status_code=404)
-    try:
-        text = subtitles.to_webvtt(data, row["format"])
-    except subtitles.SubtitleUndecodable as error:
-        return JSONResponse({"error": str(error)}, status_code=415)
-    response = PlainTextResponse(text, media_type="text/vtt; charset=utf-8")
-    response.headers["Cache-Control"] = "private, no-cache"
-    return response
+    return payload
 
 
 @router.api_route("/thumb", methods=["GET", "HEAD"])
@@ -701,7 +247,7 @@ def photo_thumb(request: Request, id: int, args: dict[str, str] = Depends(requir
     if path is None:
         try:
             path = state.photo_service.thumbnail(id, state.media_engine.file_for(id))
-        except MediaOffline:
+        except MediaUnavailable:
             path = state.photo_service.cached(id, offline=True)
             if path is None:
                 raise
@@ -758,32 +304,18 @@ def poster(request: Request, id: int, c: int = 4, args: dict[str, str] = Depends
 
 
 @router.api_route("/timeline", methods=["GET", "HEAD"])
-def timeline(request: Request, id: int, s: int = 0, source: str = '', args: dict[str, str] = Depends(require_auth)):
-    """时间轴预览的一张接触印相。只发已经铺好的，这里不现抽。
+def timeline(request: Request, id: int, s: int = 0, args: dict[str, str] = Depends(require_auth)):
+    """时间轴预览的一张接触印相。只发已经铺好的，没铺到就排一趟后台生成。
 
     `/poster` 那条取不到会当场抽一帧，因为九宫格只要九张。这里一张图是一百帧，现抽要
-    几分钟，悬停的人早走了；没铺到就回 404，页面退回九宫格。
+    几分钟，悬停的人早走了；没铺到就回 404，页面退回九宫格，后台那次铺完再来就有。
     """
     contract = request.app.state.web_contract
     if id <= 0 or s < 0:
         return JSONResponse({"error": "unavailable"}, status_code=404)
-    if source not in ('', 'peach', 'bif', 'webvtt', 'hls', 'dash', 'jellyfin'):
-        return JSONResponse({"error": "unavailable"}, status_code=404)
-    external = None if source == 'peach' else web_timeline_thumbnails.external_timeline(contract, id)
-    if source and source != 'peach' and (external is None or external.source != source):
-        return JSONResponse({"error": "unavailable"}, status_code=404)
-    if external is not None:
-        data = web_timeline_thumbnails.external_frame(contract, external, s)
-        if data is None:
-            return JSONResponse({"error": "unavailable"}, status_code=404)
-        etag = '"' + hashlib.sha256(data).hexdigest() + '"'
-        headers = {'Cache-Control': 'private, no-cache', 'ETag': etag}
-        response = Response(data, media_type='image/jpeg', headers=headers)
-        if StaticFiles().is_not_modified(response.headers, request.headers):
-            return Response(status_code=304, headers=headers)
-        return response
     path = timeline_sheets.sheet_path(contract.timeline_root, id, s)
-    if id <= 0 or s < 0 or not path.is_file():
+    if not path.is_file():
+        web_timeline_thumbnails.ensure_sheet(request.app.state, id)
         return JSONResponse({"error": "unavailable"}, status_code=404)
     return _image_response(request, path, media_type="image/jpeg")
 
@@ -1340,8 +872,8 @@ def _jav_preview_target(url: str) -> ResolvedFollowMedia:
 
 @router.api_route("/jav-preview/{code}/{ref}", methods=["GET", "HEAD"])
 def jav_preview(request: Request, code: str, ref: str, args: dict[str, str] = Depends(require_auth)):
+    from .follow_stream import open_upstream
     from .web_jav_detail import detail_code
-    from .preview_transport import open_preview_upstream
     cache = cache_for(request.app.state.web_contract)
     previews = PreviewCache(cache)
     try:
@@ -1351,8 +883,7 @@ def jav_preview(request: Request, code: str, ref: str, args: dict[str, str] = De
         target = _jav_preview_target(url)
         client = request.app.state.http_transport.client
         def upstream(method, target, incoming):
-            return open_preview_upstream(client, method, target, incoming=incoming,
-                secrets_root=request.app.state.web_contract.follow_secrets_root)
+            return open_upstream(client, method, target, incoming=incoming)
         if source["playlist"]:
             def fetch(url):
                 response = upstream("GET", _jav_preview_target(url), {})
@@ -1498,39 +1029,28 @@ def link_mark(request: Request, id: int = 0, args: dict[str, str] = Depends(requ
 
 
 @router.api_route("/site-mark", methods=["GET", "HEAD"])
-def site_mark(request: Request, source: str = "", domain: str = "",
+def site_mark(request: Request, source: str = "",
               args: dict[str, str] = Depends(require_auth)):
-    """采集来源的已核对 favicon 与口味排行的站点圆标。
+    """采集来源的已核对 favicon。
 
-    两个参数都不是地址，是键：`source` 查 `scraping_access.SOURCES`，`domain` 查
-    `taste_history.TASTE_DOMAIN_SUFFIXES`，都不在表里就是 404。和 `/link-mark`
-    同一条规矩——服务端只取自己已经知道的地址，绝不取前端递来的任意 URL。
+    参数不是地址，是键：`source` 查 `scraping_access.SOURCES`，不在表里就是 404。
+    和 `/link-mark` 同一条规矩——服务端只取自己已经知道的地址，绝不取前端递来的任意 URL。
 
     图标由服务端取有三样浏览器拿不到的东西：`site_icons` 会问站点自己声明的
     apple-touch-icon、SVG 和 manifest，而直连只够拿一枚 16px 的 `/favicon.ico`；
     要代理才通的站点在这里照样有图；浏览器不必向对方站点发请求，也就不必按站
     报出「在看哪些站」。
-
-    `domain` 只认白名单里那条后缀本身，不认它的子域：子域是浏览历史里带进来的
-    任意值，放行等于按前端给的主机名去连——正是上面那条规矩要挡的。
     """
-    if source:
-        spec = scraping_access.SOURCES.get(source)
-        if spec is None:
-            return JSONResponse({"error": "no such source"}, status_code=404)
-        # 来源身份使用已核对的原图，保留站点 favicon 的颜色和画布。
-        icon = PROJECT_ROOT / "resources" / "site-marks" / f"{source}.png"
-        if icon.is_file():
-            result = FileResponse(icon, media_type="image/png")
-            result.headers["Cache-Control"] = "public, no-cache"
-            return result
-        target = spec["login"]
-    else:
-        host = domain.casefold().strip().removeprefix("www.").rstrip(".")
-        if host not in taste_history.TASTE_DOMAIN_SUFFIXES:
-            return JSONResponse({"error": "no such site"}, status_code=404)
-        target = f"https://{host}/"
-    return _site_mark_response(request.app.state, target, GENERATED_DIR / "site-marks")
+    spec = scraping_access.SOURCES.get(source) if source else None
+    if spec is None:
+        return JSONResponse({"error": "no such source"}, status_code=404)
+    # 来源身份使用已核对的原图，保留站点 favicon 的颜色和画布。
+    icon = PROJECT_ROOT / "resources" / "site-marks" / f"{source}.png"
+    if icon.is_file():
+        result = FileResponse(icon, media_type="image/png")
+        result.headers["Cache-Control"] = "public, no-cache"
+        return result
+    return _site_mark_response(request.app.state, spec["login"], GENERATED_DIR / "site-marks")
 
 
 @router.api_route("/entity-image", methods=["GET", "HEAD"])

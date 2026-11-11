@@ -2,23 +2,18 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import sys
 import tempfile
 import unittest
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from peach import background_issues  # noqa: E402
 from peach.background_issues import IssueLog  # noqa: E402
 from peach.follow_scheduler import FollowUpdateScheduler  # noqa: E402
 from peach.metadata_amane import bridge_python  # noqa: E402
-from peach.tunnel import TunnelSnapshot  # noqa: E402
 from support.amane import write_amane_metadata  # noqa: E402
 
 
@@ -52,7 +47,7 @@ class BackgroundIssueTests(unittest.TestCase):
         write_bridge_python(self.tools)
         write_amane_metadata(self.tools, ready=True)
         self.contract = SimpleNamespace(tools_root=self.tools, follow_scheduler=None,
-                                        feed_scheduler=None, downloads=None)
+                                        feed_scheduler=None)
         self.state = SimpleNamespace()
 
     def collect(self, config=None):
@@ -80,67 +75,38 @@ class BackgroundIssueTests(unittest.TestCase):
         scheduler._run()
         self.assertEqual(self.collect(), [])
 
-    def test_services_without_their_own_clock_report_when_this_process_noticed(self):
-        self.state.network_reachability = SimpleNamespace(summary=lambda: {"state": "offline"})
-        self.state.automatic_updates = SimpleNamespace(snapshot=lambda: {"error": "下载没有启动"})
-        [network, updates] = self.collect()
-        self.assertEqual((network["key"], network["href"], network["link_label"], network["retry"], network["since"]),
-                         ("network", "/settings/network#peachProxy", "打开 Peach 代理设置",
-                          "/api/network-status/check", None))
-        noticed = network["noticed_at"]
+    def test_a_row_carries_the_moment_this_process_first_noticed_it(self):
+        from peach.background_issues import Issue
+
+        live = {"on": True}
+
+        def provider(_state, _contract, _config):
+            return [Issue("probe", "某一项失败了", "/settings", "打开设置")] if live["on"] else []
+
+        [row] = self.log.collect(self.state, self.contract, None, providers=[provider])
+        noticed = row["noticed_at"]
+        self.assertEqual((row["key"], row["since"], row["retry"]), ("probe", None, None))
         self.clock.now += 600
-        self.assertEqual([row["noticed_at"] for row in self.collect()], [noticed, noticed])
+        self.assertEqual([item["noticed_at"] for item in
+                          self.log.collect(self.state, self.contract, None, providers=[provider])], [noticed])
         # 消失过一次再出现，是新的一段：重新计。
-        self.state.network_reachability = SimpleNamespace(summary=lambda: {"state": "online"})
-        self.assertEqual(keys(self.collect()), ["automatic-updates"])
-        self.clock.now += 60
-        self.state.network_reachability = SimpleNamespace(summary=lambda: {"state": "offline"})
-        self.assertNotEqual(self.collect()[0]["noticed_at"], noticed)
-        # 要改设置才修得好的只给链接，不给重试。
-        self.assertEqual((updates["retry"], updates["link_label"]), (None, "打开自动更新设置"))
+        live["on"] = False
+        self.assertEqual(self.log.collect(self.state, self.contract, None, providers=[provider]), [])
+        live["on"] = True
+        self.assertNotEqual(
+            self.log.collect(self.state, self.contract, None, providers=[provider])[0]["noticed_at"], noticed)
 
-    def test_a_disabled_tunnel_with_a_leftover_error_is_not_a_problem(self):
-        self.state.tunnel = SimpleNamespace(snapshot=lambda: TunnelSnapshot(state="stopped", error="上一次没有正常收尾"))
-        config = SimpleNamespace(tunnel=SimpleNamespace(enabled=False))
-        only = (background_issues._tunnel,)
-        self.assertEqual(self.log.collect(self.state, self.contract, config, only), [])
-        config.tunnel.enabled = True
-        self.assertEqual(keys(self.log.collect(self.state, self.contract, config, only)), ["tunnel"])
+    def test_a_broken_provider_does_not_take_the_others_down(self):
+        from peach.background_issues import Issue
 
-    def test_downloads_count_tracked_tasks_waiting_out_a_transient_failure(self):
-        connection = sqlite3.connect(":memory:")
-        self.addCleanup(connection.close)
-        connection.execute("CREATE TABLE download_task(state TEXT, failure_detail TEXT)")
-        connection.executemany("INSERT INTO download_task VALUES(?, ?)", [
-            ("remote_running", "查询进度时连不上 CloudDrive2：timeout"), ("submitted", "连不上 PikPak"),
-            ("remote_running", None), ("failed", "远端拒收")])
+        def broken(_state, _contract, _config):
+            raise RuntimeError("boom")
 
-        @contextmanager
-        def read_connection():
-            yield connection
-        self.contract.downloads = SimpleNamespace(available=True)
-        self.contract.database = SimpleNamespace(read_connection=read_connection)
-        [row] = self.collect()
-        self.assertEqual((row["key"], row["title"], row["href"]),
-                         ("downloads", "2 个云下载任务对账暂时失败", "/tasks#cloudDownloads"))
-        self.contract.downloads.available = False
-        self.assertEqual(self.collect(), [])
+        def fine(_state, _contract, _config):
+            return [Issue("probe", "某一项失败了", "/settings", "打开设置")]
 
-    def test_push_discovery_reports_ingest_failures_and_a_stopped_watcher_only_when_enabled(self):
-        snapshot = {"enabled": True, "watch_local": True, "local_running": False,
-                    "local_message": "文件监视启动失败：权限不足",
-                    "queue": {"failed": 1, "last_error": "database is locked"}}
-        self.state.push_discovery = SimpleNamespace(snapshot=lambda: snapshot)
-        self.assertEqual(keys(self.collect()), ["push-discovery", "push-discovery-watch"])
-        snapshot["enabled"] = False
-        self.assertEqual(self.collect(), [])
-
-    def test_library_sharing_reads_this_weeks_failed_attempt(self):
-        config = SimpleNamespace(tunnel=SimpleNamespace(enabled=False))
-        attempts = iter([{"last_attempt": {"status": "failed"}}, {"last_attempt": {}}])
-        with patch("peach.library_sharing.snapshot", lambda _config: next(attempts)):
-            self.assertEqual(keys(self.log.collect(self.state, self.contract, config)), ["library-sharing"])
-            self.assertEqual(self.log.collect(self.state, self.contract, config), [])
+        self.assertEqual(keys(self.log.collect(self.state, self.contract, None,
+                                               providers=[broken, fine])), ["probe"])
 
     def test_a_missing_amane_bridge_can_be_rebuilt_in_place_unless_a_rebuild_is_running(self):
         self.contract.tools_root = self.root / "empty-tools"
@@ -180,10 +146,10 @@ class BackgroundIssueTests(unittest.TestCase):
     def test_one_broken_service_does_not_hide_the_others(self):
         def broken():
             raise RuntimeError("状态文件读坏了")
-        self.state.automatic_updates = SimpleNamespace(snapshot=broken)
-        self.state.network_reachability = SimpleNamespace(summary=lambda: {"state": "offline"})
+        self.contract.follow_scheduler = SimpleNamespace(status=broken)
+        self.contract.tools_root = self.root / "empty-tools"
         with self.assertLogs("peach.background_issues", level="ERROR"):
-            self.assertEqual(keys(self.collect()), ["network"])
+            self.assertEqual(keys(self.collect()), ["amane-bridge"])
 
 
 if __name__ == "__main__":

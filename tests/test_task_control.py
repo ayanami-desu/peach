@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import psutil
 
-from peach import job_recovery, task_control, update_tasks
+from peach import job_recovery, task_control
 from peach.jobs import BackgroundJob
 from peach.task_runs import TaskRunStore
 from support.ledger import fresh_ledger
@@ -292,7 +292,7 @@ class TaskControlTests(unittest.TestCase):
         recent = self.store.start('probe', trigger='manual')
         self.store.finish(recent.id, 'succeeded')
         active = self.store.start('probe', trigger='manual')
-        root = update_tasks.state_for(self.db).parent / 'task-controls'
+        root = task_control._root(self.db)
         orphan = root / '999999.speed.json'
         orphan.write_text('{"speed_mode":"high"}', encoding='utf-8')
         self.assertEqual(self.store.prune('probe', keep=1), 1)
@@ -305,7 +305,7 @@ class TaskControlTests(unittest.TestCase):
         self.assertIsNone(task_control.speed_mode(self.db, active.id, default=None))
 
     def test_finished_runs_leave_no_runtime_files_while_live_families_keep_their_intent(self):
-        root = update_tasks.state_for(self.db).parent / 'task-controls'
+        root = task_control._root(self.db)
 
         def files(run_id):
             return sorted(path.name.split('.')[1] for path in root.glob(f'{run_id}.*.json'))
@@ -633,49 +633,6 @@ class TaskControlTests(unittest.TestCase):
         self.assertIsNotNone(self.children[0].poll())
         self.store.finish(run.id, 'failed')
 
-    def test_user_paused_recoverable_work_yields_to_installation_and_resumes_the_same_run(self):
-        progressed = self.event()
-
-        def work(job, identity):
-            job.checkpoint(identity, checked=1, completed_items=[7])
-            progressed.set()
-            while True:
-                task_control.checkpoint()
-                time.sleep(.01)
-
-        first, original = self.start(work, key='feed-check', recovery={'all': True})
-        self.assertTrue(progressed.wait(5))
-        run_id = original['run_id']
-        task_control.request(self.store, run_id, 'pause')
-        self.wait_until(lambda: self.state(run_id)['state'] == 'paused')
-        token = update_tasks.reserve(self.db)
-        try:
-            first.thread.join(5)
-            self.assertFalse(first.thread.is_alive())
-            self.assertTrue(update_tasks.wait_quiescent(self.db, timeout=1))
-            self.assertEqual(self.store.get(run_id).status, 'pending')
-        finally:
-            update_tasks.release(self.db, token)
-        second = BackgroundJob('PeachControlTest', task_key='feed-check', runs=self.store)
-        self.jobs.append(second)
-        resumed = []
-
-        def resume(identity):
-            resumed.append(second.snapshot())
-            second.update(identity, status='complete')
-
-        job_recovery.resume(self.db, {'feed-check': lambda request: second.start(
-            resume, restart=True, recovery=request)})
-        self.wait_until(lambda: self.state(run_id)['state'] == 'paused')
-        self.assertEqual(resumed, [])
-        task_control.request(self.store, run_id, 'resume')
-        self.wait_until(lambda: bool(resumed))
-        second.thread.join(5)
-        self.assertFalse(second.thread.is_alive())
-        self.assertEqual((resumed[0]['job_id'], resumed[0]['run_id'], resumed[0]['completed_items']),
-                         (original['job_id'], run_id, [7]))
-        self.assertEqual(self.store.get(run_id).status, 'succeeded')
-
     def test_shutdown_of_nonrecoverable_paused_work_does_not_leave_a_pending_resume_row(self):
         entered = self.event()
 
@@ -691,11 +648,7 @@ class TaskControlTests(unittest.TestCase):
         worker = job.thread
         task_control.request(self.store, run_id, 'pause')
         self.wait_until(lambda: self.state(run_id)['state'] == 'paused')
-        token = update_tasks.reserve(self.db)
-        try:
-            job.stop(timeout=5)
-            self.assertFalse(worker.is_alive())
-            self.assertIn(self.store.get(run_id).status, ('cancelled', 'interrupted'))
-            self.assertNotEqual(job_recovery.read(self.db, 'control-test').get('status'), 'active')
-        finally:
-            update_tasks.release(self.db, token)
+        job.stop(timeout=5)
+        self.assertFalse(worker.is_alive())
+        self.assertIn(self.store.get(run_id).status, ('cancelled', 'interrupted'))
+        self.assertNotEqual(job_recovery.read(self.db, 'control-test').get('status'), 'active')

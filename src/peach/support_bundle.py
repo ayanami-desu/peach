@@ -14,12 +14,9 @@ from pathlib import Path
 
 from . import error_reporting
 
-LOG_NAMES = ("tray.log", "tray-lifecycle.log", "tray-setup.err.log", "tray-setup.out.log",
-             "tray-http.err.log", "tray-http.out.log", "tray-https.err.log", "tray-https.out.log",
-             'tray-restart.out.log', 'tray-scan.out.log', 'windows-source-sync.log', 'cloudflare-tunnel.log')
-STATE_NAMES = ('library-processing.json', 'runtime-prepare.json', 'standalone-update.json',
-               'automatic-updates.json', 'windows-source-sync.json', 'cloudflare-tunnel.json',
-               'remote-reporting-delivery.json', 'library-sharing-attempt.json', 'media-processing.json')
+LOG_NAMES = ('server.log', 'errors.log')
+STATE_NAMES = ('library-processing.json', 'media-processing.json', 'timeline-thumbnails.json',
+               'drive-sync.json', 'library-sharing-attempt.json')
 #: 发现页封面逐番号处理结果的份数上限；每份只有几十字节，排查缺封面靠它们。
 COVER_ATTEMPT_LIMIT = 500
 TAIL_BYTES = 96 * 1024
@@ -285,20 +282,16 @@ def bundle_to(destination, *, report: dict | None = None, config=None, browser: 
         except Exception:
             pass
     if report:
-        # 报告分享仅保留系统检查，库清单、媒体挂载明细和来源原文留在本机页面。
+        # 报告分享仅保留系统检查，库清单、网盘明细和来源原文留在本机页面。
         facts["checks"] = {key: {field: value.get(field) for field in ("status", "reason", "action")}
                            for key, value in report.get("checks", {}).items()
-                           if key not in ("media_mounts",)}
+                           if key not in ("drives",)}
         detail_fields = {'database': ('state',), 'schema': ('schema', 'version', 'pending', 'mismatched', 'unknown_versions'),
                          'security': ('exposed', 'protected'), 'port': ('port', 'state'), 'tasks': ('id', 'finished_at')}
         for key, names in detail_fields.items():
             if key in facts['checks']:
                 details = report['checks'][key].get('details', {})
                 facts['checks'][key]['details'] = {name: details[name] for name in names if name in details}
-        mounts = report.get('checks', {}).get('media_mounts', {}).get('details', {})
-        facts['mounts'] = {'state': mounts.get('state'), 'sources': [
-            {key: row.get(key) for key in ('state', 'online', 'message', 'checked_at')}
-            for row in mounts.get('sources', []) if isinstance(row, dict)]}
         source_fields = ('source', 'status', 'reason', 'last_check_at', 'elapsed_s',
                          'last_success_at', 'cooldown_until')
         facts['sources'] = [{key: row.get(key) for key in source_fields}

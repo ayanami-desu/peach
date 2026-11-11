@@ -1,41 +1,25 @@
-"""数据面板：库存统计、存储卷、口味窗口、搜索历史与画质目标。
+"""数据面板：库存统计、存储卷、搜索历史与画质目标。
 
-这一域的输出全是聚合数，没有一条是真相字段：它们要么来自 `COUNT`/`SUM`，要么来自
-浏览历史分析产出的 JSON。因此这里的函数都可以走 `contract.cached()`，也都必须能在
-缓存被 `cache_bust()` 清掉时安全丢弃结果——口径见 `web_state.WebContract.cached`。
+这一域的输出全是聚合数，没有一条是真相字段：它们全部来自 `COUNT`/`SUM`。因此这里的
+函数都可以走 `contract.cached()`，也都必须能在缓存被 `cache_bust()` 清掉时安全丢弃
+结果——口径见 `web_state.WebContract.cached`。
 
-存储卷一节读的是真实挂载点：不在线的来源要显示成「未挂载」而不是 0 字节，
-否则面板会把一整块外置盘报告成「空的」。
+存储卷一节只报跑着这份账本的那块盘：藏品都在网盘上，容量按 provider 算，本机再把
+每个来源当成一个「卷」列出来只会给出没有意义的数。
 """
 from __future__ import annotations
 
-import json
-import re
 import shutil
-import threading
-import time
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 
 from .catalog_rules import tag_cat
 from . import media_libraries, settings_file
-from .config import LOCATION_ROOT_DECLARATIONS
-from .fsutil import atomic_write_text
-from .platform import is_unmapped, root_online, system_volume, translate_ledger_path
-from .taste_history import (
-    analyze_history,
-    build_taste_dashboard,
-    refresh_history,
-    remove_history_source,
-    store_version,
-    write_manifest,
-)
+from .platform import system_volume
 from .web_activity import DEFAULT_PROFILE_ID
-from .web_catalog import attach_avatar_availability, tag_is_not_a_performer_name, tag_not_hidden
+from .web_catalog import tag_is_not_a_performer_name, tag_not_hidden
 from .media_sources import cost_for
-from .web_state import CACHE_TTL, WebContract, path_version
-from .taste_browsers import browser_sources, configure_browser, enabled_history_sources, enabled_bookmark_sources
-from .taste_bookmarks import refresh_bookmarks
+from .web_state import WebContract
 
 
 def q_search_history(contract: WebContract, limit: int = 10):
@@ -45,290 +29,6 @@ def q_search_history(contract: WebContract, limit: int = 10):
             (max(1, min(limit, 50)),),
         ).fetchall()
     return {"items": [row["query"] for row in rows]}
-
-
-TASTE_WINDOWS = {"all": None, "7d": 7, "30d": 30, "90d": 90, "365d": 365}
-
-
-def _taste_since(window: str) -> str | None:
-    if window not in TASTE_WINDOWS:
-        raise ValueError("invalid taste window")
-    days = TASTE_WINDOWS[window]
-    return (datetime.now(UTC) - timedelta(days=days)).isoformat() if days else None
-
-
-def taste_inputs(contract: WebContract, window: str) -> tuple:
-    """`q_taste` 读到的账本之外的东西的版本，与账本版本号一起构成看板快照的版本。
-
-    浏览历史库、分析清单与导入目录由 `scripts/taste_history.py` 在进程外写；榜单上的
-    圆头像读头像目录。有时间窗的视图起点每天滑一格，按日期重算一次。
-    """
-    return (store_version(contract.taste_history_store),
-            path_version(contract.taste_history_manifest),
-            path_version(contract.taste_history_import_root),
-            path_version(contract.avatar_root),
-            (_taste_since(window) or "")[:10])
-
-
-#: 看板重算最多等这么久。账本里与口味无关的写入（播放、关注检查）之后重算不到一秒，
-#: 照常等新结果；身份输入变了或进程刚起时要十几秒，就先回上一份并标 `stale`，后台
-#: 算完再换，不让一个页面占住整个服务。
-TASTE_FRESH_WAIT = 1.0
-
-
-#: 重算失败后，同一份输入在这段时间内不再重算：失败多半是确定性的（库损坏、代码错误），
-#: 页面每两秒一问就每两秒起一趟必然失败的计算。输入变了、或页面点「立即重试」照常重算。
-TASTE_RETRY_AFTER = 300.0
-
-#: 口味看板实际读到的账本表，`test_ledger_revision.DeclaredTablesTests` 用 SQLite 授权回调
-#: 实测核对。长任务写别的表（关注检查、资料处理的状态与任务心跳）不让看板重算。
-TASTE_TABLES = ("asset", "asset_entity", "asset_preference", "entity", "entity_alias",
-                "entity_classification", "entity_link", "follow_source")
-
-
-class _TasteSnapshot:
-    """一个范围最近算出的看板、它对应的输入版本、正在后台重算的那一趟，以及最近一次失败。"""
-
-    def __init__(self):
-        self.version = None
-        self.payload: dict | None = None
-        self.computed_at: str | None = None
-        self.worker: threading.Thread | None = None
-        self.error: Exception | None = None
-        #: 最近一次失败对应的输入版本与时刻（`time.monotonic()`）。
-        self.failed_version = None
-        self.failed_at = 0.0
-
-
-_TASTE_SNAPSHOTS: dict[tuple[str, str, str], _TasteSnapshot] = {}
-_TASTE_LOCK = threading.Lock()
-
-
-def _taste_version(contract: WebContract, window: str):
-    """口味依赖表的版本号、代码指纹加 `taste_inputs`，转成 JSON 再读回，内存与磁盘上的
-    版本才能直接比。代码指纹含版本号与口味各模块的源码，升级后落盘的旧快照不算新鲜。"""
-    from .taste_preferences import _policy_fingerprint
-    revision = contract.ledger_revision(TASTE_TABLES)
-    if revision is None:
-        # 账本还没有版本号时按缓存时效分段，同 `cached_until_changed` 的退路。
-        revision = f"ttl:{int(time.time() // CACHE_TTL)}"
-    return json.loads(json.dumps([revision, _policy_fingerprint(), *taste_inputs(contract, window)],
-                                 default=str))
-
-
-def _taste_snapshot_path(contract: WebContract, window: str):
-    return contract.taste_history_store.with_name(f"dashboard-cache-{window}.json")
-
-
-def _load_taste_snapshot(contract: WebContract, window: str, snapshot: _TasteSnapshot) -> None:
-    """进程重启后先接上一次的看板：输入没变就是现成结果，变了也有一份可以先显示。"""
-    try:
-        saved = json.loads(_taste_snapshot_path(contract, window).read_text(encoding="utf-8"))
-        snapshot.version, snapshot.payload, snapshot.computed_at = (
-            saved["version"], saved["payload"], saved["computed_at"])
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
-
-
-def _compute_taste_snapshot(contract: WebContract, window: str, version, snapshot: _TasteSnapshot) -> None:
-    try:
-        payload = q_taste(contract, {"window": window})
-    except Exception as error:  # 没有旧结果时请求线程原样抛给调用方，有旧结果时随 stale 下发
-        with _TASTE_LOCK:
-            snapshot.error, snapshot.failed_version, snapshot.failed_at = (
-                error, version, time.monotonic())
-        return
-    computed_at = datetime.now(UTC).isoformat()
-    with _TASTE_LOCK:
-        snapshot.version, snapshot.payload, snapshot.computed_at = version, payload, computed_at
-        snapshot.error, snapshot.failed_version = None, None
-    if contract.taste_history_store.parent.is_dir():
-        try:
-            atomic_write_text(_taste_snapshot_path(contract, window), json.dumps(
-                {"version": version, "computed_at": computed_at, "payload": payload},
-                ensure_ascii=False, default=str), mode=0o600)
-        except OSError:
-            pass
-
-
-def taste_snapshot(contract: WebContract, window: str, *, retry: bool = False) -> dict:
-    """`/api/taste`：输入版本没变就回现成的看板，变了就在后台重算。
-
-    重算在 `TASTE_FRESH_WAIT` 内完成就回新结果；没完成先回上一份，带上 `stale` 与
-    `computed_at`，页面据此标出数据时间并稍后再问。一份都没有时等到算完。同一范围同时
-    只有一趟在算。
-
-    同一份输入算失败后，`TASTE_RETRY_AFTER` 内不再重算：有旧结果时回旧结果并带 `error`，
-    页面据此停止轮询、给出重试入口；没有旧结果时抛出那次的错误。`retry` 跳过这段等待。
-    """
-    _taste_since(window)
-    version = _taste_version(contract, window)
-    key = (str(contract.db_path), str(contract.taste_history_store), window)
-    with _TASTE_LOCK:
-        snapshot = _TASTE_SNAPSHOTS.get(key)
-        if snapshot is None:
-            snapshot = _TASTE_SNAPSHOTS[key] = _TasteSnapshot()
-            _load_taste_snapshot(contract, window, snapshot)
-        if retry:
-            snapshot.failed_version = None
-        failed = (snapshot.failed_version == version
-                  and time.monotonic() - snapshot.failed_at < TASTE_RETRY_AFTER)
-        waiting = snapshot.version != version and not failed
-        if waiting and not (snapshot.worker and snapshot.worker.is_alive()):
-            snapshot.worker = threading.Thread(
-                target=_compute_taste_snapshot, args=(contract, window, version, snapshot),
-                name=f"peach-taste-{window}", daemon=True)
-            snapshot.worker.start()
-        worker, empty = snapshot.worker, snapshot.payload is None
-    if waiting:
-        worker.join(None if empty else TASTE_FRESH_WAIT)
-    with _TASTE_LOCK:
-        if snapshot.payload is None:
-            raise snapshot.error or RuntimeError("口味分析未取得")
-        stale = snapshot.version != version
-        result = {**snapshot.payload, "computed_at": snapshot.computed_at, "stale": stale}
-        if stale and snapshot.failed_version == version and snapshot.error is not None:
-            result["error"] = str(snapshot.error) or type(snapshot.error).__name__
-        return result
-
-
-#: 口味榜里会出圆头像的两排，以及页面上读得到它们的那几个榜单键。标签榜和网站榜
-#: 不出脸，域名那排出的是站点 favicon，都不在这里。
-TASTE_FACE_RANKINGS = {
-    "creator": ("creators", "browser_creators", "peach_creators"),
-    "performer": ("performers", "browser_performers", "peach_performers"),
-}
-
-
-def _attach_taste_face_availability(contract: WebContract, rankings: dict) -> None:
-    """给口味榜的人像行标上「实体图和代表作头像取不取得到」。
-
-    榜行和别处的身份引用形状不一样（`entity_id` 与 `representative_asset_id` 是行
-    自己的列，不是嵌在 `entity_ref` 里），但判据是同一对：`has_entity_image()` 加
-    `has_avatar()`。缺了标志这两排就只能无条件出图、等 404 再把图摘掉。
-
-    同一个 dict 会同时出现在多个榜单里（`peach_creators` 是 `creators` 过滤出来的
-    子集，不是副本），所以按对象身份去重再标一次——否则代表作那次批量查询要按榜单
-    数量重复跑。
-    """
-    for kind, keys in TASTE_FACE_RANKINGS.items():
-        rows = list({id(row): row for key in keys
-                     for row in rankings.get(key) or ()}.values())
-        if not rows:
-            continue
-        for row in rows:
-            row["has_image"] = contract.has_entity_image(kind, row.get("entity_id"))
-            row["image_version"] = contract.entity_image_version(kind, row.get("entity_id"))
-            #: 榜上那颗 30 px 的圆头像和别处同一份 sidecar、同一个换算。框越小，几何
-            #: 居中切掉脸的代价越大——这一格除了脸没有别的东西能认人。
-            row["avatar_focus"] = contract.avatar_focus(kind, row.get("entity_id"))
-        attach_avatar_availability(contract, rows, key="representative_asset_id")
-
-
-def q_taste(contract: WebContract, args=None):
-    args = args or {}
-    window = str(args.get("window") or "all")
-    with contract.read_connection() as connection:
-        payload = build_taste_dashboard(
-            contract.taste_history_store,
-            connection,
-            since=_taste_since(window),
-        )
-    # 取图可用性在库连接之外判：它读的是头像目录的索引，不是账本。
-    _attach_taste_face_availability(contract, payload.get("rankings") or {})
-    updated_at = None
-    try:
-        manifest = json.loads(contract.taste_history_manifest.read_text(encoding="utf-8"))
-        updated_at = manifest.get("updated_at")
-    except (OSError, ValueError, TypeError):
-        pass
-    export_count = export_bytes = 0
-    try:
-        for path in contract.taste_history_import_root.iterdir():
-            if path.is_file() and not path.name.endswith(".part"):
-                export_count += 1
-                export_bytes += path.stat().st_size
-    except OSError:
-        pass
-    payload.update({
-        "window": window,
-        "updated_at": updated_at,
-        "storage": {"exports": export_count, "bytes": export_bytes},
-        "browsers": browser_sources(contract.taste_history_store),
-    })
-    return payload
-
-
-def w_taste_refresh(contract: WebContract, body, *, progress=None, checkpoint=None, resume_state=None):
-    if body.get("background"):
-        job = contract.taste_refresh_job
-        def work(job_id):
-            result = w_taste_refresh(contract, {**body, "background": False},
-                progress=lambda **fields: job.update(job_id, **fields),
-                checkpoint=lambda **fields: job.checkpoint(job_id, **fields), resume_state=job.snapshot())
-            job.update(job_id, **result, status="complete", message="部分浏览记录未取得" if result["warnings"] else "口味分析已更新", completed_at=time.time())
-        return job.start(work, restart=True, initial={
-            "stage": "discovering", "message": "正在查找 Peach 主机上的浏览器资料"},
-            recovery={'background': True, 'window': body.get('window') or 'all'})
-    window = str(body.get("window") or "all")
-    sources = enabled_history_sources(contract.taste_history_store)
-    results = list((resume_state or {}).get('refresh_results') or [])
-    completed = set((resume_state or {}).get('completed_profiles') or [])
-    plans = (
-            ('history', sources, refresh_history),
-            ('bookmarks', enabled_bookmark_sources(contract.taste_history_store), refresh_bookmarks))
-    profile_keys = (resume_state or {}).get('profile_keys')
-    if profile_keys is None:
-        profile_keys = [f'{kind}:{source.browser}:{source.profile}:{source.path}'
-                        for kind, selected, _refresh in plans for source in selected]
-        if checkpoint and not checkpoint(profile_keys=profile_keys):
-            raise InterruptedError('口味读取已停止')
-    def profile_progress(**fields):
-        if progress:
-            progress(**{**fields, 'checked': len(completed), 'total': len(profile_keys)})
-    for kind, selected, refresh in plans:
-        for source in selected:
-            key = f'{kind}:{source.browser}:{source.profile}:{source.path}'
-            if key in completed or key not in profile_keys:
-                continue
-            rows = refresh([source], contract.taste_history_store, progress=profile_progress)
-            results.extend(rows)
-            if rows and all(row.get('status') != 'failed' for row in rows):
-                completed.add(key)
-            if checkpoint and not checkpoint(refresh_results=results.copy(), completed_profiles=sorted(completed),
-                                              checked=len(completed), total=len(profile_keys)):
-                raise InterruptedError('口味读取已停止')
-    if contract.taste_history_store.is_file():
-        analysis = analyze_history(contract.taste_history_store, contract.taste_history_root, progress=progress)
-        write_manifest(contract.taste_history_manifest, results, analysis)
-    contract.cache_bust()
-    if progress:
-        progress(stage="dashboard", checked=0, total=None, message="正在汇总口味分布、标签与创作者排名")
-    return {"refresh": results, "warnings": [f"{row['browser']} · {row['profile']}：{row['error']}"
-            for row in results if row.get("status") == "failed"], "dashboard": q_taste(contract, {"window": window})}
-
-
-def w_taste_source(contract: WebContract, body):
-    if body.get("operation") in ("add", "disable", "enable", "delete_browser"):
-        configure_browser(contract.taste_history_store, body["operation"], body)
-        if body["operation"] == "delete_browser":
-            analysis = analyze_history(contract.taste_history_store, contract.taste_history_root)
-            write_manifest(contract.taste_history_manifest, [], analysis)
-        contract.cache_bust()
-        return {"dashboard": q_taste(contract, {"window": str(body.get("window") or "all")})}
-    if body.get("operation") != "remove":
-        raise ValueError("invalid taste source operation")
-    source_key = str(body.get("source_key") or "")
-    if not re.fullmatch(r"[0-9a-f]{64}", source_key):
-        raise ValueError("invalid taste source key")
-    removed = remove_history_source(contract.taste_history_store, source_key)
-    analysis = analyze_history(contract.taste_history_store, contract.taste_history_root)
-    write_manifest(contract.taste_history_manifest, [{"removed": removed}], analysis)
-    contract.cache_bust()
-    return {
-        "removed": removed,
-        "dashboard": q_taste(contract, {"window": str(body.get("window") or "all")}),
-    }
 
 
 def w_search_history(contract: WebContract, body):
@@ -350,48 +50,36 @@ def w_search_history(contract: WebContract, body):
         )
     return {"ok": True, "operation": operation}
 
-_STORAGE_LABELS = {
-    "system": "系统盘",
-    "local": "资源盘",
-    "115": "115 网盘",
-    "pikpak": "PikPak 网盘",
-}
+
+#: 统计页存储一节只报这一块盘：账本与各份缓存都写在这里。
+STORAGE_LABEL = "系统盘"
 
 
 def _storage_volumes() -> list[dict[str, object]]:
-    """返回当前主机可验证的系统卷、资源盘和网盘容量。"""
-    declarations = [("system", _STORAGE_LABELS["system"], system_volume(), True)] + [
-        # 一个来源有几个根就几行；同名来源用序号区分，单根不加。
-        (location,
-         _STORAGE_LABELS.get(location, location) + (f" {index + 1}" if len(roots) > 1 else ""),
-         translate_ledger_path(root), False)
-        for location, roots in LOCATION_ROOT_DECLARATIONS.items()
-        for index, root in enumerate(roots)
-    ]
-    volumes: list[dict[str, object]] = []
-    for kind, label, root, is_system in declarations:
-        mounted = not is_unmapped(root) and (is_system or root_online(root))
-        row: dict[str, object] = {
-            "kind": kind,
-            "label": label,
-            "root": str(root) if not is_unmapped(root) else None,
-            "online": mounted,
-            "free": None,
-            "used": None,
-            "total": None,
-        }
-        if mounted:
-            try:
-                usage = shutil.disk_usage(root)
-                row.update(
-                    free=usage.free,
-                    used=max(usage.total - usage.free, 0),
-                    total=usage.total,
-                )
-            except OSError:
-                pass
-        volumes.append(row)
-    return volumes
+    """服务端盘上的容量。藏品在网盘上，那一侧的容量要按 provider 查，不在这一节。
+
+    取不到容量时 `free`/`used`/`total` 留 None，页面据此不画使用率。
+    """
+    root = system_volume()
+    row: dict[str, object] = {
+        "kind": "system",
+        "label": STORAGE_LABEL,
+        "root": str(root),
+        "free": None,
+        "used": None,
+        "total": None,
+    }
+    try:
+        usage = shutil.disk_usage(root)
+    except OSError:
+        pass
+    else:
+        row.update(
+            free=usage.free,
+            used=max(usage.total - usage.free, 0),
+            total=usage.total,
+        )
+    return [row]
 
 
 #: 库存一节只数盘上还在的：标「已消失」的行留着只为个人记录（ADR-0087），不算库存。
@@ -428,7 +116,7 @@ def _utc_offset(moment: datetime) -> str:
 def _play_activity(c, has_follow: bool) -> dict[str, object]:
     """每个作品最近一次播放落在哪一天、星期几的哪个钟点，按本机时区算。
 
-    形状同口味页的 `activity`（`days`、`hours`、`timezone`），前端两处共用一张热力卡。
+    形状同观看页热力卡（`days`、`hours`、`timezone`）。
     账本每个作品只记最近一次播放的时间，所以一个作品只占一格。"""
     stamps = [row[0] for row in c.execute(
         "SELECT CAST(last_played AS REAL) FROM asset WHERE last_played IS NOT NULL")]
@@ -479,10 +167,10 @@ STATS_TABLES = ("asset", "asset_entity", "entity", "entity_alias", "asset_tag", 
 
 
 def q_stats(contract: WebContract):
-    """统计页：库存 / 归属 / 标签 / 本地与在线播放 / 各存储卷。
+    """统计页：库存 / 归属 / 标签 / 本地与在线播放 / 服务端磁盘容量。
 
     账本那一段三十多条聚合 SQL 合计一秒多，按 `STATS_TABLES` 的版本缓存；媒体库划分取自设置，
-    热力图按本机时区分桶，两样作为输入进版本。存储卷读的是磁盘余量，与账本无关，按时间过期。
+    热力图按本机时区分桶，两样作为输入进版本。磁盘容量读的是本机余量，与账本无关，按时间过期。
     """
     config = settings_file.active()
     libraries = [(library, media_libraries.predicate(config, library["id"]))
@@ -490,7 +178,7 @@ def q_stats(contract: WebContract):
     out = dict(contract.cached_until_changed(
         "stats-ledger", lambda: _ledger_stats(contract, libraries),
         repr(libraries), _utc_offset(datetime.now().astimezone()), tables=STATS_TABLES))
-    # 判定在线要读一次各挂载根的首条目录项，网盘挂载上不便宜，沿用 TTL 缓存。
+    # 磁盘余量要真去问一次文件系统，一次一页都够了，沿用 TTL 缓存。
     out.update(contract.cached("stats-storage", _storage_stats))
     return out
 
@@ -606,7 +294,6 @@ def _storage_stats() -> dict:
     measured = [row for row in out["storage_volumes"] if row["total"] is not None]
     out["storage_summary"] = {
         "volumes": len(out["storage_volumes"]),
-        "online": sum(1 for row in out["storage_volumes"] if row["online"]),
         "measured": len(measured),
         "free": sum(int(row["free"]) for row in measured),
         "used": sum(int(row["used"]) for row in measured),
@@ -617,7 +304,6 @@ def _storage_stats() -> dict:
         {"root": system["root"], "free": system["free"], "total": system["total"]}
         if system and system["total"] is not None else None
     )
-    out["disk_c"] = out["system_disk"]  # 0.6.x 客户端兼容别名
     return out
 
 

@@ -123,6 +123,8 @@ class MediaAsset:
     name: str | None = None
     duration: float | None = None
     size: int | None = None
+    #: 网盘里的稳定 id；旧来源（115/PikPak/光鸭/已挂载网盘）的行没有这个值。
+    remote_id: str | None = None
 
 
 class LedgerRepository:
@@ -135,7 +137,7 @@ class LedgerRepository:
     def media_asset(self, asset_id: int) -> MediaAsset | None:
         with self.database.read_connection() as connection:
             row = connection.execute(
-                "SELECT id,path,snapshot_path,location,name,duration,size "
+                "SELECT id,path,snapshot_path,location,name,duration,size,remote_id "
                 "FROM asset WHERE id=?",
                 (asset_id,),
             ).fetchone()
@@ -149,4 +151,5 @@ class LedgerRepository:
             row["name"],
             row["duration"],
             row["size"],
+            row["remote_id"],
         )

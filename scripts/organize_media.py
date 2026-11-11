@@ -9,8 +9,8 @@
 备份用 SQLite 备份 API 落盘，写完跑 `integrity_check` 与 `foreign_key_check`。
 
 用法:
-    python scripts/organize_media.py --location 115 --file-template '{number}[ {title}]'
-    python scripts/organize_media.py --location 115 --file-template '…' --apply --backup <落点>
+    python scripts/organize_media.py --location gdrive --file-template '{code}[ {title}]'
+    python scripts/organize_media.py --location gdrive --file-template '…' --apply --backup <落点>
     python scripts/organize_media.py --rollback-last --apply --backup <落点>
 """
 from __future__ import annotations
@@ -25,10 +25,12 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from peach import junk, organize
-from peach.config import DATABASE_PATH, GENERATED_DIR
+from peach.config import DATABASE_PATH, GENERATED_DIR, PeachSettings
+from peach.drive_connections import DriveConnections
+from peach.drive_provider import DriveUnavailable
+from peach.http import HttpxTransport
 from peach.media_sources import SCANNABLE_LOCATIONS
 from peach.organize_templates import PLACEHOLDERS, TemplateError
-from peach.platform import location_roots
 from peach.scripting import add_ledger_write_args, open_for_write, verify_after_write
 
 
@@ -37,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="按模板整理文件名与目录；默认只出计划",
         epilog="占位符：" + "、".join(f"{{{key}}}={label}" for key, label in PLACEHOLDERS.items()))
     add_ledger_write_args(parser, db_default=DATABASE_PATH)
-    parser.add_argument("--location", choices=SCANNABLE_LOCATIONS, default="local")
+    parser.add_argument("--location", choices=SCANNABLE_LOCATIONS, default=SCANNABLE_LOCATIONS[0])
     parser.add_argument("--file-template", default="", help="文件名模板，不含扩展名")
     parser.add_argument("--dir-template", default="",
                         help="目录模板，相对来源根；留空表示原地改名")
@@ -56,7 +58,15 @@ def _report_plan(plan: dict) -> None:
         print(f"  {reason}：{count} 条")
 
 
+def drive_connections(db_path) -> DriveConnections:
+    """整理要动网盘，脚本自己造一份连接门面：账号与扫描起点都来自设置文件。"""
+    settings = PeachSettings(db_path=db_path, configured=True)
+    transport = HttpxTransport()
+    return DriveConnections(settings, lambda: transport.client)
+
+
 def run(args: argparse.Namespace) -> int:
+    drive = drive_connections(args.db)
     connection = open_for_write(args)
     try:
         baseline = {tuple(row) for row in connection.execute('PRAGMA foreign_key_check')}
@@ -69,18 +79,18 @@ def run(args: argparse.Namespace) -> int:
             if not args.apply:
                 print("未加 --apply，什么都没退回。")
                 return 0
-            result = organize.rollback_batch(connection, latest)
+            result = organize.rollback_batch(drive, connection, latest)
             print(f"退回 {result['restored']} 条，失败 {result['failed']}")
             for failure in result["failures"]:
                 print(f"  {failure['path']}：{failure['reason']}")
         else:
             if args.apply:
-                checked = junk.isolate(args.db, roots=[(args.location, root)
-                    for root in location_roots().get(args.location, ())])
+                checked = junk.isolate(args.db, roots=[(args.location, f"{args.location}:/")])
                 print(f"垃圾检查：隔离 {checked['isolated']} 个，待复核 {checked['review']} 个")
             plan = organize.build_plan(
                 connection, location=args.location,
-                file_template=args.file_template, dir_template=args.dir_template)
+                file_template=args.file_template, dir_template=args.dir_template,
+                connected=bool(drive.connection(args.location).get("connected")))
             path = organize.plan_path(args.generated_root, args.location)
             organize.write_plan(path, plan["rows"])
             _report_plan(plan)
@@ -88,7 +98,7 @@ def run(args: argparse.Namespace) -> int:
             if not args.apply:
                 print("未加 --apply，只出计划未动文件。")
                 return 0
-            result = organize.apply_plan(connection, plan["rows"],
+            result = organize.apply_plan(drive, connection, plan["rows"],
                                          generated_root=args.generated_root)
             print(f"整理 {result['moved']} 条，失败 {result['failed']}")
             for failure in result["failures"]:
@@ -109,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return run(args)
-    except (TemplateError, organize.OrganizeError) as error:
+    except (TemplateError, organize.OrganizeError, DriveUnavailable) as error:
         print(f"[stop] {error}")
         return 1
 

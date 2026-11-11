@@ -403,7 +403,7 @@ def w_feed_check(contract, body) -> dict:
         recovery={**{key: body[key] for key in ('sources', 'all', 'automatic') if key in body}, 'background': True},
         initial={"ok": True, "checked": 0, "total": 0, "results": [], "added": 0,
                  "request_id": request_id, "current": None})
-    if body.get("background") or started.get('waiting_for_update'):
+    if body.get("background"):
         return started
     if started["request_id"] != request_id:
         return {"ok": False, "busy": True, "checked": 0, "results": []}

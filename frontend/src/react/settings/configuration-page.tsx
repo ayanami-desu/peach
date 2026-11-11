@@ -1,35 +1,44 @@
-/* 配置页（`/settings/library`）：这台运行 Peach 的电脑上那些要「保存配置」的多字段表单。
- * 每个分区各占一格页签，一次只摆一组；本机配置权限与数据库写入权限由服务端分别判定。
- * 设置弹层里的「Peach 配置」入口指到这里。
+/* 配置页（`/settings`，六格页签各自有 `/settings/<键>`）：这台运行 Peach 的电脑上的这几格表单。
+ * 媒体不放在 Peach 上（ADR-0157），所以第一格是网盘：授权、扫描起点与同步状态都由 `GET /api/drive` 给。
+ * 每个分区各占一格页签，一次只摆一组；本机配置权限与写入条件由服务端判定。
  *
  * `.ui-configpage` 的第一层：最前面是页签条（`.ui-board-local-nav`），后面每组一个 `h2.ui-configgroup` 小标题
  * 紧跟这一组的根节点，根节点就是那一格页签面板。小标题在样式里不显示，它的字已经写在页签上；
- * 没有内容的组连标题与页签一起省略。页签条第一帧就在，和整页同一次提交画出来。 */
+ * 没有内容的组连标题与页签一起省略。页签条第一帧就在，和整页同一次提交画出来。
+ *
+ * 选中哪一格写在地址的锚点上（`#drives`、`#access`……）：网盘授权回跳落在这里，刷新也回到同一格。
+ * 同一次打开里换格只改锚点、不重开路由——重开会把表单里的输入一并丢掉。 */
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
-import { peachHistory, shellNavigate, settingsPath } from '@peach/history';
 
 import { errorMessage } from '../../api';
 import { Button } from '@/components/base/buttons/button';
 import type { ConfigurationData, ConfigurationPanel, ConfigurationProps } from '../bundle';
 import { Note } from '../components/note';
 import { SortableBoardTabs } from '../components/navigation-order';
+import { AccessSettings } from './access-settings';
+import { ApiTokenSettings } from './api-token-settings';
 import { CONFIGURATION_KEY, fetchConfiguration } from './configuration';
-import { DownloadGroup } from './download-settings';
-import { GeneralSettings } from './general-settings';
-import { MaintenanceSettings } from './maintenance-settings';
-import { MediaSettings } from './media-settings';
-import { MediaProcessingSettings, PlaybackTranscodeSettings } from './media-processing-settings';
-import { TaskSpeedSettings } from './service-preferences';
-import { CodePatternSettings } from './code-pattern-settings';
-import { NetworkSettings } from './network-settings';
-import { SourceSettings } from './source-settings';
 import { groupRoot } from './configuration-panel';
-import { downloadsShape, maintenanceShape, networkShape } from './configuration-shape';
-import { rememberShape } from '../../configuration-skeleton';
+import { DeviceSessions } from './device-sessions';
+import { DriveSettings } from './drive-settings';
+import { TaskSpeedSettings } from './service-preferences';
 import { busyProps } from './use-action';
 
-export function ConfigurationPage({ receipt, reopenTutorial, section = '', diagnostics }: ConfigurationProps & { diagnostics?: ReactElement }) {
+/* 页签的次序、锚点与标题：锚点进地址，标题与 `section` 参数（壳按标题要求打开某一格）对得上。 */
+const SECTIONS = [
+  { id: 'drives', title: '网盘' },
+  { id: 'access', title: '访问与安全' },
+  { id: 'token', title: 'API 令牌' },
+  { id: 'devices', title: '设备会话' },
+  { id: 'speed', title: '任务速度' },
+  { id: 'diagnostics', title: '系统诊断' },
+] as const;
+
+/* 地址上的锚点指的是哪一格；手写的、认不出的锚点当作没写（`get` 给 undefined）。 */
+const ANCHORED = new Map<string, string>(SECTIONS.map(({ id, title }) => [`#${id}`, title]));
+
+export function ConfigurationPage({ receipt, section = '', diagnostics }: ConfigurationProps & { diagnostics?: ReactElement }) {
   const config = useQuery({
     queryKey: CONFIGURATION_KEY, queryFn: ({ signal }) => fetchConfiguration(signal),
   });
@@ -43,7 +52,7 @@ export function ConfigurationPage({ receipt, reopenTutorial, section = '', diagn
       </div>
     );
   }
-  return <ConfigurationGroups data={data} receipt={receipt} reopenTutorial={reopenTutorial} section={section} diagnostics={diagnostics}
+  return <ConfigurationGroups data={data} receipt={receipt} section={section} diagnostics={diagnostics}
     refreshing={config.isFetching} reload={() => { void config.refetch({ cancelRefetch: false }); }} />;
 }
 
@@ -59,28 +68,31 @@ function ConfigurationIssues({ data, sections, reload, refreshing }: {
 
 interface Group { id: string; title: string; body(panel: ConfigurationPanel): ReactElement }
 
+interface GroupsProps {
+  data: ConfigurationData;
+  receipt(message: string): void;
+  section: string;
+  diagnostics?: ReactElement;
+  reload(): void;
+  refreshing: boolean;
+}
+
 /* 页签与面板的 id 前缀按页签条计数：每画出一条新的页签条领一个号。 */
 let tabSequence = 0;
 
 /* 页签条是一个 tablist，方向键在整排里走、首尾相接，Home／End 到两头，挪到哪一格就选中哪一格、焦点跟过去。
-   分区地址与选中项同步，表单保持挂载。 */
-function ConfigurationGroups(
-  { data, receipt, reopenTutorial, section, diagnostics, reload, refreshing }: Required<ConfigurationProps> & {
-    data: ConfigurationData; diagnostics?: ReactElement; reload(): void; refreshing: boolean;
-  },
-) {
+   锚点与选中项同步，表单保持挂载。 */
+function ConfigurationGroups({ data, receipt, section, diagnostics, reload, refreshing }: GroupsProps) {
   const [prefix] = useState(() => `board-tabs-${++tabSequence}`);
-  const [chosen, setChosen] = useState(section);
+  const [chosen, setChosen] = useState(() => ANCHORED.get(window.location.hash) ?? section);
   const workspace = useRef<HTMLDivElement>(null);
   const previous = useRef(chosen);
   useEffect(() => { setChosen(section) }, [section]);
-  /* 下载渠道、网络与访问、应用与维护随这份配置一次画齐：记下结构，下次整页骨架照它排。 */
   useEffect(() => {
-    const downloads = downloadsShape(data);
-    if (downloads) rememberShape('downloads', downloads);
-    rememberShape('network', networkShape(data));
-    rememberShape('maintenance', maintenanceShape(data));
-  }, [data]);
+    const follow = () => setChosen(ANCHORED.get(window.location.hash) ?? '');
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, []);
   useLayoutEffect(() => {
     if (previous.current === chosen) return;
     previous.current = chosen;
@@ -94,7 +106,8 @@ function ConfigurationGroups(
   }, [chosen]);
   const choose = (title: string) => {
     setChosen(title);
-    shellNavigate(settingsPath(title), { replace: true, state: peachHistory.navigation.location.state });
+    const id = SECTIONS.find(item => item.title === title)?.id;
+    if (id && window.location.hash !== `#${id}`) window.history.replaceState(window.history.state, '', `#${id}`);
   };
   const [narrow, setNarrow] = useState(() => matchMedia('(max-width:900px)').matches);
   useEffect(() => {
@@ -103,37 +116,37 @@ function ConfigurationGroups(
     media.addEventListener('change', changed);
     return () => media.removeEventListener('change', changed);
   }, []);
-  const group = { data, receipt };
   const issues = (sections: string[]) => <ConfigurationIssues data={data} sections={sections} reload={reload} refreshing={refreshing} />;
-  const networkKeys = ['peach_proxy', 'access', 'tunnel', 'push_discovery',
-    ...(data.editable && data.port_editable !== false ? ['media_sources'] : [])];
-  const network = Boolean(data.peach_proxy || data.access || data.tunnel || (data.editable && data.port_editable !== false)
-    || networkKeys.some(key => data.section_errors?.[key]));
-  const downloads = data.downloads;
+  /* 访问密码一改，已登录设备的修订号跟着换：保存后重读这份配置，设备那一格才不会拿旧修订号去撤销。 */
+  const saveAccess = (message: string) => { receipt(message); reload(); };
+  const access = data.access;
+  const token = data.api_token;
   const groups: Group[] = [
-    { id: 'library', title: '媒体库与入库', body: (panel) => <div {...groupRoot(panel)}>
-      {issues(['media_sources', 'library_count', 'mount_dependencies'])}
-      {!data.section_errors?.media_sources && !data.section_errors?.library_count ? <MediaSettings {...group} /> : null}
-      <CodePatternSettings receipt={receipt} />
-      <MediaProcessingSettings receipt={receipt} />
+    { id: 'drives', title: '网盘', body: (panel) => <div {...groupRoot(panel)} data-guide-target="drives">
+      <DriveSettings receipt={receipt} />
+    </div> },
+    ...(access ? [{
+      id: 'access', title: '访问与安全',
+      body: (panel: ConfigurationPanel) => <div {...groupRoot(panel)} data-guide-target="access">
+        {issues(['access'])}
+        <AccessSettings initial={access} receipt={saveAccess} />
+      </div>,
+    }, ...(token ? [{
+      id: 'token', title: 'API 令牌',
+      body: (panel: ConfigurationPanel) => <div {...groupRoot(panel)} data-guide-target="token">
+        {issues(['api_token'])}
+        <ApiTokenSettings initial={token} mode={access.mode} receipt={receipt} />
+      </div>,
+    }] : []), {
+      id: 'devices', title: '设备会话',
+      body: (panel: ConfigurationPanel) => <div {...groupRoot(panel)} data-guide-target="devices">
+        <DeviceSessions revision={access.revision} receipt={receipt} />
+      </div>,
+    }] : []),
+    { id: 'speed', title: '任务速度', body: (panel) => <div {...groupRoot(panel)} data-guide-target="speed">
       <TaskSpeedSettings receipt={receipt} />
     </div> },
-    { id: 'sources', title: '来源与订阅', body: (panel) => <SourceSettings {...group} panel={panel} issues={issues(['entry_links'])} /> },
-    ...(downloads || data.section_errors?.downloads ? [{
-      id: 'downloads', title: '下载渠道',
-      body: (panel: ConfigurationPanel) => <DownloadGroup initial={downloads} receipt={receipt} panel={panel} issues={issues(['downloads'])} />,
-    }] : []),
-    ...(network ? [{ id: 'network', title: '网络与访问', body: (panel: ConfigurationPanel) => <NetworkSettings {...group} panel={panel} issues={issues(networkKeys)} /> }] : []),
-    {
-      id: 'maintenance', title: '应用与维护',
-      body: (panel) => <div {...groupRoot(panel)}>
-        {issues(['startup', 'uninstall', 'storage', 'remote_reporting', 'library_sharing', 'updates', 'update_job', 'automatic_updates', 'facts'])}
-        <GeneralSettings {...group} />
-        <PlaybackTranscodeSettings receipt={receipt} />
-        <MaintenanceSettings {...group} reopenTutorial={reopenTutorial} />
-      </div>,
-    },
-    { id: 'diagnostics', title: '系统诊断', body: panel => <div {...groupRoot(panel)}>{panel.active ? diagnostics : null}</div> },
+    { id: 'diagnostics', title: '系统诊断', body: panel => <div {...groupRoot(panel)} data-guide-target="diagnostics">{panel.active ? diagnostics : null}</div> },
   ];
   const at = Math.max(0, groups.findIndex((item) => item.title === chosen));
   return (

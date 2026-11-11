@@ -39,7 +39,7 @@ def fixture_process(command, root, env):
 class ParallelShardTests(unittest.TestCase):
     def test_nested_parallel_containers_have_separate_batches_without_losing_files(self):
         names = ['test_frontend_preflight.py', 'test_reference_updates.py', 'test_frontend_build.py',
-                 'test_web_e2e.py', 'test_catalog.py', 'test_media.py']
+                 'test_frontend_build.py', 'test_catalog.py', 'test_media.py']
         with mock.patch.object(runner, 'load_file_seconds', return_value={}):
             batches = runner.local_batches(names, 7)
         self.assertCountEqual([name for _, plan, _ in batches for shard in plan for name in shard], names)
@@ -49,7 +49,7 @@ class ParallelShardTests(unittest.TestCase):
             self.assertEqual((len(plan), len(plan[0]), jobs), (1, 1, 1))
 
     def test_failed_gate_stops_serial_and_parallel_behavior_tests(self):
-        names = [Path('test_frontend_preflight.py'), Path('test_web_e2e.py')]
+        names = [Path('test_frontend_preflight.py'), Path('test_frontend_build.py')]
         for jobs in (1, 4):
             with self.subTest(jobs=jobs), mock.patch.object(runner, 'selected_files', return_value=names), \
                     mock.patch.object(runner, 'run_shards', return_value=(False, 2, [])) as execute, \
@@ -177,7 +177,8 @@ class EnvironmentIdentityTests(unittest.TestCase):
         rotated = {**base, 'GITHUB_TOKEN': 'fixture-two', 'CI_JOB_STARTED_AT': 'another',
                    'CI_COMMIT_MESSAGE': 'another message'}
         self.assertEqual(environment_flags(base), environment_flags(rotated))
-        self.assertNotEqual(environment_flags(base), environment_flags({'GITHUB_ACTIONS': 'true', 'GITHUB_JOB': 'python'}))
+        self.assertNotEqual(environment_flags(base),
+                            environment_flags({'GITHUB_ACTIONS': 'true', 'GITHUB_JOB': 'python'}))
         self.assertEqual(environment_flags({'CI_JOB_TOKEN': ''}), environment_flags({}))
 
     def setUp(self):
@@ -217,12 +218,13 @@ class EnvironmentIdentityTests(unittest.TestCase):
         lock.write_text('{"name":"app","packages":{"one":{"version":"2"}}}', encoding='utf8')
         self.assertNotEqual(evidence.environment(self.root), first)
 
+
     def test_ci_run_metadata_preserves_identity_and_job_selection_changes_it(self):
         os.environ.update(GITHUB_RUN_ID='one', GITHUB_RUN_NUMBER='1', GITHUB_JOB='python')
         first = evidence.environment(self.root)
         os.environ.update(GITHUB_RUN_ID='two', GITHUB_RUN_NUMBER='2')
         self.assertEqual(evidence.environment(self.root), first)
-        os.environ['GITHUB_JOB'] = 'web-e2e'
+        os.environ['GITHUB_JOB'] = 'image'
         self.assertNotEqual(evidence.environment(self.root), first)
 
     def test_gitlab_retry_metadata_preserves_runtime_identity_and_job_selection(self):
@@ -239,15 +241,6 @@ class EnvironmentIdentityTests(unittest.TestCase):
         os.environ['CI_JOB_NAME'] = 'verify-linux'
         self.assertNotEqual(evidence.environment(self.root), first)
 
-    def test_distribution_names_have_canonical_identity(self):
-        from types import SimpleNamespace
-        self.packages.return_value = [SimpleNamespace(metadata={'Name': 'Some_Pkg'}, version='1')]
-        first = evidence.environment(self.root)
-        self.packages.return_value = [SimpleNamespace(metadata={'Name': 'some-pkg'}, version='1')]
-        self.assertEqual(evidence.environment(self.root), first)
-        self.packages.return_value = [SimpleNamespace(metadata={'Name': 'some-pkg'}, version='2')]
-        self.assertNotEqual(evidence.environment(self.root), first)
-
     def test_browser_paths_share_identity_and_binary_changes_invalidate_it(self):
         first, second = self.root / 'chrome-one', self.root / 'chrome-two'
         first.write_bytes(b'browser-fixture')
@@ -258,6 +251,16 @@ class EnvironmentIdentityTests(unittest.TestCase):
         self.assertEqual(evidence.environment(self.root), identity)
         second.write_bytes(b'another-browser')
         self.assertNotEqual(evidence.environment(self.root), identity)
+
+    def test_distribution_names_have_canonical_identity(self):
+        from types import SimpleNamespace
+        self.packages.return_value = [SimpleNamespace(metadata={'Name': 'Some_Pkg'}, version='1')]
+        first = evidence.environment(self.root)
+        self.packages.return_value = [SimpleNamespace(metadata={'Name': 'some-pkg'}, version='1')]
+        self.assertEqual(evidence.environment(self.root), first)
+        self.packages.return_value = [SimpleNamespace(metadata={'Name': 'some-pkg'}, version='2')]
+        self.assertNotEqual(evidence.environment(self.root), first)
+
 
 
 class RecordSelectionTests(unittest.TestCase):
@@ -345,32 +348,6 @@ class ReceiptTests(ReceiptFixture, unittest.TestCase):
                                   {'test_catalog.py', 'test_web.py'}, self.resolve, self.mapping.__getitem__)
         self.assertEqual(kept, {})
 
-    def test_isolated_pages_keep_main_browser_proof_and_shared_changes_invalidate_it(self):
-        for name in ('setup', 'smoke'):
-            path = self.root / 'frontend/e2e' / f'{name}.test.ts'
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text('', encoding='utf8')
-        mapping = {'web': (Path('test_web_e2e.py'), Path('test_frontend_build.py')), 'checks': ()}
-        units = test_resume.scope_units(self.root, 'web', mapping.__getitem__)
-        main = 'case:test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants'
-        resolve = lambda *args, **kwargs: (('web',), '')
-        setup = 'frontend/src/react/pages/setup/setup.css'
-        for paths, mode, environment, preserved in (
-                ([setup], '100644', 'same', True),
-                (['resources/setup/macbook.png', 'web/dist/peach-pages.js'], '100644', 'same', True),
-                ([setup, 'web/dist/peach-app.css'], '100644', 'same', False),
-                ([setup], '100755', 'same', False),
-                ([setup], '100644', 'changed', False)):
-            with self.subTest(paths=paths, mode=mode, environment=environment):
-                old = {'files': {path: [1, 'old', '100644'] for path in paths}, 'signatures': {}}
-                current = {'files': {path: [1, 'new', mode] for path in paths}, 'signatures': {}}
-                record = self.record({unit: self.unit() for unit in units}, manifest=old)
-                kept = test_resume.combine(self.root, [record], {**self.context, 'manifest': current,
-                                            'environment': environment}, units, resolve, mapping.__getitem__)
-                self.assertEqual('frontend/e2e/smoke.test.ts' in kept, preserved)
-                self.assertEqual(main in kept, preserved)
-                self.assertNotIn('frontend/e2e/setup.test.ts', kept)
-                self.assertNotIn('test_frontend_build.py', kept)
 
     def test_a_failed_file_preserves_successful_sibling_files(self):
         report = {'success': False, 'count': 2, 'results': [
@@ -418,25 +395,12 @@ class ReceiptTests(ReceiptFixture, unittest.TestCase):
                 units = test_resume.report_units(['test_web.py'], report, clean_exit=clean, stamp=self.now)
                 self.assertEqual(units['test_web.py']['outcome'], 'unknown')
 
-    def test_browser_failure_retains_other_browser_file_results(self):
-        folder = self.root / 'frontend/e2e'
-        folder.mkdir(parents=True)
-        for name in ('one.test.ts', 'two.test.ts'):
-            (folder / name).write_text('fixture', encoding='utf8')
-        report = {'success': False, 'count': 1, 'results': [
-            {'id': 'test_web_e2e.Suite.test_browser', 'outcome': 'fail'},
-            {'id': 'e2e:e2e/one.test.ts > value', 'outcome': 'pass'},
-            {'id': 'e2e:e2e/one.test.ts > 文件结果', 'outcome': 'pass', 'file_complete': True},
-            {'id': 'e2e:e2e/two.test.ts > value', 'outcome': 'fail'}]}
-        units = test_resume.report_units(['test_web_e2e.py'], report, clean_exit=True, stamp=self.now)
-        plan = test_resume.external_plan(self.root, ['test_web_e2e.py'], units)
-        self.assertEqual(plan, {'test_web_e2e.py': ['frontend/e2e/two.test.ts']})
 
     def test_partial_external_output_does_not_prove_file_completion(self):
         report = {'success': False, 'count': 1, 'results': [
-            {'id': 'e2e:e2e/one.test.ts > first', 'outcome': 'pass'}]}
-        units = test_resume.report_units(['test_web_e2e.py'], report, clean_exit=True, stamp=self.now)
-        self.assertEqual(units['frontend/e2e/one.test.ts']['outcome'], 'unknown')
+            {'id': 'vitest:test/one.test.ts > first', 'outcome': 'pass'}]}
+        units = test_resume.report_units(['test_frontend_build.py'], report, clean_exit=True, stamp=self.now)
+        self.assertEqual(units['frontend/test/one.test.ts']['outcome'], 'unknown')
 
     def test_imported_test_helpers_invalidate_transitive_consumers(self):
         folder = self.root / 'tests'
@@ -459,22 +423,22 @@ class ReceiptTests(ReceiptFixture, unittest.TestCase):
         self.assertEqual(set(kept), {'test_catalog.py'})
 
     def test_container_class_skip_is_an_environment_bound_result(self):
-        case = next(case for case in test_resume.CONTAINERS if '.WebE2E' in case)
+        case = next(iter(test_resume.CONTAINERS))
         report = {'success': True, 'count': 1, 'results': [
-            {'id': 'setUpClass (test_web_e2e.WebE2ESmokeTests)', 'outcome': 'skip'},
-            {'id': 'test_web_e2e.Policy.test_value', 'outcome': 'pass'}]}
-        units = test_resume.report_units(['test_web_e2e.py'], report, clean_exit=True, cases={case})
+            {'id': 'setUpClass (test_frontend_build.VitestTests)', 'outcome': 'skip'},
+            {'id': 'test_frontend_build.Policy.test_value', 'outcome': 'pass'}]}
+        units = test_resume.report_units(['test_frontend_build.py'], report, clean_exit=True, cases={case})
         self.assertEqual(units['case:' + case]['outcome'], 'pass')
 
     def test_class_and_module_cleanup_failures_invalidate_container_proof(self):
-        case = next(case for case in test_resume.CONTAINERS if '.WebE2E' in case)
-        for holder in ('tearDownClass (test_web_e2e.WebE2ESmokeTests)', 'tearDownModule (test_web_e2e)'):
+        case = next(iter(test_resume.CONTAINERS))
+        for holder in ('tearDownClass (test_frontend_build.VitestTests)', 'tearDownModule (test_frontend_build)'):
             report = {'success': False, 'count': 1, 'results': [
                 {'id': case, 'outcome': 'pass'}, {'id': holder, 'outcome': 'error'}]}
             with self.subTest(holder=holder):
-                units = test_resume.report_units(['test_web_e2e.py'], report, clean_exit=True, cases={case})
+                units = test_resume.report_units(['test_frontend_build.py'], report, clean_exit=True, cases={case})
                 self.assertEqual(units['case:' + case]['outcome'], 'fail')
-                self.assertEqual(units['test_web_e2e.py']['outcome'], 'fail')
+                self.assertEqual(units['test_frontend_build.py']['outcome'], 'fail')
 
     def test_explicit_case_success_survives_an_unrelated_failure_in_its_module(self):
         case = 'case:test_catalog.Suite.test_value'
@@ -591,15 +555,15 @@ class CheckpointTests(ReceiptFixture, unittest.TestCase):
             self.assertFalse(progress.complete())
 
     def test_cached_external_files_require_current_complete_proof(self):
-        folder = self.root / 'frontend/e2e'
+        folder = self.root / 'frontend/test'
         folder.mkdir(parents=True)
         for name in ('one.test.ts', 'two.test.ts'):
             (folder / name).write_text('export {};', encoding='utf8')
-        self.mapping['web'] = (Path('test_web_e2e.py'),)
-        proof = {'frontend/e2e/one.test.ts': self.unit()}
+        self.mapping['web'] = (Path('test_frontend_build.py'),)
+        proof = {'frontend/test/one.test.ts': self.unit()}
         progress = self.progress(('web',), records=[self.record(proof)])
         plan = progress.child_plan()
-        self.assertEqual(plan['external']['test_web_e2e.py'], ['frontend/e2e/two.test.ts'])
+        self.assertEqual(plan['external']['test_frontend_build.py'], ['frontend/test/two.test.ts'])
         test_resume.validate_child_plan(self.root, plan, state=self.context['state'], valid_seconds=86400)
         for bad in ({**plan, 'cached': {}}, {**plan, 'state': 'another'},
                     {**plan, 'cached': {name: {**row, 'at': self.now - 86401} for name, row in proof.items()}}):
@@ -607,54 +571,44 @@ class CheckpointTests(ReceiptFixture, unittest.TestCase):
                 test_resume.validate_child_plan(self.root, bad, state=self.context['state'], valid_seconds=86400)
 
     def test_completed_container_updates_the_next_stage_plan_without_refreshing_its_proof(self):
-        for name in ('frontend/test/component.test.ts', 'frontend/e2e/smoke.test.ts', 'frontend/e2e/setup.test.ts'):
+        for name in ('frontend/test/component.test.ts', 'frontend/test/smoke.test.ts', 'frontend/test/setup.test.ts'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('export {};', encoding='utf8')
-        self.mapping['full'] = self.mapping['web'] = (Path('test_frontend_build.py'), Path('test_web_e2e.py'))
+        self.mapping['full'] = self.mapping['web'] = (Path('test_frontend_build.py'),)
         progress = self.progress()
         progress.start()
-        for module in ('test_frontend_build.py', 'test_web_e2e.py'):
-            plan = progress.child_plan()
-            test_resume.validate_child_plan(self.root, plan, state=self.context['state'], valid_seconds=86400)
-            report = {'complete': True, 'success': True, 'count': 1, 'results': [
-                {'id': case, 'outcome': 'pass'} for case in test_resume.CONTAINERS
-                if test_resume.owner('case:' + case) == module]}
-            self.assertTrue(progress.checkpoint([module], report, True))
-            stamp = progress.units['frontend/test/component.test.ts']['at']
-            updated = progress.child_plan()
-            test_resume.validate_child_plan(self.root, updated, state=self.context['state'], valid_seconds=86400)
-            self.assertEqual(updated['external'][module], [])
-            self.assertEqual(updated['cached']['frontend/test/component.test.ts']['at'], stamp)
+        plan = progress.child_plan()
+        test_resume.validate_child_plan(self.root, plan, state=self.context['state'], valid_seconds=86400)
+        report = {'complete': True, 'success': True, 'count': 1, 'results': [
+            {'id': case, 'outcome': 'pass'} for case in test_resume.CONTAINERS]}
+        self.assertTrue(progress.checkpoint(['test_frontend_build.py'], report, True))
+        stamp = progress.units['frontend/test/component.test.ts']['at']
+        updated = progress.child_plan()
+        test_resume.validate_child_plan(self.root, updated, state=self.context['state'], valid_seconds=86400)
+        self.assertEqual(updated['external']['test_frontend_build.py'], [])
+        self.assertEqual(updated['cached']['frontend/test/component.test.ts']['at'], stamp)
         self.assertTrue(progress.complete())
 
-    def test_unrelated_python_failure_survives_browser_aggregation(self):
-        smoke = next(case for case in runner.CI_BROWSER_TESTS if '.WebE2E' in case)
-        ids = ['e2e:e2e/smoke.test.ts > failure', smoke,
-               'test_web_e2e.SourcePolicyTests.test_contract']
-        selectors = runner.rerun_selectors([{'id': name, 'outcome': 'fail'} for name in ids])
-        self.assertEqual(selectors, ['test_web_e2e.SourcePolicyTests.test_contract', 'frontend/e2e/smoke.test.ts'])
 
     def test_setup_failure_selects_the_whole_module(self):
         self.assertEqual(runner.rerun_selectors([{'id': 'setUpClass (test_catalog.Suite)', 'outcome': 'error'}]),
                          ['test_catalog'])
 
     def test_external_success_cannot_hide_python_container_postcondition_failure(self):
-        folder = self.root / 'frontend/e2e'
+        folder = self.root / 'frontend/test'
         folder.mkdir(parents=True)
         for name in ('one.test.ts', 'setup.test.ts'):
             (folder / name).write_text('export {};', encoding='utf8')
-        self.mapping['web'] = (Path('test_web_e2e.py'),)
-        smoke = next(case for case in test_resume.CONTAINERS if '.WebE2E' in case)
-        setup = next(case for case in test_resume.CONTAINERS if '.SetupE2E' in case)
-        proof = {name: self.unit() for name in test_resume.external_files(self.root, 'test_web_e2e.py')}
-        proof.update({'case:' + smoke: self.unit(), 'case:' + setup: self.unit('fail')})
+        self.mapping['web'] = (Path('test_frontend_build.py'),)
+        case = next(iter(test_resume.CONTAINERS))
+        proof = {name: self.unit() for name in test_resume.external_files(self.root, 'test_frontend_build.py')}
+        proof['case:' + case] = self.unit('fail')
         plan = self.progress(('web',), records=[self.record(proof)]).child_plan()
-        self.assertEqual(plan['skip_cases'], [smoke])
-        self.assertIn(setup, plan['cases'])
+        self.assertEqual(plan['skip_cases'], [])
+        self.assertIn(case, plan['cases'])
         test_resume.validate_child_plan(self.root, plan, state=self.context['state'], valid_seconds=86400)
-        self.assertIsNone(runner.rerun_selectors([
-            {'id': setup, 'outcome': 'fail'}, {'id': 'e2e:e2e/smoke.test.ts > error', 'outcome': 'fail'}]))
+        self.assertIsNone(runner.rerun_selectors([{'id': case, 'outcome': 'fail'}]))
 
     def test_input_change_after_a_failure_retains_unaffected_success(self):
         progress = self.progress()
@@ -670,11 +624,11 @@ class CheckpointTests(ReceiptFixture, unittest.TestCase):
         self.assertNotIn('test_catalog.py', record['units'])
 
     def test_narrow_resume_plan_excludes_unselected_containers(self):
-        folder = self.root / 'frontend/e2e'
+        folder = self.root / 'frontend/test'
         folder.mkdir(parents=True)
         (folder / 'one.test.ts').write_text('export {};', encoding='utf8')
-        self.mapping['full'] = (Path('test_catalog.py'), Path('test_web_e2e.py'))
-        self.mapping['web'] = (Path('test_web_e2e.py'),)
+        self.mapping['full'] = (Path('test_catalog.py'), Path('test_frontend_build.py'))
+        self.mapping['web'] = (Path('test_frontend_build.py'),)
         all_units = test_resume.scope_units(self.root, 'full', self.mapping.__getitem__)
         proof = {name: {**self.unit(), 'cohort': self.context['state']} for name in all_units}
         proof['test_catalog.py']['outcome'] = 'fail'
@@ -704,17 +658,17 @@ class CheckpointTests(ReceiptFixture, unittest.TestCase):
                                             {'test_catalog.py'}, unittest.TestSuite)
         self.assertEqual(selected.countTestCases(), 0)
 
-    def test_successful_whole_module_rerun_restores_its_nested_coverage(self):
-        folder = self.root / 'frontend/e2e'
+    def test_successful_container_rerun_restores_its_nested_coverage(self):
+        folder = self.root / 'frontend/test'
         folder.mkdir(parents=True)
         (folder / 'one.test.ts').write_text('export {};', encoding='utf8')
-        self.mapping['web'] = (Path('test_web_e2e.py'),)
+        self.mapping['web'] = (Path('test_frontend_build.py'),)
         progress = self.progress(('web',))
         progress.start()
-        progress.checkpoint(['test_web_e2e.py'], {'complete': True, 'success': False, 'count': 0,
-            'results': [{'id': 'setUpClass (test_web_e2e.WebE2ESmokeTests)', 'outcome': 'error'}]}, True)
+        progress.checkpoint(['test_frontend_build.py'], {'complete': True, 'success': False, 'count': 0,
+            'results': [{'id': 'setUpClass (test_frontend_build.VitestTests)', 'outcome': 'error'}]}, True)
         self.assertFalse(progress.complete())
-        progress.accept_success(['test_web_e2e'])
+        progress.accept_success(['frontend/test/one.test.ts'])
         self.assertTrue(progress.complete())
 
     def test_failed_full_file_preserves_the_successful_supplement_it_executed(self):
@@ -807,8 +761,9 @@ class ShardReportTests(unittest.TestCase):
 
 class SubprocessResumeTests(unittest.TestCase):
     def invoke(self, repo, scope, *options):
-        env = {**os.environ, 'GITHUB_ACTIONS': 'false', 'CI': ''}
-        for key in ('PEACH_TEST_FOCUS', 'PEACH_E2E_FILES', 'PEACH_VITEST_FILES'):
+        env = {**os.environ, 'GITHUB_ACTIONS': 'false', 'CI': '',
+               'PYTHONPATH': str(Path(__file__).resolve().parents[1] / 'src')}
+        for key in ('PEACH_TEST_FOCUS', 'PEACH_VITEST_FILES'):
             env.pop(key, None)
         return fixture_process([sys.executable, '-X', 'utf8', str(repo / 'entry.py'),
                                 '--scope', scope, '--jobs', 'auto', *options], repo, env)
@@ -889,7 +844,7 @@ class SubprocessResumeTests(unittest.TestCase):
 
 
 class SelectionEnvironmentTests(unittest.TestCase):
-    VARIABLES = ('PEACH_TEST_FOCUS', 'PEACH_E2E_FILES', 'PEACH_VITEST_FILES')
+    VARIABLES = ('PEACH_TEST_FOCUS', 'PEACH_VITEST_FILES')
 
     def setUp(self):
         self.enterContext(mock.patch.dict(os.environ))
@@ -912,14 +867,12 @@ class SelectionEnvironmentTests(unittest.TestCase):
             self.assertEqual(values, dict.fromkeys(self.VARIABLES))
         values = captured[1][1]
         self.assertEqual(json.loads(values['PEACH_VITEST_FILES']), ['test/example.test.ts'])
-        self.assertIsNone(values['PEACH_E2E_FILES'])
         self.assertEqual(values['PEACH_TEST_FOCUS'], '1' if focus else None)
         self.assertTrue(all(os.environ.get(key) is None for key in self.VARIABLES))
 
     def test_serial_formal_selection_only_applies_to_its_container(self):
         captured = []
-        selection = {'external': {'test_frontend_build.py': ['frontend/test/example.test.ts'],
-                                  'test_web_e2e.py': ['frontend/e2e/example.test.ts']}}
+        selection = {'external': {'test_frontend_build.py': ['frontend/test/example.test.ts']}}
         progress = mock.Mock()
         progress.child_plan.return_value = selection
         progress.checkpoint.return_value = True
@@ -934,7 +887,7 @@ class SelectionEnvironmentTests(unittest.TestCase):
         from scripts import test_focus
         captured = []
         args = runner.argparse.Namespace(focus=['fixture'])
-        with mock.patch.object(test_focus, 'selection', return_value=(self.suite(captured), (), ('test/example.test.ts',))), \
+        with mock.patch.object(test_focus, 'selection', return_value=(self.suite(captured), ('test/example.test.ts',))), \
                 mock.patch.object(runner.test_history, 'append'), \
                 redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             self.assertEqual(test_focus.run(runner, args), 0)
@@ -955,14 +908,14 @@ class SelectionEnvironmentTests(unittest.TestCase):
 
 
 class ShardProtocolTests(unittest.TestCase):
-    def test_backend_shard_runs_with_the_full_parent_browser_plan(self):
+    def test_a_shard_runs_with_the_parent_resume_plan(self):
         root = Path(__file__).resolve().parents[1]
         progress = test_run_progress.RunProgress(root, evidence.inputs(root), ('full',),
             runner.selected_files, runner.scopes_for_changes, runner.SCOPES, supplements=runner.SCOPE_TEST_IDS)
         with tempfile.TemporaryDirectory() as folder:
             temporary = Path(folder).resolve()
             shard = temporary / 'plan.json'
-            shard.write_text(json.dumps([['test_test_planning.py']]), encoding='utf8')
+            shard.write_text(json.dumps([['test_dependency_policy.py']]), encoding='utf8')
             resume = temporary / 'resume.json'
             resume.write_text(json.dumps(progress.child_plan()), encoding='utf8')
             report = temporary / 'report.json'
@@ -1530,13 +1483,13 @@ class VerificationTests(unittest.TestCase):
                 mock.patch.object(runner, "GATE_TESTS", frozenset()), \
                 mock.patch.object(runner, "run_shards", return_value=(True, 7, [])) as shards:
             self.assertEqual(runner.main(["--scope", "full", "--jobs", "1"]), 0)
-        self.assertEqual([call.kwargs['shard_count'] for call in shards.call_args_list], [4, 1, 1])
+        self.assertEqual([call.kwargs['shard_count'] for call in shards.call_args_list], [4, 1])
         self.assertTrue(all(call.kwargs['jobs'] == 1 for call in shards.call_args_list))
         self.assertCountEqual([name for call in shards.call_args_list for group in call.kwargs['plan'] for name in group],
                               [path.name for path in runner.selected_files('full')])
         record = evidence.read(self.repo, evidence.key(self.repo))
         self.assertTrue(evidence.covers(record, ("full",)))
-        self.assertEqual(record["count"], 21)
+        self.assertEqual(record["count"], 14)
         self.assertLessEqual({'输入快照', '历史记录', '恢复规划', '测试执行', '结束核验'}, record['phases'].keys())
         self.assertGreaterEqual(record['elapsed'], sum(record['phases'][name] for name in
                                                      ('输入快照', '历史记录', '恢复规划', '测试执行', '结束核验')))
@@ -1544,7 +1497,7 @@ class VerificationTests(unittest.TestCase):
     def test_a_failure_that_passes_alone_signs_the_record_and_names_the_flaky_file(self):
         """全量里挂、单独重跑过的：记录照样算通过，偶发的文件名留在记录里；单独也挂就没有记录。"""
         def shards(*_args, outcomes, **_kwargs):
-            outcomes.append({"id": "e2e:e2e/folder-layout.test.ts > 目录 > 滚到底", "outcome": "fail",
+            outcomes.append({"id": "vitest:test/folder-layout.test.ts > 目录 > 滚到底", "outcome": "fail",
                              "seconds": 2.0, "message": "height 0"})
             return False, 7, []
 
@@ -1561,7 +1514,7 @@ class VerificationTests(unittest.TestCase):
             record = evidence.read(self.repo, evidence.key(self.repo))
             self.assertEqual(evidence.covers(record, ("full",)), signed)
             if signed:
-                self.assertEqual(record["flaky"], ["frontend/e2e/folder-layout.test.ts"])
+                self.assertEqual(record["flaky"], ["frontend/test/folder-layout.test.ts"])
 
     def test_full_baseline_requires_only_new_scopes_without_extending_its_age(self):
         original = self.certify(self.repo, ("full",))
@@ -1821,14 +1774,14 @@ class VerificationTests(unittest.TestCase):
                 mock.patch.object(runner, "ROOT", self.repo), mock.patch.object(evidence, "write") as write:
             self.assertEqual(runner.main(["--focus", "test_focus_sample"]), 0)
             write.assert_not_called()
-            with mock.patch.dict(os.environ, {"PEACH_E2E_FILES": "[]"}):
+            with mock.patch.dict(os.environ, {"PEACH_VITEST_FILES": "[]"}):
                 with self.assertRaises(SystemExit) as stopped:
                     runner.main(["--scope", "checks"])
             self.assertEqual(stopped.exception.code, 2)
 
     def test_focus_rejects_missing_files_and_path_escape(self):
         from scripts import test_focus
-        for selector in ("test_missing", "frontend/e2e/../../other.test.ts", "scripts/test_runner.py"):
+        for selector in ("test_missing", "frontend/test/../../other.test.ts", "scripts/test_runner.py"):
             with self.subTest(selector=selector), self.assertRaises(ValueError):
                 test_focus.selection(self.repo, [selector])
 

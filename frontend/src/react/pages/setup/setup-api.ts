@@ -1,8 +1,8 @@
 /* 首启页的三条请求：取题目、提交、让这台电脑弹文件夹对话框。
  *
  * 页面包不带主界面的请求封装与 Query 缓存，这里直接用 `fetch`。形态见 `docs/OPERATIONS.md`
- * 「首次设置的内部流程」：错误正文是 `{error, errors?}`，`errors` 按题目 key 给，媒体目录那一项是
- * 与行对应的列表，整表不成立时是只有一句话的列表。 */
+ * 「首次设置的内部流程」：错误正文是 `{error, errors?}`，`errors` 按题目 key 给。
+ * 首设只问数据目录、监听地址、端口与网盘授权回调基址；网盘接入与首次扫描都在设置完成之后。 */
 import { PICK_FOLDER_URL } from '../../../configuration-endpoints';
 
 export const SETUP_QUESTIONS_URL = '/api/setup/questions';
@@ -24,36 +24,21 @@ export interface SetupQuestion {
   visible_when?: Record<string, string>;
 }
 
-export interface MountDependency { name: string; message: string; download_url: string; download_label: string }
-
 export interface SetupQuestions {
-  peach_proxy?: import('../../bundle').PeachProxyState;
   docker?: boolean;
   /** Docker 固定的数据目录（`/data`），不出题，只在确认页列出；其余部署为 `null`。 */
   data_root?: string | null;
   /** 容器启动时已按 `PEACH_ACCESS_PASSWORD` 写下访问密码，访问那一项不再出题。 */
   access_preset?: boolean;
-  remote_reporting?: import('../../settings/remote-reporting-settings').RemoteReportingState;
-  windows: boolean;
-  standalone: boolean;
-  questions: SetupQuestion[];
-  media_sources: SetupOption[];
-  media_source_default: string;
-  media_root: { label: string; placeholder: string } | null;
-  cloud: { help: string; link: { url: string; label: string }; dependencies: MountDependency[] };
   access_enabled: boolean;
-  scan_now: boolean;
-  history_guide: boolean;
+  questions: SetupQuestion[];
 }
 
 export interface SetupFact { term: string; value: string; download_url?: string; download_label?: string; install_tool?: string }
 
 export interface SetupDone {
   restored?: boolean;
-  skip_media?: boolean;
   url: string;
-  scan_requested: boolean;
-  history_guide: boolean;
   standalone: boolean;
   redirect: string | null;
   facts: SetupFact[];
@@ -61,27 +46,14 @@ export interface SetupDone {
 
 export type SetupErrors = Partial<Record<string, string | string[]>>;
 
-export interface SetupFolder {
-  path: string;
-  location: string;
-  root: string;
-  library_id?: string;
-  library?: string;
-  library_icon?: string;
-  library_color?: string;
-  cost?: 'free' | 'metered' | '';
-  library_policy?: import('../../settings/library-policy-settings').Preset;
-  library_stages?: string;
-}
-
 export interface SetupSubmission {
-  media_dir: SetupFolder[];
-  skip_media: boolean;
+  data_root?: string;
+  host?: string;
+  port?: string;
+  drive_public_url?: string;
   access_enabled: boolean;
   access_password?: string;
   access_confirm?: string;
-  scan_now: boolean;
-  history_guide?: boolean;
   [key: string]: unknown;
 }
 

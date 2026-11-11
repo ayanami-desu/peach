@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from peach import ledger_backups, migrations, settings_file, update_tasks, web_organize
+from peach import ledger_backups, migrations, settings_file, web_organize
 from peach.task_runs import TaskRunStore
 from support.ledger import MIGRATIONS_DIR, fresh_ledger
 
@@ -639,28 +639,7 @@ class LedgerBackupManagerTests(unittest.TestCase):
         self.assertEqual(self.finished_runs("ledger-restore"), ["succeeded"],
                          "自己那一行接回恢复后的账本并正常结算；查忙时没把自己算进去")
         self.assertEqual(self.busted, [True])
-        self.assertFalse(update_tasks.is_pausing(self.live), "挡新任务的闸门已放开")
         self.assertEqual(notes(self.root / "database" / state["saved"]), ["before", "after"])
-
-    def test_restore_is_refused_while_other_tasks_run(self):
-        backup = ledger_backups.create(self.live)
-        with patch.object(update_tasks, "running", return_value=["扫描与采集"]):
-            with self.assertRaisesRegex(ledger_backups.BackupRejected, "扫描与采集"):
-                self.manager.start_restore(f"database/{backup.name}")
-        self.assertEqual(self.manager.snapshot()["restore"], {"status": "idle"})
-
-    def test_restore_is_refused_on_a_reading_device(self):
-        backup = ledger_backups.create(self.live)
-        with patch("peach.runtime_prepare.configured_ledger_writer", return_value=(False, "这台电脑是只读端")):
-            with self.assertRaisesRegex(ledger_backups.BackupRejected, "写入端"):
-                self.manager.start_restore(f"database/{backup.name}")
-
-    def test_new_tasks_are_held_off_while_restoring(self):
-        token = update_tasks.reserve(self.live, busy="正在从备份恢复账本，暂时不能启动新任务。")
-        self.addCleanup(update_tasks.release, self.live, token)
-        with self.assertRaisesRegex(update_tasks.UpdateBusy, "正在从备份恢复账本"):
-            with update_tasks.admission(self.live):
-                pass
 
     def test_routes_require_confirmation_and_report_refusals(self):
         from fastapi import FastAPI

@@ -5,95 +5,27 @@ import io
 import json
 import os
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import ci_plan, test_runner as runner
+from scripts import test_runner as runner
 from support.ledger import fresh_ledger
 
 
-class CIFrontendOwnershipTests(unittest.TestCase):
-    CI = {'GITHUB_ACTIONS': 'true', 'GITHUB_WORKFLOW': 'Test', 'GITHUB_JOB': 'python'}
 
-    @staticmethod
-    def ids(suite):
-        for test in suite:
-            if isinstance(test, unittest.TestSuite):
-                yield from CIFrontendOwnershipTests.ids(test)
-            else:
-                yield test.id()
 
-    def frontend_ids(self, environment, **shard):
-        with patch.dict(os.environ, environment, clear=True), \
-             patch.object(runner, 'selected_files', return_value=(runner.TESTS / 'test_frontend_build.py',
-                                                                  runner.TESTS / 'test_frontend_preflight.py')):
-            return list(self.ids(runner.build_suite('web', **shard)))
+#: CI 与本地跑的是同一套 `test_runner`：这里只按 job 身份切换分片策略。
+CI = {'GITHUB_ACTIONS': 'true', 'GITHUB_WORKFLOW': 'Test', 'GITHUB_JOB': 'python'}
 
-    def test_only_known_ci_jobs_delegate_exactly_three_frontend_tools(self):
-        local = set(self.frontend_ids({}))
-        delegated = {'test_frontend_build.VitestTests.test_the_island_suite_passes',
-                     'test_frontend_preflight.FrontendPreflightTests.test_the_frontend_sources_typecheck',
-                     'test_frontend_preflight.FrontendPreflightTests.test_frontend_sources_and_tests_pass_lint'}
-        self.assertLessEqual(delegated, local)
-        for job in ('python', 'web-e2e'):
-            with self.subTest(job=job):
-                selected = set(self.frontend_ids({**self.CI, 'GITHUB_JOB': job}))
-                self.assertEqual(local - selected, delegated)
-                self.assertEqual(selected - local, set())
-                self.assertIn('test_frontend_build.VitestTests.test_the_island_suite_has_a_bounded_worker_pool', selected)
-        for environment in ({}, {'GITHUB_ACTIONS': 'true'},
-                            {**self.CI, 'GITHUB_ACTIONS': 'false'},
-                            {**self.CI, 'GITHUB_WORKFLOW': 'Release'},
-                            {**self.CI, 'GITHUB_JOB': 'another-job'}):
-            with self.subTest(environment=environment):
-                self.assertEqual(set(self.frontend_ids(environment)), local)
 
-    def test_delegated_shards_cover_all_remaining_tests_once(self):
-        serial = self.frontend_ids(self.CI)
-        shards = [self.frontend_ids(self.CI, shard_index=index, shard_count=2) for index in range(2)]
-        self.assertFalse(set(shards[0]) & set(shards[1]))
-        self.assertCountEqual(serial, shards[0] + shards[1])
-        self.assertEqual(len(serial), len(set(serial)))
-
-    def test_python_jobs_delegate_browser_cases_and_keep_their_contract_tests(self):
-        def collect(environment):
-            with patch.dict(os.environ, environment, clear=True), patch.object(
-                    runner, 'selected_files', return_value=(runner.TESTS / 'test_web_e2e.py',)):
-                return set(self.ids(runner.build_suite('web')))
-        local = collect({})
-        selected = collect(self.CI)
-        self.assertEqual(local - selected, {
-            'test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants',
-            'test_web_e2e.SetupE2ETests.test_the_first_run_page_writes_errors_back_and_finishes',
-        })
-        self.assertTrue(any('.MissingPrerequisiteTests.' in name for name in selected))
-        for environment in ({**self.CI, 'GITHUB_JOB': 'web-e2e'},
-                            {**self.CI, 'GITHUB_WORKFLOW': 'Release'}):
-            self.assertEqual(collect(environment), local)
-
-    def test_delegated_ci_returns_results_without_local_evidence(self):
-        for scope in ('web', 'full'):
-            for success, count, expected in ((True, 3, 0), (False, 3, 1), (True, 0, 1)):
-                with self.subTest(scope=scope, success=success, count=count), \
-                     patch.dict(os.environ, self.CI, clear=True), \
-                     patch.object(runner, 'environment_preflight'), \
-                     patch.object(runner, 'run_local_suite', return_value=(success, count, [])), \
-                     patch.object(runner, 'verified_run', side_effect=AssertionError('CI 不签本机记录')), \
-                     patch.object(runner.test_evidence, 'held', side_effect=AssertionError('CI 不取本机证据锁')), \
-                     patch.object(runner.test_evidence, 'write', side_effect=AssertionError('CI 不写本机记录')), \
-                     contextlib.redirect_stdout(io.StringIO()):
-                    self.assertEqual(runner.main(['--scope', scope]), expected)
-
-    def test_local_runs_use_the_verification_path(self):
-        with patch.dict(os.environ, {}, clear=True), \
-             patch.object(runner, 'environment_preflight'), \
-             patch.object(runner, 'verified_run', return_value=0) as verify, \
-             contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(runner.main(['--scope', 'web']), 0)
-        verify.assert_called_once()
+def ids(suite):
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            yield from ids(test)
+        else:
+            yield test.id()
 
 
 class TestPlanningTests(unittest.TestCase):
@@ -105,9 +37,6 @@ class TestPlanningTests(unittest.TestCase):
         after = before.replace("'test_scripts.py',", "'test_scripts.py', 'test_new_script.py',")
         contents = {'scripts/test_runner.py': (before, after)}
         self.assertEqual(runner.scopes_for_changes(contents, contents=contents)[0], ('checks', 'tooling'))
-        planned = ci_plan.plan('pull_request', list(contents), contents)
-        self.assertFalse(planned['wide'])
-        self.assertFalse(planned['browser'])
         first = change_impact.signatures('scripts/test_runner.py', before)
         second = change_impact.signatures('scripts/test_runner.py', after)
         from scripts import test_evidence
@@ -141,20 +70,6 @@ class TestPlanningTests(unittest.TestCase):
                 self.assertEqual(runner.scopes_for_changes(['scripts/test_runner.py'], contents={
                     'scripts/test_runner.py': (before, after)})[0], ('full',))
 
-    def test_checks_ci_omits_runtime_tool_installation_and_keeps_platforms(self):
-        for path in ("README.md", "CONTRIBUTING.md", ".github/PULL_REQUEST_TEMPLATE.md", "docs/TESTING.md"):
-            with self.subTest(path=path):
-                result = ci_plan.plan("push", [path])
-                rows = result["matrix"]["include"]
-                self.assertEqual({row["os"] for row in rows}, {"windows-latest", "macos-latest"})
-                self.assertTrue(all(not row["runtime_tools"] for row in rows))
-                self.assertIn("python", result["required_jobs"])
-                self.assertFalse(result["browser"])
-        for event, paths in (("workflow_dispatch", ["README.md"]),
-                             ("push", ["README.md", "src/peach/server.py"]),
-                             ("push", ["frontend/src/react/boardui/ORIGIN.md"]),
-                             ("push", ["unknown.runtime"])):
-            self.assertTrue(all(row["runtime_tools"] for row in ci_plan.plan(event, paths)["matrix"]["include"]))
 
     def test_comments_and_display_metadata_select_checks_without_hiding_logic(self):
         fixtures = {
@@ -167,39 +82,14 @@ class TestPlanningTests(unittest.TestCase):
         for path, content in fixtures.items():
             with self.subTest(path=path):
                 self.assertEqual(runner.scopes_for_changes([path], contents={path: content})[0], ('checks',))
-                plan = ci_plan.plan('pull_request', [path], {path: content})
-                self.assertFalse(plan['browser'])
-                self.assertFalse(plan['frontend'])
         for content in (('x = 1', 'x = 2'), ('"help a"', '"help b"'), ('x = 1', 'x = (')):
             self.assertEqual(runner.scopes_for_changes(['tests/support/ledger.py'],
                                                      contents={'tests/support/ledger.py': content})[0], ('full',))
 
-    def test_ci_jobs_follow_their_own_inputs(self):
-        for path in ('tests/test_follow_store.py', 'tests/test_metadata_sources.py',
-                     '.github/workflows/project-board.yml'):
-            with self.subTest(path=path):
-                plan = ci_plan.plan('pull_request', [path])
-                self.assertFalse(plan['browser'])
-                self.assertFalse(plan['wheel'])
-        for path in ('src/peach/server.py', 'src/peach/auth.py', 'frontend/src/core/index.ts',
-                     'tests/test_web_e2e.py', 'frontend/e2e/setup.test.ts'):
-            with self.subTest(path=path):
-                self.assertTrue(ci_plan.plan('pull_request', [path])['browser'])
-        self.assertTrue(ci_plan.plan('pull_request', ['.github/workflows/release.yml'])['wheel'])
-        self.assertTrue(ci_plan.plan('pull_request', ['.github/workflows/upgrade-smoke.yml'])['wheel'])
-        self.assertTrue(ci_plan.plan('pull_request', ['.github/workflows/unknown.yml'])['wide'])
 
-    def test_chart_workflow_checks_tooling_and_preserves_mixed_runtime_coverage(self):
-        path = '.github/workflows/star-history.yml'
-        self.assertEqual(runner.scopes_for_changes([path])[0], ('tooling',))
-        plan = ci_plan.plan('pull_request', [path])
-        for job in ('wide', 'browser', 'frontend', 'vendor', 'wheel'):
-            with self.subTest(job=job):
-                self.assertFalse(plan[job])
-        self.assertTrue(ci_plan.plan('pull_request', [path, 'src/peach/server.py'])['browser'])
 
     def setUp(self):
-        environment = patch.dict(os.environ, {'PEACH_TEST_FOCUS': '', 'PEACH_E2E_FILES': ''})
+        environment = patch.dict(os.environ, {'PEACH_TEST_FOCUS': ''})
         environment.start()
         self.addCleanup(environment.stop)
 
@@ -272,34 +162,15 @@ class TestPlanningTests(unittest.TestCase):
                 self.assertEqual(scopes, expected)
         self.assertEqual(runner.scopes_for_changes(['pyproject.toml'])[0], ('full',))
 
-    def test_matrix_keeps_full_manual_and_platform_coverage(self):
-        result = ci_plan.plan('workflow_dispatch', ['web/app.js'])
-        rows = result['matrix']['include']
-        self.assertEqual(len([r for r in rows if r['scope'] == 'full']), 6)
-        self.assertEqual({r['os'] for r in rows}, {'windows-latest', 'macos-latest'})
-        self.assertEqual({r['python'] for r in rows}, {'3.14'})
-        self.assertTrue(all(r['scope'] == 'full' for r in rows))
-        self.assertEqual(len(result['wheel_matrix']['include']), 2)
 
-    def test_browser_partitions_cover_every_file_once_and_balance_recorded_duration(self):
-        matrix = ci_plan.browser_matrix()['include']
-        groups = [json.loads(row['files']) for row in matrix]
-        expected = {path.relative_to(runner.ROOT).as_posix()
-                    for path in (runner.ROOT / 'frontend/e2e').rglob('*.test.ts')}
-        collected = [name for group in groups for name in group]
-        self.assertEqual(set(collected), expected)
-        self.assertEqual(len(collected), len(set(collected)))
-        self.assertTrue(all(groups))
-        costs = [row['estimated_seconds'] for row in matrix]
-        self.assertLess(max(costs) - min(costs), 60)
 
     def test_windows_python_partitions_balance_recorded_cost_and_keep_every_case(self):
         seconds = json.loads((runner.ROOT / 'scripts/ci-python-timings.json').read_text(encoding='utf-8'))['seconds']
         files = runner.selected_files('full')
-        with patch.dict(os.environ, {**CIFrontendOwnershipTests.CI, 'RUNNER_OS': 'Windows'}):
+        with patch.dict(os.environ, {**CI, 'RUNNER_OS': 'Windows'}):
             groups = [runner.assigned_files(files, index, 4) for index in range(4)]
-            serial = list(CIFrontendOwnershipTests.ids(runner.build_suite('full')))
-            collected = [name for index in range(4) for name in CIFrontendOwnershipTests.ids(
+            serial = list(ids(runner.build_suite('full')))
+            collected = [name for index in range(4) for name in ids(
                 runner.build_suite('full', shard_index=index, shard_count=4))]
         self.assertCountEqual(serial, collected)
         self.assertEqual(len(collected), len(set(collected)))
@@ -310,261 +181,37 @@ class TestPlanningTests(unittest.TestCase):
 
     def test_unassigned_ci_and_macos_keep_filename_partitions(self):
         files = [runner.TESTS / f'test_selected_{index}.py' for index in range(8)]
-        for environment in ({'RUNNER_OS': 'Windows'}, {**CIFrontendOwnershipTests.CI, 'RUNNER_OS': 'macOS'}):
+        for environment in ({'RUNNER_OS': 'Windows'}, {**CI, 'RUNNER_OS': 'macOS'}):
             with self.subTest(environment=environment), patch.dict(os.environ, environment, clear=True):
                 self.assertEqual(runner.assigned_files(files, 1, 4), set(files[1::4]))
 
-    def test_broad_auto_matrix_keeps_each_selected_test_once(self):
-        for paths in (['src/peach/mp4repair.py', 'src/peach/web_media_repair.py'],
-                      ['src/peach/web_catalog.py']):
-            with self.subTest(paths=paths):
-                scopes, _ = runner.scopes_for_changes(paths)
-                plan = ci_plan.plan('push', paths)
-                self.assertFalse(plan['wide'])
-                for system, count, runner_os in (('windows-latest', 4, 'Windows'),
-                                                 ('macos-latest', 2, 'macOS')):
-                    with self.subTest(system=system):
-                        rows = [row for row in plan['matrix']['include'] if row['os'] == system]
-                        self.assertEqual(len(rows), count)
-                        self.assertTrue(all(row['scope'] == 'auto' for row in rows))
-                        with patch.dict(os.environ, {**CIFrontendOwnershipTests.CI, 'RUNNER_OS': runner_os}):
-                            serial = list(CIFrontendOwnershipTests.ids(runner.build_suite(*scopes)))
-                            collected = [name for row in rows for name in CIFrontendOwnershipTests.ids(
-                                runner.build_suite(*scopes, shard_index=row['shard_index'],
-                                                   shard_count=row['shard_count']))]
-                        self.assertTrue(serial)
-                        self.assertEqual(len(serial), len(set(serial)))
-                        self.assertCountEqual(serial, collected)
 
-    def test_auto_partition_threshold_counts_unique_selected_files(self):
-        for count, windows_count, macos_count in ((149, 1, 1), (150, 4, 2)):
-            with self.subTest(count=count), patch.object(runner, 'selected_files', return_value=tuple(
-                    runner.TESTS / f'test_selected_{index}.py' for index in range(count))):
-                plan = ci_plan.plan('pull_request', ['src/peach/web_catalog.py'])
-                self.assertFalse(plan['wide'])
-                for system, expected in (('windows-latest', windows_count), ('macos-latest', macos_count)):
-                    with self.subTest(system=system):
-                        rows = [row for row in plan['matrix']['include'] if row['os'] == system]
-                        self.assertEqual(len(rows), expected)
-                        self.assertTrue(all(row['scope'] == 'auto' for row in rows))
 
-    def test_explicit_roots_use_their_own_browser_files_and_weights_for_full_and_auto(self):
-        with tempfile.TemporaryDirectory() as directory:
-            for name, seconds in (('main', {'alpha': 7}), ('worker', {'beta': 40, 'gamma': 90})):
-                root = (Path(directory) / name).resolve()
-                (root / 'frontend/e2e').mkdir(parents=True)
-                (root / 'scripts').mkdir()
-                weights = {f'frontend/e2e/{name}.test.ts': value for name, value in seconds.items()}
-                for path in weights:
-                    (root / path).touch()
-                (root / 'scripts/ci-browser-timings.json').write_text(
-                    json.dumps({'seconds': weights}), encoding='utf-8')
-                for event, count, scope in (('pull_request', 2, 'auto'), ('workflow_dispatch', 6, 'full')):
-                    with self.subTest(root=root.name, event=event):
-                        planned = ci_plan.plan(event, [next(iter(weights))], root=root)
-                        rows = planned['matrix']['include']
-                        self.assertEqual(len(rows), count)
-                        self.assertTrue(all(row['scope'] == scope for row in rows))
-                        browsers = planned['browser_matrix']['include']
-                        self.assertCountEqual([path for row in browsers for path in json.loads(row['files'])], weights)
-                        self.assertCountEqual([row['estimated_seconds'] for row in browsers], seconds.values())
 
-    def test_explicit_roots_count_their_python_files_at_the_auto_partition_threshold(self):
-        with tempfile.TemporaryDirectory() as directory:
-            for name, count, windows_count, macos_count in (('main', 149, 1, 1), ('worker', 150, 4, 2)):
-                root = (Path(directory) / name).resolve()
-                (root / 'tests').mkdir(parents=True)
-                (root / 'frontend/e2e').mkdir(parents=True)
-                (root / 'frontend/e2e/smoke.test.ts').touch()
-                for index in range(count):
-                    (root / f'tests/test_follow_generated_{index}.py').touch()
-                for scope in ('full', 'follow'):
-                    selected = runner.selected_files(scope, root=root)
-                    self.assertEqual(len(selected), count)
-                    self.assertTrue(all(path.parent == root / 'tests' for path in selected))
-                planned = ci_plan.plan('pull_request', ['src/peach/follow.py'], root=root)
-                self.assertFalse(planned['wide'])
-                for system, expected in (('windows-latest', windows_count), ('macos-latest', macos_count)):
-                    with self.subTest(root=root.name, system=system):
-                        rows = [row for row in planned['matrix']['include'] if row['os'] == system]
-                        self.assertEqual(len(rows), expected)
-                        self.assertTrue(all(row['scope'] == 'auto' for row in rows))
 
-    def test_explicit_roots_keep_separate_test_consumers_and_relative_source_importers(self):
-        with tempfile.TemporaryDirectory() as directory:
-            roots = [(Path(directory) / name).resolve() for name in ('main', 'worker')]
-            files = ({'tests/test_follow_web.py': 'from peach import media\n',
-                      'src/peach/web_reader.py': 'from . import unmapped_hub\n'},
-                     {'tests/test_code_creators.py': 'from peach import media, unmapped_hub\n'})
-            for root, contents in zip(roots, files):
-                for name, source in contents.items():
-                    path = root / name
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(source, encoding='utf-8')
-                (root / 'src/peach').mkdir(parents=True, exist_ok=True)
-                (root / 'src/peach/unmapped_hub.py').touch()
-            for index in (0, 1, 0):
-                root = roots[index]
-                with self.subTest(root=root.name):
-                    scopes = runner.scopes_for_changes(['src/peach/media.py'], root=root)[0]
-                    self.assertEqual(scopes, (('follow', 'media', 'web'), ('media', 'metadata'))[index])
-                    hub_scopes = runner.scopes_for_changes(['src/peach/unmapped_hub.py'], root=root)[0]
-                    self.assertEqual(hub_scopes, (('catalog',), ('metadata',))[index])
-                    self.assertEqual(ci_plan.browser_input('src/peach/media.py', root=root), index == 0)
 
-    def test_document_changes_avoid_optional_jobs_and_unknown_changes_require_them(self):
-        documents = ci_plan.plan('pull_request', ['docs/TESTING.md'])
-        self.assertEqual(documents['required_jobs'], ['plan', 'python', 'workflow-lint', 'frontend-ready'])
-        unknown = ci_plan.plan('pull_request', ['unknown.file'])
-        self.assertLessEqual({'web-e2e', 'web-bundle', 'web-vendor', 'wheel-smoke'},
-                             set(unknown['required_jobs']))
-        mainline = ci_plan.plan('push', ['docs/TESTING.md'])
-        self.assertFalse(mainline['wide'])
-        self.assertEqual(mainline['required_jobs'], documents['required_jobs'])
-        manual = ci_plan.plan('workflow_dispatch', ['docs/TESTING.md'])
-        self.assertTrue(manual['wide'])
-        self.assertLessEqual({'web-e2e', 'web-bundle', 'web-vendor', 'wheel-build', 'wheel-smoke'},
-                             set(manual['required_jobs']))
 
-    def test_result_gate_rejects_missing_failed_cancelled_or_required_skipped_jobs(self):
-        required = ['plan', 'python', 'workflow-lint', 'frontend-ready', 'web-e2e']
-        passed = {name: {'result': 'success'} for name in required}
-        ci_plan.validate_results({**passed, 'web-vendor': {'result': 'skipped'}}, required)
-        for result in ('failure', 'cancelled', 'skipped'):
-            with self.subTest(result=result), self.assertRaises(ValueError):
-                ci_plan.validate_results({**passed, 'web-e2e': {'result': result}}, required)
-        with self.assertRaises(ValueError):
-            ci_plan.validate_results({name: value for name, value in passed.items() if name != 'python'}, required)
-        with self.assertRaises(ValueError):
-            ci_plan.validate_results(passed, [])
 
-    def test_frontend_gate_requires_only_the_selected_frontend_jobs(self):
-        required = ci_plan.plan('push', ['frontend/package-lock.json'])['required_jobs']
-        passed = {name: {'result': 'success'} for name in ('plan', 'web-bundle', 'web-vendor')}
-        ci_plan.validate_results(passed, required, phase='frontend')
-        for name in ('web-bundle', 'web-vendor'):
-            for result in ('missing', 'failure', 'cancelled', 'skipped'):
-                results = dict(passed)
-                if result == 'missing':
-                    results.pop(name)
-                else:
-                    results[name] = {'result': result}
-                with self.subTest(name=name, result=result), self.assertRaises(ValueError):
-                    ci_plan.validate_results(results, required, phase='frontend')
 
-    def test_frontend_gate_allows_document_plans_and_rejects_an_invalid_plan(self):
-        required = ci_plan.plan('pull_request', ['docs/TESTING.md'])['required_jobs']
-        results = {'plan': {'result': 'success'}, 'web-bundle': {'result': 'skipped'},
-                   'web-vendor': {'result': 'skipped'}}
-        ci_plan.validate_results(results, required, phase='frontend')
-        for result in ('failure', 'cancelled', 'skipped'):
-            with self.subTest(result=result), self.assertRaises(ValueError):
-                ci_plan.validate_results({**results, 'plan': {'result': result}}, required, phase='frontend')
-        with self.assertRaises(ValueError):
-            ci_plan.validate_results(results, [], phase='frontend')
-        with self.assertRaises(ValueError):
-            ci_plan.validate_results(results, required, phase='unknown')
 
-    def test_dependency_and_manual_runs_cover_both_systems(self):
-        for event, paths in [('push', ['uv.lock']), ('pull_request', ['migrations/0025.sql']),
-                             ('workflow_dispatch', [])]:
-            result = ci_plan.plan(event, paths)
-            self.assertTrue(result['wide'])
-            self.assertEqual({r['os'] for r in result['matrix']['include'] if r['scope'] == 'full'},
-                             {'macos-latest', 'windows-latest'})
-            wheels = result['wheel_matrix']['include']
-            self.assertCountEqual(wheels, [{'os': 'windows-latest', 'python': '3.14'},
-                                          {'os': 'macos-latest', 'python': '3.14'}])
 
-    def test_pull_request_uses_changed_domains(self):
-        rows = ci_plan.plan('pull_request', ['src/peach/follow_store.py'])['matrix']['include']
-        self.assertTrue(any(r['scope'] == 'auto' for r in rows))
-        self.assertFalse(any(r['scope'] == 'full' for r in rows))
-        self.assertEqual(runner.scopes_for_changes(['scripts/localize_performer_names.py'])[0],
-                         ('metadata', 'tooling'))
-        self.assertEqual(runner.scopes_for_changes(['README.md'])[0], ('checks',))
-        for document in ('docs/TESTING.md', 'docs/CLOUDDRIVE.md', 'docs/OPERATIONS.md'):
-            with self.subTest(document=document):
-                self.assertEqual(runner.scopes_for_changes([document])[0], ('checks',))
 
     def test_library_processing_selects_the_domains_that_exercise_it(self):
         """`library_processing.py` 的模块名与测试文件名对不上，按名字推不出域。
 
         验它的测试是 `test_metadata_library.py`（metadata 与 web 都登记）、
-        `test_stale_candidates.py`（metadata）和 `test_web_e2e.py`（web）；
+        `test_stale_candidates.py`（metadata）和 `test_frontend_build.py`（web）；
         映射缺了这一条，改处理任务就整轮退化成 `full`。
         """
         scopes, _ = runner.scopes_for_changes(['src/peach/library_processing.py'])
         self.assertLessEqual({'metadata', 'web'}, set(scopes))
         selected = {path.name for scope in scopes for path in runner.selected_files(scope)}
         self.assertLessEqual({'test_metadata_library.py', 'test_stale_candidates.py',
-                              'test_web_e2e.py'}, selected)
+                              'test_frontend_build.py'}, selected)
 
-    def test_missing_git_base_selects_wide_matrix(self):
-        with patch.object(sys, 'argv', ['ci_plan.py', '--event', 'pull_request', '--base', 'missing']), \
-             patch.object(runner, 'changed_files', side_effect=subprocess.CalledProcessError(1, 'git')), \
-             patch.dict(ci_plan.os.environ, {}, clear=True), contextlib.redirect_stdout(io.StringIO()) as output:
-            ci_plan.main()
-        self.assertTrue(ci_plan.json.loads(output.getvalue())['wide'])
 
-    def test_mainline_plan_passes_the_verified_baseline_to_test_jobs_and_falls_back_when_missing(self):
-        for baseline, wide in (('verified', False), (ValueError('未取得'), True)):
-            with self.subTest(baseline=baseline), \
-                    patch.object(sys, 'argv', ['ci_plan.py', '--event', 'push', '--base', 'unverified']), \
-                    patch.object(ci_plan, 'github_verified_base', **({'side_effect': baseline} if isinstance(baseline, Exception) else {'return_value': baseline})), \
-                    patch.object(runner, 'changed_files', return_value=['README.md']) as changed, \
-                    patch.object(runner, 'changed_contents', return_value={}), \
-                    contextlib.redirect_stdout(io.StringIO()) as output:
-                ci_plan.main()
-            result = json.loads(output.getvalue())
-            self.assertEqual(result['wide'], wide)
-            if not wide:
-                self.assertEqual(result['base'], 'verified')
-                self.assertEqual(changed.call_args.args[1], 'verified')
 
-    def test_github_baseline_accepts_only_successful_push_ancestors(self):
-        runs = [{'head_sha': sha, 'conclusion': result, 'event': 'push', 'head_branch': 'master'}
-                for sha, result in (('failed', 'failure'), ('diverged', 'success'), ('ancestor', 'success'))]
-        with patch.dict(os.environ, {'GITHUB_REPOSITORY':'peach-mitao/peach'}), \
-                patch.object(ci_plan.subprocess, 'check_output', side_effect=[json.dumps({'workflow_runs':runs}), 'head']), \
-                patch('scripts.ci_scope.ancestor_of_head', return_value=lambda sha:sha=='ancestor'):
-            self.assertEqual(ci_plan.github_verified_base(runner.ROOT), 'ancestor')
 
-    def test_actions_output_passes_a_git_revision_and_json_values_to_downstream_jobs(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-
-            (root / 'frontend/e2e').mkdir(parents=True)
-            (root / 'frontend/e2e/smoke.test.ts').touch()
-
-            def git(*args):
-                return subprocess.check_output(
-                    ['git', '-C', str(root), '-c', 'user.name=Test',
-                     '-c', 'user.email=test@example.invalid', *args],
-                    text=True, encoding='utf-8').strip()
-
-            git('init', '--quiet')
-            readme = root / 'README.md'
-            readme.write_text('first\n', encoding='utf-8')
-            git('add', 'README.md')
-            git('commit', '--quiet', '-m', 'first')
-            base = git('rev-parse', 'HEAD')
-            readme.write_text('second\n', encoding='utf-8')
-            git('add', 'README.md')
-            git('commit', '--quiet', '-m', 'second')
-            output_file = root / 'actions-output'
-            with patch.object(sys, 'argv', ['ci_plan.py', '--event', 'push', '--base', base]), \
-                    patch.object(ci_plan, '__file__', str(root / 'scripts' / 'ci_plan.py')), \
-                    patch.object(ci_plan, 'github_verified_base', return_value=base), \
-                    patch.dict(os.environ, {'GITHUB_OUTPUT': str(output_file)}), \
-                    contextlib.redirect_stdout(io.StringIO()) as output:
-                ci_plan.main()
-            values = dict(line.split('=', 1) for line in output_file.read_text('utf-8').splitlines())
-            self.assertEqual(values['base'], base)
-            self.assertEqual(git('diff', '--name-only', values['base'] + '...HEAD'), 'README.md')
-            result = json.loads(output.getvalue())
-            for key in result.keys() - {'base'}:
-                self.assertEqual(json.loads(values[key]), result[key])
 
     def test_venv_interpreter_path_keeps_environment_identity(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -615,7 +262,7 @@ class TestPlanningTests(unittest.TestCase):
             # 共享测试设施导入的模块影响所有用例。
             self.assertEqual(scopes('src/peach/shared.py'), ('full',))
         self.assertEqual(scopes('tests/test_ledger_revision.py'), ('core',))
-        self.assertEqual(scopes('.gitlab-ci.yml'), ('tooling', 'packaging'))
+        self.assertEqual(scopes('scripts/run_gitlab_runner.py'), ('tooling',))
         self.assertEqual(scopes('src/peach/not_a_module.py'), ('full',))
 
     def test_relative_and_absolute_imports_name_the_peach_module(self):
@@ -631,23 +278,23 @@ class TestPlanningTests(unittest.TestCase):
             self.assertEqual(runner._imported_modules(runner.ROOT / 'src' / 'peach' / 'example.py'), {'alpha'})
 
     def test_timed_shard_plan_covers_every_file_once_and_starts_with_the_longest(self):
-        names = [f'test_{letter}.py' for letter in 'abcdefg'] + ['test_web_e2e.py']
+        names = [f'test_{letter}.py' for letter in 'abcdefg'] + ['test_frontend_build.py']
         seconds = {'test_a': 300.0, 'test_b': 120.0, 'test_c': 100.0, 'test_d': 90.0, 'test_e': 10.0,
-                   'test_f': 10.0, 'test_g': 50.0, 'test_web_e2e': 1000.0}
+                   'test_f': 10.0, 'test_g': 50.0, 'test_frontend_build': 1000.0}
         plan = runner.shard_plan(names, 4, seconds)
         self.assertEqual(len(plan), 4)
         self.assertCountEqual([name for shard in plan for name in shard], names)
-        self.assertEqual(plan[0], ['test_web_e2e.py'], '最重的文件独占一片并第一个派发')
+        self.assertEqual(plan[0], ['test_frontend_build.py'], '最重的文件独占一片并第一个派发')
 
         def total(shard):
             return sum(seconds[name.removesuffix('.py')] for name in shard)
         totals = [total(shard) for shard in plan]
         self.assertEqual(totals, sorted(totals, reverse=True))
         self.assertLessEqual(max(totals[1:]) - min(totals[1:]), 120.0)
-        # 本机还没有实测表：按个数均分，浏览器冒烟照样独占首片。
+        # 本机还没有实测表：所有文件等重，按文件名顺序均分。
         empty = runner.shard_plan(names, 4, {})
-        self.assertEqual(empty[0], ['test_web_e2e.py'])
-        self.assertEqual(sorted(len(shard) for shard in empty[1:]), [2, 2, 3])
+        self.assertEqual(empty[0], ['test_a.py', 'test_e.py'])
+        self.assertEqual(sorted(len(shard) for shard in empty[1:]), [2, 2, 2])
 
     def test_zero_duration_files_fill_each_shard_and_run_once(self):
         for size in (2, 5, 9):
@@ -714,7 +361,7 @@ class TestPlanningTests(unittest.TestCase):
                 json.dumps({'complete': True, 'success': True, 'count': 1, 'timings': []}), encoding='utf-8')
             return Done()
 
-        plan = [['test_web_e2e.py'], ['test_a.py', 'test_b.py'], ['test_c.py']]
+        plan = [['test_frontend_build.py'], ['test_a.py', 'test_b.py'], ['test_c.py']]
         with contextlib.redirect_stdout(io.StringIO()):
             runner.run_shards(('full',), jobs=1, shard_count=3, spawn=spawn, plan=plan)
         self.assertEqual(seen, list(enumerate(plan)))
@@ -890,21 +537,21 @@ class GateAndFlakyRerunTests(unittest.TestCase):
         return {'id': test_id, 'outcome': 'fail', 'seconds': 1.0, 'message': 'x'}
 
     def test_failed_rows_name_the_files_to_rerun_and_refuse_what_cannot_be_isolated(self):
-        rows = [self.fail('e2e:e2e/folder-layout.test.ts > 目录 > 滚到底'),
-                self.fail('test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants'),
+        rows = [self.fail('test_frontend_build.VitestTests.test_the_island_suite_passes'),
+                self.fail('vitest:test/folder-layout.test.ts > 目录 > 滚到底'),
                 self.fail('vitest:test/react/follow-feed.test.tsx > 页面 > 加载更多'),
                 self.fail(runner.VITEST_CONTAINER),
                 self.fail('test_feeds_web.FeedsWebTests.test_second_round'),
                 {'id': 'test_ok.Case.test_pass', 'outcome': 'pass', 'seconds': 0.1}]
         self.assertEqual(runner.rerun_selectors(rows), [
-            'test_feeds_web.FeedsWebTests.test_second_round', 'frontend/e2e/folder-layout.test.ts',
+            'test_feeds_web.FeedsWebTests.test_second_round', 'frontend/test/folder-layout.test.ts',
             'frontend/test/react/follow-feed.test.tsx'])
-        self.assertEqual(runner.rerun_selectors([self.fail('setUpClass (test_web_e2e.WebE2ESmokeTests)')]),
-                         ['test_web_e2e'], '类级准备失败选择所属模块')
+        self.assertEqual(runner.rerun_selectors([self.fail('setUpClass (test_frontend_build.VitestTests)')]),
+                         ['test_frontend_build'], '类级准备失败选择所属模块')
         self.assertIsNone(runner.rerun_selectors([self.fail(
-            'test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants')]),
-            '浏览器容器失败却没有逐条结果：说不清是哪个文件')
-        many = [self.fail(f'e2e:e2e/page-{index}.test.ts > 用例') for index in range(runner.RERUN_LIMIT + 1)]
+            'test_frontend_build.VitestTests.test_the_island_suite_passes')]),
+            '容器失败却没有逐条结果：说不清是哪个文件')
+        many = [self.fail(f'vitest:test/page-{index}.test.ts > 用例') for index in range(runner.RERUN_LIMIT + 1)]
         self.assertIsNone(runner.rerun_selectors(many), '失败面大多半是真回归，不再重跑一轮')
         self.assertIsNone(runner.rerun_selectors([]))
 
@@ -913,13 +560,13 @@ class GateAndFlakyRerunTests(unittest.TestCase):
             def __init__(self, code):
                 self.returncode = code
 
-        rows = [self.fail('e2e:e2e/folder-layout.test.ts > 目录 > 滚到底')]
+        rows = [self.fail('vitest:test/folder-layout.test.ts > 目录 > 滚到底')]
         commands = []
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertTrue(runner.rerun_failures(rows, spawn=lambda command, **_: commands.append(command) or Done(0)))
-        self.assertEqual(runner.FLAKY, ['frontend/e2e/folder-layout.test.ts'])
+        self.assertEqual(runner.FLAKY, ['frontend/test/folder-layout.test.ts'])
         self.assertIn('--machine-lock-held', commands[0], '父进程已持有整机锁，重跑不能再去等它')
-        self.assertEqual(commands[0][-2:], ['--focus', 'frontend/e2e/folder-layout.test.ts'])
+        self.assertEqual(commands[0][-2:], ['--focus', 'frontend/test/folder-layout.test.ts'])
         runner.FLAKY.clear()
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertFalse(runner.rerun_failures(rows, spawn=lambda command, **_: Done(1)))
@@ -954,7 +601,7 @@ class GateAndFlakyRerunTests(unittest.TestCase):
         from scripts import test_focus
         with patch.object(runner.test_evidence, 'held', side_effect=AssertionError('定向调试不取得共享锁')), \
                 patch.object(test_focus, 'run', return_value=0) as focused:
-            self.assertEqual(runner.main(['--focus', 'frontend/e2e/design-people.test.ts']), 0)
+            self.assertEqual(runner.main(['--focus', 'frontend/test/design-people.test.ts']), 0)
         self.assertEqual(focused.call_count, 1)
 
     def test_named_modules_include_their_direct_behavior_consumers(self):
@@ -977,8 +624,8 @@ class GateAndFlakyRerunTests(unittest.TestCase):
 
     def test_focus_accepts_vitest_files_and_hands_them_to_the_island_suite(self):
         from scripts import test_focus
-        suite, browsers, islands = test_focus.selection(runner.ROOT, ['frontend/test/jav-card-title.test.ts'])
-        self.assertEqual((browsers, islands), ((), ('test/jav-card-title.test.ts',)))
+        suite, islands = test_focus.selection(runner.ROOT, ['frontend/test/jav-card-title.test.ts'])
+        self.assertEqual(islands, ('test/jav-card-title.test.ts',))
         self.assertEqual([test.id() for test in suite], [test_focus.VITEST_SUITE])
         with self.assertRaises(ValueError):
             test_focus.selection(runner.ROOT, ['frontend/test/../../scripts/test_runner.py'])
@@ -987,14 +634,15 @@ class GateAndFlakyRerunTests(unittest.TestCase):
         from scripts import test_focus
         first = 'test_test_planning.TestPlanningTests'
         second = 'test_test_planning.GateAndFlakyRerunTests'
-        expected, _, _ = test_focus.selection(runner.ROOT, [first, second])
-        actual, browsers, islands = test_focus.selection(runner.ROOT, [f'{first}, {second}', first])
+        expected, _ = test_focus.selection(runner.ROOT, [first, second])
+        actual, islands = test_focus.selection(runner.ROOT, [f'{first}, {second}', first])
         self.assertEqual([test.id() for test in actual], [test.id() for test in expected])
-        self.assertEqual((browsers, islands), ((), ()))
-        _, browsers, islands = test_focus.selection(runner.ROOT, [
-            'frontend/e2e/search.test.ts,frontend/test/jav-card-title.test.ts'])
-        self.assertEqual(browsers, ('e2e/search.test.ts',))
-        self.assertEqual(islands, ('test/jav-card-title.test.ts',))
+        self.assertEqual(islands, ())
+        _, islands = test_focus.selection(runner.ROOT, [
+            'frontend/test/api-import.test.ts,frontend/test/jav-card-title.test.ts'])
+        self.assertEqual(islands, ('test/api-import.test.ts', 'test/jav-card-title.test.ts'))
+        with self.assertRaises(ValueError):
+            test_focus.selection(runner.ROOT, ['frontend/e2e/search.test.ts'])
         for invalid in (f'{first},', ', ', f'{first},../outside.py'):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 test_focus.selection(runner.ROOT, [invalid])

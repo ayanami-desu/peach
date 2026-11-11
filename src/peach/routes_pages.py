@@ -20,10 +20,9 @@ import hashlib
 import json
 import os
 import sqlite3
-import sys
 import threading
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 import re
 
 from pathlib import Path
@@ -42,12 +41,13 @@ from fastapi.responses import (
 from . import distribution, onboarding, settings_file
 from .config import PROJECT_ROOT
 from .diagnostic_browser import BUNDLE_CHUNK_NAME
+from .diagnostic_context import host_kind
 from .entities import resolve_entity, resolve_entity_id
 from .media_libraries import LIBRARY_ICONS
-from .routes_auth import (FIRST_ACCESS_DENIED, origin_allowed, query_auth_redirect, require_asset_auth,
+from .routes_auth import (origin_allowed, query_auth_redirect, require_asset_auth,
                           require_page_auth, set_auth_cookie)
-from .web_local_access import first_access_client
 from .web_entry import page_shell, runtime_fact_entries
+from .web_settings import NAVIGATION_ORDERS
 from .web_state import FAVICON
 
 router = APIRouter()
@@ -69,13 +69,14 @@ _SETUP_SYMBOLS = re.compile(r'<symbol id="i-(?:' + '|'.join(sorted({"folder-sear
 _SETUP_COPY = {
     "data_root": ("数据目录", "Peach 数据库、封面、预览图和缓存都放在这里，馆藏较大时会占用数十 GB。"
                               "系统盘空间紧张时，请选择其他磁盘上的文件夹；之后也可在设置页迁移。"),
-    "media_dir": ("媒体目录", "选择存放视频和图片的现有文件夹，也可以使用外置硬盘。"),
     "host": ("谁可以访问", ""),
     "port": ("端口", "浏览器地址里冒号后面的数字，一般不用改。"),
-    "mdns_name": ("局域网访问地址", "选了「同一局域网的设备」之后，其他设备在浏览器里输入这个地址就能打开 Peach。"),
+    "drive_public_url": ("网盘授权回调基址", "填网盘后台登记过的那段公开地址，例如 https://peach.example.com；"
+                                            "网盘授权完成后靠它把浏览器带回 Peach。留空的话先完成设置，"
+                                            "之后在设置页的网盘分区里填写。"),
 }
-#: 「谁可以访问」在页面上的顺序：局域网在左边，也是默认选项——Peach 的本意就是给
-#: 同一局域网里的设备看。命令行问答按 `HOST_OPTIONS` 的编号顺序念，两边取值一致。
+#: 「谁可以访问」在页面上的顺序：对外在左边，也是默认选项——视频由网盘直接交给浏览器，
+#: 观看端多半不是运行 Peach 的这台机器。命令行问答按 `HOST_OPTIONS` 的编号顺序念，两边取值一致。
 _HOST_ORDER = ("2", "1")
 
 
@@ -100,77 +101,37 @@ def _copy_for(key: str, fallback: str) -> tuple[str, str]:
     return _SETUP_COPY.get(key, (fallback, ""))
 
 
-#: 非 Windows 表单说明实际目录的填写位置。
-_POSIX_MEDIA_NOTE = "填写这台设备实际读取媒体的文件夹；Docker 部署填写容器内目录，例如 /media。"
-
-
-#: 有一行媒体来源选了云盘时，媒体库底下出现的那句提示和它的帮助链接。
-_CLOUD_HELP = "请先将 CloudDrive2 或 OpenList 中的网盘挂载为本机文件夹；Windows 读取 NAS 共享时，请先映射为盘符，再选择对应文件夹。本机安装提示仅适用于在本机运行 CloudDrive。文件操作需要挂载工具和网盘账号授予写入权限；光鸭云盘的上传、建文件夹、改名和移动需要 CloudDrive2 v1.1.0 或更高版本，删除和复制暂不支持。"
-_CLOUD_HELP_URL = "https://www.clouddrive2.com/help.html"
-_CLOUD_HELP_LABEL = "挂载帮助"
-
-
-def missing_mount_dependencies(*, windows: bool) -> list[dict[str, str]]:
-    """云盘挂载缺的软件：每项一句「未检测到」和它的下载入口，由 `/api/setup/questions` 交给首启页。"""
-    from .media_configuration import mount_dependencies
-    return [{"name": row["name"], "message": f"未检测到 {row['name']}。",
-             "download_url": row["download_url"], "download_label": f"下载 {row['name']}"}
-            for row in mount_dependencies(system='win32' if windows else 'darwin') if not row['available']]
-
-
-def _media_dir_values(values: Mapping[str, object], default: str) -> list[str]:
-    """提交里的媒体目录：提交的是几行就几行，一行都没有就一行默认值。"""
-    raw = values.get("media_dir")
-    if isinstance(raw, (list, tuple)):
-        return [str(item) for item in raw] or [default]
-    return [str(raw) if raw else default]
-
-
 def _question_view(question) -> dict[str, str]:
     """一道题在页面上的题面、说明、控件种类和输入框前后缀，由 `/api/setup/questions` 交给首启页。"""
     title, help_text = _copy_for(question.key, question.prompt)
     view = {"label": title, "help": help_text, "input": "text", "prefix": "", "suffix": ""}
-    if question.key == "media_dir":
-        view["input"] = "folders"
-    elif question.key == "data_root":
+    if question.key == "data_root":
         view["input"] = "folder"
     elif question.key == "host":
         view["input"] = "choice"
     elif question.key == "port":
         view.update(input="number", prefix="localhost:")
-    elif question.key == "mdns_name":
-        view.update(prefix="http://" if distribution.standalone() else "https://", suffix=".local")
-        if distribution.standalone():
-            view["help"] = ("其他设备打开这个地址时要加上上面的端口，例如 "
-                            "http://peach.local:8900。首次连接请允许 Windows 专用网络访问。")
     return view
 
 
 def _access_on_by_default(asked) -> bool:
-    """访问密码开关第一次出现时开不开：host 默认是局域网（`"2"`）就开。
+    """访问密码开关第一次出现时开不开：host 默认对外（`"2"`）就开。
 
-    独立包默认对局域网监听，明文 HTTP 又没有别的门，所以默认对局域网开放时默认要密码。
+    对外监听时谁都能连上来，服务本身不再判来源，密码是唯一的门，所以默认要密码。
     """
     host_default = next((question.default for question in asked if question.key == "host"), "2")
     return host_default == "2"
 
 
-def _setup_destination(config, *, history_guide: bool) -> str:
-    """完成页的入口：进馆藏，或者选了导入浏览器历史就先去口味页。都带 `onboarding=1`。"""
-    return _normal_url(config) + ('taste?onboarding=1' if history_guide else '?onboarding=1')
-
-
 def _normal_url(config) -> str:
-    """设置完成之后本机浏览器要去的地址。
+    """设置完成之后浏览器要去的地址。
 
-    独立包即使对局域网监听，本机也走回环；源码部署才走由托盘维护的 HTTPS 固定入口。Docker 的
+    源码部署与服务端安装包都走回环——设置这一步就是在跑 Peach 的那台机器上做的。Docker 的
     外部地址由宿主机端口映射决定，服务自己不知道，留在当前地址。
     """
     if distribution.docker():
         return "/"
-    if distribution.standalone() or config.server.host in _LOOPBACK:
-        return f"http://127.0.0.1:{config.server.port}/"
-    return f"https://{config.server.mdns_name}.local/"
+    return f"http://127.0.0.1:{config.server.port}/"
 
 
 def asset_response(request: Request, path: Path, media: str, *, immutable: bool = False) -> Response:
@@ -305,17 +266,12 @@ def index(request: Request, args: dict[str, str] = Depends(require_page_auth)):
         return response
     if not settings.configured:
         # 未配置不是错误状态：服务照常起，首页（和任何前端路由的深链）变成首次运行页。
-        html = setup_shell()
-        if "edit" in request.query_params and _copy_editor_available():
-            html = _with_copy_editor(html)
-        response = HTMLResponse(html)
+        response = HTMLResponse(setup_shell())
         response.headers["Cache-Control"] = "no-store"
         return response
     if not settings.page_path.is_file():
         return PlainTextResponse("Peach page missing", status_code=500)
     shape = getattr(request.state, "entity_shape", None)
-    editor = "edit" in request.query_params and _copy_editor_available()
-    from .client_updates import runtime_identity
     html = settings.page_path.read_text(encoding="utf-8")
     from .web_tutorial import q_tutorial_progress
     try:
@@ -324,99 +280,17 @@ def index(request: Request, args: dict[str, str] = Depends(require_page_auth)):
     except sqlite3.Error:
         # 账本不可读时仍可进入配置；教程客户端保留“未取得状态”的提示与重试入口。
         pass
-    entries = {'peach-client-runtime': runtime_identity()}
+    entries = {}
     if shape is not None:
         entries['peach-entity-shape'] = shape
     for name, entry in entries.items():
         payload = json.dumps(entry, ensure_ascii=False).replace("<", "\\u003c")
         script = f'<script type="application/json" id="{name}">{payload}</script>'
         html = html.replace("</head>", script + "</head>", 1) if "</head>" in html else html + script
-    if editor:
-        html = _with_copy_editor(html)
     response = HTMLResponse(html)
     response.headers["Cache-Control"] = "no-store"
     set_auth_cookie(response, request)
     return response
-
-
-def _copy_editor_available() -> bool:
-    return not getattr(sys, "frozen", False) and all((PROJECT_ROOT / path).is_file() for path in (
-        "scripts/dev/copy-editor.js", "frontend/src/copy-editor-core.js"))
-
-
-def _with_copy_editor(html: str) -> str:
-    html = html.replace("<body", '<body data-peach-copy-mode="source"', 1)
-    return html.replace("</body>", '<script src="/dev/copy-editor-core.js" defer></script><script src="/dev/copy-editor.js" defer></script></body>')
-
-
-def _require_copy_editor():
-    if not _copy_editor_available():
-        raise HTTPException(404, "missing")
-
-
-@router.get("/dev/copy-editor.js")
-def copy_editor_script(request: Request, args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    return asset_response(request, PROJECT_ROOT / "scripts/dev/copy-editor.js", "text/javascript")
-
-
-@router.get("/dev/copy-editor-core.js")
-def copy_editor_core(request: Request, args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    return asset_response(request, PROJECT_ROOT / "frontend/src/copy-editor-core.js", "text/javascript")
-
-
-@router.get("/dev/copy-edits")
-def copy_editor_edits(args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    path = PROJECT_ROOT / "build/copy-editor/edits.json"
-    return JSONResponse(json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {},
-                        headers={"Cache-Control": "no-store"})
-
-
-@router.get("/dev/copy-candidates")
-def copy_editor_candidates(text: str = "", args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    from . import dev_copy
-    try:
-        return JSONResponse(dev_copy.candidates(PROJECT_ROOT, text), headers={"Cache-Control": "no-store"})
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-
-
-@router.post("/dev/copy-save")
-async def copy_editor_save(request: Request, args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    if request.headers.get("origin") != str(request.base_url).rstrip("/"):
-        raise HTTPException(403, "same origin required")
-    if len(await request.body()) > 32768:
-        raise HTTPException(413, "too large")
-    try:
-        from . import dev_copy_runtime
-        return JSONResponse(dev_copy_runtime.submit(PROJECT_ROOT, await request.json()))
-    except (ValueError, TypeError, KeyError) as error:
-        return JSONResponse({"error": str(error)}, status_code=409)
-
-
-@router.get('/dev/copy-apply')
-def copy_editor_apply_status(args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    from . import dev_copy_runtime
-    return JSONResponse(dev_copy_runtime.status(PROJECT_ROOT), headers={'Cache-Control': 'no-store'})
-
-
-@router.post('/dev/copy-apply')
-async def copy_editor_apply_retry(request: Request, args: dict[str, str] = Depends(require_asset_auth)):
-    _require_copy_editor()
-    if request.headers.get('origin') != str(request.base_url).rstrip('/'):
-        raise HTTPException(403, 'same origin required')
-    if len(await request.body()) > 32768:
-        raise HTTPException(413, 'too large')
-    from . import dev_copy_runtime
-    try:
-        return JSONResponse(dev_copy_runtime.submit(PROJECT_ROOT, await request.json(), retry=True))
-    except (ValueError, TypeError, KeyError) as error:
-        return JSONResponse({'error': str(error)}, status_code=409)
 
 
 def _setup_guard(request: Request, *, submit: bool) -> None:
@@ -424,92 +298,73 @@ def _setup_guard(request: Request, *, submit: bool) -> None:
 
     形态各不相同因为原因各不相同：已经配置过的机器上这些端点根本不存在（404，不是
     「禁止」——把它做成一条可探测的 403 等于对外宣告这里有个初始化入口）；非回环调用方是
-    403（引导服务只绑 127.0.0.1，能走到这里说明有人转发了它）；独立包认地址栏里的主机名，
-    不是回环写法也是 403。Docker 的请求都从网桥进来，不能只认回环，改按 `first_access_client`
-    收本机与私有网络、不带代理转发头的来源（ADR-0149），403 正文带 `docker` 让页面说清楚去哪里打开。
-    提交再按 `origin_allowed` 看来源：从别的页面发来的表单不收，隧道地址在首启时不算本机。
+    403（未配置时服务只绑 127.0.0.1，能走到这里说明有人转发了它）。Docker 的请求都从网桥进来，
+    回环判据在那里不成立，所以这一支要本机或局域网内的对端：把端口映射到公网的容器在设置完成前
+    等于把这份设置交给任何够得着它的人。提交再按 `origin_allowed` 看来源：从别的页面发来的表单不收。
     """
     settings = request.app.state.settings
     if settings.configured:
         raise HTTPException(status_code=404, detail="not found")
     if distribution.docker():
-        if not first_access_client(request):
-            raise HTTPException(status_code=403, detail={"message": FIRST_ACCESS_DENIED, "docker": True})
-        if submit and not origin_allowed(request, guard="setup", tunnels=False):
+        host = request.client.host if request.client else ""
+        if host_kind(host) == 'public':
+            raise HTTPException(status_code=403, detail="请从部署这台 Peach 的机器或局域网打开设置")
+        if submit and not origin_allowed(request, guard="setup"):
             raise HTTPException(status_code=403, detail="请从 Peach 设置页提交")
         return
     host = request.client.host if request.client else ""
     if host not in _LOOPBACK:
         raise HTTPException(status_code=403, detail="setup is loopback-only")
-    if distribution.standalone() and request.url.hostname not in _LOOPBACK:
+    if request.url.hostname not in _LOOPBACK:
         raise HTTPException(status_code=403, detail="请使用本机地址打开设置")
     if not submit:
         return
-    if not origin_allowed(request, guard="setup", tunnels=False):
+    if not origin_allowed(request, guard="setup"):
         raise HTTPException(status_code=403, detail="请从 Peach 设置页提交")
 
 
 @router.get("/api/setup/questions")
 def setup_questions(request: Request):
-    """首启表单要画的一切：题目与顺序、默认值、题面与说明、可选项、平台差异与开关初始态。
+    """首启表单要画的一切：题目与顺序、默认值、题面与说明、可选项与开关初始态。
 
     页面骨架上的固定文案（标题、按钮、「完成设置后」那一组、访问密码分区的几句话）归前端；
-    这里给的是随平台、打包形态、本机已装软件或题目定义而变的那部分。守卫与提交端点相同，
-    只是不看 Origin：配置完成后这里 404，运行事实不再对外。
+    这里给的是随部署形态或题目定义而变的那部分。守卫与提交端点相同，只是不看 Origin：
+    配置完成后这里 404，运行事实不再对外。
     """
     _setup_guard(request, submit=False)
-    from . import access, peach_proxy, remote_reporting
-    windows = os.name == "nt"
+    from . import access
     docker = distribution.docker()
-    asked = _asked(onboarding.questions(settings_file.active(), windows=windows), docker=docker)
+    asked = _asked(onboarding.questions(settings_file.active()), docker=docker)
     host_labels = dict(onboarding.HOST_OPTIONS)
-    from .media_configuration import SOURCE_OPTIONS
     items = []
     for question in asked:
         view = _question_view(question)
-        note = _POSIX_MEDIA_NOTE if question.key == "media_dir" and not windows else ""
         item: dict[str, object] = {
             "key": question.key, "label": view["label"],
-            "help": [line for line in (view["help"], note) if line],
-            "default": (DOCKER_MEDIA_DIR if docker else "") if question.key == "media_dir" else question.default,
+            "help": [view["help"]] if view["help"] else [],
+            "default": question.default,
             # 星号与 `required` 跟着输入框走：两段式单选总有一项选中，不标。
             "required": question.key != "host",
-            # 目录和访问范围属于首次设置主流程，端口与局域网名称按需展开。
-            "advanced": question.key not in {"media_dir", "data_root", "host"},
+            # 目录与访问范围属于首次设置主流程，端口与网盘回调基址按需展开。
+            "advanced": question.key not in {"data_root", "host"},
             "input": view["input"], "prefix": view["prefix"], "suffix": view["suffix"],
         }
         if question.key == "host":
             item["options"] = [{"value": choice, "label": host_labels[choice]} for choice in _HOST_ORDER]
-        if question.key == "mdns_name":
-            # 局域网地址只在选了「同一局域网的设备」时显示并提交；不提交时服务端按默认值补。
-            item["visible_when"] = {"host": "2"}
         items.append(item)
     return JSONResponse({
-        "windows": windows,
-        "standalone": distribution.standalone(),
         "questions": items,
-        "media_sources": [{"value": value, "label": label} for value, label in SOURCE_OPTIONS],
-        "media_source_default": "local",
-        "media_root": None,
-        "cloud": {"help": _CLOUD_HELP, "link": {"url": _CLOUD_HELP_URL, "label": _CLOUD_HELP_LABEL},
-                  "dependencies": missing_mount_dependencies(windows=windows)},
         "access_enabled": _access_on_by_default(asked),
-        "scan_now": True,
-        "history_guide": False,
-        "peach_proxy": peach_proxy.describe(settings_file.active().directory("secrets")),
         "docker": docker,
         # Docker 的数据目录固定是卷挂载点，不出题；完成前的确认页照样列出它。
         "data_root": str(settings_file.active().data_root) if docker else None,
         # 容器启动时已按 `PEACH_ACCESS_PASSWORD` 写下访问密码，页面不再出这一题。
         "access_preset": access.load(settings_file.active().directory("secrets") / "access.json")["mode"] == "password",
-        "remote_reporting": remote_reporting.snapshot(),
     })
 
 
-#: Docker 首次设置不出的题：数据目录是 `/data` 卷，监听地址、端口与局域网名由 Compose 决定。
-DOCKER_FIXED_QUESTIONS = frozenset({"data_root", "host", "port", "mdns_name"})
-#: Compose 把宿主机媒体目录挂到容器里的这个位置。
-DOCKER_MEDIA_DIR = "/media"
+#: Docker 首次设置不出的题：数据目录是 `/data` 卷，监听地址与端口由 Compose 决定。
+DOCKER_FIXED_QUESTIONS = frozenset({"data_root", "host", "port"})
 
 
 def _asked(asked, *, docker: bool):
@@ -520,31 +375,16 @@ def _json_text(value: object) -> str:
     return "" if value is None else str(value)
 
 
-def _submitted_media_rows(rows: object) -> dict[str, list]:
-    """JSON 媒体行拆成与表单相同的逐列列表；身份字段按行原样带给配置校验。"""
-    rows = [row if isinstance(row, dict) else {} for row in rows] if isinstance(rows, list) else []
-    return {
-        "media_dir": [_json_text(row.get("path")) for row in rows],
-        "media_location": [_json_text(row.get("location", "local")) for row in rows],
-        "media_root": [_json_text(row.get("root")) for row in rows],
-        "media_cost": [row.get("cost") for row in rows],
-        "media_identity": [{key: row[key] for key in ("root_id", "library_id", "library", "library_icon", "change_mode",
-                                                     "library_color", "library_policy", "library_stages")
-                            if key in row} for row in rows],
-    }
-
-
 @router.post("/api/setup")
 async def setup_submit_json(request: Request):
     """首启提交：校验一份答卷，全对就落盘；错误按题目 key 回给页面写回原位。
 
-    正文形态见 `docs/OPERATIONS.md`「首次设置的内部流程」。正文先换成扁平 dict：媒体
-    文件夹三列是列表，其余是字串。错误按题目的 key 收集，访问密码的错误在 `access_password`；
-    先报全部字段错误，字段都对了才看设置文件在不在（409，并发提交或重发，不能覆盖别人刚
-    写好的那份）。
+    正文是一个扁平对象：题目 key 各自一句，外加上面的访问密码与 `access_enabled`。错误按
+    题目的 key 收集，访问密码的错误在 `access_password`；先报全部字段错误，字段都对了才看
+    设置文件在不在（409，并发提交或重发，不能覆盖别人刚写好的那份）。
 
-    扫描不在这里跑：这条引导服务在设置完成的那一刻就会被托盘停掉，跑在它进程里的
-    扫描会跟着一起死。这里只写一个标记，由托盘切到正常服务之后消费。
+    网盘接入不在这条流程里：设置完成之后在设置页逐个填回调基址并发起授权。首次扫描同理，
+    要等网盘接上、有了根目录才有可扫的东西。
     """
     _setup_guard(request, submit=True)
     try:
@@ -553,21 +393,11 @@ async def setup_submit_json(request: Request):
         body = None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="请求正文要是 JSON 对象")
-    from . import remote_reporting
-    try:
-        reporting = remote_reporting.parse_choices(body.get("remote_reporting", {}), partial=True)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     submitted: dict[str, object] = {
         key: _json_text(body[key])
-        for key in ("data_root", "host", "port", "mdns_name", "access_password", "access_confirm")
+        for key in ("data_root", "host", "port", "drive_public_url", "access_password", "access_confirm")
         if body.get(key) is not None and not (distribution.docker() and key in DOCKER_FIXED_QUESTIONS)}
-    submitted.update(_submitted_media_rows(body.get("media_dir")))
-    submitted["skip_media"] = body.get("skip_media") is True
-    scan_now = body.get("scan_now") is True and not submitted["skip_media"]
-    history_guide = body.get("history_guide") is True
-    windows = os.name == "nt"
-    answers, errors = _read_answers(settings_file.active(), submitted, windows=windows)
+    answers, errors = _read_answers(settings_file.active(), submitted)
     from . import access
     password_enabled = body.get("access_enabled") is True
     password = submitted.get("access_password", "") if password_enabled else ""
@@ -578,18 +408,7 @@ async def setup_submit_json(request: Request):
         access.validate_password(password, confirmation)
     except ValueError as exc:
         errors["access_password"] = str(exc)
-    standalone = distribution.standalone()
-    from . import peach_proxy
-    proxy_values = None
-    proxy_root = settings_file.active().directory("secrets")
-    if answers is not None:
-        resolved, _broken = onboarding.resolve_config(answers.data_root)
-        proxy_root = resolved.directory("secrets")
-    try:
-        proxy_values = peach_proxy.validate(proxy_root, body.get("peach_proxy", {"mode": "environment"}))
-    except ValueError as exc:
-        errors["peach_proxy"] = str(exc)
-    if standalone and answers is not None:
+    if distribution.standalone() and answers is not None:
         try:
             onboarding.check_available_port(answers.port, request.url.port or 80)
         except ValueError as exc:
@@ -601,28 +420,21 @@ async def setup_submit_json(request: Request):
         if resolved.path.exists():
             raise HTTPException(status_code=409, detail="settings file already exists")
         try:
-            applied = onboarding.apply(resolved, answers, windows=windows, access_password=password,
-                                       peach_proxy_values=proxy_values, require_tls=windows and not standalone)
+            applied = onboarding.apply(resolved, answers, access_password=password)
             settings_file.remember_data_root(settings_file.active(), applied.config)
         except (OSError, RuntimeError) as exc:
             errors = {"data_root": str(exc)}
     if errors:
         raise HTTPException(status_code=400, detail={"message": "有几项需要修改", "errors": errors})
-    remote_reporting.save(reporting, applied.config)
-    if scan_now:
-        onboarding.request_first_scan(applied.config, "configured" if answers.media_sources is not None else "local")
-    return _setup_done(applied.config, scan_now=scan_now, history_guide=history_guide,
-                       skip_media=submitted["skip_media"])
+    return _setup_done(applied.config)
 
 
-def _setup_done(config, *, scan_now: bool = False, history_guide: bool = False, restored: bool = False,
-                skip_media: bool = False):
-    destination = _normal_url(config) if restored else _setup_destination(config, history_guide=history_guide)
+def _setup_done(config, *, restored: bool = False):
+    # 接回已有数据目录的实例已经配置好了：再带 `?onboarding=1` 会让入口页去要那份已经不存在的首设表单。
+    url = _normal_url(config)
+    destination = url if restored else url + "?onboarding=1"
     return JSONResponse({
         "url": destination,
-        "scan_requested": scan_now,
-        "skip_media": skip_media,
-        "history_guide": history_guide,
         "restored": restored,
         "standalone": distribution.standalone(),
         # 独立包与 Docker 的完成页过一会儿自己跳到入口：服务要先换成正常模式。时长由前端定，
@@ -661,69 +473,16 @@ async def setup_restore(request: Request):
     return _setup_done(config, restored=True)
 
 
-def _setup_media_source_errors(dirs: Sequence[str], kinds: object,
-                               problems: Sequence[str], validate) -> list[str]:
-    """首启的本地来源必须真的可读；CloudDrive 来源仍可离线保存。
-
-    `media_configuration.validate` 对整表不成立的情况（一行都没填、超过 100 行）
-    只回一句话，和行数对不上。那种时候原样交回去让页面显示，不能按行去覆盖——
-    索引会越界，用户看到的是 500 而不是「请添加 1 到 100 个媒体目录」。
-    """
-    if problems and len(problems) != len(dirs):
-        return list(problems)
-    errors = list(problems) if problems else [""] * len(dirs)
-    source_kinds = list(kinds) if isinstance(kinds, (list, tuple)) else []
-    for index, path in enumerate(dirs):
-        kind = source_kinds[index] if index < len(source_kinds) else "local"
-        if kind != "local":
-            continue
-        try:
-            validate(path)
-        except ValueError as exc:
-            errors[index] = str(exc)
-    return errors if any(errors) else []
-
-
 def _read_answers(
-    config, submitted: Mapping[str, object], *, windows: bool,
+    config, submitted: Mapping[str, object],
 ) -> tuple[object, dict[str, object]]:
     """逐字段校验，错误按字段收集。校验器和 CLI 问答用的是同一批。
 
-    媒体目录那一项是多行：错误是与行对应的列表，其余字段的错误是一句话。
+    空着的字段按题目的默认值补，和命令行直接回车等价。
     """
     values: dict[str, object] = {}
     errors: dict[str, object] = {}
-    for question in onboarding.questions(config, windows=windows):
-        if question.key == "media_dir":
-            if submitted.get("skip_media") is True:
-                values.update(media_dirs=(), media_sources=[])
-                continue
-            from . import media_configuration
-            dirs = _media_dir_values(submitted, "")
-            kinds = submitted.get("media_location", [])
-            roots = submitted.get("media_root", [])
-            costs = submitted.get("media_cost", [])
-            sources = [{"location": kinds[i] if i < len(kinds) else "local", "path": path,
-                        "root": roots[i] if i < len(roots) else ""} for i, path in enumerate(dirs)]
-            for index, row in enumerate(sources):
-                if index < len(costs) and costs[index] is not None:
-                    row["cost"] = costs[index]
-                identities = submitted.get("media_identity", [])
-                if isinstance(identities, list) and index < len(identities) and isinstance(identities[index], dict):
-                    row.update(identities[index])
-            sources = media_configuration.prepare_sources(sources, windows=windows, config=config)
-            _, _, problems = media_configuration.validate(sources, windows=windows, config=config)
-            if not problems:
-                from . import media_identity
-                try:
-                    media_identity.configure_sources(config, sources, windows=windows)
-                except ValueError as exc:
-                    problems = [str(exc)] * len(sources)
-            problems = _setup_media_source_errors(dirs, kinds, problems, question.validate)
-            if problems:
-                errors["media_dir"] = problems
-            values.update(media_dirs=tuple(Path(path) for path in dirs), media_sources=sources)
-            continue
+    for question in onboarding.questions(config):
         raw = str(submitted.get(question.key, "") or "")
         try:
             values[question.key] = question.validate(raw if raw.strip() else question.default)
@@ -812,17 +571,6 @@ def bundled_site_icon(request: Request, name: str,
     if not path.is_file():
         return PlainTextResponse("missing", status_code=404)
     return asset_response(request, path, "image/png")
-
-
-@router.api_route('/browser-icon/{key}', methods=['GET','HEAD'])
-def bundled_browser_icon(request: Request, key: str,
-                         args: dict[str,str] = Depends(require_asset_auth)):
-    from .browser_icons import resolve
-    target = resolve(key)
-    if target is None:
-        return PlainTextResponse('missing',status_code=404)
-    path, content_type = target
-    return asset_response(request,path,content_type)
 
 
 @router.api_route("/robots.txt", methods=["GET", "HEAD"])
@@ -938,16 +686,20 @@ def post_route_redirect(request: Request, item_id: int,
 @router.api_route("/diagnostics", methods=["GET", "HEAD"])
 def management_route_redirect(request: Request, args: dict[str, str] = Depends(require_page_auth)):
     paths = {"/activity": "/tasks", "/scraping": "/sources",
-             "/configuration": "/settings/library", "/follow-manage": "/subscriptions",
+             "/configuration": "/settings/drives", "/follow-manage": "/subscriptions",
              "/diagnostics": "/settings/diagnostics"}
     return _page_redirect(request, paths[request.url.path])
+
+
+#: 设置页各分区的前端路由由 `web_settings.NAVIGATION_ORDERS` 决定：新入口在那边登记后，
+#: 刷新与直接粘地址才进得来。两份清单各写一遍就会漂，所以这里直接取并集。
+SETTINGS_SECTIONS = frozenset(NAVIGATION_ORDERS['preferences']) | frozenset(NAVIGATION_ORDERS['configuration'])
 
 
 @router.api_route("/settings/{section}", methods=["GET", "HEAD"])
 def settings_section_route(request: Request, section: str,
                            args: dict[str, str] = Depends(require_page_auth)):
-    if section not in {"appearance", "playback", "jav", "search", "content", "library",
-                       "subscriptions", "downloads", "network", "maintenance", "diagnostics"}:
+    if section not in SETTINGS_SECTIONS:
         raise HTTPException(404, "not found")
     return index(request, args)
 
@@ -1010,12 +762,9 @@ def entity_route(request: Request, name: str,
 @router.api_route("/wall", methods=["GET", "HEAD"])
 @router.api_route("/trash", methods=["GET", "HEAD"])
 @router.api_route("/review", methods=["GET", "HEAD"])
-@router.api_route("/taste", methods=["GET", "HEAD"])
 @router.api_route("/data-cleanup", methods=["GET", "HEAD"])
 @router.api_route("/data-cleanup/organize", methods=["GET", "HEAD"])
-@router.api_route("/data-cleanup/resource-sync", methods=["GET", "HEAD"])
 @router.api_route("/data-cleanup/orphan-records", methods=["GET", "HEAD"])
-@router.api_route("/data-cleanup/media-repair", methods=["GET", "HEAD"])
 @router.api_route("/data-cleanup/links", methods=["GET", "HEAD"])
 @router.api_route("/data-cleanup/batch-delete", methods=["GET", "HEAD"])
 @router.api_route("/duplicates", methods=["GET", "HEAD"])
@@ -1024,14 +773,11 @@ def entity_route(request: Request, name: str,
 # 留下的记录是「刚才为什么没跑」的唯一答案，从别处贴过来的地址不该是 404。
 @router.api_route("/tasks", methods=["GET", "HEAD"])
 @router.api_route("/sources", methods=["GET", "HEAD"])
-@router.api_route("/resource-sync", methods=["GET", "HEAD"])
 @router.api_route("/follow", methods=["GET", "HEAD"])
 @router.api_route("/subscriptions", methods=["GET", "HEAD"])
 # 配置页是主站里的一屏（island），数据走 `/api/configuration`。未配置时 `index()` 给的是
 # 首次运行表单，正好就是「请先完成首次设置」该长的样子。
 @router.api_route("/settings", methods=["GET", "HEAD"])
-# 「应用与维护」之下的子页「修复与迁移」，不在配置分区里。
-@router.api_route("/settings/maintenance/repairs", methods=["GET", "HEAD"])
 def client_route(request: Request, item_id: int | None = None,
                  args: dict[str, str] = Depends(require_page_auth)):
     return index(request, args)

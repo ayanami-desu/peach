@@ -7,58 +7,46 @@
 | --- | --- |
 | `routes_auth` | 口令闸门与登录页，三个 `require_*` 依赖 |
 | `routes_pages` | 单页界面、静态资产与全部前端路由落点 |
-| `routes_configuration` | 本机配置与账号设置 |
-| `routes_jav_browser` | JAV 用户脚本的专用权限、添加与状态查询 |
-| `routes_media` | 播放、分片、缩图、封面、头像、外链圆标 |
-| `routes_subtitles` | 字幕转换、SubtitleCat 中文字幕搜索与加载 |
+| `routes_configuration` | 本机配置、网盘授权与媒体库分组 |
+| `routes_media` | 播放取流、缩图、封面、头像、外链圆标 |
 | `routes_api` | JSON 契约出口，含两条 `/api/{route:path}` catch-all |
 
 `include_router` 的顺序是契约的一部分，不是排版：FastAPI 按注册顺序匹配，
 `routes_api` 的两条 catch-all 会吃掉一切 `/api/...`，所以它必须最后。
-`/api/stream-plan` 和 `/api/stream-cancel` 住在 `routes_media`，那个 router 也因此
-要排在 `routes_api` 前面。
+`/api/stream-plan` 住在 `routes_media`，那个 router 也因此要排在 `routes_api` 前面。
 
 留在本文件里的只有全应用一份的东西：依赖装配、`lifespan`、异常处理器、`/vendor`
 挂载、响应头与压缩中间件和 `/healthz`。
 """
 import asyncio
 import logging
+import secrets
+import sqlite3
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.datastructures import MutableHeaders
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
-from . import (__version__, browser_transport, distribution, feeds, ledger_backups, tunnel, web_contract,
-               web_feeds, web_follow, web_settings)
-from . import routes_api, routes_auth, routes_configuration, routes_jav_browser, routes_media, routes_pages, routes_subtitles
-from .buildinfo import frozen_build
-from .config import LOCATION_ROOT_DECLARATIONS, MEDIA_ROOT_DECLARATIONS, PeachSettings
+from . import __version__, feeds, ledger_backups, media_probe, record_rehome, wants, web_contract, web_feeds, web_follow
+from . import routes_api, routes_auth, routes_configuration, routes_media, routes_pages
+from .config import PeachSettings
+from .drive_connections import DriveConnections
+from .drive_sync import DriveSync
+from .drive_stream import build as build_streamer
 from .ffmpeg import FFmpegResolver
-from .follow_scheduler import FEED_JOB_ID, FollowScheduleConfig, FollowUpdateScheduler
 from .follow_covers import FollowCoverService
 from .follow_faces import FollowFaceIndex
+from .follow_scheduler import FEED_JOB_ID, FollowScheduleConfig, FollowUpdateScheduler
 from .follow_stream import FollowMediaResolver
-from .http import HttpxTransport
-from .remote_media_cache import MEDIA_SECURITY_HEADERS
 from .health import inspect_database
-from .media import (
-    FilesystemBackend,
-    MediaEngine,
-    MediaNotFound,
-    MediaOffline,
-    MediaUnavailable,
-)
-from .mdns import create_mdns_publisher
-from .mount_reachability import MountReachability
-from .mp4repair import HeaderRepairStore
-from .platform import location_mounts
+from .http import HttpxTransport
+from .media import MediaEngine, MediaNotFound, MediaUnavailable
 from .previews import (
     COVER_SMALL_THUMB_EDGE,
     COVER_SMALL_THUMB_QUALITY,
@@ -70,31 +58,18 @@ from .previews import (
     cover_thumb_root,
     entity_thumb_root,
 )
-from .follow_secrets import credential_store_for
-from .push_discovery import PushDiscoveryService
-from .web_downloads import build_download_service
-from .web_local_access import first_access_client
-from .sample_images import SampleCache
-from .sample_images import cache_root as sample_cache_root
 from .providers import OpenCodeGoClient, default_registry
+from .remote_media_cache import MEDIA_SECURITY_HEADERS
 from .repository import LedgerDatabase, LedgerRepository
-from .review_mirror import ReviewMirror
-from .routes_auth import FIRST_ACCESS_DENIED, AssetLoginRequired, PageLoginRequired
+from .scan import ScanService
+from .routes_auth import AssetLoginRequired, PageLoginRequired
 # 两档缓存时长的实现在 `routes_media`，这里再导出：它们是对外的缓存契约，
 # tests/test_follow_web.py 按 `api.MEDIA_CACHE_SECONDS` 断言两者的关系。
 from .routes_media import AVATAR_CACHE_SECONDS, MEDIA_CACHE_SECONDS  # noqa: F401
-from .segments import HlsSegmentService
-from .streaming import StreamSessionRegistry
-from .sync import LedgerSync
-from .transcodes import TranscodeService
-
+from .sample_images import SampleCache
+from .sample_images import cache_root as sample_cache_root
 
 LOGGER = logging.getLogger(__name__)
-
-#: 这个进程的构建身份，打包时埋在包根，进程内不变。源码运行时没有第二份代码，是 None。
-#: 换生产托盘的脚本靠它确认跑起来的正是这次打出的包：版本号一次发布只推一格，同一个
-#: 版本号下会有很多个构建，只比版本号证明不了二进制真的换掉了。
-BUILD = frozen_build()
 
 #: gzip 不碰的内容类型。Starlette 的默认名单已经排掉 `video/*`、`audio/*` 和各种
 #: 已压缩的图片，这里再补两个它没排、而 Peach 会真的撞上的：
@@ -136,35 +111,12 @@ class ResponseHeadersMiddleware:
                     policy.set_cookie('peach_media_policy','1',max_age=365*86400,httponly=True,
                                       secure=scope['scheme']=='https',samesite='strict')
                     headers.append('set-cookie',policy.headers['set-cookie'])
-                headers['Referrer-Policy'] = 'same-origin'
+                if 'referrer-policy' not in headers:
+                    headers['Referrer-Policy'] = 'same-origin'
                 headers['X-Robots-Tag'] = routes_pages.ROBOTS_TAG
             await send(message)
 
         await self.app(scope, receive, send_headers)
-
-
-class FirstSetupSourceMiddleware:
-    """Docker 首次设置完成前，服务没有口令也没有访问策略，谁连得上谁就能调接口（ADR-0149）。
-
-    这段时间 `/api/` 与写请求只收 `first_access_client` 认的来源：本机或私有网络、不带代理转发头。
-    页面壳与静态资源照常给，来源不满足的浏览器也能看到首次设置页上那句说明。配置完成后
-    服务换成正常模式，由口令与访问策略把关，这一层不再起作用。
-    """
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and distribution.docker():
-            request = Request(scope)
-            settings = request.app.state.settings
-            if (not settings.configured
-                    and (scope["path"].startswith("/api/") or scope["method"] not in {"GET", "HEAD"})
-                    and not first_access_client(request)):
-                response = JSONResponse({"error": FIRST_ACCESS_DENIED, "docker": True}, status_code=403)
-                await response(scope, receive, send)
-                return
-        await self.app(scope, receive, send)
 
 
 #: Starlette 自己抛的那几种 HTTPException 带的是英文 detail，给人看之前换成中文。
@@ -172,31 +124,6 @@ _DEFAULT_DETAILS = {
     "Not Found": "这个地址下没有页面。",
     "Method Not Allowed": "这个地址不接受这种请求。",
 }
-
-
-def _offline_response(exc: MediaOffline) -> JSONResponse:
-    """脱盘：来源盘整体不在，客户端据此显示「脱盘模式」而不是当成文件丢失。"""
-    response = JSONResponse(
-        {"error": "offline", "source": exc.source, "root_id": exc.root_id, "id": exc.asset_id},
-        status_code=503,
-    )
-    response.headers["X-Peach-Offline"] = "1"
-    return response
-
-
-def _writer(sync: LedgerSync | None) -> bool:
-    """这台是不是账本写入端。只读端不起任何会往账本里写的后台通道。"""
-    return sync is None or not sync.read_only
-
-
-def _start_tunnel(settings: PeachSettings, manager: tunnel.TunnelManager) -> None:
-    """公网入口只按本次启动注入的设置开；不回头读设置文件里的当前值。"""
-    if not (settings.tunnel_enabled and settings.configured):
-        return
-    try:
-        manager.start(tunnel.plan_for_settings(settings))
-    except tunnel.TunnelError:
-        LOGGER.warning("Cloudflare Tunnel 未能启动", exc_info=True)
 
 
 def _restore_task_center(contract) -> None:
@@ -209,9 +136,6 @@ def _restore_task_center(contract) -> None:
     后继是例外：它重新排队而不判 `interrupted`，冻在终态就再也没有重试的机会
     （ADR-0040 第六条）。排着的那些也在这一步被叫醒，接着跑完。
     """
-    from .job_recovery import reconcile_paused
-    if contract.task_runs.enabled:
-        reconcile_paused(contract.db_path)
     recovered = contract.task_runs.recover_interrupted()
     if recovered:
         LOGGER.info("task center recovered %s interrupted run(s)", len(recovered))
@@ -229,7 +153,7 @@ def _restore_task_center(contract) -> None:
 #: 索引、筛选项都建在它上面）、统计与搜索推荐池，重启后第一个打开页面的人不再等它们一起冷算。
 WARM_AGGREGATES = (("/api/entity/shapes", {}), ("/api/items", {"limit": "60"}), ("/api/stats", {}),
                    ("/api/search/recommendations", {}),
-                   ("/api/taste", {"window": "all"}), ("/api/review", {}), ("/api/ads", {}),
+                   ("/api/review", {}), ("/api/ads", {}),
                    ("/api/follow", {}))
 
 
@@ -241,31 +165,10 @@ def _start_ledger_services(settings: PeachSettings, contract, services) -> bool:
     except Exception:
         LOGGER.exception('账本恢复标记未能处理')
     status = inspect_database(settings.db_path)
-    repairs = getattr(contract, 'upgrade_repairs', None)
-    if status['schema'] == 'pending' and repairs is not None and repairs.available:
-        from .config import MIGRATIONS_DIR
-        from .migrations import upgrade
-        import time
-        try:
-            upgrade(settings.db_path, MIGRATIONS_DIR,
-                    settings.db_path.with_name(f'ledger.pre-schema-{time.time_ns()}.db'))
-            status = inspect_database(settings.db_path)
-            contract.task_runs.enabled = contract.task_runs.available()
-        except Exception as exc:
-            repairs.error = str(exc)
-            LOGGER.exception('自动迁移失败，后台任务保持停止')
-            return False
     if not status["readable"] or status["schema"] != "current":
         LOGGER.warning("数据库未就绪，依赖数据库的后台任务保持停止（数据库：%s；结构：%s）；数据库准备完成后重启服务。",
                        status["database"], status["schema"])
         return False
-    if repairs is not None:
-        try:
-            repairs.prepare()
-        except Exception as exc:
-            repairs.error = str(exc)
-            LOGGER.exception('升级补修未完成，后台任务保持停止')
-            return False
     _restore_task_center(contract)
     from .web_job_recovery import restore
     if contract.task_runs.enabled:
@@ -300,103 +203,36 @@ def _server_error_headers(request: Request, error: Exception, status_code=500):
     return {'X-Peach-Error-ID': error_id, 'Cache-Control': 'no-store'}
 
 
-def _configure_upgrade_repairs(settings, contract, sync):
-    from . import settings_file
-    from .upgrade_repairs import UpgradeRepairs
-    config = settings_file.active()
-    enabled = (_writer(sync) and settings.configured and config.present
-               and (config.directory('database') / 'ledger.db').resolve() == settings.db_path.resolve())
-    if enabled:
-        from .runtime_prepare import configured_ledger_writer
-        enabled, _reason = configured_ledger_writer(config)
-    service = UpgradeRepairs(contract, available=enabled, config=config)
-    contract.upgrade_config, contract.upgrade_repairs = config, service
-    return service
-
-
-def _installation_in_progress(database):
-    from . import standalone_update, update_tasks
-    return update_tasks.is_pausing(database) or standalone_update.installation_pending()
-
-
 class _LedgerActivation:
-    """安装确认期只提供网页；确认后启动后台，退出时等待在途准备收尾。"""
+    """账本就绪后拉起依赖账本的后台服务；退出时等它们收尾。"""
 
-    def __init__(self, app, settings, contract, services, automatic_updates, sharing):
-        self.app, self.settings, self.contract = app, settings, contract
-        self.services, self.automatic_updates, self.sharing = services, automatic_updates, sharing
+    def __init__(self, app, settings, contract, services):
+        self.app, self.settings, self.contract, self.services = app, settings, contract, services
         self.stopping = asyncio.Event()
         self.lock = asyncio.Lock()
-        self.automatic_started = False
-        self.task = None
 
-    async def start(self):
+    async def start(self) -> bool:
         self.app.state.ledger_background_ready = False
-        self.app.state.ledger_background_deferred = False
         if not self.settings.configured:
-            return False
-        deferred = await asyncio.to_thread(_installation_in_progress, self.settings.db_path)
-        self.app.state.ledger_background_deferred = deferred
-        if deferred:
-            self.task = asyncio.create_task(self._wait_for_installation())
             return False
         return await self.resume()
 
-    async def resume(self):
+    async def resume(self) -> bool:
         async with self.lock:
             if self.stopping.is_set() or self.app.state.ledger_background_ready:
                 return self.app.state.ledger_background_ready
             ready = await asyncio.to_thread(_start_ledger_services, self.settings, self.contract, self.services)
             self.app.state.ledger_background_ready = ready
-            if not self.automatic_started:
-                self.automatic_updates.start()
-                self.automatic_started = True
-            if ready:
-                self.sharing.start()
             return ready
 
-    async def _wait_for_installation(self):
-        try:
-            while await asyncio.to_thread(_installation_in_progress, self.settings.db_path):
-                if self.stopping.is_set():
-                    return
-                await asyncio.sleep(1)
-            if not self.stopping.is_set():
-                await self.resume()
-        except Exception as exc:
-            self.contract.upgrade_repairs.error = str(exc)
-            LOGGER.exception('安装后的后台服务未能启动')
-        finally:
-            self.app.state.ledger_background_deferred = False
-
-    async def stop(self):
+    async def stop(self) -> None:
         self.stopping.set()
-        if self.task is not None:
-            await self.task
 
 
-def _configure_capacity_guard(settings, contract, services):
-    from .storage_budget import CapacityGuard
-    config = contract.upgrade_config
-    # 服务进程里这把闸门守的是播放、浏览与网络媒体缓存：总量超限只清理，不挡请求。
-    guard = (CapacityGuard(config, foreground=True)
-             if settings.transcode_root.parent.resolve() == config.directory('generated').resolve() else None)
-    contract.capacity_guard = guard
-    for service in services:
-        service.capacity_guard = guard
-
-
-def create_app(
-    settings: PeachSettings | None = None,
-    sync: LedgerSync | None = None,
-    review_mirror: ReviewMirror | None = None,
-    tunnel_manager: tunnel.TunnelManager | None = None,
-) -> FastAPI:
-    """`sync` 由 CLI 注入。测试直接建 app 时不传，复制与只读闸门整体不参与。"""
+def create_app(settings: PeachSettings | None = None) -> FastAPI:
+    """测试直接建 app 时也走这条路径：不传设置就用默认设置。"""
     settings = settings or PeachSettings()
-    if tunnel_manager is None:
-        tunnel_manager = tunnel.TunnelManager(settings.tunnel_state_root, settings.tunnel_log_root)
-    database = LedgerDatabase(settings.db_path, media_roots=MEDIA_ROOT_DECLARATIONS)
+    database = LedgerDatabase(settings.db_path)
     contract = web_contract.WebContract(
         settings.db_path, settings.snapshot_root,
         candidate_root=settings.candidate_root,
@@ -406,42 +242,50 @@ def create_app(
         poster_root=settings.poster_root,
         timeline_root=settings.timeline_root,
         photo_root=settings.photo_root,
-        transcode_root=settings.transcode_root,
-        stream_root=settings.stream_root,
         follow_state_root=settings.follow_state_root,
         entry_links_root=settings.entry_links_root,
-        taste_history_root=settings.taste_history_output_root,
-        taste_history_store=settings.taste_history_store,
-        taste_history_import_root=settings.taste_history_import_root,
-        taste_history_manifest=settings.taste_history_manifest,
         database=database,
     )
-    contract.download_organize_templates = lambda: web_settings.organize_templates(contract)
     repository = LedgerRepository(database)
-    from .mount_reachability import source_roots
-    mount_reachability = MountReachability(source_roots())
-    from .network_reachability import NetworkReachability
-    from .web_library_processing import retry_after_network_recovery
-    network_reachability = NetworkReachability(
-        on_recovered=lambda: retry_after_network_recovery(contract, sync))
-    # 处理任务在外部采集前按它判断网（`library_processing._network_gate`）。
-    contract.network_reachability = network_reachability
     resolver = FFmpegResolver(settings.ffmpeg_root)
     http_transport = HttpxTransport()
     follow_media_resolver = FollowMediaResolver(http_transport, state_root=settings.follow_state_root).with_credential_loader(
         lambda provider: web_follow._credential_store(contract).load(provider))
-    # 检查更新、浏览与画面签名的取图共用这一份按站冷却：同一个站被限流，几处都得停。
+    # 订阅检查、浏览与画面签名的取图共用这一份按站冷却：同一个站被限流，几处都得停。
     contract.follow_media_resolver = follow_media_resolver
     follow_cover_service = FollowCoverService(
         resolver, follow_media_resolver, settings.poster_root / "follow")
     contract.follow_faces = FollowFaceIndex(
         settings.poster_root / "follow-faces", http_transport,
         cover_root=settings.poster_root / "follow", gate=follow_media_resolver)
-    filesystem = FilesystemBackend(
-        settings.allowed_media_roots,
-        settings.snapshot_root,
-    )
-    media_engine = MediaEngine(repository, filesystem)
+    # 网盘连接、取流与媒体装配：资产不再落到本地，播放要么 302 要么由这里转发 Range。
+    drive = DriveConnections(settings, lambda: http_transport.client)
+    streamer = build_streamer(drive.providers, lambda: http_transport.client)
+    media_engine = MediaEngine(repository, streamer, cache_root=settings.photo_root.parent / "media-cache")
+    # 扫描与同步：扫描起点来自设置里的网盘根，增量按游标、每日一次全量核对。
+    scan_service = ScanService(drive.providers, repository, drive.roots_map())
+
+    def after_scan(location: str, result) -> None:
+        """新登记的行要探时长、与「想要」对账、把消失作品的个人记录接回来。
+
+        扫描只负责登记；这三件事都靠 `new_ids` 认对象，所以挂在同步之后一次做完。
+        探测在前：接回的第二条判据要比时长。
+        """
+        ids = list(result.new_ids)
+        if not ids:
+            return
+        choice = resolver.ffprobe()
+        media_probe.probe_missing(database, media_engine, choice.path if choice else None,
+                                  asset_ids=ids)
+        with closing(sqlite3.connect(database, timeout=30)) as connection:
+            connection.row_factory = sqlite3.Row
+            wants.reconcile(connection, ids)
+            connection.commit()
+        record_rehome.reattach_in(database, ids)
+
+    drive_sync = DriveSync(scan_service, after=after_scan)
+    drive.sync_state = drive_sync.state
+    drive.refresh_hook = drive_sync.request
     preview_service = PreviewService(
         repository, resolver, settings.snapshot_root, settings.poster_root,
         settings.avatar_root, settings.logo_root,
@@ -454,57 +298,13 @@ def create_app(
     cover_small_thumb_service = DerivedImageService(cover_thumb_root(settings.cover_root),
                                                     edge=COVER_SMALL_THUMB_EDGE,
                                                     quality=COVER_SMALL_THUMB_QUALITY)
-    transcode_service = TranscodeService(resolver, settings.transcode_root, state_root=settings.follow_state_root)
-    header_repairs = HeaderRepairStore(settings.transcode_root, resolver, runs=contract.task_runs)
-    # 分片计划按会话记住（`SessionPlans`），这里只跑没记过的那一次；一次可能要等 ffprobe，
-    # 两个线程时两部探不动的片子就让所有会话的分片排队。
-    hls_plan_executor = ThreadPoolExecutor(
-        max_workers=8, thread_name_prefix="PeachHlsPlan",
-    )
-    hls_service = HlsSegmentService(
-        resolver, settings.stream_root, prefer_hardware=transcode_service.prefer_hardware,
-        hardware=transcode_service.hardware,
-    )
-    mdns = create_mdns_publisher(
-        settings.mdns_name, settings.mdns_port, secure=settings.tls_enabled,
-        address=settings.mdns_address,
-    ) if settings.mdns_enabled else None
     providers = default_registry()
     opencode_go = OpenCodeGoClient(transport=http_transport)
-    review_mirror = review_mirror or ReviewMirror(
-        settings.review_writer_origin,
-        settings.review_writer_ca,
-        settings.review_mirror_cache,
-        token=settings.token,
-        proxy=settings.review_writer_proxy,
-    )
     follow_scheduler = FollowUpdateScheduler(
         settings.follow_state_root,
         lambda: web_follow.w_follow_check(contract, {"automatic": True}),
-        available=sync is None or not sync.read_only,
+        available=True,
     )
-    push_discovery = PushDiscoveryService(
-        state_root=settings.follow_state_root,
-        secrets_root=settings.secrets_root,
-        db_path=settings.db_path,
-        declared_roots=LOCATION_ROOT_DECLARATIONS,
-        mounts=location_mounts(),
-        available=_writer(sync),
-        ffprobe=resolver.ffprobe,
-        after_ingest=contract.cache_bust,
-    )
-    # 云下载：远端完成后的文件由推送发现登记，这里只对账与兜底定向登记。凭据只在本机。
-    from .download_postprocess import enqueue as enqueue_download_postprocess
-    downloads = build_download_service(
-        database=database, state_root=settings.follow_state_root,
-        credentials=credential_store_for(settings.secrets_root,
-                                         shared_root=contract.follow_shared_root),
-        push_discovery=push_discovery, available=_writer(sync),
-        after_ingest=lambda task: enqueue_download_postprocess(contract, task))
-    contract.downloads = downloads
-    from .jav_browser import JavBrowser
-    from .web_resource_search import q_resource_search
-    jav_browser = JavBrowser(contract, search=q_resource_search)
     contract.follow_scheduler = follow_scheduler
     # 订阅源拉取（ADR-0042）用同一个调度实现，只换 job id、状态文件与默认间隔。
     # 默认 6 小时：一位女优的 JavDB 演员页一天更新几条，比这更密只是把 JavDB 的配额
@@ -513,7 +313,7 @@ def create_app(
     feed_scheduler = FollowUpdateScheduler(
         settings.follow_state_root,
         lambda: web_feeds.w_feed_check(contract, {"automatic": True}),
-        available=_writer(sync),
+        available=True,
         job_id=FEED_JOB_ID,
         filename="feed-schedule.json",
         default=FollowScheduleConfig(enabled=True,
@@ -523,102 +323,39 @@ def create_app(
     )
     contract.feed_scheduler = feed_scheduler
     from .web_job_recovery import RecoveryService
-    recovery_service = RecoveryService(contract, available=_writer(sync))
-    contract.header_repairs = header_repairs
-    contract.transcode_service = transcode_service
-    # 只读端不写任务中心：`task_run` 也在账本里，reader 往里写会造成无法自动合并的
-    # 分叉。活动页在只读端照常能看——读不受影响，只是看到的是写入端那台的记录。
-    contract.task_runs.enabled = (
-        (sync is None or not sync.read_only) and contract.task_runs.available())
-    from .library_sharing import Service as LibrarySharing
-    from . import settings_file
-    sharing = LibrarySharing(settings_file.active(), contract)
-    from .automatic_updates import AutomaticUpdates
-    from .routes_configuration import managed_configuration
-    automatic_updates = AutomaticUpdates(
-        settings.follow_state_root,
-        available=managed_configuration() and bool(settings.configured),
-    )
-    upgrade_repairs = _configure_upgrade_repairs(settings, contract, sync)
-    _configure_capacity_guard(settings, contract,
-        (transcode_service, hls_service, entity_thumb_service, cover_thumb_service, cover_small_thumb_service))
-
-    async def warm_startup_entries():
-        """配置页首屏要的开机启动项状态，先在后台问一遍。
-
-        那一格是 `/api/configuration` 同步路径上唯一一件慢事：读一个 `.lnk` 得起一个
-        `powershell.exe`，本机三个快捷方式加起来 2.5 秒，而它正好挡在用户点开设置之后。
-        这里先问一次，`desktop_startup` 按 `.lnk` 的指纹留着结论，等用户真点开时是现成的。
-        """
-        if not (managed_configuration() and settings.configured):
-            return
-        from . import desktop_startup
-        try:
-            await asyncio.to_thread(desktop_startup.snapshot)
-        except Exception:
-            # 预热失败不该影响服务起不起得来，配置页照旧自己现问一遍。
-            logging.getLogger(__name__).debug("startup entry warmup failed", exc_info=True)
+    recovery_service = RecoveryService(contract, available=True)
+    contract.task_runs.enabled = contract.task_runs.available()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # asyncio 异常处理器由 `cli._run_uvicorn` 装在 uvicorn 的事件循环上：它要拿着 uvicorn
-        # 的 Server，才能在监听被标准库关掉后重新监听。
-        # 握手要等 cloudflared 连上边缘，断网时会等满 `wait_timeout`；放在后台，本机访问
-        # 不等公网入口。连接进度由 `tunnel_manager.snapshot()` 报告。
-        tunnel_startup = asyncio.create_task(asyncio.to_thread(_start_tunnel, settings, tunnel_manager))
-        services = (follow_scheduler, feed_scheduler, push_discovery, downloads, recovery_service, jav_browser, upgrade_repairs)
-        activation = _LedgerActivation(_app, settings, contract, services, automatic_updates, sharing)
+        services = (follow_scheduler, feed_scheduler, recovery_service)
+        activation = _LedgerActivation(_app, settings, contract, services)
         _app.state.ledger_activation = activation
         ledger_ready = await activation.start()
-        if settings.configured:
-            mount_reachability.start()
-        warmup = asyncio.create_task(warm_startup_entries())
         aggregate_stop = asyncio.Event()
         aggregate_warmup = asyncio.create_task(_warm_ledger_aggregates(ledger_ready, contract, aggregate_stop))
-        if mdns is not None:
-            try:
-                await asyncio.to_thread(mdns.start)
-            except Exception:
-                mdns.status = "unavailable"
-                logging.getLogger(__name__).exception("mDNS publication failed")
+        sync_stop = asyncio.Event()
+        sync_loop = asyncio.create_task(drive_sync.run(sync_stop))
         try:
             yield
         finally:
-            # 外部播放器的最后一段观看要赶在账本收尾前落下。
-            await asyncio.to_thread(_app.state.playback_trackers.stop)
             await activation.stop()
             _app.state.ledger_background_ready = False
             aggregate_stop.set()
-            warmup.cancel()
+            sync_stop.set()
+            await sync_loop
             recovery_service.stop()
             follow_scheduler.stop()
             feed_scheduler.stop()
-            automatic_updates.stop()
-            await asyncio.to_thread(upgrade_repairs.stop)
-            await asyncio.to_thread(sharing.stop)
-            push_discovery.stop()
-            await asyncio.to_thread(jav_browser.stop)
-            downloads.stop()
-            mount_reachability.stop()
-            await asyncio.to_thread(network_reachability.stop)
             # to_thread 的查询在线程内释放连接后才算结束。
             await aggregate_warmup
             # 死链检查和资源对账的后台线程是 daemon，本来挡不住进程退出；这里显式收
             # 一下，免得在途的那一轮在解释器拆卸期间还继续查库、往没人读的状态里写。
             contract.stop_background_jobs()
-            header_repairs.stop()
             from . import face_models
             face_models.detach(contract.task_runs)
-            if mdns is not None:
-                await asyncio.to_thread(mdns.stop)
-            # stop 让还在等边缘的握手当场返回；握手若刚好在 stop 之后才拉起子进程，
-            # 第二次 stop 把它收掉。
-            await asyncio.to_thread(tunnel_manager.stop)
-            await tunnel_startup
-            await asyncio.to_thread(tunnel_manager.stop)
             http_transport.close()
             follow_media_resolver.close()
-            hls_plan_executor.shutdown(wait=False, cancel_futures=True)
 
     app = FastAPI(
         title="Peach API",
@@ -631,69 +368,37 @@ def create_app(
     app.state.settings = settings
     app.state.database = database
     app.state.web_contract = contract
-    app.state.library_sharing = sharing
     app.state.repository = repository
+    app.state.drive = drive
+    app.state.scan = scan_service
+    app.state.drive_sync = drive_sync
     app.state.media_engine = media_engine
     app.state.preview_service = preview_service
     app.state.photo_service = photo_service
-    from .subtitles import SidecarListings
-    app.state.sidecar_listings = SidecarListings()
     app.state.sample_cache = sample_cache
     app.state.entity_thumb_service = entity_thumb_service
     app.state.cover_thumb_service = cover_thumb_service
     app.state.cover_small_thumb_service = cover_small_thumb_service
-    app.state.transcode_service = transcode_service
-    app.state.header_repairs = header_repairs
-    app.state.hls_plan_executor = hls_plan_executor
-    from .segments import SessionPlans
-    app.state.hls_session_plans = SessionPlans()
-    app.state.hls_service = hls_service
-    app.state.mdns = mdns
     app.state.providers = providers
     app.state.opencode_go = opencode_go
-    app.state.review_mirror = review_mirror
     app.state.http_transport = http_transport
     app.state.follow_media_resolver = follow_media_resolver
     app.state.follow_cover_service = follow_cover_service
     app.state.follow_scheduler = follow_scheduler
-    app.state.automatic_updates = automatic_updates
-    app.state.upgrade_repairs = upgrade_repairs
-    from pathlib import Path
-    from .follow_evidence import Reclaim
-    app.state.follow_evidence = Reclaim(Path(contract.follow_sources_root) / "follow", contract,
-                                        runs=contract.task_runs)
-    app.state.push_discovery = push_discovery
-    app.state.downloads = downloads
-    app.state.jav_browser = jav_browser
-    app.state.mount_reachability = mount_reachability
-    app.state.network_reachability = network_reachability
     from .background_issues import IssueLog
     app.state.background_issues = IssueLog()
-    app.state.stream_sessions = StreamSessionRegistry()
-    from .strm_stream import StrmResources
-    app.state.strm_resources = StrmResources()
-    import secrets
     app.state.external_playback_key = secrets.token_bytes(32)
-    from .playback_tracking import PlaybackTrackers
-    app.state.playback_trackers = PlaybackTrackers()
-    app.state.sync = sync
-    app.state.tunnel = tunnel_manager
 
-    # 媒体三异常的统一出口，路由里不再手抄同一组 try/except。
-    # 404/503/404 是逐个异常的状态码契约，不许并成一种。
+    # 媒体两异常的统一出口，路由里不再手抄同一组 try/except。
     @app.exception_handler(MediaNotFound)
     def _media_not_found_handler(request: Request, exc: MediaNotFound):
         return JSONResponse({"error": "no such id"}, status_code=404)
-
-    @app.exception_handler(MediaOffline)
-    def _media_offline_handler(request: Request, exc: MediaOffline):
-        return _offline_response(exc)
 
     @app.exception_handler(MediaUnavailable)
     def _media_unavailable_handler(request: Request, exc: MediaUnavailable):
         return JSONResponse({"error": "unavailable"}, status_code=404)
 
-    # 401 有三种形态，按路由类分组保留（不许统一成一种）：页面路由跳登录页，
+    # 401 有两种形态，按路由类分组保留（不许统一成一种）：页面路由跳登录页，
     # 页面资产返回 PlainText 提示，API 与媒体路由返回 JSON。
     @app.exception_handler(PageLoginRequired)
     def _page_login_required_handler(request: Request, exc: PageLoginRequired):
@@ -731,14 +436,13 @@ def create_app(
         return JSONResponse({'error': '服务处理失败，请导出诊断报告',
                              'error_id': headers['X-Peach-Error-ID']}, status_code=500, headers=headers)
 
-    # 第三方前端依赖固定版本并随 Peach 自托管；局域网断网时仍可播放。
+    # 第三方前端依赖固定版本并随 Peach 自托管；断网时仍可播放。
     app.mount(
         "/vendor",
         StaticFiles(directory=settings.vendor_path, check_dir=False),
         name="vendor",
     )
 
-    app.add_middleware(FirstSetupSourceMiddleware)
     app.add_middleware(ResponseHeadersMiddleware)
 
     # JSON 契约、页面脚本与样式是仅有的几类大文本响应，压下去省的字节最多：
@@ -758,53 +462,31 @@ def create_app(
     def healthz(request: Request, ready: bool = False):
         from .health import database_status, readiness
         if ready:
-            deferred = getattr(request.app.state, 'ledger_background_deferred', False)
-            result = readiness(settings, background_ready=None if deferred else getattr(request.app.state, "ledger_background_ready", None))
-            result['background_deferred'] = deferred
+            result = readiness(settings, background_ready=getattr(request.app.state, "ledger_background_ready", None))
             return JSONResponse(result, status_code=200 if result["ready"] else 503,
                                 headers={"Cache-Control": "no-store"})
-        # 不探测共享目录或迁移数据库；健康检查必须无副作用。
+        # 不探测网盘、迁移数据库或读媒体字节；健康检查必须无副作用。
         ffmpeg = resolver.ffmpeg()
-        read_only = bool(sync is not None and sync.read_only)
-        tunnel_state = tunnel_manager.snapshot()
         from .diagnostics import health_components
-        components = health_components(settings, app.state.mount_reachability.summary())
+        components = health_components(settings, {})
         return {"ok": True, "service": "peach-api", "version": __version__,
                 "checks": components,
-                # 打包这份代码的提交。源码运行时是 null：跑的就是检出本身。
-                "build_commit": BUILD.commit if BUILD else None,
                 # 这台机器跑过 `peach init` 没有。未配置时服务照常起，只是没有数据。
                 "configured": settings.configured,
-                # 这次请求的发起方能不能改这台机器的配置（独立包、回环地址）。它随调用方
-                # 变化，只决定管理菜单里「配置」显不显示；拒绝写入的判定在端点自己那里。
+                # 这次请求的发起方能不能改这台机器的配置。它随调用方变化，只决定管理菜单里
+                # 「设置」显不显示；拒绝写入的判定在端点自己那里。
                 "configurable": routes_configuration.configurable(request),
                 "db": database_status(settings.db_path),
                 "ffmpeg": ffmpeg.source if ffmpeg else "unavailable",
-                "media_mounts": app.state.mount_reachability.summary(),
-                "mdns": mdns.status if mdns is not None else "disabled",
-                "mdns_backend": mdns.backend if mdns is not None else None,
-                "mdns_service": mdns.name if mdns is not None else None,
-                "mdns_service_host": mdns.hostname if mdns is not None else None,
-                "mdns_address": mdns.address if mdns is not None else None,
-                "ledger_sync": sync.status if sync is not None else "disabled",
-                "ledger_read_only": read_only,
-                "ledger_read_only_message": sync.read_only_message if read_only else None,
-                "ledger_writer_origin": settings.review_writer_origin if read_only else None,
-                "scheme": "https" if settings.tls_enabled else "http",
-                # 采集用的浏览器窗口正等着人点验证的站，供排查时看一眼；窗口本身就是提醒，不另弹通知（ADR-0065）。
-                "attention": browser_transport.attention(),
-                # 健康检查可能被公网探针访问，不能在这里回传随机 Tunnel URL。
-                "tunnel": {"enabled": settings.tunnel_enabled, "state": tunnel_state.state},
+                "drive": {location: drive.connection(location)["connected"]
+                          for location in drive.providers},
         }
 
-    # 顺序即契约：catch-all 最后。`routes_media` 里有 `/api/stream-plan` 与
-    # `/api/stream-cancel` 两条具名 API，所以它也要排在 `routes_api` 之前。
+    # 顺序即契约：catch-all 最后。`routes_media` 里有 `/api/stream-plan` 这条具名 API，
+    # 所以它也要排在 `routes_api` 之前。
     app.include_router(routes_auth.router)
     app.include_router(routes_pages.router)
     app.include_router(routes_configuration.router)
-    app.include_router(routes_jav_browser.create_router())
-    app.state.local_only = routes_configuration.local_only
     app.include_router(routes_media.router)
-    app.include_router(routes_subtitles.router)
     app.include_router(routes_api.router)
     return app

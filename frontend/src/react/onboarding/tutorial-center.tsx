@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Button } from '@/components/base/buttons/button';
-import { RiFolderLine, RiListCheck3, RiPlayCircleLine, RiRocketLine, RiRssLine, RiBarChartLine, RiDownloadCloudLine, RiSmartphoneLine, RiCheckboxCircleLine } from '@remixicon/react';
+import { RiFolderLine, RiListCheck3, RiPlayCircleLine, RiRocketLine, RiRssLine, RiSmartphoneLine, RiCheckboxCircleLine } from '@remixicon/react';
 import { Radio } from 'react-aria-components';
 import { toast } from 'sonner';
 import { SEGMENT, SEGMENTED_TRACK, SegmentedRadioGroup } from '../components/segmented';
 import { apiGet } from '../../api';
-import { isPreferencePath, navigationBackground, peachHistory } from '../../history';
+import { DRIVE_SETTINGS_PATH, isPreferencePath, navigationBackground, peachHistory, settingsPath } from '../../history';
 import { GUIDE_CHAPTERS, contextualChapter, type GuideChapter } from '../../onboarding/guide-catalog';
 import { emptyProgress, guideChapterComplete, guideResumePosition, listenGuide, readGuideProgress, recordGuideStep, saveGuideProgress, type GuideAction, type GuideProgress } from '../../onboarding/guide-state';
 import type { GuideSession } from '../../onboarding/guide-driver';
@@ -21,7 +21,7 @@ import { mountGuidePopover } from './guide-popover';
 import { stageApi } from '../application-residents';
 
 interface ProgressCounts {
-  library: { total: number }; taste: { history_sources: number };
+  library: { total: number };
   follow: { sources: { provider: string; enabled: boolean }[] };
   credentials: { providers: { provider: string; requirement: string; present: boolean; missing?: string[] }[] };
   review: { counts: Record<string, number> };
@@ -42,12 +42,12 @@ function GettingStarted({ go }: { go(path: string): void }) {
   const ready = sources.length > 0 && required.every(row => row.present && !row.missing?.length);
   const reviews = Object.values(data?.review.counts || {}).reduce((total, value) => total + Number(value || 0), 0);
   return <div className="flex flex-col gap-4">
-    <GuideBanner icon={RiRocketLine} title="从第一份收藏开始" description="连接媒体目录，查看入库结果，再打开馆藏。">
-      <Button onClick={() => go('/settings/library')}>连接媒体目录</Button>
+    <GuideBanner icon={RiRocketLine} title="从第一份收藏开始" description="连接网盘，查看入库结果，再打开馆藏。">
+      <Button onClick={() => go(DRIVE_SETTINGS_PATH)}>连接网盘</Button>
     </GuideBanner>
     {error ? <Note tone="error" action={<Button variant="secondary" size="small" onClick={() => setAttempt(attempt + 1)}>重试</Button>}>{error}</Note> : null}
     <ol className="peach-guide-routes">
-      <li><span className="peach-guide-topic-icon"><RiFolderLine aria-hidden className="size-5" /></span><div className="min-w-0 flex-1"><strong>连接媒体目录</strong><p>确认媒体文件夹、所属媒体库和读取策略。</p></div><Button variant="secondary" size="small" onClick={() => go('/settings/library')}>查看配置</Button></li>
+      <li><span className="peach-guide-topic-icon"><RiFolderLine aria-hidden className="size-5" /></span><div className="min-w-0 flex-1"><strong>连接网盘</strong><p>确认网盘账号、扫描起点与同步进度。</p></div><Button variant="secondary" size="small" onClick={() => go(DRIVE_SETTINGS_PATH)}>查看配置</Button></li>
       <li><span className="peach-guide-topic-icon"><RiListCheck3 aria-hidden className="size-5" /></span><div className="min-w-0 flex-1"><strong>查看首次扫描</strong><p>{data ? data.library.total ? `已入库 ${data.library.total.toLocaleString()} 项，可在任务中心查看处理情况。` : '馆藏尚无内容，查看扫描任务是否已开始。' : '在任务中心查看实际扫描进度。'}</p></div><Button variant="secondary" size="small" onClick={() => go('/tasks')}>任务中心</Button></li>
       <li><span className="peach-guide-topic-icon"><RiPlayCircleLine aria-hidden className="size-5" /></span><div className="min-w-0 flex-1"><strong>打开馆藏</strong><p>从首页搜索和浏览已经入库的内容。</p></div><Button variant="secondary" size="small" onClick={() => go('/')}>进入馆藏</Button></li>
     </ol>
@@ -55,9 +55,7 @@ function GettingStarted({ go }: { go(path: string): void }) {
     <div className="peach-guide-routes">
       {[
         { title: '关注创作者', description: ready ? '当前启用来源的必要凭据已具备。' : sources.length ? '已有关注来源，请检查必要凭据。' : '添加想持续追踪的创作者与来源。', path: '/subscriptions', icon: RiRssLine },
-        { title: '口味与记录', description: data?.taste.history_sources ? `已导入 ${data.taste.history_sources} 份浏览器历史。` : '按需要导入浏览历史或书签。', path: '/taste', icon: RiBarChartLine },
-        { title: '云下载与浏览器添加', description: '连接渠道、设置目标目录，按需要配对用户脚本。', path: '/settings/downloads', icon: RiDownloadCloudLine },
-        { title: '手机访问', description: '查看访问范围、地址与密码。', path: '/settings/network', icon: RiSmartphoneLine },
+        { title: '手机访问', description: '查看访问范围、地址与密码。', path: settingsPath('访问与安全'), icon: RiSmartphoneLine },
         ...(reviews ? [{ title: '人工复核', description: `当前有 ${reviews.toLocaleString()} 条待复核资料。`, path: '/review', icon: RiCheckboxCircleLine }] : []),
       ].map(({title, description, path, icon: Icon}) => <div key={title}><span className="peach-guide-topic-icon"><Icon aria-hidden className="size-5" /></span><div className="min-w-0 flex-1"><strong>{title}</strong><p>{description}</p></div><Button variant="ghost" size="small" aria-label={`查看${title}`} onClick={() => go(path)}>查看</Button></div>)}
     </div>

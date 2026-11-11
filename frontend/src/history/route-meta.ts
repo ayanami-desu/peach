@@ -17,7 +17,7 @@ import { entityLinkName } from '../core/entity-links';
 import { entityDisplayName } from '../core/entity-names';
 import { t } from '../i18n';
 import { CLEANUP_CRUMB_PAGES, type CleanupToolPath } from '../cleanup-tools';
-import { PREFERENCE_SECTIONS, CONFIGURATION_SECTIONS, REPAIR_CENTER_PATH } from './settings-route';
+import { PREFERENCE_SECTIONS, CONFIGURATION_SECTIONS } from './settings-route';
 
 export interface RouteMeta {
   readonly title?: string;
@@ -28,13 +28,12 @@ export interface RouteMeta {
 }
 
 const ROUTE_ENTRIES = {
-  '/settings': { title: '设置', refresh: 'skip' },
   ...Object.fromEntries(Object.entries(PREFERENCE_SECTIONS).map(([key, title]) => [`/settings/${key}`, { title, refresh: 'skip' }])),
+  // Peach 配置：`/settings` 与它下面六格都开这一页，管理区身份是「配置」，侧栏入口取登记的第一条。
+  '/settings': { section: 'configuration', title: 'Peach 配置', refresh: 'reopen' },
   ...Object.fromEntries(Object.entries(CONFIGURATION_SECTIONS).map(([key, title]) => [`/settings/${key}`, { title, section: 'configuration', refresh: 'reopen' }])),
-  [REPAIR_CENTER_PATH]: { title: '修复与迁移', section: 'configuration', refresh: 'reopen' },
   '/jav': { nav: 'jav', title: 'JAV', refresh: 'reopen' },
   '/stats': { section: 'stats', title: '统计' },
-  '/taste': { section: 'taste', title: '口味', refresh: 'reopen' },
   '/review': { section: 'review', title: '人工复核', refresh: 'reopen' },
   '/data-cleanup': { section: 'cleanup', title: '数据管理' },
   ...Object.fromEntries(Object.entries(CLEANUP_CRUMB_PAGES).map(([path, title]) => [path, { section: 'cleanup', title, refresh: 'reopen' }])),
@@ -42,10 +41,7 @@ const ROUTE_ENTRIES = {
   '/quality-goals': { section: 'quality', title: '高清版', refresh: 'reopen' },
   '/sources': { section: 'cleanup', title: '来源和凭证', refresh: 'reopen' },
   '/subscriptions': { section: 'follow', title: '关注管理', refresh: 'skip' },
-  '/settings/library': { section: 'configuration', title: 'Peach 配置', refresh: 'reopen' },
   '/tasks': { section: 'activity', title: '任务中心', refresh: 'reopen' },
-  // 旧直达地址，改写到数据管理页的锚点，没有自己的管理身份。
-  '/resource-sync': { title: '数据管理' },
   '/performers': { nav: 'performers', title: '艺人', reload: 'reopen' },
   '/creators': { title: '卖家', reload: 'reopen' },
   '/studios': { nav: 'studios', title: '厂牌', reload: 'reopen' },

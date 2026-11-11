@@ -72,12 +72,14 @@ export const submit = (form: Element | null | undefined) => act(async () => {
 });
 
 /** 按可见文字找按钮。弹出层挂在 `body` 末尾，所以默认从整页找。 */
-export const buttonNamed = (name: string, root: ParentNode = document) =>
-  [...root.querySelectorAll('button')].find((button) => button.textContent?.trim() === name) ?? null;
+export const buttonNamed = (name: string, root: ParentNode | null | undefined = document) =>
+  root ? [...root.querySelectorAll('button')]
+    .find((button) => button.textContent?.trim() === name) ?? null : null;
 
 /** 按可见文字找链接，同样默认从整页找。 */
-export const linkNamed = (name: string, root: ParentNode = document) =>
-  [...root.querySelectorAll('a')].find((link) => link.textContent?.trim() === name) ?? null;
+export const linkNamed = (name: string, root: ParentNode | null | undefined = document) =>
+  root ? [...root.querySelectorAll('a')]
+    .find((link) => link.textContent?.trim() === name) ?? null : null;
 
 /** 一组动作按文档顺序的名称，按钮与链接都算，纯图标键取 `aria-label`：断言链接在左、主动作在最右用它。 */
 export const actionOrder = (root: ParentNode | null | undefined) =>

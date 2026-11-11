@@ -119,6 +119,6 @@ export function JavSelectionProvider({ children, readOnly, receipt }: {
       <Button size="small" variant="secondary" disabled={!picked.size || !!action.busy} onClick={() => setResources([...picked.values()])}>查找资源</Button>
       <Button size="small" variant="ghost" onClick={close}>取消选择</Button>
     </SelectionDock>
-    <JavBatchResources items={resources} close={() => setResources(null)} readOnly={readOnly} receipt={receipt} />
+    <JavBatchResources items={resources} close={() => setResources(null)} receipt={receipt} />
   </Context.Provider>;
 }

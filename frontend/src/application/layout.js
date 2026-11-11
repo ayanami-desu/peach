@@ -470,7 +470,7 @@ layoutState.settingsHost = ()=>({
   receipt:message=>receiptsState.actionReceipt(message),
   failure:receiptsState.actionFailure,
   syncRemote:remote=>applySyncedSettings(remote,effect=>preferencesState.settingsEffects[effect]?.()),
-  openConfiguration:()=>navigationState.navigatePath('/settings/library'),
+  openConfiguration:()=>navigationState.navigatePath('/settings/drives'),
   attached:()=>preferencesState.syncGlassOptics(),
   /* 「这台电脑」那一格的判据：服务由托盘管、已完成配置、请求来自本机三条同时成立。 */
   configurable:()=>api('/healthz')

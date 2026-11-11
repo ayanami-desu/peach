@@ -29,7 +29,7 @@ from .follow_check import plan_check, run_check
 from .follow_covers import fanbox_video_indexes
 from .web_settings import follow_initial_days
 from .follow_discovery import (
-    MAX_SUGGESTIONS, PROFILE_ALIAS_SKIP_SERVICES, archive_suggestions, discover,
+    PROFILE_ALIAS_SKIP_SERVICES, archive_suggestions, discover,
     discovery_plan, no_backoff, suggest_term, tag_suggestions,
 )
 from .follow_image_dims import positive_dims
@@ -49,7 +49,6 @@ from .follow_store import (
     FollowStore, ReleaseGroup, normalized_author_name,
 )
 from .entities import canonicalize_entity_name, normalize_entity_name, prefer_entity_name
-from .taste_history import read_creator_candidates
 from .web_state import path_version
 from .online_tag_management import OnlineTagPolicy, TYPE_RANK, tag_key
 
@@ -1709,7 +1708,11 @@ def _followed_names(rows, alias_groups) -> dict[str, str]:
     return names
 
 
-def q_follow_suggest(contract, q: str, limit: int = MAX_SUGGESTIONS,
+#: 添加框敲字时每组建议给多少条。这是给人挑的清单，不是导出全部。
+SUGGEST_PER_GROUP = 12
+
+
+def q_follow_suggest(contract, q: str, limit: int = SUGGEST_PER_GROUP,
                      *, transport=None) -> dict:
     """添加框敲字时的建议：本机见过的写法、本机清单里的创作者、站上的作者与标签。
 
@@ -1727,7 +1730,7 @@ def q_follow_suggest(contract, q: str, limit: int = MAX_SUGGESTIONS,
     query = suggest_term(q)
     if not query:
         return {"q": str(q or "").strip(), "groups": []}
-    per_group = max(1, min(int(limit), MAX_SUGGESTIONS * 2))
+    per_group = max(1, min(int(limit), SUGGEST_PER_GROUP * 2))
     folded = query.casefold()
     with contract.database.read_connection() as connection:
         store = _store(contract, connection)
@@ -1843,8 +1846,8 @@ def _item_groups(contract, source_id) -> dict:
 
 
 def _item_page(group, payload, sources, author_aliases) -> dict:
-    """直达详情（`fetchFollowItem`）只读这一组和署名要的来源、别名；筛选项、计数与
-    「猜你喜欢」都不算，也不随响应下发。条目不存在时组为空。"""
+    """直达详情（`fetchFollowItem`）只读这一组和署名要的来源、别名；筛选项与计数
+    都不算，也不随响应下发。条目不存在时组为空。"""
     return {"ok": True, "sources": sources, "author_aliases": author_aliases,
             "groups": [payload(group)] if group is not None else [], "has_more": False}
 
@@ -2030,13 +2033,11 @@ def q_follow(contract, args) -> dict:
         for item in counted:
             status = str(item.status)
             counts[status] = counts.get(status, 0) + 1
-    suggestions = _suggestions(contract, sources)
     return {
         "ok": True,
         "sources": sources,
         "author_aliases": author_aliases,
         "alias_suggestions": alias_suggestions,
-        "suggestions": suggestions,
         "groups": groups,
         "counts": {status: int(counts.get(status, 0)) for status in _STATUSES},
         # 排序回一份：页面是从 URL 读的，两边对不上时以服务端这份为准。
@@ -2050,35 +2051,6 @@ def q_follow(contract, args) -> dict:
         "has_more": has_more,
         "providers": sorted(CONNECTORS),
     }
-
-
-#: 「猜你喜欢」一次给多少个。这是给人挑的，不是导出全部。
-MAX_SUGGESTIONS = 12
-
-
-def _suggestions(contract, sources) -> list[dict]:
-    """「猜你喜欢」取**浏览历史口味分析**产出的创作者候选，按访问次数排序。
-
-    之前两次都取错了源，记下来免得再犯：`facets.creators` 是「他有谁的文件」，
-    `location='online'` 的资产是「他关注过谁」，两者都不是「他常搜谁」。真正的信号是
-    `scripts/taste_history.py` 从 Chrome/Safari/Zen/Google Takeout 的历史里分析出来的
-    `taste-creator-candidates-*.csv`——用户举的两个名字在那里分别排第 1 和第 3
-    （`lazyprocrastinator` 28 次、`ffxivinitiala` 13 次）。
-
-    分析没跑过就没有建议，不拿别的数据顶替。
-    """
-    followed = {str(row["label"]).casefold() for row in sources}
-    picked = []
-    for row in read_creator_candidates(contract.taste_history_root,
-                                       limit=MAX_SUGGESTIONS * 4):
-        name = row["name"]
-        if name.casefold() in followed:
-            continue
-        picked.append({"name": name, "visits": row["visits"],
-                       "origin": row["sources"]})
-        if len(picked) >= MAX_SUGGESTIONS:
-            break
-    return picked
 
 
 def _write_item_ids(body) -> list[int]:
@@ -2194,8 +2166,6 @@ def w_follow_play(contract, body) -> dict:
     contract.cache_bust()
     with contract.database.write_transaction() as connection:
         status = _store(contract, connection).record_playback(item_id)
-    from .capacity_history import record_playback
-    record_playback(contract)
     return {"ok": True, "item": item_id, "status": status}
 
 
@@ -2264,7 +2234,7 @@ def w_follow_check(contract, body) -> dict:
                   'background': True},
         initial={"ok": True, "checked": 0, "total": 0, "results": [],
                  "request_id": request_id, "older": bool(body.get("older")), "current": None})
-    if body.get("background") or started.get('waiting_for_update'):
+    if body.get("background"):
         return started
     if started["request_id"] != request_id:
         return {"ok": False, "busy": True, "checked": 0, "results": []}
@@ -2276,9 +2246,6 @@ def w_follow_check(contract, body) -> dict:
     if worker is not None and worker is not threading.current_thread():
         worker.join(5)
     if "error" in outcome:
-        from .jobs import JobPaused
-        if isinstance(outcome['error'], JobPaused):
-            return contract.follow_job.snapshot() or started
         raise outcome["error"]
     return outcome["result"]
 

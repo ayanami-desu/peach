@@ -4,10 +4,9 @@ import { CLEANUP_TOOLS } from './cleanup-tools';
 import { CLEANUP_ENTRY, CLEANUP_ENTRY_GRID } from './react/data-cleanup/cleanup-entry';
 import { PLAIN_STAT_STRIP, plainStatClass } from './react/components/stat-card';
 
-/* 「扫描与采集」「媒体修复」两张卡的正文。卡片本体由 React 画，骨架与遗留层的取数占位
+/* 「扫描与采集」卡的正文。卡片本体由 React 画，骨架与遗留层的取数占位
    画的是同一段话：写两份的话，骨架上的那句会比真卡短一截，接管时整张卡跳一次。 */
 export const SCAN_CARD_TEXT = '发现新文件，补全新增及未完成影片的资料和预览。先选择媒体库，再选择同步范围。';
-export const REPAIR_CARD_TEXT = '部分视频文件可能播放卡顿、打不开，修复缺时间戳表和缺索引的问题。';
 
 const bar = '<span class="skeleton skeleton-text" aria-hidden="true"></span>';
 /* 要等数据才能执行的键是真的按不了：原生 `disabled` 挡住点击与聚焦，`data-skeleton-action`
@@ -31,15 +30,6 @@ export function scanCardSkeletonHtml(): string {
   return island(`<section aria-label="扫描与采集" class="${fieldsetClass('stack')}" data-cleanup-task data-cleanup-processing>
         ${cardText('扫描与采集', SCAN_CARD_TEXT, 'stack', `<div class="w-full max-w-80"><p class="mb-1 text-body-2-medium text-text-secondary">媒体库</p>${islandSelect(bar, { attrs: `${unavailable} aria-label="媒体库"` })}</div>`)}
         <footer class="${FIELDSET_FOOT.stack}">${links}<span data-button-group data-split-button data-variant="primary">${islandButton({ label: '同步新增文件', attrs: waitingAction })}${islandButton({ glyph: 'chevron-down', attrs: `${waitingAction} aria-label="更多同步方式"` })}</span></footer>
-      </section>`);
-}
-
-/** 「媒体修复」卡：页脚的媒体库下拉框先按最终尺寸画出来，库名要等数据；「开始修复」要等选定
- *  媒体库，骨架里是禁用态。 */
-export function repairCardSkeletonHtml(): string {
-  return island(`<section aria-label="媒体修复" class="${fieldsetClass('split')}" data-cleanup-task data-cleanup-processing>
-        ${cardText('媒体修复', REPAIR_CARD_TEXT, 'split')}
-        <footer class="${FIELDSET_FOOT.split}">${islandSelect(bar, { className: 'w-48', attrs: unavailable })}${islandButton({ label: '开始修复', attrs: waitingAction })}</footer>
       </section>`);
 }
 

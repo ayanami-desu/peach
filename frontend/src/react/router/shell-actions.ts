@@ -166,15 +166,11 @@ export interface ManagedOpenProps extends Record<ConfigurationPath, { section?: 
   Record<import('../../cleanup-tools').CleanupToolPath, Record<string, never>> {
   '/jav': { tab: string; readOnly: boolean };
   '/stats': Record<string, never>;
-  '/taste': { onboarding: boolean };
   '/review': { category: string; queue?: string; readOnly: boolean; readOnlyMessage: string; writerUrl: string };
   '/data-cleanup': Record<string, never>;
   '/duplicates': Record<string, never>;
   '/quality-goals': Record<string, never>;
   '/sources': Record<string, never>;
-  /** `section`：首帧选中的那一组页签名，取走壳里 `configurationRequestedSection` 记下的那一次（地址带 `#peachProxy` 时是「网络与访问」）。 */
-  '/settings/library': { section?: string };
-  '/settings/maintenance/repairs': Record<string, never>;
   '/tasks': Record<string, never>;
   '/subscriptions': {
     tab: string; page: number; sort: string; dir: string; pageSize: number; layout: string;

@@ -43,42 +43,38 @@ SCOPES: dict[str, tuple[str, ...]] = {
                 "test_entity_classification.py", "test_company_profiles.py", "test_fc2_sellers.py",
                 "test_entity_merge.py", "test_entity_redirect.py", "test_fastapi_api.py", "test_field_owners.py",
                 "test_migrations.py",
-                "test_review_mirror.py", "test_rm_web.py",
+                "test_rm_web.py",
                 "test_entity_link_install.py", "test_web_links.py", "test_entry_links.py",
                 "test_feeds.py", "test_feeds_web.py", "test_wants_web.py",
                 "test_link_marks.py", "test_site_icons.py", "test_site_logos.py",
                 "test_avatar_face.py",
                 "test_brand_marks.py", "test_studio_icon_variants.py",
-                "test_push_discovery.py", "test_media_probe.py",
-                "test_downloads*.py", "test_web_downloads.py",
+                "test_media_probe.py",
                 "test_review_csv.py", "test_related.py",
-                "test_search_suggest.py", "test_subtitles.py",
+                "test_search_suggest.py",
                 "test_task_runs.py", "test_followups.py", "test_task_center_integration.py",
                 "test_background_issues.py",
                 "test_studio_followup.py", "test_creator_identity_followup.py", "test_sample_images.py",
                 "test_jav_code_domain.py",
-                "test_taste_history.py", "test_taste_preferences.py", "test_web_ui.py", "test_web_js.py",
-                "test_web_perf.py", "test_web_resource_sync.py", "test_record_rehome.py", "test_wants.py",
-                "test_magnet_chain.py",
+                "test_web_ui.py", "test_web_js.py",
+                "test_web_perf.py", "test_record_rehome.py", "test_wants.py",
                 "test_web_orphan_records.py",
                 "test_web_review.py", "test_web_settings.py", "test_system_language.py"),
     # 任务中心的两个文件跟着 `test_jobs.py` 走：`jobs.py` 与 `task_runs.py` 是同一条
     # 接线的两端，改哪一端都要两边一起验。
-    "media": ("test_external_playback.py", "test_runtime_consistency.py", "test_endcard.py", "test_fastapi_api.py", "test_jobs.py",
+    "media": ("test_external_playback.py", "test_runtime_consistency.py", "test_fastapi_api.py", "test_jobs.py",
               "test_task_runs.py", "test_followups.py", "test_task_center_integration.py", "test_task_control.py", "test_task_resources.py", "test_resource_platform.py", "test_face_models.py",
-              "test_frame_capture.py", "test_timeline_sheets.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py",
-              "test_web_timeline_thumbnails.py", "test_timeline_sources.py", "test_bif.py",
-              "test_interaction.py", "test_media.py", "test_mp4repair.py",
-              "test_mp4recover.py", "test_web_media_repair.py",
-              "test_previews.py", "test_preview_transport.py",
-              "test_providers.py", "test_segments.py", "test_streaming.py", "test_stream_lifecycle.py",
-              "test_subtitles.py", "test_transcodes.py", "test_hardware_transcode.py", "test_strm.py",
-              "test_guangya_sources.py", "test_media_sources.py", "test_smb*.py"),
-    "sync": ("test_sync*.py", "test_platform.py", "test_mount.py", "test_tray*.py", "test_macos_standalone.py", "test_log_retention.py",
-             "test_mdns.py", "test_netwatch.py", "test_certs.py",
-             "test_review_mirror.py", "test_runtime_prepare.py"),
-    "metadata": ("test_custom_metadata.py", "test_scraping_access.py", "test_browser_transport.py", "test_metadata*.py", "test_genre_taxonomy.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py",
-                 "test_fc2*.py", "test_local_poster.py", "test_media_io.py",
+              "test_frame_capture.py", "test_timeline_sheets.py", "test_preview_sheets.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py",
+              "test_web_timeline_thumbnails.py",
+              "test_interaction.py", "test_media.py",
+              "test_providers.py",
+              "test_previews.py",
+              # 网盘这一组是播放链路的两端：拉清单、换直链、按 Range 转发。
+              "test_drive_google.py", "test_drive_onedrive.py", "test_drive_stream.py",
+              "test_drive_sync.py", "test_scan_drives.py",
+              "test_media_sources.py"),
+    "metadata": ("test_custom_metadata.py", "test_scraping_access.py", "test_metadata*.py", "test_genre_taxonomy.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py",
+                 "test_fc2*.py",
                  "test_community_catalog.py",
                  "test_babepedia_match.py",
                  "test_western_artwork.py",
@@ -110,15 +106,13 @@ SCOPES: dict[str, tuple[str, ...]] = {
                  "test_resource_identification.py",
                  "test_agency_entity.py", "test_agency_reject.py", "test_label_maker.py",
                  "test_seed_pack.py", "test_seed_followup.py", "test_seed_corrections.py"),
-    "tooling": ("test_scripts.py", "test_trash_junk.py", "test_auth.py", "test_access.py", "test_cli.py", "test_server.py", "test_diagnostics.py", "test_error_reporting.py", "test_remote_reporting.py", "test_reporting_*.py", "test_library_sharing.py", "test_library_diagnostics.py", "test_script_policy.py",
-                "test_scan.py", "test_record_rehome.py", "test_wants.py", "test_push_discovery.py", "test_media_probe.py", "test_subtitles.py", "test_onboarding.py", "test_configuration_sources.py", "test_clouddrive_proxy.py", "test_folder_picker.py", "test_ledger_backups.py", "test_clear_camera_filename_codes.py",
-                "test_agent_worktree.py", "test_ci_test_evidence.py", "test_check_public_text.py", "test_issue_intake.py", "test_star_history.py", "test_test_evidence.py", "test_test_history.py", "test_test_environment.py", "test_dependency_policy.py",
-                "test_version_bump.py", "test_changelog.py", "test_release_due.py", "test_release_candidate.py", "test_media_build_cache.py", "test_runner_launcher.py",
-                "test_restart_windows_tray.py", "test_deploy_windows_tray.py", "test_runtime_prepare.py",
-                "test_buildinfo.py", "test_versioning.py", "test_macos_standalone.py",
-                "test_windows_update.py", "test_release_updates.py", "test_release_signing.py", "test_automatic_updates.py", "test_standalone_update.py", "test_upgrade_repairs.py", "test_certs.py", "test_config.py",
-                "test_fsutil.py", "test_desktop_settings.py", "test_desktop_installer.py", "test_data_storage.py",
-                "test_job_status.py", "test_jobs.py", "test_task_runs.py", "test_followups.py", "test_update_tasks.py",
+    "tooling": ("test_scripts.py", "test_trash_junk.py", "test_auth.py", "test_access.py", "test_cli.py", "test_server.py", "test_diagnostics.py", "test_error_reporting.py", "test_library_diagnostics.py", "test_script_policy.py",
+                "test_record_rehome.py", "test_downloads_retry.py", "test_wants.py", "test_media_probe.py", "test_onboarding.py", "test_folder_picker.py", "test_ledger_backups.py", "test_clear_camera_filename_codes.py",
+                "test_agent_worktree.py", "test_check_public_text.py", "test_issue_intake.py", "test_star_history.py", "test_test_evidence.py", "test_test_history.py", "test_test_environment.py", "test_dependency_policy.py",
+                "test_version_bump.py", "test_changelog.py", "test_runner_launcher.py",
+                "test_config.py", "test_log_retention.py",
+                "test_fsutil.py", "test_data_storage.py",
+                "test_job_status.py", "test_jobs.py", "test_task_runs.py", "test_followups.py",
                 "test_task_center_integration.py", "test_task_control.py", "test_task_resources.py", "test_resource_platform.py", "test_reference_updates.py",
                 "test_repo_hygiene.py", "test_seed_pack.py", "test_seed_followup.py",
                 "test_review_csv.py", "test_jav_code_domain.py", "test_organize.py",
@@ -126,38 +120,33 @@ SCOPES: dict[str, tuple[str, ...]] = {
                 "test_subprocess_encoding.py", "test_module_layering.py",
                 "test_outbound_proxy_policy.py", "test_network_reachability.py",
                 "test_copy_final_state.py", "test_demo_dataset.py",
-                "test_cloudflared_packaging.py", "test_tunnel.py", "test_process_job.py",
-                "test_ffmpeg_build.py", "test_ffmpeg_bundle.py", "test_untrunc_build.py", "test_macos_media.py",
-                "test_media_tool_import.py", "test_seed_corrections.py", "test_face_models_bundle.py"),
+                "test_process_job.py",
+                "test_seed_corrections.py"),
     # 前端 island 层（ADR-0022）。产物与源码的断言不需要 Node；vitest 那部分在没有
     # npm 时自己跳过，所以这个域在任何机器上都能跑，`full` 也就自动包含它。
     # `test_web_perf.py` 两个域都登记：压缩与 ETag 是 API 交付（catalog），
     # 播放器按需加载的断言读 `web/app.js`（web），改任一侧都该被本域拦住。
     # `test_copy_final_state.py` 两个域都登记：它扫全树，而界面字串是它最常拦到的
     # 一面，改 `web/` 的人必须在本域就撞上它。
-    # 后面七个文件的主体不在这一层，但各有一段断言读 `web/` 或 `frontend/` 的源码，
+    # 后面几个文件的主体不在这一层，但各有一段断言读 `web/` 或 `frontend/` 的源码，
     # 所以本域也要登记它们：改了 `web/app.js` 却漏跑读它的测试，`test_test_planning.py`
     # 的域映射门槛会在本地就红。
-    "web": ("test_frontend_build.py", "test_frontend_preflight.py", "test_web_ui.py", "test_web_js.py", "test_web_e2e.py",
+    "web": ("test_frontend_build.py", "test_frontend_preflight.py", "test_web_ui.py", "test_web_js.py",
             "test_tag_management.py",
-            "test_subtitle_search.py", "test_subtitle_memory.py",
             "test_legacy_shell_routes.py",
             "test_web_perf.py", "test_copy_final_state.py",
             "test_agency_entity.py", "test_label_maker.py", "test_dependency_policy.py",
-            "test_desktop_settings.py", "test_dev_copy.py",
             "test_fastapi_api.py", "test_follow_assets.py", "test_follow_web.py",
-            "test_metadata_library.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py", "test_clouddrive_proxy.py", "test_studio_icon_variants.py", "test_web_settings.py", "test_web_library_shortcuts.py", "test_web_tutorial.py", "test_company_profiles.py"),
+            "test_metadata_library.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py", "test_studio_icon_variants.py", "test_web_settings.py", "test_web_library_shortcuts.py", "test_web_tutorial.py", "test_company_profiles.py"),
     "core": ("test_access.py", "test_auth.py", "test_config.py", "test_field_owners.py",
              "test_entity_classification.py",
              "test_migrations.py", "test_ledger_revision.py",
-             "test_platform.py", "test_mount.py", "test_tray.py", "test_certs.py",
+             "test_platform.py", "test_settings_drive.py",
              "test_folder_picker.py", "test_fsutil.py", "test_runtime_consistency.py",
-             "test_subprocess_encoding.py", "test_outbound_proxy_policy.py", "test_windows_update.py", "test_buildinfo.py"),
-    "packaging": ("test_dependency_policy.py", "test_buildinfo.py", "test_onboarding.py", "test_macos_standalone.py",
-                  "test_cli.py", "test_server.py", "test_versioning.py", "test_frontend_build.py", "test_frontend_preflight.py",
-                  "test_cloudflared_packaging.py", "test_desktop_installer.py",
-                  "test_ffmpeg_build.py", "test_ffmpeg_bundle.py", "test_untrunc_build.py", "test_macos_media.py",
-                  "test_face_models_bundle.py", "test_metadata_amane_bridge.py", "test_release_candidate.py", "test_media_build_cache.py"),
+             "test_subprocess_encoding.py", "test_outbound_proxy_policy.py"),
+    "packaging": ("test_dependency_policy.py", "test_onboarding.py",
+                  "test_cli.py", "test_server.py", "test_frontend_build.py", "test_frontend_preflight.py",
+                  "test_metadata_amane_bridge.py", ),
 }
 
 SCOPE_TEST_IDS: dict[str, tuple[str, ...]] = {
@@ -180,51 +169,21 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     "scripts/render_star_history.py": ("tooling",),
     "frontend/e2e/jav-userscript-contract.mjs": ("catalog", "web"),
     "web/integrations/peach-jav.user.js": ("catalog", "web"),
-    "scripts/build_macos_media.py": ("tooling", "packaging"),
-    "scripts/setup_macos_media_tools.py": ("tooling", "packaging"),
-    "scripts/smoke_macos_media.py": ("tooling", "packaging"),
-    "scripts/fetch_cloudflared_macos.py": ("tooling", "packaging"),
     "scripts/fetch_face_models.py": ("tooling", "packaging"),
-    "scripts/cloudflared-macos.json": ("tooling", "packaging"),
-    "scripts/fetch_sparkle_macos.py": ("tooling", "packaging"),
-    "scripts/sparkle-macos.json": ("tooling", "packaging"),
-    "scripts/sparkle_appcast.py": ("tooling", "packaging"),
-    # 发布签名脚本的用例与客户端校验放在同一份 `test_release_signing.py` 里。
-    "scripts/sign_release.py": ("tooling",),
-    "scripts/fetch_ffmpeg_sources.py": ("tooling", "packaging"),
-    "scripts/ffmpeg-sources.json": ("tooling", "packaging"),
-    "scripts/build_ffmpeg_windows.sh": ("tooling", "packaging"),
-    "scripts/fetch_untrunc_sources.py": ("tooling", "packaging"),
-    "scripts/untrunc-sources.json": ("tooling", "packaging"),
-    "scripts/build_untrunc_windows.sh": ("tooling", "packaging"),
-    "scripts/media_tool_bundle.py": ("tooling", "packaging"),
     "src/peach/seed_corrections.py": ("metadata", "tooling"),
     "src/peach/seed_validation.py": ("metadata", "tooling"),
     "src/peach/preview_cache.py": ("follow", "catalog", "media", "web"),
-    "src/peach/preview_transport.py": ("catalog", "media", "web"),
-    "src/peach/dev_copy.py": ("web",),
     "scripts/dev/copy-editor.js": ("web",),
     # 路由页面同时被目录、工具与前端三个域的测试读源码。
     "src/peach/routes_pages.py": ("catalog", "tooling", "web"),
-    # 托盘既是 sync 域的服务编排，也被版本与桌面设置那些 tooling 测试读源码。
-    "src/peach/tray.py": ("sync", "tooling"),
-    "src/peach/menubar.py": ("sync", "tooling"),
-    # Sparkle 更新器由菜单栏持有，打包与发布门槛的测试也直接导入它。
-    "src/peach/sparkle_update.py": ("sync", "tooling", "packaging"),
-    # 托盘子服务与隧道的 cloudflared 共用这份 Job Object；两边的测试都要跑到。
-    "src/peach/process_job.py": ("tooling", "sync"),
-    'src/peach/task_control.py': ('catalog', 'media', 'metadata', 'follow', 'sync', 'tooling', 'web'),
+    # 后台任务的 Job Object 由任务控制与工具域测试共同读源码。
+    "src/peach/process_job.py": ("tooling",),
+    'src/peach/task_control.py': ('catalog', 'media', 'metadata', 'follow', 'tooling', 'web'),
     'tests/test_task_control.py': ('media', 'tooling'),
     'tests/test_task_resources.py': ('media', 'tooling'),
     'tests/test_resource_platform.py': ('media', 'tooling'),
     'src/peach/resource_platform.py': ('media', 'tooling', 'web'),
-    'src/peach/gpu_linux.py': ('media', 'tooling', 'web'),
-    'src/peach/task_resources.py': ('catalog', 'media', 'metadata', 'follow', 'sync', 'tooling', 'web'),
-    'src/peach/gpu_usage.py': ('media', 'tooling', 'web'),
-    # 托盘重启的实现由 `test_restart_windows_tray.py` 验，模块名推不出来。
-    "src/peach/windows_restart.py": ("tooling",),
-    # 托盘「重启服务」按路径拉起这个脚本（`--source --force`），托盘测试也要跑到。
-    "scripts/restart_windows_tray.py": ("tooling", "sync"),
+    'src/peach/task_resources.py': ('catalog', 'media', 'metadata', 'follow', 'tooling', 'web'),
     "src/peach/jav_poster_crop.py": ("metadata", "web"),
     # genre 词表按名字只推得出 metadata。复核队列与 API 那两处的用例拿「词表没收的词」
     # 当素材：词表一收那个词，`test_web_review.py`（catalog）与 `test_fastapi_api.py`
@@ -236,12 +195,19 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     # 住在 tooling——按名字只推得出 metadata，不指明就跑不到。
     "src/peach/metadata_policy.py": ("metadata", "tooling"),
     # 处理任务的主体测试是 `test_metadata_library.py`，它登记在 metadata 与 web 两个域；
-    # `test_stale_candidates.py` 在 metadata，`test_web_e2e.py` 在 web 里整条跑它。
+    # `test_stale_candidates.py` 在 metadata 域。
     # 模块名与测试文件名对不上，按名字推不出来，不指明就退化成 full。
     "src/peach/library_processing.py": ("metadata", "web"),
     "src/peach/library_processing_scope.py": ("metadata", "web"),
+    # 卡片接触印相同样从网盘抽帧，和 `test_preview_sheets.py` 一起归 media。
+    "src/peach/preview_sheets.py": ("media",),
+    # 磁力链解析由 `sources/javdb.py` 与 `javdb_public.py` 共用，用例在 `test_javdb_public.py`
+    # 与 `test_metadata_sources.py` 里，两域都要跑到。
+    "src/peach/magnets.py": ("metadata", "web"),
+    # 任务状态根目录由 `task_control`、`task_resources`、`job_recovery` 共用，
+    # 用例散在 `test_task_control.py` 与 `test_jobs.py`。
+    "src/peach/task_state.py": ("tooling", "media"),
     "src/peach/local_poster.py": ("metadata", "web"),
-    "src/peach/media_io.py": ("metadata", "media", "tooling"),
     "src/peach/processing_control.py": ("media", "metadata", "web"),
     # 刮削后继：主体测试 `test_followups.py` 与 `test_studio_followup.py`，按名字推不出来。
     "src/peach/avatar_followup.py": ("catalog", "media", "tooling"),
@@ -264,7 +230,6 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     # 撤回的实现与复核页入口（ADR-0141）：脚本用例散在 catalog、metadata、tooling，网页用例在
     # `test_metadata_verification.py`，路由登记在 `test_rm_web.py`。
     "src/peach/auto_landing_revert.py": ("catalog", "metadata", "tooling"),
-    "src/peach/web_auto_landings.py": ("catalog", "metadata", "web"),
     # 实体事实种子包（ADR-0073）：导出导入的逻辑与命令行，测试都在 `test_seed_pack.py`；
     # 扫描结算后自动导入的后继（ADR-0075）在 `test_seed_followup.py`。
     "src/peach/seed_pack.py": ("metadata", "tooling"),
@@ -280,7 +245,6 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     # 形状的用例在 catalog 与 web 两个域里经 `q_entity` 读它。
     "src/peach/performer_header.py": ("metadata", "catalog", "web"),
     # 推送发现横跨扫描登记（tooling）与 HTTP 端点（catalog），按名字只推得出一个域。
-    "src/peach/push_discovery.py": ("tooling", "catalog"),
     # 入库通知由推送发现、云下载整理与任务接口共用，测试分在 catalog 与 tooling，按名字推不出来。
     "src/peach/ingest_notices.py": ("catalog", "tooling"),
     # 个人记录的判据与搬运（ADR-0087）：资源同步与列表在 catalog，扫描登记与撤回脚本在 tooling。
@@ -300,12 +264,8 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     ".dockerignore": ("packaging", "tooling"),
     "compose.yaml": ("packaging", "tooling"),
     "src/peach/server.py": ("packaging", "tooling"),
-    # 一键更新的用例和镜像仓库核对一起放在 `test_release_updates.py`。
-    "src/peach/docker_update.py": ("tooling",),
-    "scripts/smoke_docker.py": ("packaging", "tooling"),
     # GitLab 流水线：构建、发布与 CI 验证的编排，本机测试不执行它；`test_version_bump.py`
     # 读它判补丁版本。主线 CI 改它时由 `ci_scope` 让三个平台跑全量。
-    ".gitlab-ci.yml": ("packaging", "tooling"),
     # 源码分发包的文件清单，由打包测试与发布脚本使用。
     "MANIFEST.in": ("packaging", "tooling"),
     # 浏览器文件的实测秒数：CI 浏览器矩阵（tooling）与本机浏览器冒烟的排队顺序（web）共用。
@@ -316,15 +276,8 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
 # tooling 里的脚本策略门槛验它的形态。
 AUTO_SCOPE_PREFIXES: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("src/peach/media.py", "media"),
-    ("src/peach/hardware_transcode.py", "media"),
-    # 关键帧与 ctts 都从 moov 读，测试住在 `test_segments.py` 里。
-    ("src/peach/mp4index.py", "media"),
-    ("src/peach/mp4repair.py", "media"),
-    ("src/peach/mp4recover.py", "media"),
-    # 批量修复是播放链路的任务，但住在 web 层，两个域都要跑到。
-    ("src/peach/web_media_repair.py", ("media", "web")),
-    ("src/peach/desktop_startup.py", "tooling"),
-    ("src/peach/desktop_uninstall.py", "tooling"),
+    # 网盘的清单、直链与 Range 转发是一组，验它们的是 `test_drive_*.py`，都在 media 域。
+    ("src/peach/drive_", "media"),
     ("src/peach/peach_proxy.py", "tooling"),
     ("src/peach/gfriends.py", "metadata"),
     # 站点解析器契约与套了契约的站（ADR-0044）：测试住在 `test_metadata_sources.py` 与
@@ -358,22 +311,14 @@ AUTO_SCOPE_PREFIXES: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("scripts/demo_dataset.py", ("web", "tooling")),
     ("scripts/vendor_web_dependencies.mjs", ("web", "tooling")),
     ("scripts/audit_video_endcards.py", ("media", "tooling")),
-    ("scripts/setup_macos_port80.sh", ("sync", "tooling")),
     # 订阅源的解析与建壳验在 `test_feeds*.py`，两份都登记在 catalog：壳的边界是
     # 「它不是 asset」，看得住这条的是目录域那批测试。
     ("src/peach/feeds.py", "catalog"),
     ("src/peach/feed_followup.py", "catalog"),
-    # 云下载的任务模型、两个客户端与生成的 protobuf 代码，测试都是 `test_downloads*.py`。
-    ("src/peach/downloads", "catalog"),
     ("src/peach/follow", "follow"),
     ("src/peach/fanbox.py", "follow"),
     ("src/peach/web_follow.py", "follow"),
-    ("src/peach/sync", "sync"),
-    ("src/peach/platform.py", "sync"),
-    ("src/peach/mount.py", "sync"),
-    ("src/peach/mdns.py", "sync"),
-    ("src/peach/netwatch.py", "sync"),
-    ("src/peach/certs.py", "sync"),
+    ("src/peach/platform.py", "core"),
     # 产地的判据住在 `regions.py`，验它的测试叫 `test_content_region.py`：
     # 模块名与测试文件名对不上，按名字推不出来，只能在这里指明。
     ("src/peach/regions.py", "catalog"),
@@ -388,10 +333,10 @@ AUTO_SCOPE_PREFIXES: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("resources/marks/", ("catalog", "web")),
     ("resources/site-marks/", ("catalog", "web")),
     ("resources/licenses/", ("packaging", "tooling")),
-    # 应用图标：页面站标（web）、托盘与菜单栏（sync）、安装包与 DMG（packaging），
-    # `test_scripts.py` 读 `peach-logo.png`（tooling）。
+    # 应用图标：页面站标（web）与安装包（packaging），`test_scripts.py` 读
+    # `peach-logo.png`（tooling）。
     ("resources/setup/", ("web", "packaging")),
-    ("resources/", ("sync", "tooling", "web", "packaging")),
+    ("resources/", ("tooling", "web", "packaging")),
     ("web/", "web"),
     ("frontend/", "web"),
     ("scripts/", "tooling"),
@@ -665,18 +610,11 @@ CI_FRONTEND_TESTS = frozenset({
     "test_frontend_preflight.FrontendPreflightTests.test_frontend_sources_and_tests_pass_lint",
     "test_frontend_build.VitestTests.test_the_island_suite_passes",
 })
-
-CI_BROWSER_TESTS = frozenset({
-    "test_web_e2e.WebE2ESmokeTests.test_every_route_holds_the_layout_and_runtime_invariants",
-    "test_web_e2e.SetupE2ETests.test_the_first_run_page_writes_errors_back_and_finishes",
-})
-
-
 def ci_frontend_delegated() -> bool:
-    """Test 工作流的 Python 与浏览器任务由 web-bundle 承担前端工具检查。"""
+    """Test 工作流的 Python 任务由 web-bundle 承担前端工具检查。"""
     return (os.environ.get("GITHUB_ACTIONS") == "true"
             and os.environ.get("GITHUB_WORKFLOW") == "Test"
-            and os.environ.get("GITHUB_JOB") in {"python", "web-e2e"})
+            and os.environ.get("GITHUB_JOB") == "python")
 
 
 def without_ci_frontend_tests(suite: unittest.TestSuite) -> unittest.TestSuite:
@@ -685,8 +623,7 @@ def without_ci_frontend_tests(suite: unittest.TestSuite) -> unittest.TestSuite:
     for test in suite:
         if isinstance(test, unittest.TestSuite):
             selected.addTests(without_ci_frontend_tests(test))
-        elif test.id() not in CI_FRONTEND_TESTS and not (
-                os.environ.get("GITHUB_JOB") == "python" and test.id() in CI_BROWSER_TESTS):
+        elif test.id() not in CI_FRONTEND_TESTS:
             selected.addTest(test)
     return selected
 
@@ -881,9 +818,8 @@ def shard_command(scopes: tuple[str, ...], index: int, count: int, timings: Path
     return command
 
 
-#: 没有本机实测时的先验秒数。浏览器冒烟一条用例占十几分钟，必须独占一片并第一个派发，
-#: 否则排在中间的那片开跑时其余分片已过半，它一个人拖尾。
-PRIOR_SECONDS = {"test_web_e2e.py": 900.0}
+#: 没有本机实测时的先验秒数。
+PRIOR_SECONDS: dict[str, float] = {}
 
 
 def shard_plan(names: Iterable[str], shard_count: int,
@@ -1069,8 +1005,7 @@ GATE_TESTS = frozenset({
 })
 #: 失败后单独重跑的文件数上限。失败面更大多半是真回归，重跑只会再白等一轮。
 RERUN_LIMIT = 6
-#: 浏览器与 vitest 的容器用例：它们的失败由各自的逐条结果说明，重跑只重跑那几个文件。
-E2E_CONTAINER = "test_web_e2e."
+#: vitest 的容器用例：它的失败由逐条结果说明，重跑只重跑那几个文件。
 VITEST_CONTAINER = "test_frontend_build.VitestTests.test_the_island_suite_passes"
 #: 本次运行里失败、单独重跑通过的用例；`verified_run` 写进测试记录。
 FLAKY: list[str] = []
@@ -1079,15 +1014,13 @@ FLAKY: list[str] = []
 def rerun_selectors(rows: list[dict]) -> list[str] | None:
     """失败的逐条结果对应的定向选择器；分不出具体文件或失败面过大时返回 None。"""
     failed = [str(row.get("id", "")) for row in rows if row.get("outcome") in {"fail", "error"}]
-    e2e = sorted({item.split(" > ")[0].removeprefix("e2e:") for item in failed if item.startswith("e2e:")})
     vitest = sorted({item.split(" > ")[0].removeprefix("vitest:") for item in failed if item.startswith("vitest:")})
     python = []
     for item in failed:
-        if item.startswith(("e2e:", "vitest:")):
+        if item.startswith("vitest:"):
             continue
         name = item.split(" ")[0]
-        if (name in CI_BROWSER_TESTS and any('frontend/' + path in test_resume.container_files(ROOT, name)
-                                              for path in e2e)) or (name == VITEST_CONTAINER and vitest):
+        if name == VITEST_CONTAINER and vitest:
             continue
         if not re.fullmatch(r"test_\w+(?:\.\w+)+", name):
             holder = re.search(r'\((test_\w+)(?:\.\w+)?\)', item)
@@ -1095,13 +1028,13 @@ def rerun_selectors(rows: list[dict]) -> list[str] | None:
                 python.append(holder.group(1))
                 continue
             return None
-        if name in CI_BROWSER_TESTS or name == VITEST_CONTAINER:
-            # 类级准备失败、或浏览器容器整个没起来：没有可单独重跑的那一条。
+        if name == VITEST_CONTAINER:
+            # 类级准备失败、或 vitest 容器整个没起来：没有可单独重跑的那一条。
             return None
         python.append(name)
-    if not failed or len({name.split(".")[0] for name in python}) + len(e2e) + len(vitest) > RERUN_LIMIT:
+    if not failed or len({name.split(".")[0] for name in python}) + len(vitest) > RERUN_LIMIT:
         return None
-    return [*dict.fromkeys(python), *(f"frontend/{name}" for name in e2e), *(f"frontend/{name}" for name in vitest)]
+    return [*dict.fromkeys(python), *(f"frontend/{name}" for name in vitest)]
 
 
 def rerun_failures(rows: list[dict], spawn=subprocess.run) -> bool:
@@ -1270,8 +1203,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error('恢复计划仅供正式父运行的分片使用')
     if args.focus:
         return run_focus(parser, args)
-    if os.environ.get("PEACH_TEST_FOCUS") or os.environ.get("PEACH_E2E_FILES") or os.environ.get("PEACH_VITEST_FILES"):
-        parser.error("定向调试环境不能签发正式记录；请清除 PEACH_TEST_FOCUS、PEACH_E2E_FILES 与 PEACH_VITEST_FILES")
+    if os.environ.get("PEACH_TEST_FOCUS") or os.environ.get("PEACH_VITEST_FILES"):
+        parser.error("定向调试环境不能签发正式记录；请清除 PEACH_TEST_FOCUS 与 PEACH_VITEST_FILES")
     requested: tuple[str, ...] = tuple(dict.fromkeys(args.scopes or ("auto",)))
     if "auto" in requested and len(requested) > 1:
         parser.error("auto 不能与别的域同时指定")
@@ -1313,7 +1246,7 @@ def run_focus(parser, args) -> int:
 
 
 #: 内部并行的前端与浏览器容器，和普通分片按阶段执行。
-HEAVY_FILES = frozenset({"test_web_e2e", "test_frontend_build"})
+HEAVY_FILES = frozenset({"test_frontend_build"})
 
 
 def busy(error) -> int:
@@ -1432,9 +1365,7 @@ def isolated_temp(base: Path | None = None):
 
 if __name__ == "__main__":
     # 故障注入的默认错误日志属于当前测试进程，不能写进真实数据目录。
-    os.environ["PEACH_REPORTING_TEST_MODE"] = "1"
-    from peach import error_reporting, remote_reporting
-    remote_reporting.disable_for_process()
+    from peach import error_reporting
     with isolated_temp(), tempfile.TemporaryDirectory(prefix='peach-test-errors-') as error_logs:
         error_reporting._log_dir = Path(error_logs)
         raise SystemExit(main())

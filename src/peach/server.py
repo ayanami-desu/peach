@@ -39,10 +39,7 @@ def initialize() -> None:
     if config.present:
         if not (config.directory('database') / 'ledger.db').is_file():
             raise RuntimeError('已有配置但缺少数据库，请恢复数据库后启动')
-        from .runtime_prepare import configured_ledger_writer
-        writer, _reason = configured_ledger_writer(config)
-        if not writer:
-            return
+        # 单机部署：这一进程就是账本的唯一写入方，升级迁移不可能轮到别人做。
         migrate = launch("migrate", "upgrade", "--yes", "--db",
                          str(config.directory("database") / "ledger.db"))
         try:
@@ -93,31 +90,15 @@ def supervise(host: str, port: int, stopping: threading.Event) -> int:
     serving_configured = False
 
     def serve() -> subprocess.Popen:
-        # 还没有设置文件时起的是首次设置服务，与托盘首启同一个 `--setup`；设置一提交、设置文件
-        # 出现，下面的循环就把它换成正常服务。
+        # 还没有设置文件时起的是首次设置服务（`peach serve --setup`）；设置一提交、
+        # 设置文件出现，下面的循环就把它换成正常服务。
         nonlocal serving_configured
         serving_configured = settings_file.load_config().present
         setup = () if serving_configured else ("--setup",)
-        return launch("serve", *setup, "--host", host, "--port", str(port), "--no-mdns", "--no-ledger-sync")
-
-    def stop_all() -> None:
-        nonlocal service, scanner
-        stop_process(scanner)
-        stop_process(service)
-        service = scanner = None
-
-    def restart(environment: dict[str, str]) -> None:
-        # 看守进程之后读设置、拉起服务都按迁移后的位置；原位置留下的位置记录让以后的启动也跟过去。
-        nonlocal service
-        os.environ[settings_file.DATA_ROOT_ENV] = environment[settings_file.DATA_ROOT_ENV]
-        service = serve()
+        return launch("serve", *setup, "--host", host, "--port", str(port))
 
     try:
         while not stopping.is_set():
-            # 设置页「更改位置」写下的迁移请求：停服务、搬家、在新位置重新拉起，都在这一轮里做完。
-            from .data_storage import poll_headless
-            if poll_headless(stop_all, restart):
-                continue
             config = settings_file.load_config()
             reload_path = config.directory("state") / onboarding.RELOAD_NAME
             if service is None or reload_path.exists() or config.present != serving_configured:
@@ -151,25 +132,18 @@ def main(argv: list[str] | None = None) -> int:
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stopping.set())
     initialize()
-    if os.environ.get('PEACH_DISTRIBUTION') == 'docker':
-        # 起服务前写好：watchtower profile 等 Peach 就绪才启动，启动时读这份令牌（ADR-0140）。
-        from .docker_update import ensure_token
-        try:
-            ensure_token()
-        except OSError as error:
-            print(f"一键更新令牌未能生成：{error}", file=sys.stderr, flush=True)
     config = settings_file.load_config()
     seeded = seed_access_password(config)
     if seeded:
         print(seeded, flush=True)
-    print(f"Peach 服务监听：{args.host}:{args.port}。容器外部访问地址以宿主机端口映射为准。", flush=True)
+    print(f"Peach 服务监听：{args.host}:{args.port}。对外地址由部署侧的端口映射与反向代理决定。", flush=True)
     if distribution.docker() and not config.present:
-        print("首次设置：从部署机器或局域网的浏览器打开 Peach，按页面完成设置。", flush=True)
+        print("首次设置：用浏览器打开服务的地址，按页面完成设置。", flush=True)
     elif access.load(config.directory("secrets") / "access.json")["mode"] == "legacy":
-        print("首次打开：从部署机器或局域网的浏览器打开 Peach，设置访问密码或选择免登录。" if distribution.docker()
-              else "首次登录：在运行 Peach 的环境中执行 peach token 查看口令，登录后设置访问密码。", flush=True)
-    if os.environ.get('PEACH_DISTRIBUTION') == 'docker':
-        print("NAS / 局域网访问：Compose 的 PEACH_BIND 应为宿主机局域网 IP；127.0.0.1 只允许宿主机访问。", flush=True)
+        print("首次打开：用浏览器打开服务的地址，设置访问密码或选择免登录。" if distribution.docker()
+              else "首次登录：在这台机器上执行 peach token 查看口令，登录后设置访问密码。", flush=True)
+    if distribution.docker():
+        print("公网部署：TLS 与域名终止在反向代理上，回调地址要与设置里的网盘公网地址一致。", flush=True)
     return supervise(args.host, args.port, stopping)
 
 

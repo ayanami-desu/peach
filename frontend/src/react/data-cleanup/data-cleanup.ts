@@ -17,8 +17,6 @@ import type { CleanupToolKey } from '../../cleanup-tools';
 import { apiGet } from '../../api';
 import { DUPLICATES_KEY, fetchDuplicates } from '../duplicates/duplicates';
 import { prefetchLibraryProcessing } from '../library-processing/library-processing';
-import { prefetchMediaRepair } from '../media-repair/media-repair';
-import { prefetchMediaSources } from '../media-sources';
 import { fetchQualityGoals, QUALITY_GOALS_KEY } from '../quality-goals/quality-goals';
 import { queryClient } from '../query';
 import { REVIEW_LABELS, type ReviewCategory } from '../review/review';
@@ -27,7 +25,6 @@ import {
 } from './links';
 import { prefetchOrganize } from './organize';
 import { fetchOrphanRecords, ORPHAN_RECORDS_KEY } from './orphan-records';
-import { prefetchResourceSync } from './resource-sync';
 import { fetchDeletePerformers, PERFORMER_DELETE_KEY } from './performer-delete';
 import { t } from '../../i18n';
 
@@ -115,8 +112,6 @@ export async function prefetchDataCleanup(signal: AbortSignal): Promise<void> {
 export async function prefetchDataCleanupTool(tool: CleanupToolKey, signal: AbortSignal): Promise<void> {
   switch (tool) {
     case 'organize': await prefetchOrganize(signal); break;
-    case 'media-repair': await prefetchMediaRepair(signal); break;
-    case 'resource-sync': await prefetchMediaSources(signal); await prefetchResourceSync(signal); break;
     case 'orphan-records':
       await queryClient.prefetchQuery({ queryKey: ORPHAN_RECORDS_KEY, queryFn: () => fetchOrphanRecords(signal) }); break;
     case 'batch-delete':

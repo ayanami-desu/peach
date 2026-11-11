@@ -451,5 +451,6 @@ describe('关闭', () => {
 
 it('面板第二行的口径：本地图缺来源写「来源未知」、缺大小写「大小未知」，一千字节以下也写 1 KB', () => {
   expect(photoMeta({ src: '', thumb: '', asset: { id: 1 } }, undefined)).toBe('来源未知 · 大小未知');
-  expect(photoMeta({ src: '', thumb: '', asset: { id: 1, location: 'pikpak', size: 10 } }, undefined)).toBe('PikPak · 1\u00a0KB');
+  // 网盘图写登记表里的网盘名（`GET /api/drive` 的 label 走同一张表），一千字节以下仍写 1 KB。
+  expect(photoMeta({ src: '', thumb: '', asset: { id: 1, location: 'gdrive', size: 10 } }, undefined)).toBe('Google Drive · 1\u00a0KB');
 });

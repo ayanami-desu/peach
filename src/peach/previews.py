@@ -7,15 +7,12 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from .smb_media import input_url, SmbResource
-from contextlib import nullcontext
 
 from PIL import Image, ImageOps
 
 from . import brand_marks, artifact_rules, upgrade_rules
 from .ffmpeg import FFmpegResolver
 from .fsutil import atomic_path
-from .media import normalized_path
 from .repository import LedgerRepository
 
 
@@ -119,7 +116,7 @@ def _generate_lock(destination: Path) -> threading.Lock:
 
     同一目标同一把锁，锁内再判一次文件是否已存在：两个线程同时请求同一张图时，
     第二个直接返回第一个的结果，而不是再跑一遍 FFmpeg。落盘本身的安全由
-    `fsutil.atomic_path` 负责，这把锁省的是重复的转码开销。
+    `fsutil.atomic_path` 负责，这把锁省的是重复的抽帧开销。
     """
     return _GENERATE_LOCKS[hash(str(destination)) % _LOCK_STRIPES]
 
@@ -162,7 +159,7 @@ class PreviewService:
             stamp = artifact_rules.fingerprint(source)
             with atomic_path(destination) as temporary:
                 self._run([
-                    str(ffmpeg), "-y", "-v", "error", "-i", input_url(source),
+                    str(ffmpeg), "-y", "-v", "error", "-i", str(source),
                     "-vf", f"crop=iw/3:ih/3:iw/3*{col}:ih/3*{row},scale='min(640,iw)':-2",
                     "-q:v", "4", str(temporary),
                 ])
@@ -195,7 +192,7 @@ class PreviewService:
                 for col, row in ((1, 1), (0, 0), (1, 2), (2, 0), (0, 2), (2, 2)):
                     temporary = destination.with_name(f"{destination.stem}.{col}{row}.tmp.jpg")
                     self._run([
-                        str(ffmpeg), "-y", "-v", "error", "-i", input_url(source),
+                        str(ffmpeg), "-y", "-v", "error", "-i", str(source),
                         "-vf", f"crop=iw/3:ih/3:iw/3*{col}:ih/3*{row},"
                                "scale=160:160:force_original_aspect_ratio=increase,crop=160:160",
                         "-q:v", "4", str(temporary),
@@ -354,7 +351,7 @@ class PreviewService:
         asset = self.repository.media_asset(asset_id)
         if asset is None or not asset.snapshot_path:
             raise PreviewUnavailable("snapshot unavailable")
-        path = normalized_path(asset.snapshot_path)
+        path = Path(asset.snapshot_path)
         if not (path == self.snapshot_root or self.snapshot_root in path.parents) or not path.is_file():
             raise PreviewUnavailable("snapshot unavailable")
         return path
@@ -463,7 +460,7 @@ class PhotoThumbnailService:
             try:
                 stamp = artifact_rules.fingerprint(source)
                 with atomic_path(destination) as temporary:
-                    with (source.open() if isinstance(source, SmbResource) else nullcontext(source)) as readable, Image.open(readable) as opened:
+                    with Image.open(source) as opened:
                         image = ImageOps.exif_transpose(opened)
                         if image.mode not in {"RGB", "L"}:
                             image = image.convert("RGB")
@@ -573,7 +570,7 @@ class DerivedImageService:
                     return destination
                 stamp = artifact_rules.fingerprint(source)
                 with atomic_path(destination) as temporary:
-                    with (source.open() if isinstance(source, SmbResource) else nullcontext(source)) as readable, Image.open(readable) as opened:
+                    with Image.open(source) as opened:
                         image = ImageOps.exif_transpose(opened)
                         if image.mode not in {"RGB", "L"}:
                             image = image.convert("RGB")

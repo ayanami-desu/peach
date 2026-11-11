@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -12,9 +11,8 @@ from datetime import datetime, timezone
 import psutil
 
 from .fsutil import atomic_write_text
-from .gpu_usage import GpuCounters
 from .resource_platform import cpu_capacity, thread_times
-from .update_tasks import state_for
+from .task_state import state_root
 
 _LIVE = {}
 _LOCK = threading.RLock()
@@ -24,7 +22,7 @@ NETWORK_HIGH = 10 * 1024 * 1024
 
 
 def _path(db, identity):
-    return state_for(db).parent / 'task-controls' / f'{identity}.resources.json'
+    return state_root(db) / 'task-controls' / f'{identity}.resources.json'
 
 
 class Usage:
@@ -36,8 +34,6 @@ class Usage:
         self.processes = {}
         self.network_bytes = 0
         self.network_error = ''
-        #: 读数未取得时传输走的是哪一路；`cloud` 是网盘挂载，界面据此写「网盘读取」。
-        self.network_via = ''
         self.lock = threading.RLock()
         self.saved_at = 0.0
         with _LOCK:
@@ -47,7 +43,7 @@ class Usage:
         with self.lock:
             return {'pid': self.pid, 'created': self.created, 'threads': list(self.threads),
                     'processes': dict(self.processes), 'network_bytes': self.network_bytes,
-                    'network_error': self.network_error, 'network_via': self.network_via}
+                    'network_error': self.network_error}
 
     def publish(self, *, force=False):
         now = time.monotonic()
@@ -101,31 +97,13 @@ def record_download(size):
         control.usage.publish()
 
 
-def unobserved_network(reason, *, via=''):
+def unobserved_network(reason):
     from .task_control import CURRENT
     control = CURRENT.get()
     if control is not None:
         with control.usage.lock:
             control.usage.network_error = reason
-            control.usage.network_via = via
         control.usage.publish(force=True)
-
-
-def media_input(path):
-    from .task_control import CURRENT
-    if CURRENT.get() is None:
-        return
-    from . import settings_file
-    from .platform import resolve_root
-    from .media_sources import CLOUD_LOCATIONS
-    from .smb_media import resolve, source_identity
-    raw = str(source_identity(path))
-    config = settings_file.active()
-    location, _index, _tail = resolve_root(raw, config.locations)
-    if location in CLOUD_LOCATIONS:
-        unobserved_network('网盘挂载的缓存与预读无法按任务取得实际网速', via='cloud')
-    elif resolve(raw, config) is not None:
-        unobserved_network('SMB 的缓存与预读无法按任务取得实际网速')
 
 
 def _metric(state, field, value=None, reason='', threshold=0):
@@ -134,9 +112,8 @@ def _metric(state, field, value=None, reason='', threshold=0):
 
 
 class Monitor:
-    def __init__(self, store, *, gpu=None, clock=time.monotonic):
+    def __init__(self, store, clock=time.monotonic):
         self.store, self.clock = store, clock
-        self.gpu = gpu
         self.previous = {}
         self.rows = {}
         self.sampled_at = None
@@ -164,14 +141,13 @@ class Monitor:
                 or not math.isfinite(value['created']) or value['created'] <= 0
                 or type(value.get('network_bytes')) not in (int, float)
                 or not math.isfinite(value['network_bytes']) or value['network_bytes'] < 0
-                or not isinstance(value.get('network_error', ''), str)
-                or not isinstance(value.get('network_via', ''), str)):
+                or not isinstance(value.get('network_error', ''), str)):
             raise ValueError('这轮任务的资源归属记录无效')
         if value.get('pid') != run.pid:
             return None
         return value
 
-    def _sample(self, run, now, gpu, gpu_state, gpu_error):
+    def _sample(self, run, now):
         empty = {'cpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属'),
                  'gpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属'),
                  'network': _metric('unavailable', 'bytes_per_second', reason='这轮任务尚未登记传输计量')}
@@ -229,29 +205,8 @@ class Monitor:
             network_metric = _metric('ready', 'bytes_per_second', round(rate), threshold=NETWORK_HIGH)
         if owners.get('network_error'):
             network_metric = _metric('unavailable', 'bytes_per_second', reason=owners['network_error'])
-            if owners.get('network_via'):
-                network_metric['via'] = owners['network_via']
-        if hasattr(self.gpu, 'sample_processes'):
-            try:
-                identities = {root.pid: root.create_time(), **{pid: child.create_time() for pid, child in children.items()}}
-                gpu, gpu_state, gpu_error = self.gpu.sample_processes(identities)
-            except psutil.Error as error:
-                gpu, gpu_state, gpu_error = None, 'unavailable', f'GPU 进程身份未取得：{type(error).__name__}'
-        gpu_metric = _metric(gpu_state, 'percent', reason=gpu_error)
-        engines = {}
-        gpu_parts = {}
-        if gpu is not None:
-            for pid in children:
-                for engine, value in gpu.get(pid, {}).items():
-                    gpu_parts[(pid, engine)] = value
-                    engines[engine] = engines.get(engine, 0.0) + value
-            shared = max(gpu.get(root.pid, {}).values(), default=0.0)
-            if shared:
-                gpu_metric = _metric('unavailable', 'percent', reason='共享服务进程的 GPU 使用无法准确归属到这一轮')
-            else:
-                gpu_metric = _metric('ready', 'percent', round(min(100.0, max(engines.values(), default=0.0)), 1), threshold=GPU_HIGH)
-        return {'cpu': cpu_metric, 'gpu': gpu_metric, 'network': network_metric,
-                '_cpu_parts': parts, '_gpu_parts': gpu_parts}
+        gpu_metric = _metric('unavailable', 'percent', reason='Peach 不采集 GPU 占用')
+        return {'cpu': cpu_metric, 'gpu': gpu_metric, 'network': network_metric, '_cpu_parts': parts}
 
     def snapshot(self):
         with self.lock:
@@ -263,24 +218,13 @@ class Monitor:
             if not runs:
                 self.rows, self.previous, self.sampled_at = {}, {}, now
                 return self.rows
-            if self.gpu is None:
-                if sys.platform.startswith('linux'):
-                    from .gpu_linux import LinuxGpuCounters
-                    self.gpu = LinuxGpuCounters()
-                else:
-                    self.gpu = GpuCounters()
-            gpu, state, reason = self.gpu.sample()
             stamp = datetime.now(timezone.utc).isoformat()
-            self.rows = {run.id: {**self._sample(run, now, gpu, state, reason), 'sampled_at': stamp}
+            self.rows = {run.id: {**self._sample(run, now), 'sampled_at': stamp}
                          for run in runs}
             active = {run.id for run in runs}
             self.previous = {key: value for key, value in self.previous.items() if key in active}
             self.sampled_at = now
             return self.rows
-
-    def close(self):
-        if self.gpu is not None:
-            self.gpu.close()
 
     def for_run(self, run, family=None):
         """这一轮连同后代的资源占用。`family` 是 `TaskRunStore.active_families` 给这一轮的那份，
@@ -303,9 +247,9 @@ class Monitor:
                    'gpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得'),
                    'network': _metric('unavailable', 'bytes_per_second', reason='执行端的传输读数未取得')}
         samples = [waiting if row['status'] == 'pending' else rows.get(row['id'], unknown) for row in family]
-        result = {'sampled_at': datetime.now(timezone.utc).isoformat()}
-        for name, field, threshold in (('cpu', 'percent', CPU_HIGH), ('gpu', 'percent', GPU_HIGH),
-                                       ('network', 'bytes_per_second', NETWORK_HIGH)):
+        result = {'sampled_at': datetime.now(timezone.utc).isoformat(),
+                  'gpu': dict(samples[0]['gpu'])}
+        for name, field, threshold in (('cpu', 'percent', CPU_HIGH), ('network', 'bytes_per_second', NETWORK_HIGH)):
             values = [sample[name] for sample in samples]
             unavailable = next((value for value in values if value['state'] == 'unavailable'), None)
             if unavailable is not None:
@@ -319,15 +263,6 @@ class Monitor:
                         for key, value in sample.get('_cpu_parts', {}).items():
                             parts[key] = max(parts.get(key, 0.0), value)
                     value = round(min(100.0, sum(parts.values())), 1)
-                elif name == 'gpu':
-                    parts = {}
-                    for sample in samples:
-                        for key, value in sample.get('_gpu_parts', {}).items():
-                            parts[key] = max(parts.get(key, 0.0), value)
-                    engines = {}
-                    for (_pid, engine), value in parts.items():
-                        engines[engine] = engines.get(engine, 0.0) + value
-                    value = round(min(100.0, max(engines.values(), default=0.0)), 1)
                 else:
                     value = sum(value[field] for value in values)
                 result[name] = _metric('ready', field, value, threshold=threshold)

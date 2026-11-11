@@ -1,17 +1,15 @@
 """设置文件层：Peach 数据目录的发现，以及 `<Peach 数据目录>/config.toml` 的读取、合并与写回。
 
-三层优先级固定为 **环境变量 > 设置文件 > 内建默认**，`config.py` 只消费合并结果。
-内建默认必须对一个全新用户成立，所以这里（和 `config.py`）不许出现任何一台具体机器的
-路径、主机名、账号名或局域网地址（ADR-0023 第一阶段）。当前部署的那些值不是删掉了，
-而是搬进设置文件：`peach init --from-existing` 生成它。
+优先级固定为 **设置文件 > 内建默认**，`config.py` 只消费合并结果。唯一的环境变量是
+`PEACH_DATA_ROOT`，它在数据目录发现阶段就用掉了。内建默认必须对一个全新用户成立，所以
+这里（和 `config.py`）不许出现任何一台具体机器的路径、主机名或账号名（ADR-0023）。
 
 Peach 数据目录的发现刻意**不**依赖设置文件内容——设置文件本身就住在 Peach 数据目录里面：
 
 1. `PEACH_DATA_ROOT` 环境变量；
-2. 从起点逐级向上，第一个存在的 `<上级目录>/peach-data`。起点在源码树里是项目根，
-   打包后是 EXE 所在目录——单文件包的 `_MEIPASS` 是 `%TEMP%` 下的临时目录，它上面
-   没有任何东西。ADR-0017 的顶层布局把 `peach-app` 与 `peach-data` 并列，向上找因此
-   覆盖主检出、`peach-worktrees/<task>` 里的隔离工作树和 `dist/Peach` 里的托盘；
+2. 从起点逐级向上，第一个存在的 `<上级目录>/peach-data`。起点在源码树里是项目根。
+   ADR-0017 的顶层布局把 `peach-app` 与 `peach-data` 并列，向上找因此覆盖主检出和
+   `peach-worktrees/<task>` 里的隔离工作树；
 3. 都没有 → 未配置。此时仍然给出建议的数据目录（`peach init` 会去建它），但 `configured`
    为 False：服务照常启动，`/healthz` 报 `configured=false`，页面提示去跑 `peach init`。
 
@@ -24,7 +22,7 @@ from __future__ import annotations
 import os
 import sys
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -34,25 +32,16 @@ from . import distribution
 SETTINGS_FILENAME = "config.toml"
 DATA_ROOT_ENV = "PEACH_DATA_ROOT"
 DATA_ROOT_LOCATION = "data-root.txt"
-#: ADR-0017 的顶层布局里这两个目录名是固定的，不随机器变化。
+#: ADR-0017 的顶层布局里这个目录名是固定的，不随机器变化。
 DATA_ROOT_DIRNAME = "peach-data"
-SHARED_ROOT_DIRNAME = "peach-sync"
 
 #: Peach 数据目录下的子目录键。设置文件里省略某项就取同名目录；写绝对路径可以搬出 Peach 数据目录。
 DIRECTORY_KEYS = (
     "database", "generated", "sources", "state", "secrets", "logs", "tools", "review",
 )
 
-#: 媒体来源的键（如 local、115）对应数据库 asset.location 的值，不是盘符。
-#: 值是数据库 asset.path 中保存的目录前缀；各系统均使用 Windows 格式。
-#: 一个来源有多个目录时写数组；[media.mounts] 按同一顺序保存本机实际目录。
-#: peach.platform 在读取文件前转换路径（ADR-0023 勘误）。
-DEFAULT_LOCATION_ROOTS: dict[str, tuple[str, ...]] = {}
-
-#: `[media]` 下按子表保存路径、媒体库与读取策略，没有标量键。第一阶段的 `[media] R = '...'` 是盘符键，
-#: 键空间和 location ID 不同，静默接受只会让整台机器脱盘，所以要显式报升级提示。
-_LOCATIONS_KEY = "locations"
-_MOUNTS_KEY = "mounts"
+#: `[drive]` 段里除两张子表之外的键。`public_url` 是 OAuth 回调的基址。
+_DRIVE_KEYS = frozenset({"public_url", "accounts", "roots"})
 
 
 class SettingsFileError(RuntimeError):
@@ -83,8 +72,8 @@ def _search_anchor(
     """向上找 Peach 数据目录的起点：源码树用项目根，打包产物用 EXE 所在目录。
 
     资源根和发现起点是两回事。PyInstaller 的资源在 `_MEIPASS`，单文件包把它解到
-    `%TEMP%/_MEIxxxx`，从那里向上只会走到用户目录，托盘于是把一台配置好的机器判成
-    首次运行并起 `serve --setup`。`sys.executable` 在两种打包形态里都是 EXE 本身。
+    `%TEMP%/_MEIxxxx`，从那里向上只会走到用户目录，一台配置好的机器会被判成首次运行
+    并起 `serve --setup`。`sys.executable` 在两种形态里都是 EXE 本身。
     """
     if frozen:
         return Path(executable).resolve().parent
@@ -161,52 +150,6 @@ def remember_data_root(bootstrap: PeachConfig, selected: PeachConfig) -> None:
 class ServerSettings:
     host: str = "127.0.0.1"
     port: int = 8900
-    #: 本机发布的 mDNS 名。两台机器同时在线时必须显式改一台，否则互相抢同一个名字。
-    mdns_name: str = "peach"
-    #: reader 复核镜像要读的 writer 源，形如 `https://<地址>`；空串表示本机不做镜像。
-    review_writer_origin: str = ""
-    #: 只对上面那个源生效的 HTTP 代理；空串表示直连。macOS 上 LaunchAgent 的 Python
-    #: 可能拿不到 Local Network 权限，那种机器才需要填。
-    review_writer_proxy: str = ""
-
-
-@dataclass(frozen=True)
-class ReplicationSettings:
-    """单写者 ledger 复制（ADR-0017、ADR-0020）的坐标。
-
-    `enabled` 默认 False：多数部署只有一台机器，没有第二台就没有单写者复制可言。
-    关闭时不装配 ledger 同步观察器、不探测也不挂载 SMB、托盘不出 Ledger 菜单项，
-    服务按独立写者跑（`/healthz` 的 `ledger_sync` 为 `disabled`）。现有双机部署由
-    `peach init --from-existing` 写成 true，读到 true 的机器上面这些逐项生效。
-    """
-
-    enabled: bool = False
-    #: 共享传输点。空串表示取 `<Peach 数据目录的上级>/peach-sync`。
-    shared_root: str = ""
-    smb_host: str = ""
-    smb_share: str = ""
-    #: 挂载共享用的账号，必须和钥匙串里已有的那条同名；空串表示不预检、不弹认证框。
-    smb_user: str = ""
-
-
-@dataclass(frozen=True)
-class TunnelSettings:
-    """Cloudflare Tunnel 的本机开关。
-
-    Quick Tunnel 没有稳定域名，也没有 Cloudflare Access 身份层，所以默认关闭，
-    只有在 Peach 自己已经启用访问密码时才允许打开。`binary` 只记录本机可执行文件
-    的显式位置，不把二进制或下载地址写进设置文件。
-
-    `mode = "named"` 换成用户自己在 Cloudflare 后台建的命名隧道：入口是 `hostname`
-    这个固定主机名，凭据是 `token`。令牌只落在这个文件里，不进账本、日志和健康检查。
-    命名隧道只在源码开发环境可用，独立包读到它会拒绝启动隧道。
-    """
-
-    enabled: bool = False
-    binary: str = ""
-    mode: str = "quick"
-    token: str = ""
-    hostname: str = ""
 
 
 @dataclass(frozen=True)
@@ -220,20 +163,17 @@ class PeachConfig:
     #: Peach 数据目录是被找到的，还是只是一个建议使用的数据目录。
     data_root_found: bool = False
     directories: dict[str, str] = field(default_factory=dict)
-    #: `asset.location` -> 本机挂载点，即该来源的每个数据库路径前缀落在本机哪个目录，按顺序
-    #: 与 `locations` 里的数据库路径前缀一一对应。Windows 上通常为空：盘符本身就是挂载点。
-    mounts: dict[str, tuple[str, ...]] = field(default_factory=dict)
     library_names: dict[str, str] = field(default_factory=dict)
     library_icons: dict[str, str] = field(default_factory=dict)
-    media_costs: dict[str, str] = field(default_factory=dict)
     library_catalog: dict[str, dict[str, str]] = field(default_factory=dict)
-    storage_roots: dict[str, dict[str, str]] = field(default_factory=dict)
-    #: `asset.location` -> 用户声明的数据库目录前缀；未添加媒体目录时为空。
-    locations: dict[str, tuple[str, ...]] = field(
-        default_factory=lambda: dict(DEFAULT_LOCATION_ROOTS))
     server: ServerSettings = ServerSettings()
-    replication: ReplicationSettings = ReplicationSettings()
-    tunnel: TunnelSettings = TunnelSettings()
+    #: 网盘授权的回调基址，形如 `https://peach.example.com`；空串表示还没填，
+    #: 此时授权入口拒绝发起（回调落不回这台服务）。
+    drive_public_url: str = ""
+    #: 网盘来源 -> (client_id, client_secret)。缺一项就说明那个网盘还没接进来。
+    drive_clients: dict[str, tuple[str, str]] = field(default_factory=dict)
+    #: 网盘来源 -> 扫描起点的远端目录 id；网站点自己的选法，与账号根目录无关。
+    drive_roots: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def configured(self) -> bool:
@@ -250,16 +190,6 @@ class PeachConfig:
         raw = (self.directories.get(key) or "").strip() or key
         candidate = Path(raw)
         return candidate if candidate.is_absolute() else self.data_root / candidate
-
-    @property
-    def shared_root(self) -> Path:
-        raw = self.replication.shared_root.strip()
-        return Path(raw) if raw else self.data_root.parent / SHARED_ROOT_DIRNAME
-
-    @property
-    def smb_share(self) -> str:
-        """共享名默认取共享目录名：两边同名是最不容易配错的形状。"""
-        return self.replication.smb_share or self.shared_root.name
 
 
 # --------------------------------------------------------------------------- 读取
@@ -306,13 +236,6 @@ def _integer(table: dict, key: str, default: int, path: Path, prefix: str) -> in
     return value
 
 
-def _boolean(table: dict, key: str, default: bool, path: Path, prefix: str) -> bool:
-    value = table.get(key, default)
-    if not isinstance(value, bool):
-        raise _fail(path, f"`{prefix}{key}` 必须是 true 或 false")
-    return value
-
-
 def _string_map(table: dict, path: Path, prefix: str) -> dict[str, str]:
     result: dict[str, str] = {}
     for key, value in table.items():
@@ -322,11 +245,11 @@ def _string_map(table: dict, path: Path, prefix: str) -> dict[str, str]:
     return result
 
 
-def _root_map(table: dict, path: Path, prefix: str, *, allow_empty: bool = False) -> dict[str, tuple[str, ...]]:
-    """`[media.locations]` / `[media.mounts]` 的值：一个字符串，或一个字符串数组。
+def _root_map(table: dict, path: Path, prefix: str) -> dict[str, tuple[str, ...]]:
+    """`[drive.roots.<来源>]` 的值：一个远端目录 id，或一个 id 数组。
 
-    单个来源常常只有一个目录，写成字符串最好读；第二块硬盘加进来时改成数组即可。
-    两张表的解析口径一致，数组里不能有空串、不能重复——那两种写法都说不清用户想要什么。
+    单个目录写成字符串最好读；多块共享盘加进来时改成数组即可。
+    数组里不能有空串、不能重复——那两种写法都说不清用户想要什么。
     """
     result: dict[str, tuple[str, ...]] = {}
     for key, value in table.items():
@@ -335,18 +258,37 @@ def _root_map(table: dict, path: Path, prefix: str, *, allow_empty: bool = False
             continue
         if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
             raise _fail(path, f"`{prefix}{key}` 必须是字符串，或者字符串数组")
-        if not allow_empty and any(not item for item in value):
+        if any(not item for item in value):
             raise _fail(path, f"`{prefix}{key}` 的数组里不能有空串")
-        filled = [item for item in value if item] if allow_empty else value
-        if len(set(filled)) != len(filled):
-            raise _fail(path, f"`{prefix}{key}` 的数组里有重复的路径")
+        if len(set(value)) != len(value):
+            raise _fail(path, f"`{prefix}{key}` 的数组里有重复的目录 id")
         result[key] = tuple(value)
     return result
 
 
+def _drive_clients(table: dict, path: Path) -> dict[str, tuple[str, str]]:
+    """`[drive.accounts.<来源>]`：每个网盘一套 OAuth 客户端凭据。"""
+    from .drive_provider import LOCATIONS
+    result: dict[str, tuple[str, str]] = {}
+    for key, value in table.items():
+        if key not in LOCATIONS:
+            raise _fail(path, f"`[drive.accounts]` 里不认识的网盘：{key}；"
+                              f"只接受 {'、'.join(LOCATIONS)}")
+        if not isinstance(value, dict):
+            raise _fail(path, f"`[drive.accounts.{key}]` 必须是一张表")
+        stray = sorted(set(value) - {"client_id", "client_secret"})
+        if stray:
+            raise _fail(path, f"`[drive.accounts.{key}]` 里有不认识的键：" + "、".join(stray))
+        client_id = _string(value, "client_id", "", path, f"drive.accounts.{key}.")
+        client_secret = _string(value, "client_secret", "", path, f"drive.accounts.{key}.")
+        if not client_id or not client_secret:
+            raise _fail(path, f"`[drive.accounts.{key}]` 的 client_id 与 client_secret 都要填")
+        result[key] = (client_id, client_secret)
+    return result
+
+
 def _merge(
-    data_root: Path, path: Path, present: bool, found: bool,
-    document: dict, environ: dict[str, str],
+    data_root: Path, path: Path, present: bool, found: bool, document: dict,
 ) -> PeachConfig:
     directories = _string_map(
         _table(document, "directories", path), path, "directories.")
@@ -354,158 +296,60 @@ def _merge(
     if unknown:
         raise _fail(path, "`directories` 里有不认识的键：" + "、".join(unknown))
 
-    media = _table(document, "media", path)
-    stray = sorted(set(media) - {_LOCATIONS_KEY, _MOUNTS_KEY, "libraries", "library_icons", "costs", "library_catalog", "storage_roots"})
-    if stray:
-        # 第一阶段的 `[media] R = '/Volumes/Media'`。键空间从盘符换成了 location ID，
-        # 把它当未知键忽略等于「所有来源都没挂」——整台机器安静地进脱盘模式。
-        raise _fail(path, (
-            "`[media]` 下不再接受盘符键：" + "、".join(stray)
-            + "。改写成 `[media.mounts] <location-id> = <本机路径>`，"
-            "ID 取 `[media.locations]` 中已配置的来源键，"
-            "路径填写该来源的本机媒体目录，例如 "
-            "`local = '/mnt/media'`"
-        ))
-    # 来源只取用户声明；未填写路径表时没有媒体目录。
-    if _LOCATIONS_KEY in media:
-        locations = _root_map(_table(media, _LOCATIONS_KEY, path), path, "media.locations.")
-        empty = sorted(key for key, roots in locations.items() if not roots)
-        if empty:
-            raise _fail(path, "`[media.locations]` 中这些媒体来源没有配置目录前缀：" + "、".join(empty))
-    else:
-        locations = dict(DEFAULT_LOCATION_ROOTS)
-    mounts = _root_map(_table(media, _MOUNTS_KEY, path), path, "media.mounts.", allow_empty="storage_roots" in media)
-    unknown_mounts = sorted(set(mounts) - set(locations))
-    if unknown_mounts:
-        # 打错一个 ID 却静默忽略，同样是安静地脱盘。
-        raise _fail(path, (
-            "`[media.mounts]` 里有没在 `[media.locations]` 声明过的来源："
-            + "、".join(unknown_mounts)
-        ))
-    for key, points in mounts.items():
-        # 媒体目录按顺序对应数据库路径前缀，数目不一致时拒绝保存。
-        if points and len(points) != len(locations[key]):
-            raise _fail(path, (
-                f"`[media.mounts] {key}` 配置了 {len(points)} 个媒体目录，"
-                f"但 `[media.locations] {key}` 配置了 {len(locations[key])} 个数据库路径前缀；"
-                "两边按顺序一一对应，要么数目相同，要么整项留空"
-            ))
-
     server_table = _table(document, "server", path)
     fallback = ServerSettings()
     server = ServerSettings(
         host=_string(server_table, "host", fallback.host, path, "server."),
         port=_integer(server_table, "port", fallback.port, path, "server."),
-        mdns_name=_string(
-            server_table, "mdns_name", fallback.mdns_name, path, "server."),
-        review_writer_origin=_string(
-            server_table, "review_writer_origin", fallback.review_writer_origin,
-            path, "server."),
-        review_writer_proxy=_string(
-            server_table, "review_writer_proxy", fallback.review_writer_proxy,
-            path, "server."),
     )
 
-    replication_table = _table(document, "replication", path)
-    defaults = ReplicationSettings()
-    replication = ReplicationSettings(
-        enabled=_boolean(
-            replication_table, "enabled", defaults.enabled, path, "replication."),
-        shared_root=_string(
-            replication_table, "shared_root", defaults.shared_root, path, "replication."),
-        smb_host=_string(
-            replication_table, "smb_host", defaults.smb_host, path, "replication."),
-        smb_share=_string(
-            replication_table, "smb_share", defaults.smb_share, path, "replication."),
-        smb_user=_string(
-            replication_table, "smb_user", defaults.smb_user, path, "replication."),
-    )
+    drive = _table(document, "drive", path)
+    stray = sorted(set(drive) - _DRIVE_KEYS)
+    if stray:
+        raise _fail(path, "`[drive]` 里有不认识的键：" + "、".join(stray))
+    public_url = _string(drive, "public_url", "", path, "drive.").strip()
+    if public_url and not (public_url.startswith("https://") and len(public_url) > len("https://")):
+        raise _fail(path, "`drive.public_url` 必须是 https 地址，例如 https://peach.example.com")
+    drive_clients = _drive_clients(_table(drive, "accounts", path), path)
+    drive_roots = _root_map(_table(drive, "roots", path), path, "drive.roots.")
+    unknown_roots = sorted(set(drive_roots) - set(drive_clients))
+    if unknown_roots:
+        raise _fail(path, "`[drive.roots]` 里有没在 `[drive.accounts]` 配置过的网盘："
+                          + "、".join(unknown_roots))
 
-    tunnel_table = _table(document, "tunnel", path)
-    tunnel_defaults = TunnelSettings()
-    tunnel = TunnelSettings(
-        enabled=_boolean(
-            tunnel_table, "enabled", tunnel_defaults.enabled, path, "tunnel."),
-        binary=_string(
-            tunnel_table, "binary", tunnel_defaults.binary, path, "tunnel."),
-        mode=_string(
-            tunnel_table, "mode", tunnel_defaults.mode, path, "tunnel."),
-        token=_string(
-            tunnel_table, "token", tunnel_defaults.token, path, "tunnel."),
-        hostname=_string(
-            tunnel_table, "hostname", tunnel_defaults.hostname, path, "tunnel."),
-    )
-
-    media_costs = _string_map(_table(media, "costs", path), path, "media.costs.")
-    if any(cost not in {"free", "metered"} for cost in media_costs.values()):
-        raise _fail(path, "`[media.costs]` 只接受 free 或 metered")
-    config = PeachConfig(
+    media = _table(document, "media", path)
+    stray = sorted(set(media) - {"libraries", "library_icons", "library_catalog"})
+    if stray:
+        raise _fail(path, "`[media]` 下只接受 libraries、library_icons、library_catalog："
+                          + "、".join(stray))
+    catalog_table = _table(media, "library_catalog", path)
+    for key, value in catalog_table.items():
+        if not isinstance(value, dict):
+            raise _fail(path, f"`[media.library_catalog.{key}]` 必须是一张表")
+    library_catalog = {key: _string_map(value, path, "media.library_catalog.")
+                       for key, value in catalog_table.items()}
+    return PeachConfig(
         data_root=data_root, path=path, present=present, data_root_found=found,
-        directories=directories, mounts=mounts, locations=locations,
+        directories=directories,
         library_names=_string_map(_table(media, "libraries", path), path, "media.libraries."),
         library_icons=_string_map(_table(media, "library_icons", path), path, "media.library_icons."),
-        media_costs=media_costs,
-        server=server, replication=replication, tunnel=tunnel,
+        library_catalog=library_catalog,
+        server=server,
+        drive_public_url=public_url, drive_clients=drive_clients, drive_roots=drive_roots,
     )
-    from . import media_identity
-    if "storage_roots" in media or "library_catalog" in media:
-        try:
-            libraries = {key: _string_map(value, path, "media.library_catalog.")
-                         for key, value in _table(media, "library_catalog", path).items()}
-            roots = {key: _string_map(value, path, "media.storage_roots.")
-                     for key, value in _table(media, "storage_roots", path).items()}
-            media_identity.validate_catalog(libraries, roots)
-            config = media_identity.project(config, libraries, roots)
-        except (ValueError, TypeError, AttributeError) as exc:
-            raise _fail(path, f"媒体库身份配置无效：{exc}") from exc
-    return _apply_environment(config, environ)
-
-
-#: 环境变量 -> 设置项。这一层永远压过文件，临时覆盖和 CI 都靠它，不用改文件。
-#: `PEACH_DATA_ROOT` 在 `discover_data_root` 里就用掉了；`PEACH_MEDIA_MOUNTS` 由
-#: `peach.platform` 在每次 `location_mounts()` 里现读，测试会在运行期改它。
-_SERVER_ENV = {
-    "PEACH_MDNS_NAME": "mdns_name",
-    "PEACH_REVIEW_WRITER_ORIGIN": "review_writer_origin",
-    "PEACH_REVIEW_WRITER_PROXY": "review_writer_proxy",
-}
-_REPLICATION_ENV = {
-    "PEACH_SHARED_DATA_ROOT": "shared_root",
-    "PEACH_SHARED_SMB_HOST": "smb_host",
-    "PEACH_SHARED_SMB_SHARE": "smb_share",
-    "PEACH_SHARED_SMB_USER": "smb_user",
-}
-
-
-def _apply_environment(config: PeachConfig, environ: dict[str, str]) -> PeachConfig:
-    server_changes = {
-        field_name: environ[name]
-        for name, field_name in _SERVER_ENV.items() if environ.get(name)
-    }
-    replication_changes = {
-        field_name: environ[name]
-        for name, field_name in _REPLICATION_ENV.items() if environ.get(name)
-    }
-    if server_changes:
-        config = replace(config, server=replace(config.server, **server_changes))
-    if replication_changes:
-        config = replace(
-            config, replication=replace(config.replication, **replication_changes))
-    return config
 
 
 def load_config(
     project_root: Path = SEARCH_ANCHOR, environ: dict[str, str] | None = None,
     *, strict: bool = True,
 ) -> PeachConfig:
-    """读一次设置文件并合并三层。
+    """读一次设置文件并合并。
 
     `strict=False` 时坏文件退回内建默认（Peach 数据目录仍然照发现顺序算），给 `peach init
     --force` 留一条自救路径；否则抛 `SettingsFileError`。
 
-    「坏」包括语法读不出来和合并时被拒（未知目录键、`[media]` 下的盘符键之类）。
-    两者都要走同一条退路：`_merge` 的拒绝漏在 try 外面的话，自救入口自己也会崩——
-    而 `[media] R = ...` 这种被判成硬错误的盘符键，正是最常见的一份坏文件。
+    「坏」包括语法读不出来和合并时被拒（未知目录键、`[drive]` 里不认识的网盘之类）。
+    两者都要走同一条退路：`_merge` 的拒绝漏在 try 外面的话，自救入口自己也会崩。
     """
     environ = os.environ if environ is None else environ
     data_root, found = discover_data_root(project_root, environ)
@@ -520,12 +364,12 @@ def load_config(
             if strict:
                 raise
     try:
-        return _merge(data_root, path, present, found, document, environ)
+        return _merge(data_root, path, present, found, document)
     except SettingsFileError:
         if strict:
             raise
-        # 文件内容整份作废，只保留 Peach 数据目录的发现结果和环境变量层。
-        return _merge(data_root, path, False, found, {}, environ)
+        # 文件内容整份作废，只保留 Peach 数据目录的发现结果。
+        return _merge(data_root, path, False, found, {})
 
 
 @lru_cache(maxsize=1)
@@ -569,7 +413,7 @@ def _render_value(value: object) -> str:
 
 
 def _render_roots(pairs: dict[str, tuple[str, ...]]) -> list[str]:
-    """渲染数据库路径前缀或媒体目录：单个写成字符串，多个写成数组。"""
+    """渲染网盘扫描起点：单个写成字符串，多个写成数组。"""
     rendered: dict[str, object] = {}
     for key, roots in pairs.items():
         if len(roots) == 1:
@@ -593,119 +437,63 @@ def _render_pairs(pairs: dict[str, object]) -> list[str]:
 
 def render(config: PeachConfig) -> str:
     """把设置渲染成带注释的 TOML。注释是给人读的，`load_config` 不依赖它们。"""
-    from . import media_identity
-    libraries, roots = media_identity.catalog(config)
-    # 读取时会拒绝的身份不写出，免得一次保存让下次启动读不回配置。
-    try:
-        media_identity.validate_catalog(libraries, roots)
-    except ValueError as exc:
-        raise SettingsFileError(f"媒体库身份配置无效：{exc}") from exc
     lines = [
         "# Peach 设置文件。优先级：环境变量 > 本文件 > 程序默认值；手动修改后重启服务生效。",
         "# 本文件保存在 Peach 数据目录中；该目录由 PEACH_DATA_ROOT 或项目旁的 peach-data 决定。",
         "# Docker：本文件位于 /data/config.toml；将 /data 放在数据卷中，重建容器时保留该卷。",
-        "# Docker 中的 /media 是容器内的媒体目录，宿主机目录由 Compose 挂载到这里。",
-        "# Docker 部署说明：https://github.com/peach-mitao/peach/blob/master/docs/DOCKER.md",
         f"# 生成入口：peach init（Peach 数据目录：{config.data_root}）",
         "",
         "[directories]",
         "# Peach 数据目录下的子目录，例如 database、logs；省略时使用同名目录。",
-        "# 也可填写绝对路径。Docker 中相对目录位于 /data 下；其他目录需要单独挂载并保留数据。",
+        "# 也可填写绝对路径。Docker 中相对目录位于 /data 下；换到别处时要自己保证那份数据随容器保留。",
     ]
     lines += _render_pairs({key: config.directories[key]
                             for key in DIRECTORY_KEYS if key in config.directories})
     lines += [
         "",
-        "[media.locations]",
-        "# 通常在网页的媒体目录中填写实际目录即可；Peach 保存时自动维护本表和 [media.mounts]。",
-        "# 以下说明供手动编辑配置参考；已有影片按本表查找文件，改成不匹配的值会使影片无法读取。",
-        "# local、115、pikpak 等键表示媒体来源；值是数据库中影片路径的目录前缀。",
-        "# Peach 数据库在所有系统上都保存 Windows 格式的路径，例如 R:\\media\\a.mp4。",
-        "# 因此 Docker / Linux / macOS 也使用本表；R:\\media 无需在这些系统上实际存在。",
-        "# 例：本表 local = 'R:\\media'，[media.mounts] local = '/media'。",
-        "# Peach 会把数据库中的 R:\\media\\a.mp4 转换为 /media/a.mp4，再读取文件。",
-        "# 本表必须匹配数据库中的路径；Docker / Linux / macOS 搬动实际目录时保留本表，修改 [media.mounts]。",
-        "# Windows 示例：local = ['D:\\Videos', 'E:\\Movies']，直接使用本机媒体目录。",
+        "[drive]",
+        "# 网盘授权的回调基址，必须是 https 地址，例如 https://peach.example.com。",
+        "# 网盘后台登记的回调地址是 <public_url>/oauth/<网盘>/callback；留空时无法发起授权。",
     ]
-    lines += _render_roots(dict(config.locations))
+    lines += _render_pairs({"public_url": config.drive_public_url})
+    for key, (client_id, client_secret) in config.drive_clients.items():
+        lines += [
+            "",
+            f"[drive.accounts.{_render_key(key)}]",
+            "# 该网盘 OAuth 应用的凭据。client_secret 是钥匙，本文件是它唯一的存放处。",
+            *_render_pairs({"client_id": client_id, "client_secret": client_secret}),
+        ]
+    lines += [
+        "",
+        "[drive.roots]",
+        "# 网盘来源 -> 扫描起点的远端目录 id（不是路径）；留空表示扫该账号的根目录。",
+        "# 一个来源扫多个目录时写成数组。",
+    ]
+    lines += _render_roots(dict(config.drive_roots))
     lines += [
         "",
         "[media.libraries]",
-        "# [media.locations] 中的目录前缀 -> 界面显示的媒体库名称；不写时取目录名。",
-        "# 名称与路径表是身份配置的兼容投影；媒体库归属以 library_catalog 和 storage_roots 为准。",
+        "# 媒体库 id -> 界面显示的媒体库名称。",
     ]
-    lines += [f"{_render_value(root)} = {_render_value(name)}" for root, name in config.library_names.items()]
+    lines += [f"{_render_value(key)} = {_render_value(name)}" for key, name in config.library_names.items()]
     lines += [
         "",
         "[media.library_icons]",
-        "# [media.locations] 中的目录前缀 -> 媒体库图标。取值是 peach.media_libraries.LIBRARY_ICONS 里的图标名，",
+        "# 媒体库 id -> 媒体库图标。取值是 peach.media_libraries.LIBRARY_ICONS 里的图标名，",
         "# 不认识的值忽略：只含一个来源的馆藏回落到该来源的图标，跨来源的用 database。",
     ]
-    lines += [f"{_render_value(root)} = {_render_value(icon)}" for root, icon in config.library_icons.items()]
-    lines += ["", "[media.costs]", "# [media.locations] 中的目录前缀 -> 代理流量保护。free 关闭，metered 开启。"]
-    lines += [f"{_render_value(root)} = {_render_value(cost)}" for root, cost in config.media_costs.items()]
-    lines += [
-        "",
-        "[media.mounts]",
-        "# 与 [media.locations] 使用相同的媒体来源键；值是 Peach 实际读取文件的目录。",
-        "# Docker 填容器内路径，例如 local = '/media'；宿主机目录在 Compose 的 volumes 中配置。",
-        "# Linux / macOS 也使用本机绝对路径，例如 /mnt/media 或 /Volumes/Media。",
-        "# 一个来源有多个目录时，两表都写数组，目录数量和顺序必须相同。",
-        "# Docker / Linux / macOS 必须提供实际目录，否则无法读取该来源的媒体文件；媒体记录仍保留。",
-        "# Windows 直接读取 [media.locations] 中的目录，无需填写本表。",
-    ]
-    lines += _render_roots(dict(config.mounts))
-    for key, value in libraries.items():
+    lines += [f"{_render_value(key)} = {_render_value(icon)}" for key, icon in config.library_icons.items()]
+    for key, value in config.library_catalog.items():
         lines += ["", f"[media.library_catalog.{_render_key(key)}]", *_render_pairs(value)]
-    for key, value in roots.items():
-        lines += ["", f"[media.storage_roots.{_render_key(key)}]", *_render_pairs(value)]
     lines += [
         "",
         "[server]",
         "# Docker 服务固定监听 0.0.0.0:8900；宿主机访问地址与端口由 Compose 配置。",
         "# 此处 host、port 用于直接运行 peach serve；Docker 入口参数优先。",
-        "# mdns_name 在局域网里必须唯一：两台机器同名会互相抢占。",
-        "# review_writer_origin 是允许修改数据库的设备的地址；只读设备通过它获取待确认资料。",
-        "# 留空表示本机不显示另一台设备的待确认资料。",
     ]
     lines += _render_pairs({
         "host": config.server.host,
         "port": config.server.port,
-        "mdns_name": config.server.mdns_name,
-        "review_writer_origin": config.server.review_writer_origin,
-        "review_writer_proxy": config.server.review_writer_proxy,
-    })
-    lines += [
-        "",
-        "[replication]",
-        "# 两台电脑之间的数据库复制设置（ADR-0017）；只有一台允许修改数据库，另一台只读。",
-        "# 单机与独立 Docker 部署保持 enabled = false。",
-        "# 关闭时不启动同步观察器、不探测 SMB；桌面托盘不显示 Ledger 菜单项。",
-        "# shared_root 是两台电脑交换数据库副本的目录；留空时使用 Peach 数据目录旁的 peach-sync。",
-        "# smb_* 用于连接另一台电脑的共享目录；留空时不连接共享目录。",
-    ]
-    lines += _render_pairs({
-        "enabled": config.replication.enabled,
-        "shared_root": config.replication.shared_root,
-        "smb_host": config.replication.smb_host,
-        "smb_share": config.replication.smb_share,
-        "smb_user": config.replication.smb_user,
-    })
-    lines += [
-        "",
-        "[tunnel]",
-        "# Cloudflare Tunnel 默认关闭；打开前必须先设置访问密码。",
-        "# binary 留空时按内置包、PEACH_CLOUDFLARED 和 PATH 的顺序寻找 cloudflared。",
-        "# mode = \"quick\" 是随机地址的临时链接；\"named\" 用自建命名隧道，只在源码开发",
-        "# 环境可用，需要 hostname（Cloudflare 后台绑定的公开主机名）和 token（隧道令牌）。",
-        "# token 是凭据：这个文件是它唯一的存放处，不要复制到别处，也不要提交进 Git。",
-    ]
-    lines += _render_pairs({
-        "enabled": config.tunnel.enabled,
-        "binary": config.tunnel.binary,
-        "mode": config.tunnel.mode,
-        "hostname": config.tunnel.hostname,
-        "token": config.tunnel.token,
     })
     return "\n".join(lines) + "\n"
 
@@ -716,91 +504,5 @@ def write(config: PeachConfig, *, force: bool = False) -> Path:
     if path.exists() and not force:
         raise SettingsFileError(f"设置文件已存在，加 --force 才覆盖：{path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    keep_pre_identity_backup(path)
     path.write_text(render(config), encoding="utf-8")
     return path
-
-
-def keep_pre_identity_backup(path: Path) -> None:
-    """身份表第一次落盘前留下原文件，与显式升级同名；已有备份不覆盖。
-
-    `render` 总会写出身份表（ADR-0115：首次保存即持久化），所以任何一次保存都可能是那次升级；
-    `config.previous.toml` 每次保存都被覆盖，留不住升级前的样子。
-    """
-    if not path.is_file():
-        return
-    original = path.read_bytes()
-    try:
-        if tomllib.loads(original.decode("utf-8")).get("media", {}).get("storage_roots"):
-            return
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
-        return
-    try:
-        with path.with_suffix(".pre-media-identity.toml").open("xb") as target:
-            target.write(original)
-    except FileExistsError:
-        pass
-
-
-def upgrade_media_identity(config: PeachConfig, *, apply: bool = False) -> PeachConfig:
-    """显式升级配置身份；预演不写文件，不访问账本。"""
-    from . import media_identity
-    from .fsutil import atomic_write_text
-    prepared = media_identity.project(config)
-    media_identity.validate_catalog(prepared.library_catalog, prepared.storage_roots)
-    if apply and not config.storage_roots:
-        if not config.present:
-            raise SettingsFileError("请先完成首次设置")
-        backup = config.path.with_suffix(".pre-media-identity.toml")
-        # 排他备份防止覆盖上一次升级前的配置。
-        with backup.open("xb") as target:
-            target.write(config.path.read_bytes())
-        atomic_write_text(config.path, render(prepared))
-    return prepared
-
-
-def capture_existing(
-    config: PeachConfig, *, replication_enabled: bool = True,
-    overrides: dict[str, object] | None = None,
-    mounts: dict[str, tuple[str, ...]] | None = None,
-) -> PeachConfig:
-    """把当前生效的配置整理成一份可写回的设置。
-
-    `--from-existing` 用它：现有部署的坐标散在环境变量、平台默认和运行现场里，先按
-    当前进程实际解析到的值落盘，再让命令行显式补上进程看不见的那几项（局域网地址、
-    钥匙串账号名之类只有本机的人知道的事实）。
-
-    `replication_enabled` 默认 True：加了 `--from-existing` 就说明这是一台已经在跑的
-    机器，它的复制行为必须和现在一致，不能因为写了设置文件就静悄悄关掉。
-    """
-    overrides = {key: value for key, value in (overrides or {}).items()
-                 if value is not None and value != ""}
-    server = replace(config.server, **{
-        key: value for key, value in overrides.items()
-        if key in ServerSettings.__dataclass_fields__
-    })
-    replication = replace(config.replication, enabled=replication_enabled, **{
-        key: value for key, value in overrides.items()
-        if key in ReplicationSettings.__dataclass_fields__
-    })
-    # 共享目录和共享名先落成显式值：设置文件是给人读的，留空让人去猜默认规则不合适。
-    if not replication.shared_root:
-        replication = replace(replication, shared_root=str(config.shared_root))
-    if not replication.smb_share:
-        replication = replace(replication, smb_share=config.smb_share)
-    prepared = replace(
-        config, server=server, replication=replication,
-        directories={key: config.directories.get(key, key) for key in DIRECTORY_KEYS},
-        mounts=dict(mounts) if mounts is not None else dict(config.mounts),
-    )
-    if config.storage_roots and mounts is not None:
-        from . import media_identity
-        libraries, roots = media_identity.catalog(config)
-        for value in roots.values():
-            location = value["location"]
-            index = config.locations[location].index(value["root"])
-            points = mounts.get(location, ())
-            value["mount"] = str(points[index]) if index < len(points) else ""
-        media_identity.validate_catalog(libraries, roots)
-        return media_identity.project(prepared, libraries, roots)
-    return prepared

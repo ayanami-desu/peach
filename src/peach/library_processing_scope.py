@@ -1,22 +1,21 @@
-"""馆藏处理按媒体库身份限制目录、估算与资产集合。"""
+"""馆藏处理按媒体库限制资产集合。
+
+库的范围只体现在账本的筛选条件上：`asset.location` 与 `asset.drive_root` 一起决定归属，
+不再投影出另一份「目录配置」。
+"""
 import json
 import sqlite3
 from contextlib import closing
 
-from .media_identity import catalog, project
-from .media_libraries import predicate
+from .media_libraries import libraries, predicate
 
 
 def scoped_config(config, library_id):
     if library_id is None:
         return config
-    libraries, roots = catalog(config)
-    if not isinstance(library_id, str) or library_id not in libraries:
+    if not isinstance(library_id, str) or not any(row['id'] == library_id for row in libraries(config)):
         raise ValueError('所选媒体库已不存在，请重新选择')
-    chosen = {key: value for key, value in roots.items() if value['library_id'] == library_id}
-    if not chosen:
-        raise ValueError('所选媒体库没有可处理的目录')
-    return project(config, {library_id: libraries[library_id]}, chosen)
+    return config
 
 
 def scoped_assets(config, db_path, library_id, asset_ids=None):

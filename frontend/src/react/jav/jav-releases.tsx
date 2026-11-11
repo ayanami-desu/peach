@@ -13,7 +13,6 @@ import { javContentSkeleton, javTagSkeleton, JAV_RECOMMENDATION_GRID } from '../
 import { tierPlaceholdersHtml } from '../../catalog-filter-skeleton';
 import { errorMessage } from '../../api';
 import { entityDisplayName } from '../../core/entity-names';
-import type { DownloadPrefill } from '../activity/cloud-download-dialog';
 import { Note } from '../components/note';
 import { CoverQueue } from '../components/cover-queue';
 import { TaskProgress } from '../components/task-progress';
@@ -26,7 +25,7 @@ import { recommendationScore, RELEASE_SORTS, type DiscoveryDirection, type Relea
 import { addWant, invalidateWants } from '../wants/wants';
 import { useAction } from '../settings/use-action';
 import { useEntityNames } from '../use-entity-names';
-import { DiscoveryCard, resourcePrefill } from './discovery-card';
+import { DiscoveryCard } from './discovery-card';
 import { controlReleaseMetadata, coverArrived, DISCOVERY_METADATA_KEY, DISCOVERY_REFRESH_MS, fetchCoverNow, fetchDiscoveryMetadata, fetchReleases,
   releaseFilters, releaseKey, RELEASE_PAGE_SIZE, RELEASE_PAGE_SIZES,
   type Discovery, type DiscoveryMetadataStatus, type ReleaseFacetPerformer, type ReleaseFacetStudio, type ReleaseFilters,
@@ -66,8 +65,8 @@ const fetchReleaseCover = (code: string) => fetchCoverNow(code).then(result => {
   return result.has_cover;
 });
 
-export function Releases({ readOnly, receipt, resource, query, navigate, clearText }: {
-  readOnly: boolean; receipt(message: string): void; resource(work: DownloadPrefill): void; query: string;
+export function Releases({ readOnly, receipt, query, navigate, clearText }: {
+  readOnly: boolean; receipt(message: string): void; query: string;
   navigate(path: string): void; clearText(): void;
 }) {
   useEntityNames();
@@ -230,12 +229,12 @@ export function Releases({ readOnly, receipt, resource, query, navigate, clearTe
     {view === 'list' ? waiting || data?.items.length ? <ReleaseTable items={data?.items || []} waiting={waiting} filters={filters}
       studios={data?.facets.studios || []} javImage={settings.value.javImage} readOnly={readOnly} navigate={navigate}
       onTag={value => choose('tag', value || filters.tag)} onSort={setSort} wanting={item => action.busy === String(item.id)}
-      onWant={want} onResource={item => resource(resourcePrefill(item))} /> : null
+      onWant={want} /> : null
     : <div data-media-grid="" className={JAV_RECOMMENDATION_GRID} style={{ '--card-ratio': ratio } as CSSProperties}>
       {(data?.items || []).map(item => <DiscoveryCard key={item.id} item={item} layout={layout} javImage={settings.value.javImage}
         readOnly={readOnly} navigate={navigate} tag={filters.tag} onTag={value => choose('tag', value || filters.tag)}
         wanting={action.busy === String(item.id)} onWant={() => want(item)}
-        onResource={() => resource(resourcePrefill(item))} badge={filters.sort === 'taste' ? <TasteChip value={item.taste_score} /> : undefined} />)}
+        badge={filters.sort === 'taste' ? <TasteChip value={item.taste_score} /> : undefined} />)}
     </div>}
     {data ? <DataTableFooter label="新作" total={data.total}
       pagination={{ pageIndex: filters.page - 1, pageSize: filters.size }} onChange={changePage}

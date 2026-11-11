@@ -54,8 +54,6 @@ const PLACEHOLDERS: Record<string, () => string> = {
   '/data-cleanup': () => cleanupSkeletonHtml(),
   /* 每个维护工具都有自己那一页的骨架，新加的工具不会落到下面那张通用面板上。 */
   ...Object.fromEntries(CLEANUP_TOOLS.map(tool => [tool.path, () => cleanupToolSkeletonHtml(tool.key)])),
-  // 旧地址 /resource-sync 打开后转到资源同步二级页，占位先画成那一页，转过去时同一个键不重画。
-  '/resource-sync': () => cleanupToolSkeletonHtml('resource-sync'),
   '/review': () => reviewSkeletonHtml(),
   /* 采集来源是 812px 窄列里一叠同宽的 Fieldset：连接检查、高清封面，再接各个来源。骨架画四块，
      那是首屏装得下的张数；说明那一句是静态文案，与数据无关，立刻显示。 */

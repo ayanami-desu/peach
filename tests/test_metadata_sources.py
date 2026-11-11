@@ -290,9 +290,6 @@ class SiteCooldownTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        finder = patch("peach.browser_transport.find_browser", return_value=None)
-        finder.start()
-        self.addCleanup(finder.stop)
 
     def session(self, source, respond):
         """真的 `SourceTransport` 套在 `HostLimitedTransport` 里（与 `LibraryMetadataProvider` 同一个形状），底下是假传输。"""

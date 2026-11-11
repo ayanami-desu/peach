@@ -96,20 +96,6 @@ class MainBundleTests(unittest.TestCase):
         self.assertEqual([script["src"] for script in assets.scripts], ["/dist/peach-app.js"])
         self.assertEqual(assets.scripts[0].get("type"), "module")
 
-    def test_the_startup_switches_and_their_payload_are_in_the_shipped_bundle(self):
-        """「开机自启」那三颗开关的标签和它们发出去的键，判据落在产物上。
-
-        `web/dist/` 是提交进 Git 的产物。改了 `frontend/src` 不重建，浏览器拿到
-        的仍是旧的那一份，而 tsc 和 vitest 都只看源码，谁都不会红——只有扫产物这一条会。
-        配置页在按页拆出的 chunk 里，入口与 chunk 一起扫。
-        """
-        for label in ("开机后启动 Peach", "只启动托盘，不打开网页", "在桌面创建快捷方式"):
-            self.assertIn(label, self.bundle,
-                          f"产物里没有「{label}」，先跑 npm --prefix frontend run build")
-        payload = self.bundle[self.bundle.index('"/api/configuration/startup"'):][:240]
-        for key in ("enabled:", "silent:", "desktop:"):
-            self.assertIn(key, payload, f"保存开机自启没带上 {key}")
-
     def test_react_bundle_records_stable_dependency_paths(self):
         """区域注释只能从 `node_modules/` 起，不得把生成它的工作树路径写进产物。"""
         for bundle in (*APP_SCRIPTS, PAGES_BUNDLE):
@@ -339,7 +325,7 @@ class FrontendManifestTests(unittest.TestCase):
             ["git", "-C", str(ROOT), "check-ignore", "web/dist/peach-app.js"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         self.assertEqual(tracked.returncode, 1, "web/dist 被 .gitignore 排除了，产物发不出去")
-        for ignored in ("frontend/node_modules/react/package.json",):
+        for ignored in ("frontend/node_modules",):
             result = subprocess.run(["git", "-C", str(ROOT), "check-ignore", ignored],
                                     capture_output=True, text=True, encoding="utf-8",
                                     errors="replace", check=False)

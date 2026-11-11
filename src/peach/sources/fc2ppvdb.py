@@ -8,10 +8,9 @@
 站上没有的商品回一张 200 的「404 ページが見つかりません」页，`<h1>` 里没有番号。
 
 站前是 Cloudflare 的 JS 验证：httpx 与模拟 Chrome 指纹的 curl_cffi 直连都回 403，只有浏览器过完验证发下的
-`cf_clearance` 能进。有 Chrome 或 Edge 的机器上请求由本机浏览器打开，验证由它自己过（`browser_transport`，
-ADR-0065），新会话落到的年齢確認页由 `browser_gate` 替人点；没有浏览器时退回 httpx，请求带用户在采集设置里
-贴的 Cookie（`scraping_access.SOURCES['fc2ppvdb']`），它绑着解题那台浏览器的 UA，整站 UA（`peach.user_agent`）
-与用户的 Chrome 保持一致。
+`cf_clearance` 能进，所以请求带用户在采集设置里贴的 Cookie（`scraping_access.SOURCES['fc2ppvdb']`），它绑着
+解题那台浏览器的 UA，整站 UA（`peach.user_agent`）与用户的 Chrome 保持一致。新会话第一次进站落到的年齢確認页
+由用户在浏览器里点过一次，之后再贴 Cookie。
 
 不交封面：站上那张是 360×360 的 CloudFront 缩略图（`og:image:width` 写 800，实测 360），连封面的最低宽度都
 过不了，下回来只是白花一次请求；封面留给链上前后指着 FC2 存储原件的几档。
@@ -31,7 +30,7 @@ FC2PPVDB = SiteConfig(name="fc2ppvdb", label="FC2PPV-DB", provider="fc2ppvdb-pag
                       base_url="https://fc2ppv-db.com", domains=("fc2ppv-db.com",), stage="community",
                       cookie=True, page_limit=PAGE_LIMIT)
 VIDEO_PATH = "/ja/videos/{video_id}"
-#: 新会话第一次进站被送到的年齢確認页；`scraping_access.SOURCES["fc2ppvdb"]["browser_gate"]` 让浏览器传输替人点。
+#: 新会话第一次进站被送到的年齢確認页；贴进来的 Cookie 已经过过这一页时不会落到这里。
 AGE_GATE_PATH = "/age-verify"
 
 #: `<meta name="description">` 末尾那三项。
@@ -155,7 +154,7 @@ class Fc2ppvdbSource(SiteSource):
                                 f"{self.config.label} 要求 Cloudflare 验证，请在采集设置里更新 Cookie",
                                 status_code=403)
         if AGE_GATE_PATH in page.url:
-            # 新会话第一次进站被送到年齢確認页（200）；浏览器传输按 `browser_gate` 替人点，点不过去时页面原样到这里。
+            # 新会话第一次进站被送到年齢確認页（200）；Cookie 没带上过闸状态时页面原样到这里。
             raise SourceFailure(FailureReason.AUTH_REQUIRED, f"{self.config.label} 送到了年齢確認页，浏览器没有点过去")
         soup = BeautifulSoup(page.text, "html.parser")
         heading = soup.select_one("main h1") or soup.select_one("h1")

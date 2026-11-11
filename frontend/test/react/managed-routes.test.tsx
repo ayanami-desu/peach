@@ -12,7 +12,7 @@ import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 
 import type {
   ConfigurationProps, DataCleanupProps, DuplicatesProps, FollowManageProps, QualityGoalsProps, ReviewProps,
-  ScrapingProps, StatsProps, TasteProps,
+  ScrapingProps, StatsProps,
 } from '../../src/react/bundle';
 import type { ShellActions } from '../../src/react/router/shell-actions';
 import type { DiagnosticsProps } from '../../src/react/diagnostics/diagnostics-page';
@@ -88,16 +88,14 @@ const tasks = (label = '追更检查') => ({
     parent_run_id: null, root_run_id: null, followup_key: '', followup_depth: 0,
   }],
 });
-const DOWNLOADS = { available: true, providers: [], tasks: [] };
 type Reply = { ok: boolean; status: number; json(): Promise<unknown> };
 const reply = (body: unknown): Reply => ({ ok: true, status: 200, json: async () => body });
 
-/** 活动页的取数：`/api/tasks` 手动兑现（首屏等的就是它），云下载段另取的 `/api/downloads` 当场回空表。 */
+/** 活动页的取数：`/api/tasks` 手动兑现（首屏等的就是它）。 */
 function tasksFetch(body: unknown = tasks(), { deferred = true } = {}) {
   const pending: Array<() => void> = [];
   let signal: AbortSignal | undefined;
   const fetched = vi.fn((input: string, init?: RequestInit) => {
-    if (input.startsWith('/api/downloads')) return Promise.resolve(reply(DOWNLOADS));
     signal = init?.signal ?? undefined;
     if (!deferred) return Promise.resolve(reply(body));
     return new Promise<Reply>((resolve, reject) => {
@@ -304,33 +302,32 @@ it('包取不回来时，等着的那一页跟着失败', async () => {
 });
 
 const configuration = {
-  editable: true, notice: '', revision: 'rev-1', media_dirs: ['D:\\Media'], port: 9123, facts: [],
+  editable: true, notice: '', revision: 'rev-1', port: 9123, facts: [],
+  access: { mode: 'open', revision: 'rev-1' },
+  api_token: { rotatable: true, reason: '', paired: true },
   startup: { available: true, enabled: false, silent: true, message: '', desktop: false, desktop_message: '' },
-  peach_proxy: { mode: 'environment', proxy_saved: false, needs_selection: false },
 };
 
-/* 壳打开返回的那一刻就按 `#peachProxy` 滚过去，所以页签条与交进来的那一组的选中态要在同一次提交里画好。
+/* 壳打开返回的那一刻就按锚点滚过去，所以页签条与交进来的那一组的选中态要在同一次提交里画好。
    分区自己怎么排、页签怎么走在 `configuration.test.tsx`。 */
 it('配置页打开返回的那一刻，页签条已经在容器里，选中的是交进来的那一组', async () => {
-  const r = await load('/settings/library');
+  const r = await load('/settings/speed');
   const { stats } = surface();
   await mount(r);
   r.connectManagedRoutes(Promise.resolve(r.prefetchManagedRoute));
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => {
     if (url === '/api/configuration') return configuration;
-    if (url === '/api/configuration/indexers') return { indexers: [], max_indexers: 4 };
-    if (url === '/api/follow/credentials') return { root: '', providers: [] };
-    if (url === '/api/follow/schedule') return { enabled: false, available: true, interval_minutes: 60 };
-    return { mode: 'off', status: 'idle' };
+    if (url === '/api/drive') return { public_url: '', locations: [] };
+    return { taskSpeedMode: 'balanced' };
   } })));
   await act(async () => {
-    const open = { section: '网络与访问' };
-    expect(await r.openManagedRoute('/settings/library', open, { container: stats, isCurrent: () => true })).toBe(true);
+    const open = { section: '任务速度' };
+    expect(await r.openManagedRoute('/settings/speed', open, { container: stats, isCurrent: () => true })).toBe(true);
     const tabs = [...stats.querySelectorAll('.ui-configpage [role="tablist"] > [role="tab"]')];
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['媒体库与入库', '来源与订阅', '网络与访问', '应用与维护', '系统诊断']);
-    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true', 'false', 'false']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['网盘', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
+    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false', 'false', 'true', 'false']);
     const active = stats.querySelector('.ui-board-group-active');
-    expect(active?.id).toBe(tabs[2].getAttribute('aria-controls'));
+    expect(active?.id).toBe(tabs[4].getAttribute('aria-controls'));
     expect(stats.querySelector('.ui-configpage')?.parentElement?.classList.contains('peach-react')).toBe(true);
   });
 });
@@ -383,16 +380,6 @@ it('统计页：点标签交壳回目录', async () => {
   expect(props.tagLabel('JK制服')).toBe('JK制服');
 });
 
-it('口味页：总结里的下一步按路径走 go', async () => {
-  const r = await load();
-  const go = vi.fn();
-  const props = element<TasteProps>('/taste', r, { onboarding: true }, shellActions(), go);
-  props.navigate('/subscriptions');
-  props.navigate('/');
-  expect(go.mock.calls).toEqual([['/subscriptions'], ['/']]);
-  expect(props.onboarding).toBe(true);
-});
-
 it('数据管理页：复核、高清版与重复文件走 go，垃圾文件与回收站交壳', async () => {
   const r = await load();
   const actions = shellActions();
@@ -431,14 +418,13 @@ it('回执、打开作品与资料页都交回壳：都走过去时回执', asyn
   expect(goals.srcBadge).toBe(actions.srcBadge);
   expect(goals.javDisplayName({ name: 'ABC-123 片名.mp4' } as never)).toContain('ABC-123');
   expect(goals.javTitleHtml({ name: '<b>.mp4' } as never)).not.toContain('<b>');
-  goals.toast('已提交离线下载');
   const duplicates = element<DuplicatesProps>('/duplicates', r, {}, actions, vi.fn());
   duplicates.toast('已删除', { undo });
   duplicates.toast('已保留');
   duplicates.failure('删除', 'boom');
-  const configuration = element<ConfigurationProps>('/settings/library', r, { section: '媒体库与入库' }, actions, vi.fn());
+  const configuration = element<ConfigurationProps>('/settings/drives', r, { section: '网盘' }, actions, vi.fn());
   configuration.receipt('已保存配置');
-  expect([configuration.reopenTutorial, configuration.section]).toEqual([actions.reopenTutorial, '媒体库与入库']);
+  expect([configuration.reopenTutorial, configuration.section]).toEqual([actions.reopenTutorial, '网盘']);
   const review = element<ReviewProps>('/review', r,
     { category: '', readOnly: false, readOnlyMessage: '', writerUrl: '' }, actions, vi.fn());
   review.openEntity('performer', '某人');
@@ -447,16 +433,12 @@ it('回执、打开作品与资料页都交回壳：都走过去时回执', asyn
   element<FollowManageProps>('/subscriptions', r, {
     tab: 'list', page: 1, sort: '', dir: '', pageSize: 20, layout: 'default', readOnly: false, readOnlyMessage: '', writerUrl: '',
   }, actions, vi.fn()).toast('已添加 1 个关注来源');
-  const taste = element<TasteProps>('/taste', r, { onboarding: false }, actions, vi.fn());
-  taste.onSignal('tag', '痴女');
-  taste.toast('已导入');
   expect(vi.mocked(actions.openItem).mock.calls).toEqual([[3]]);
   expect(vi.mocked(actions.openEntity).mock.calls).toEqual([['performer', '某人']]);
-  expect(vi.mocked(actions.openTasteSignal).mock.calls).toEqual([['tag', '痴女']]);
   expect(vi.mocked(actions.failure).mock.calls).toEqual([['删除', 'boom']]);
   expect(actions.toast).not.toHaveBeenCalled();
   expect(vi.mocked(actions.receipt).mock.calls).toEqual([
-    ['已提交离线下载'], ['已删除', { undo }], ['已保留', {}], ['已保存配置'], ['已判定'], ['已添加 1 个关注来源'], ['已导入'],
+    ['已删除', { undo }], ['已保留', {}], ['已保存配置'], ['已判定'], ['已添加 1 个关注来源'],
   ]);
 });
 

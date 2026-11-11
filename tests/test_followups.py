@@ -269,43 +269,6 @@ class RunnerTests(LedgerTestCase):
         self.assertEqual(self.store.get(child).status, "succeeded")
         self.assertEqual(attempts, ["ledger-a:1", "ledger-a:1"])
 
-    def test_a_busy_task_gate_keeps_the_lane_alive_until_the_followup_is_claimed(self):
-        """闸门锁被别人拿着时领取等满超时：通道不退出，锁放开后照样领到这一条。"""
-        from filelock import FileLock
-        from peach import update_tasks
-        parent = self.parent()
-        held, release = threading.Event(), threading.Event()
-        # 闸门锁可重入要靠同一个对象；替身也按目录缓存，只把等待期限缩短。
-        locks = {}
-
-        def short_gate(root):
-            return locks.setdefault(root, FileLock(root / "admission.lock", timeout=0.05))
-
-        def hold():
-            with FileLock(update_tasks.state_for(self.db) / "admission.lock"):
-                held.set()
-                release.wait(10)
-
-        with registered(echo_type("ledger-a")), \
-                mock.patch.object(followups_module, "DEFER_POLL_SECONDS", 0.01), \
-                mock.patch.object(update_tasks, "_mutex", short_gate):
-            child = self.store.enqueue_followups(parent.id, [("ledger-a:1", "ledger-a", "甲")])["queued"][0]
-            holder = threading.Thread(target=hold)
-            holder.start()
-            self.assertTrue(held.wait(5))
-            runner = FollowupRunner(self.contract())
-            try:
-                runner.wake()
-                time.sleep(0.3)
-                self.assertTrue(runner._threads[followups_module.LEDGER_LANE].is_alive())
-                self.assertEqual(self.store.get(child).status, "pending")
-            finally:
-                release.set()
-                holder.join(5)
-            self.wait_until_settled(parent.id)
-            runner.stop(timeout=10)
-        self.assertEqual(self.store.get(child).status, "succeeded")
-
     def test_draining_leaves_a_followup_that_steps_aside_in_the_queue(self):
         attempts = []
 
@@ -337,11 +300,6 @@ class RunnerTests(LedgerTestCase):
                 ("urgent:1", "urgent", "丙"), ("urgent:2", "urgent", "丁")])
             self.assertEqual(FollowupRunner(self.contract()).drain(), 4)
         self.assertEqual(order, ["urgent:1", "urgent:2", "backlog:1", "backlog:2"])
-
-    def test_the_download_postprocess_jumps_the_ledger_lane(self):
-        from peach import download_postprocess
-        self.assertTrue(download_postprocess.TYPE.writes_ledger)
-        self.assertTrue(download_postprocess.TYPE.jumps_queue)
 
     def test_types_that_do_not_write_the_ledger_get_their_own_lane(self):
         with registered(echo_type("ledger-a"), echo_type("cheap", writes_ledger=False)):
@@ -1687,32 +1645,6 @@ class ProcessLibraryTests(LedgerTestCase):
 
 
 class TaskPayloadTests(LedgerTestCase):
-    def test_installation_pause_preserves_the_same_followup_for_resume(self):
-        from peach import update_tasks
-        from peach.jobs import JobPaused
-        calls = []
-        tokens = []
-        def work(_contract, _key, _handle):
-            calls.append('run')
-            if len(calls) == 1:
-                tokens.append(update_tasks.reserve(self.db))
-                raise JobPaused('安装期间暂停')
-            return {'outcome':'完成'}
-        kind = echo_type('upgrade-test', run=work)
-        parent = self.parent()
-        with registered(kind):
-            child = self.store.enqueue_followups(parent.id, [('upgrade-test:1','upgrade-test','处理')])['queued'][0]
-            runner = FollowupRunner(SimpleNamespace(task_runs=self.store))
-            try:
-                self.assertEqual(runner.drain(), 1)
-                self.assertEqual(self.store.get(child).status, 'pending')
-            finally:
-                for token in tokens:
-                    update_tasks.release(self.db, token)
-            self.assertEqual(runner.drain(), 1)
-        self.assertEqual(self.store.get(child).status, 'succeeded')
-        self.assertEqual(calls, ['run','run'])
-
     def test_the_detail_endpoint_gives_both_ends_of_the_chain(self):
         from peach.web_tasks import q_task
         from peach.web_contract import WebContract

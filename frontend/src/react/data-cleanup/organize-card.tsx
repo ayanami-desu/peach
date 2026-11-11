@@ -9,7 +9,6 @@ import { confirmModal, MEDIA_SOURCE_ICONS } from '@peach/legacy/ui';
 import { LOC } from '@peach/legacy/core';
 
 import { Button } from '@/components/base/buttons/button';
-import { IconButton } from '@/components/base/buttons/icon-button';
 import { Input } from '@/components/base/input/input';
 import { Select, SelectItem } from '../components/select';
 
@@ -21,11 +20,10 @@ import { Note } from '../components/note';
 import { TaskProgress } from '../components/task-progress';
 import { queryClient } from '../query';
 import { SourceMark } from '../settings/section';
-import { FolderSearchIcon } from '../settings/folder-rows';
 import { busyProps } from '../settings/use-action';
 import {
   baseName, DIRECTORY_TEMPLATE_ERROR, fetchOrganize, fetchOrganizeExample, ORGANIZE_KEY, organizeOutcome, planSummary,
-  pickOrganizeFolder, previewOrganize, rememberTemplates, startOrganize, withOrganizeJob,
+  previewOrganize, rememberTemplates, startOrganize, withOrganizeJob,
   type OrganizeCommand, type OrganizeData, type OrganizeJob, type OrganizePlan,
 } from './organize';
 import { t } from '../../i18n';
@@ -34,6 +32,9 @@ const APPLY_BODY = (name: string, path: string) => (path
   ? t('cleanup:organize.applyBodyPath', { name, path })
   : t('cleanup:organize.applyBodyAll', { name }));
 const ROLLBACK_BODY = t('cleanup:organize.rollbackBody');
+/* 来源没配扫描根时，后端回的唯一个根就是这个字面量（`q_organize` 的 `roots`）；
+ * 选它跟不选范围一样，请求里传空路径。 */
+const WHOLE_DRIVE = '整个网盘';
 /** 预览只列前 8 行：这里是给人扫一眼方向对不对，完整计划在 CSV 里。 */
 const PLAN_ROWS = 8;
 
@@ -70,14 +71,14 @@ export function OrganizeCard(
   const [draft, setDraft] = useState<{ location: string; file: string; dir: string } | null>(null);
   const fields = draft?.location === location ? draft : { location, file: stored?.file ?? '', dir: stored?.dir ?? '' };
   const edit = (patch: Partial<{ file: string; dir: string }>) => { setDraft({ ...fields, ...patch }); preview.reset() };
-  const [scope, setScope] = useState({ location: '', path: '' });
-  const path = scope.location === location ? scope.path : '';
-  const scopeRef = useRef({ location, path });
-  scopeRef.current = { location, path };
-  const [invalid, setInvalid] = useState<'file' | 'dir' | 'path' | null>(null);
+  /* 范围跟着来源走：换来源就回到「整个网盘」，不沿用上一个来源选的扫描根。 */
+  const [scope, setScope] = useState({ location: '', root: WHOLE_DRIVE });
+  const root = scope.location === location ? scope.root : WHOLE_DRIVE;
+  const roots = [...new Set([WHOLE_DRIVE, ...(locations.find((row) => row.location === location)?.roots ?? [])])];
+  const path = root === WHOLE_DRIVE ? '' : `${location}:/${root}`;
+  const [invalid, setInvalid] = useState<'file' | 'dir' | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dirInput = useRef<HTMLInputElement>(null);
-  const pathInput = useRef<HTMLInputElement>(null);
   const example = useQuery({
     queryKey: ['organize-example', fields.file, fields.dir],
     queryFn: ({ signal }) => fetchOrganizeExample(fields.file, fields.dir, signal),
@@ -95,24 +96,17 @@ export function OrganizeCard(
     input?.setSelectionRange(next.caret, next.caret);
   });
 
-  const request = () => ({ location, path: path.trim(), file_template: fields.file.trim(), dir_template: fields.dir.trim() });
+  const request = () => ({ location, path, file_template: fields.file.trim(), dir_template: fields.dir.trim() });
   const preview = useMutation({
     mutationFn: previewOrganize,
     /* 模板不合法时错误就出在两个框里的一个，所以除了说原因还要指出是哪一格。 */
     onError: (cause) => {
-      const target = /整理路径/.test(errorMessage(cause)) ? 'path'
-        : DIRECTORY_TEMPLATE_ERROR.test(errorMessage(cause)) ? 'dir' : 'file';
+      /* 范围出错没有哪一格可标红，交给下面的预览失败提示说原因；模板出错要指到那一格。 */
+      const message = errorMessage(cause);
+      if (/整理路径/.test(message)) { setInvalid(null); return }
+      const target = DIRECTORY_TEMPLATE_ERROR.test(message) ? 'dir' : 'file';
       setInvalid(target);
-      (target === 'path' ? pathInput : target === 'dir' ? dirInput : fileInput).current?.focus();
-    },
-  });
-  const picker = useMutation({
-    mutationFn: ({ initial }: { initial: string; location: string; path: string }) => pickOrganizeFolder(initial),
-    onSuccess: (picked, sent) => {
-      if (!picked.path || sent.location !== scopeRef.current.location || sent.path !== scopeRef.current.path) return;
-      setScope({ location: sent.location, path: picked.path });
-      setInvalid(null); preview.reset();
-      pathInput.current?.focus();
+      (target === 'dir' ? dirInput : fileInput).current?.focus();
     },
   });
   const job = useBackgroundJob<OrganizeJob, OrganizeCommand, OrganizeData>({
@@ -224,8 +218,8 @@ export function OrganizeCard(
           ? <Select aria-label={t('cleanup:organize.storageLabel')} prefix={t('cleanup:organize.storagePrefix')} className="w-fit min-w-25" selectedKey={location || null}
               onSelectionChange={(key) => {
                 if (key === null) return;
-                setChosen(String(key)); setScope({ location: String(key), path: '' });
-                setInvalid(null); preview.reset(); picker.reset(); focused.current = false;
+                setChosen(String(key)); setScope({ location: String(key), root: WHOLE_DRIVE });
+                setInvalid(null); preview.reset(); focused.current = false;
               }}>
               {locations.map((row) => (
                 <SelectItem key={row.location} id={row.location} textValue={LOC[row.location] || row.location}>
@@ -234,17 +228,20 @@ export function OrganizeCard(
               ))}
             </Select>
           : null}
-          <div className="flex min-w-0 basis-64 flex-1 items-start gap-2">
-            <Input aria-label={t('cleanup:organize.pathLabel')} className="min-w-0 flex-1" placeholder={t('cleanup:organize.pathPlaceholder')}
-              name="organize-path" autoComplete="off" spellCheck="false" value={path} ref={pathInput}
-              isInvalid={invalid === 'path'}
-              onChange={(value) => { setScope({ location, path: value }); setInvalid(null); preview.reset(); picker.reset() }} />
-            <IconButton icon={FolderSearchIcon} aria-label={t('cleanup:organize.choosePath')} {...busyProps(picker.isPending)}
-              onClick={() => picker.mutate({ initial: path || locations.find((row) => row.location === location)?.roots[0] || '', location, path })} />
-          </div>
+          <Select aria-label={t('cleanup:organize.scopeLabel')} prefix={t('cleanup:organize.scopePrefix')} className="w-fit min-w-25"
+            selectedKey={root} isDisabled={!locations.length}
+            onSelectionChange={(key) => {
+              if (key === null) return;
+              setScope({ location, root: String(key) }); setInvalid(null); preview.reset();
+            }}>
+            {roots.map((name) => (
+              <SelectItem key={name} id={name} textValue={name === WHOLE_DRIVE ? t('cleanup:organize.wholeDrive') : name}>
+                {name === WHOLE_DRIVE ? t('cleanup:organize.wholeDrive') : name}
+              </SelectItem>
+            ))}
+          </Select>
         </div>
         <p className="text-caption-1-regular text-text-secondary">{ORGANIZE_SCOPE_HINT}</p>
-        {picker.isError ? <Note tone="error" title={t('cleanup:organize.pickerFailed')}>{errorMessage(picker.error)}{t('cleanup:organize.pickerFallback')}</Note> : null}
         <Input label={t('cleanup:organize.fileTemplate')} placeholder="{code}[ {title}]" value={fields.file} ref={fileInput}
           spellCheck="false" isInvalid={invalid === 'file'}
           onFocus={() => { setTarget('file'); focused.current = true }}

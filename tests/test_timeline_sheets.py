@@ -1,31 +1,18 @@
-"""时间轴预览的接触印相：格子几何、整套生成、队列取舍与整库跑法。"""
+"""时间轴预览的接触印相：格子几何、整套生成，以及按需生成这一部。"""
 from __future__ import annotations
 
 import json
 import shutil
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from peach import timeline_sheets
-from peach.jobs import DiskSpaceDenied
-from support.ledger import fresh_ledger
+from peach.media import MediaUnavailable
 
 
 class SheetGeometryTests(unittest.TestCase):
-    def test_invalidated_display_geometry_keeps_images_but_requires_rebuilding(self):
-        directory = timeline_sheets.sheet_dir(self.root, 5)
-        directory.mkdir(parents=True)
-        sheet = directory / '000.jpg'
-        sheet.write_bytes(b'old frame geometry')
-        meta = {'interval': 10, 'frames': 2, 'sheets': 1, 'invalidated_by': 'display-dimensions-1'}
-        (directory / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
-        self.assertEqual(timeline_sheets.read_meta(self.root, 5), meta)
-        self.assertFalse(timeline_sheets.is_current(self.root, 5, 10))
-        self.assertEqual(sheet.read_bytes(), b'old frame geometry')
-
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="timeline-geometry-"))
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
@@ -132,117 +119,57 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(timeline_sheets.sheet_path(self.root, 9, 0).exists())
 
 
-class QueueTests(unittest.TestCase):
+class EnsureTests(unittest.TestCase):
+    """按需生成：选中哪一部就给哪一部做一套，网盘不给字节就退回九宫格。"""
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="timeline-queue-"))
+        self.root = Path(tempfile.mkdtemp(prefix="timeline-ensure-"))
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
-        self.db = fresh_ledger(self.root)
-        rows = [
-            (1, "local", r"R:\a.mp4", 3600, "2026-09-01", None),
-            (2, "pikpak", r"R:\b.mp4", 3600, "2026-09-02", None),
-            (3, "local", r"R:\c.mp4", 3600, None, None),
-            (4, "local", r"R:\d.mp4", 5, "2026-09-03", None),
-            (5, "local", r"R:\e.mp4", 3600, "2026-09-04", "trash"),
-            (6, "local", r"R:\f.mp4", 3600, "2026-09-05", None),
-        ]
-        connection = sqlite3.connect(self.db)
-        with connection:
-            connection.executemany(
-                "INSERT INTO asset(id,medium,location,path,duration,last_played,disposal) "
-                "VALUES(?,'video',?,?,?,?,?)", rows)
-        connection.close()
+        self.engine = MagicMock()
+        self.asset = MagicMock(duration=100.0, id=5)
 
-    def test_the_queue_is_local_only_and_starts_with_what_was_played_last(self):
-        """这条链随时会被磁盘闸门或用户按停，跑到哪算哪，所以先做的必须是最可能被
-        扫到的那些。网盘上的每抽一帧都要回源拉一次，不进队列。"""
-        self.assertEqual([row[0] for row in timeline_sheets.pending(self.db, 10)],
-                         [6, 1, 3])
+    def _ready(self, asset_id: int = 5):
+        directory = timeline_sheets.sheet_dir(self.root, asset_id)
+        directory.mkdir(parents=True)
+        (directory / "000.jpg").write_bytes(b"sheet")
+        (directory / "meta.json").write_text(
+            json.dumps({"interval": 10, "frames": 10, "sheets": 1}), encoding="utf-8")
 
-    def test_the_queue_can_be_cut_short(self):
-        self.assertEqual([row[0] for row in timeline_sheets.pending(self.db, 10, limit=1)],
-                         [6])
+    def test_an_existing_sheet_is_used_without_asking_the_drive(self):
+        self._ready()
+        path = timeline_sheets.ensure("ffmpeg", self.engine, self.asset, 100, 10, self.root)
+        self.assertEqual(path, timeline_sheets.sheet_path(self.root, 5, 0))
+        self.engine.ffmpeg_input.assert_not_called()
 
+    def test_a_drive_that_will_not_give_bytes_yields_no_sheet(self):
+        self.engine.ffmpeg_input.side_effect = MediaUnavailable("授权已失效")
+        self.assertIsNone(timeline_sheets.ensure("ffmpeg", self.engine, self.asset, 100, 10, self.root))
 
-class GenerateLibraryTests(unittest.TestCase):
-    def test_capacity_denial_during_frames_pauses_without_completing_the_asset(self):
-        guard = MagicMock()
-        guard.check.side_effect = [None, None, DiskSpaceDenied('capacity')]
-        def build(*args, active, **kwargs):
-            self.assertTrue(active())
-            active()
-            self.fail('capacity denial must leave the frame loop')
-        with patch.object(timeline_sheets, 'build', side_effect=build):
-            state = self._run(guard=guard)
-        self.assertEqual(state['stopped'], 'capacity')
-        self.assertEqual((state['done'], state['made'], state['failed']), (0, 0, 0))
+    def test_a_video_too_short_to_scan_is_not_fetched_at_all(self):
+        self.assertIsNone(timeline_sheets.ensure("ffmpeg", self.engine, self.asset, 15, 10, self.root))
+        self.engine.ffmpeg_input.assert_not_called()
 
-    def test_resume_keeps_counters_and_does_not_build_committed_assets(self):
-        saved = dict(completed_assets=[1], done=1, made=1, skipped=0, failed=0)
-        built = []
-        with patch.object(timeline_sheets, 'is_current', side_effect=lambda root, asset_id, interval: asset_id == 1), \
-                patch.object(timeline_sheets, 'build', side_effect=lambda ffmpeg, path, duration, root, asset_id, interval, **kwargs:
-                             built.append(asset_id) or True):
-            state = self._run(resume_state=saved)
-        self.assertEqual(built, [2])
-        self.assertEqual((state['made'], state['done'], state['total']), (2, 3, 3))
+    def test_the_drive_headers_reach_every_frame(self):
+        """每抽一帧都是一次单独的请求，授权头漏在别的帧上就是 401。"""
+        self.engine.ffmpeg_input.return_value = ('https://drive/x', {'Authorization': 'Bearer t'})
+        seen = []
 
-    def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="timeline-run-"))
-        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
-        self.db = fresh_ledger(self.root)
-        self.media = self.root / "media"
-        self.media.mkdir()
-        connection = sqlite3.connect(self.db)
-        with connection:
-            for index in (1, 2, 3):
-                path = self.media / f"{index}.mp4"
-                if index != 3:
-                    path.write_bytes(b"movie")
-                connection.execute(
-                    "INSERT INTO asset(id,medium,location,path,duration,last_played) "
-                    "VALUES(?,'video','local',?,3600,?)",
-                    (index, str(path), f"2026-09-0{4 - index}"))
-        connection.close()
-        self.sheets = self.root / "sheets"
+        def capture(_ffmpeg, url, timestamp, destination, **options):
+            seen.append((url, options.get('headers')))
+            destination.write_bytes(b"frame")
+            return True
 
-    def _run(self, **kwargs):
-        with patch.object(timeline_sheets, "resolve_case_insensitive", lambda path: path):
-            return timeline_sheets.generate_library(
-                self.db, self.sheets, 10, ffmpeg="ffmpeg", **kwargs)
+        def tile(_ffmpeg, _pattern, _columns, _rows, destination, **_options):
+            destination.write_bytes(b"sheet")
+            return True
 
-    def test_a_video_that_will_not_open_does_not_take_the_queue_down_with_it(self):
-        """源坏了、时长记错、编码器不认，都是它自己的事；队列后面还有几千部。"""
-        with patch.object(timeline_sheets, "build", lambda *a, **k: {"frames": 1}):
-            state = self._run()
-        self.assertEqual((state["total"], state["made"], state["failed"]), (3, 2, 1))
-        self.assertEqual(state["stopped"], "")
-
-    def test_a_video_already_done_is_counted_as_skipped(self):
-        with patch.object(timeline_sheets, "is_current", lambda *a: True):
-            state = self._run()
-        self.assertEqual((state["skipped"], state["made"]), (3, 0))
-
-    def test_existing_image_previews_are_skipped_without_extracting_video_frames(self):
-        from PIL import Image
-        Image.new('RGB', (320, 180), 'red').save(self.media / 'frame.jpg')
-        (self.media / '1.vtt').write_text(
-            'WEBVTT\n\n00:00.000 --> 01:00:00.000\nframe.jpg\n', encoding='utf-8')
-        with patch.object(timeline_sheets, 'build', return_value={'frames': 1}) as build:
-            state = self._run()
-        self.assertEqual((state['skipped'], state['made'], state['failed']), (1, 1, 1))
-        self.assertEqual([call.args[4] for call in build.call_args_list], [2])
-
-    def test_a_full_disk_stops_the_run_and_says_so(self):
-        """磁盘触线说明整台机器写不下了，立刻停手并把原因带出去，不能跑成「完成」。"""
-        guard = MagicMock()
-        guard.check.side_effect = DiskSpaceDenied("系统盘只剩 3 GB")
-        state = self._run(guard=guard)
-        self.assertEqual(state["stopped"], "系统盘只剩 3 GB")
-        self.assertEqual(state["done"], 0)
-
-    def test_pressing_stop_is_recorded_as_the_user_stopping_it(self):
-        state = self._run(active=lambda: False)
-        self.assertEqual(state["stopped"], timeline_sheets.STOPPED_BY_USER)
+        with patch.object(timeline_sheets, 'capture_with_retry', capture), \
+                patch.object(timeline_sheets, 'tile_frames', tile):
+            path = timeline_sheets.ensure("ffmpeg", self.engine, self.asset, 100, 10, self.root)
+        self.assertTrue(seen)
+        self.assertEqual({url for url, _headers in seen}, {'https://drive/x'})
+        self.assertEqual({json.dumps(headers, sort_keys=True) for _url, headers in seen},
+                         {json.dumps({'Authorization': 'Bearer t'}, sort_keys=True)})
+        self.assertTrue(path.is_file())
 
 
 if __name__ == "__main__":

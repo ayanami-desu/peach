@@ -9,10 +9,9 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 from starlette.background import BackgroundTask
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import FileResponse, Response, StreamingResponse
 
 from .fsutil import atomic_path, atomic_write_text
-from .streaming import BufferedFileResponse
 
 AVATAR_REFRESH_SECONDS = 90 * 86400
 FAVICON_REFRESH_SECONDS = 365 * 86400
@@ -86,9 +85,8 @@ class RemoteMediaCache:
                             **(headers or {}), **MEDIA_SECURITY_HEADERS}
         if metadata["status"] == 200:
             response_headers.pop("content-length", None)
-            # 落盘的关注条目照本地片子送：读块走送流自己的线程，断开就停读。
-            return BufferedFileResponse(path, media_type=response_headers.pop("content-type", None),
-                                        headers=response_headers)
+            return FileResponse(path, media_type=response_headers.pop("content-type", None),
+                                headers=response_headers)
         if request.method == "HEAD":
             return Response(status_code=206, headers=response_headers)
         def body():

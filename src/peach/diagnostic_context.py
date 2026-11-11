@@ -79,7 +79,7 @@ def playback(value):
                      booleans=('paused', 'ended', 'muted', 'same_origin', 'source_assigned'), numbers=PLAYBACK_NUMBERS)
     if not isinstance(value, dict):
         return result
-    route = re.compile(r'/(?:stream(?:/hls/\d+/(?:index\.m3u8|\d+\.ts))?|follow-stream|preview-stream|strm-resource/\d+/[a-f0-9]+)')
+    route = re.compile(r'/(?:stream|follow-stream|media)')
     for key in ('source_route', 'declared_route'):
         if isinstance(raw := value.get(key), str) and route.fullmatch(raw):
             result[key] = raw
@@ -105,7 +105,6 @@ def host_kind(value):
 
 def runtime(config):
     from . import media_processing_policy
-    from .reporting_identity import distribution, event_metadata, machine_facts
     packages = {}
     for name in ('peach', 'fastapi', 'starlette', 'uvicorn', 'anyio', 'httpx', 'curl_cffi', 'pillow', 'opencv-python-headless', 'sentry-sdk'):
         try:
@@ -114,25 +113,17 @@ def runtime(config):
         except PackageNotFoundError:
             packages[name] = None
     result = {'status': 'available', 'packages': packages, 'sqlite': sqlite3.sqlite_version,
-              'distribution': distribution(), 'memory_gb': machine_facts().get('memory_gb'),
-              'checkout_or_build_commit': event_metadata('errors').get('dist'),
               'logical_processors': os.cpu_count(), 'active_threads': threading.active_count(),
               'windows_edition': platform.win32_edition() if os.name == 'nt' else None,
-              'server': {'host_kind': host_kind(config.server.host), 'port': config.server.port,
-                         'replication_enabled': config.replication.enabled, 'tunnel_enabled': config.tunnel.enabled,
-                         'tunnel_mode': config.tunnel.mode},
+              'server': {'host_kind': host_kind(config.server.host), 'port': config.server.port},
               'proxy_environment': {name.lower(): bool(os.environ.get(name) or os.environ.get(name.lower()))
                                     for name in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY')},
               'windows_browsing': windows_browsing(),
               'media_preferences': {'metadata_only': media_processing_policy.metadata_only(config.directory('state')),
-                  'preview_acceleration': media_processing_policy.acceleration(config.directory('state'), purpose='preview'),
-                  'playback_acceleration': media_processing_policy.acceleration(config.directory('state'))},
+                  'preview_acceleration': media_processing_policy.acceleration(config.directory('state'))},
               'environment': {name: os.environ.get(name) == '1' for name in ('PEACH_HEADLESS_MANAGED', 'PEACH_TRAY_MANAGED')}}
-    backend = os.environ.get('PEACH_TRANSCODE_BACKEND', 'auto')
-    from .hardware_transcode import BACKENDS
-    result['transcode_backend'] = backend if backend in BACKENDS else 'invalid'
     result['storage'] = {}
-    for name in ('database', 'generated', 'state', 'logs', 'tools'):
+    for name in ('database', 'generated', 'state', 'logs'):
         try:
             path = config.directory(name)
             result['storage'][name] = {'status': 'available' if path.is_dir() else 'missing'}

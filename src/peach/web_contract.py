@@ -122,16 +122,7 @@ from .web_router import (
     dispatch_api_post,
 )
 from .web_state import CACHE_TTL, FAVICON, WebContract
-from .web_stats import (
-    TASTE_WINDOWS,
-    q_quality_goals,
-    q_search_history,
-    q_stats,
-    q_taste,
-    w_search_history,
-    w_taste_refresh,
-    w_taste_source,
-)
+from .web_stats import q_quality_goals, q_search_history, q_stats, w_search_history
 
 __all__ = [
     "PANEL_ASPECT", "front_panel_box",
@@ -145,7 +136,7 @@ __all__ = [
     "JAV_ASSET_PREDICATE", "JUNK_KINDS", "LENGTH_TAGS", "PART_MARK", "POST_HANDLERS",
     "PROMO_CLUSTER_FILES", "PROMO_DOMAIN", "PROMO_FILLER", "PROMO_PHRASE",
     "READ_ONLY_POST_ROUTES", "REAL_CODE",
-    "TASTE_WINDOWS", "WebContract", "_edition_groups", "attach_card_performers",
+    "WebContract", "_edition_groups", "attach_card_performers",
     "attach_edition_groups", "attach_jav_display_fields", "attach_multipart_groups",
     "con_entities", "con_tags",
     "dispatch_api_get", "dispatch_api_post", "face_focus", "has_sibling_original",
@@ -155,10 +146,9 @@ __all__ = [
     "q_ads", "q_duplicates", "q_editions", "q_entity", "q_entity_photos", "q_facets",
     "w_entity_alias", "w_entity_name",
     "q_index", "q_item", "q_items", "q_parts", "q_photo_set", "q_playlists",
-    "q_quality_goals", "q_related", "q_search_history", "q_stats", "q_suggest", "q_taste",
+    "q_quality_goals", "q_related", "q_search_history", "q_stats", "q_suggest",
     "q_tops", "state_clause", "state_predicate", "tag_is_not_a_performer_name",
     "tag_not_hidden", "w_activity", "w_batch",
     "w_empty_trash", "w_feedback", "w_item_tag", "w_playlist", "w_preference",
-    "w_quality_goal", "w_review_decision", "w_review_genre", "w_search_history", "w_taste_refresh",
-    "w_taste_source", "w_watch_later",
+    "w_quality_goal", "w_review_decision", "w_review_genre", "w_search_history", "w_watch_later",
 ]

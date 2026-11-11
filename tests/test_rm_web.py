@@ -20,8 +20,6 @@ from support.ledger import fresh_ledger
 # 调用点继续走 `rm_web`（`web_contract` 现在只是再导出层），但 **patch 必须打在真的
 # 那个模块上**：`web_stats.q_stats` 读的是 `web_stats` 自己模块里的 `system_volume`，
 # 打在再导出层上不会有任何效果，而且不会报错——测试会带着假 mock 一路绿。
-# 同一个 `LOCATION_ROOT_DECLARATIONS` 在存储卷一节属于 `web_stats`、在空目录清理
-# 一节属于 `web_batch`，两个都得分别打。
 
 
 class WebDataTests(unittest.TestCase):
@@ -222,14 +220,6 @@ class WebDataTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_path = str(fresh_ledger(self.tmp.name))
-        # 口味看板会列出本机浏览器；测试不读这台机器的真实浏览历史，也不受它的大小影响。
-        self.enterContext(mock.patch("peach.taste_history.discover_history_sources", return_value=[]))
-        declared = mock.patch.object(web_batch, "LOCATION_ROOT_DECLARATIONS", {
-            "local": (str(Path(self.tmp.name).resolve()),),
-            "115": (str(Path(self.tmp.name).resolve()),),
-        })
-        declared.start()
-        self.addCleanup(declared.stop)
         con = sqlite3.connect(self.db_path)
         con.executemany(
             """INSERT INTO asset(
@@ -439,7 +429,7 @@ class WebDataTests(unittest.TestCase):
 
     def test_home_aggregates_recompute_only_when_the_tables_they_read_change(self):
         """顶栏候选池、统计、名册、筛选项各按自己读的表缓存：换种子、搜一次不重算，作品变了就重算。"""
-        # 存储卷一节读真实挂载的根目录，与这里要验的缓存无关。
+        # 存储卷一节读本机真实余量，与这里要验的缓存无关。
         volumes = mock.patch.object(web_stats, "_storage_volumes", return_value=[])
         volumes.start()
         self.addCleanup(volumes.stop)
@@ -700,24 +690,23 @@ class WebDataTests(unittest.TestCase):
             {"weekday": 0, "hour": 23, "count": 1}, {"weekday": 1, "hour": 0, "count": 1},
             {"weekday": 6, "hour": 8, "count": 1}])
 
-    def test_library_counts_follow_named_roots_and_exclude_images(self):
+    def test_library_counts_follow_scan_roots_and_exclude_images(self):
         with closing(sqlite3.connect(self.db_path)) as connection:
-            connection.execute("UPDATE asset SET path=? WHERE id=1", (r"R:\Media\one.mp4",))
-            connection.execute("UPDATE asset SET path=? WHERE id=3", (r"R:\Media\cover.jpg",))
+            connection.execute("UPDATE asset SET location='gdrive',drive_root='root-1' WHERE id=1")
+            connection.execute(
+                "UPDATE asset SET medium='image',location='gdrive',drive_root='root-1' WHERE id=3")
             connection.commit()
-        # 改真配置的这几个字段，不另捏一个只带它们的对象：`active()` 是全模块共用的，
-        # 存储卷那一段顺着 `translate_ledger_path` 也要读 `mounts`，缺字段就是
-        # AttributeError。Windows 上账本路径不必翻译、走不到那一步，只有 macOS 会红。
+        # 改真配置的这几个字段，不另捏一个只带它们的对象：`active()` 是全模块共用的。
         config = replace(
             web_stats.settings_file.load_config(environ={}, strict=False),
-            locations={"local": (r"R:\Media", r"R:\Media-more")},
-            library_names={}, library_icons={})
+            drive_roots={"gdrive": ("root-1", "root-2")},
+            library_catalog={}, library_names={}, library_icons={})
         with mock.patch.object(web_stats.settings_file, "active", return_value=config):
             rows = rm_web.q_stats(self.contract)["by_library"]
         self.assertEqual([(row["name"], row["videos"], row["bytes"]) for row in rows],
-                         [("Media", 1, 100), ("Media-more", 0, 0)])
+                         [("root-1", 1, 100), ("root-2", 0, 0)])
 
-    def test_stats_use_the_platform_system_volume_and_keep_the_old_alias(self):
+    def test_stats_use_the_platform_system_volume(self):
         usage = type("Usage", (), {"free": 20, "total": 100})
         with mock.patch.object(web_stats, "system_volume", return_value=Path("X:/")), mock.patch(
             "shutil.disk_usage", return_value=usage,
@@ -730,28 +719,21 @@ class WebDataTests(unittest.TestCase):
             stats["system_disk"],
             {"root": str(Path("X:/")), "free": 20, "total": 100},
         )
-        self.assertIs(stats["disk_c"], stats["system_disk"])
 
-    def test_stats_report_system_resource_and_cloud_volumes(self):
+    def test_stats_report_only_the_server_disk(self):
+        """藏品在网盘上，容量按 provider 查；统计页这一节只报本机一块盘。"""
         usage = type("Usage", (), {"free": 20, "total": 100})
-        declarations = {"local": ("R:/media", "S:/more"), "115": ("B:/",), "pikpak": ("A:/",)}
-        with mock.patch.object(web_stats, "LOCATION_ROOT_DECLARATIONS", declarations), \
-                mock.patch.object(web_stats, "system_volume", return_value=Path("X:/")), \
-                mock.patch.object(web_stats, "translate_ledger_path",
-                                  side_effect=lambda value: Path(value)), \
-                mock.patch.object(web_stats, "root_online", return_value=True), \
+        with mock.patch.object(web_stats, "system_volume", return_value=Path("X:/")), \
                 mock.patch("shutil.disk_usage", return_value=usage):
             stats = rm_web.q_stats(self.contract)
 
-        # 同一来源的几个根各占一行，用序号区分；单根来源不带序号。
         self.assertEqual(
-            [(row["kind"], row["label"]) for row in stats["storage_volumes"]],
-            [("system", "系统盘"), ("local", "资源盘 1"), ("local", "资源盘 2"),
-             ("115", "115 网盘"), ("pikpak", "PikPak 网盘")],
+            [(row["kind"], row["label"], row["root"]) for row in stats["storage_volumes"]],
+            [("system", "系统盘", str(Path("X:/")))],
         )
+        self.assertNotIn("online", stats["storage_volumes"][0])
         self.assertEqual(stats["storage_summary"], {
-            "volumes": 5, "online": 5, "measured": 5,
-            "free": 100, "used": 400, "total": 500,
+            "volumes": 1, "measured": 1, "free": 20, "used": 80, "total": 100,
         })
 
     def test_items_support_duration_range(self):
@@ -1103,183 +1085,6 @@ class WebDataTests(unittest.TestCase):
         self.assertNotIn(
             "has_image", rm_web.q_index(self.contract, "tags", limit=10)["items"][0])
 
-    def test_taste_rankings_say_up_front_whether_each_face_can_be_fetched(self):
-        """口味榜的创作者和女优两排走同一条两级链，标志也得随榜下发。
-
-        榜行的形状和别处的身份引用不一样（`entity_id`、`representative_asset_id`
-        直接长在行上），但判据是同一对函数，不能因为形状不同就退回无条件出图。
-        """
-        con = sqlite3.connect(self.db_path)
-        con.execute("UPDATE asset SET play_count=2,play_seconds=600,last_played=? WHERE id=1",
-                    (1_700_000_200,))
-        con.commit()
-        con.close()
-        # 浏览历史那一侧显式指向不存在的临时路径：默认值是本机真实的采集库，
-        # 榜单会跟着本机装了什么摇。
-        never = Path(self.tmp.name).resolve() / "no-taste-history"
-        contract = rm_web.WebContract(
-            Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-            taste_history_store=never / "history.sqlite",
-            taste_history_import_root=never / "imports",
-            taste_history_manifest=never / "manifest.json")
-
-        def flags():
-            rankings = rm_web.q_taste(contract, {"window": "all"})["rankings"]
-            return {key: [(row["name"], row["has_image"], row["has_avatar"])
-                          for row in rankings[key]]
-                    for key in ("creators", "performers", "peach_creators",
-                                "peach_performers")}
-
-        self.assertEqual(flags(), {
-            "creators": [("Canonical Creator", False, False)],
-            "performers": [("Canonical Alice", False, False)],
-            "peach_creators": [("Canonical Creator", False, False)],
-            "peach_performers": [("Canonical Alice", False, False)],
-        })
-
-        (self.avatars / f"{entity_image_key('performer', 11)}.img").write_bytes(b"x")
-        self._install_snapshot()
-        contract.cache_bust()
-        # 同一批 dict 同时出现在总榜和分源榜里，两处必须给同一个答案。账号没有本人身份
-        # 依据，代表作头像照出，另标代表作画面。
-        self.assertEqual(flags(), {
-            "creators": [("Canonical Creator", False, True)],
-            "performers": [("Canonical Alice", True, True)],
-            "peach_creators": [("Canonical Creator", False, True)],
-            "peach_performers": [("Canonical Alice", True, True)],
-        })
-        rankings = rm_web.q_taste(contract, {"window": "all"})["rankings"]
-        self.assertTrue(rankings["creators"][0]["avatar_stand_in"])
-        self.assertNotIn("avatar_stand_in", rankings["performers"][0])
-        # 标签榜不出脸，不该被顺手挂上两个用不到的标志。
-        tags = rm_web.q_taste(contract, {"window": "all"})["rankings"]["tags"]
-        self.assertNotIn("has_image", tags[0])
-
-    def test_taste_dashboard_serves_its_snapshot_while_a_slow_rebuild_runs(self):
-        """口味看板按输入版本留一份快照：没变直接回，变了后台重算，算得慢先回上一份。
-
-        进程重启后从磁盘接上同一份快照，输入没变就不重算。
-        """
-        store_root = Path(self.tmp.name).resolve() / "taste-history"
-        store_root.mkdir()
-        contract = rm_web.WebContract(
-            Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-            taste_history_store=store_root / "history.sqlite",
-            taste_history_import_root=store_root / "imports",
-            taste_history_manifest=store_root / "manifest.json")
-        self.addCleanup(web_stats._TASTE_SNAPSHOTS.clear)
-        real = web_stats.q_taste
-
-        def marked(label):
-            return lambda contract, args: {**real(contract, args), "marker": label}
-
-        def get():
-            return rm_web.dispatch_api_get(contract, "/api/taste", {"window": "all"})
-
-        with mock.patch.object(web_stats, "q_taste", side_effect=marked("first")):
-            first = get()
-        self.assertEqual((first["marker"], first["stale"]), ("first", False))
-        self.assertTrue((store_root / "dashboard-cache-all.json").is_file())
-        with mock.patch.object(web_stats, "q_taste", side_effect=AssertionError("输入没变不该重算")):
-            self.assertEqual(get()["marker"], "first")
-
-        release = threading.Event()
-
-        def slow(contract, args):
-            release.wait(5)
-            return marked("second")(contract, args)
-
-        with contract.write_transaction() as connection:
-            connection.execute("UPDATE asset SET play_count=3 WHERE id=1")
-        with mock.patch.object(web_stats, "TASTE_FRESH_WAIT", 0.01), \
-                mock.patch.object(web_stats, "q_taste", side_effect=slow):
-            pending = get()
-            self.assertEqual((pending["marker"], pending["stale"]), ("first", True))
-            self.assertEqual(pending["computed_at"], first["computed_at"])
-            release.set()
-            web_stats._TASTE_SNAPSHOTS[str(contract.db_path), str(contract.taste_history_store), "all"].worker.join(5)
-            fresh = get()
-        self.assertEqual((fresh["marker"], fresh["stale"]), ("second", False))
-
-        web_stats._TASTE_SNAPSHOTS.clear()
-        with mock.patch.object(web_stats, "q_taste", side_effect=AssertionError("重启后输入没变不该重算")):
-            restarted = get()
-        self.assertEqual((restarted["marker"], restarted["stale"]), ("second", False))
-
-    def _taste_contract(self):
-        store_root = Path(self.tmp.name).resolve() / "taste-history"
-        store_root.mkdir()
-        self.addCleanup(web_stats._TASTE_SNAPSHOTS.clear)
-        return rm_web.WebContract(
-            Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-            taste_history_store=store_root / "history.sqlite",
-            taste_history_import_root=store_root / "imports",
-            taste_history_manifest=store_root / "manifest.json")
-
-    def test_a_failed_taste_rebuild_backs_off_and_says_so_until_retried(self):
-        """重算失败后同一份输入不再每次请求都重算：回上一份并带上失败原因，页面据此停止
-        轮询；点重试或输入再变才重算。一份结果都没有时照旧抛出那次的错误。"""
-        contract = self._taste_contract()
-        real = web_stats.q_taste
-
-        def get(**args):
-            return rm_web.dispatch_api_get(contract, "/api/taste", {"window": "all", **args})
-
-        first = get()
-        self.assertNotIn("error", first)
-        with contract.write_transaction() as connection:
-            connection.execute("UPDATE asset SET play_count=3 WHERE id=1")
-        failing = mock.Mock(side_effect=RuntimeError("账本读取失败"))
-        with mock.patch.object(web_stats, "q_taste", failing):
-            failed = get()
-            self.assertEqual((failed["stale"], failed["error"], failed["computed_at"]),
-                             (True, "账本读取失败", first["computed_at"]))
-            self.assertEqual(get()["error"], "账本读取失败")
-            self.assertEqual(failing.call_count, 1, "退避期内同一份输入不再重算")
-            later = web_stats.time.monotonic() + web_stats.TASTE_RETRY_AFTER + 1
-            with mock.patch.object(web_stats.time, "monotonic", return_value=later):
-                get()
-            self.assertEqual(failing.call_count, 2)
-        with mock.patch.object(web_stats, "q_taste", side_effect=real):
-            retried = get(retry="1")
-        self.assertEqual(retried["stale"], False)
-        self.assertNotIn("error", retried)
-
-        web_stats._TASTE_SNAPSHOTS.clear()
-        web_stats._taste_snapshot_path(contract, "all").unlink()
-        failing = mock.Mock(side_effect=RuntimeError("账本读取失败"))
-        with mock.patch.object(web_stats, "q_taste", failing):
-            for _ in range(2):
-                with self.assertRaisesRegex(RuntimeError, "账本读取失败"):
-                    get()
-        self.assertEqual(failing.call_count, 1)
-
-    def test_a_taste_snapshot_saved_by_older_code_is_rebuilt_after_an_upgrade(self):
-        """落盘快照的版本带代码指纹：升级之后、账本还没写过之前，旧代码算的那份不算新鲜。"""
-        from peach import taste_preferences
-        contract = self._taste_contract()
-        real = web_stats.q_taste
-        get = lambda: rm_web.dispatch_api_get(contract, "/api/taste", {"window": "all"})  # noqa: E731
-        with mock.patch.object(web_stats, "q_taste",
-                               side_effect=lambda c, a: {**real(c, a), "marker": "old"}):
-            self.assertEqual(get()["marker"], "old")
-        web_stats._TASTE_SNAPSHOTS.clear()
-        with mock.patch.object(taste_preferences, "_policy_fingerprint", return_value="upgraded"), \
-                mock.patch.object(web_stats, "q_taste",
-                                  side_effect=lambda c, a: {**real(c, a), "marker": "new"}):
-            upgraded = get()
-        self.assertEqual((upgraded["marker"], upgraded["stale"]), ("new", False))
-
-    def test_taste_snapshot_ignores_ledger_writes_outside_its_tables(self):
-        """看板只认它读的那几张表：关注检查、任务状态这类写入不让它重算。"""
-        contract = self._taste_contract()
-        get = lambda: rm_web.dispatch_api_get(contract, "/api/taste", {"window": "all"})  # noqa: E731
-        get()
-        with contract.write_transaction() as connection:
-            connection.execute("INSERT INTO search_history(query,last_used_at) VALUES('足交','2026-08-20')")
-        with mock.patch.object(web_stats, "q_taste", side_effect=AssertionError("无关写入不该重算")):
-            self.assertFalse(get()["stale"])
-
     def test_items_can_skip_repeated_total_count_on_later_pages(self):
         result = rm_web.q_items(
             self.contract, {"limit": "1", "offset": "0", "count": "0"},
@@ -1479,8 +1284,8 @@ class WebDataTests(unittest.TestCase):
     def test_a_star_writes_twenty_points_and_taking_it_back_writes_null(self):
         """评分这一列是 0–100，五颗星走 20 的倍数；撤销回 NULL，不是 0。
 
-        量纲不是自选的：这一列是 Stash 的 rating100 原样导进来的，
-        `taste_history` 也按 rating/20 折算成 0–5 分。撤销必须写 NULL，因为排序是
+        量纲不是自选的：这一列是 Stash 的 rating100 原样导进来的，五颗星对应
+        20 的倍数。撤销必须写 NULL，因为排序是
         `a.rating {d} NULLS LAST`——写 0 会把「没评过」和「评了一星」并成一档，
         七万多条没评过的于是排在评了一星的前面。
         """
@@ -1636,14 +1441,14 @@ class WebDataTests(unittest.TestCase):
             "/api/library-processing",
             "/api/library-processing/issues",
             "/api/media-processing",
-            "/api/thumbnail-jobs", "/api/timeline", "/api/media-repair",
+            "/api/thumbnail-jobs", "/api/timeline",
             "/api/scraping", "/api/scraping/cover", "/api/scraping/amane-bridge",
             "/api/scraping/check-all",
             "/api/items", "/api/item", "/api/entity", "/api/entity/shapes", "/api/entity/latest", "/api/photos", "/api/photo-set",
             "/api/index", "/api/parts", "/api/editions", "/api/duplicates", "/api/quality-goals",
             "/api/stats", "/api/tops", "/api/ads", "/api/related", "/api/facets",
             "/api/suggest",
-            "/api/search-history", "/api/search/recommendations", "/api/review", "/api/review/auto-landings",
+            "/api/search-history", "/api/search/recommendations", "/api/review",
             "/api/playlists", "/api/playlist",
             "/api/post-setup-tutorial",
             "/api/tutorial-progress", "/api/performer/delete-candidates", "/api/performer/delete-plan",
@@ -1651,22 +1456,20 @@ class WebDataTests(unittest.TestCase):
             "/api/custom-metadata",
             "/api/follow", "/api/follow/credentials", "/api/follow/schedule",
             "/api/follow/check", "/api/follow/resolve", "/api/follow/suggest",
-            "/api/taste/refresh",
-            "/api/links/prune", "/api/resource-sync/apply",
+            "/api/links/prune",
             "/api/follow/tags", "/api/follow/authors",
-            "/api/taste", "/api/settings", "/api/links", "/api/organize", "/api/organize/example", "/api/orphan-records",
+            "/api/settings", "/api/links", "/api/organize", "/api/organize/example", "/api/orphan-records",
             "/api/feeds", "/api/feeds/check", "/api/feeds/discoveries", "/api/feeds/lookup",
             "/api/feeds/schedule",
-            "/api/downloads", "/api/resources/search",
-            "/api/wants", "/api/wants/magnets",
+            
+            "/api/wants",
             "/api/jav/detail", "/api/jav/reviews", "/api/jav/resources", "/api/jav/discoveries", "/api/jav/releases",
             "/api/jav/discoveries/metadata",
             "/api/result-updates",
         })
         self.assertEqual(set(rm_web.POST_HANDLERS), {
             "/api/tag-management", "/api/tag-management/preview", "/api/follow/tag",
-            "/api/downloads", "/api/downloads/cancel", "/api/downloads/postprocess",
-            "/api/library-processing", "/api/thumbnail-jobs", "/api/media-repair",
+            "/api/library-processing", "/api/thumbnail-jobs",
             "/api/media-processing",
             "/api/scraping/settings", "/api/scraping/check", "/api/scraping/check-all",
             "/api/scraping/cover", "/api/jav/cover", "/api/jav/discoveries/metadata", "/api/jav/releases/metadata",
@@ -1678,17 +1481,15 @@ class WebDataTests(unittest.TestCase):
             "/api/custom-metadata",
             "/api/preference", "/api/quality-goal", "/api/item-tag", "/api/batch",
             "/api/search-history", "/api/trash/empty",
-            "/api/review/decision", "/api/review/genre", "/api/review/auto-landings/revert",
-            "/api/purge-missing", "/api/orphan-records/attach",
+            "/api/review/decision", "/api/review/genre",
             "/api/links/check", "/api/links/prune",
-            "/api/resource-sync/scan", "/api/resource-sync/apply",
             "/api/follow/check", "/api/follow/status", "/api/follow/media/hide",
             "/api/follow/image-dims", "/api/follow/save",
             "/api/follow/play", "/api/follow/activity",
             "/api/follow/source", "/api/follow/resolve", "/api/follow/credential",
             "/api/follow/author-alias", "/api/follow/creator", "/api/follow/schedule",
             "/api/follow/schedule/run", "/api/feeds/schedule/run",
-            "/api/taste/refresh", "/api/taste/source", "/api/settings",
+            "/api/settings",
             "/api/entity-name", "/api/entity-alias",
             "/api/organize/preview", "/api/organize/apply", "/api/organize/rollback",
             "/api/feeds/check", "/api/feeds/source", "/api/feeds/discovery",
@@ -1922,7 +1723,7 @@ class WebDataTests(unittest.TestCase):
         self.assertTrue(finished.is_set(), "第二次写入没能在 10 秒内拿到写锁，写锁没被释放")
 
     def stage_media(self, aid, name="clip.mp4"):
-        """把某条资产指向真实的临时文件，物理删除才有东西可删。"""
+        """把某条资产指向一个真实的临时文件，用来确认删除不碰本机文件。"""
         path = Path(self.tmp.name) / name
         path.write_bytes(b"media")
         con = sqlite3.connect(self.db_path)
@@ -1930,7 +1731,7 @@ class WebDataTests(unittest.TestCase):
         con.commit(); con.close()
         return path
 
-    def test_recycle_bin_delete_removes_the_media_and_every_ledger_reference(self):
+    def test_recycle_bin_delete_removes_every_ledger_reference(self):
         path = self.stage_media(1)
         playlist = rm_web.w_playlist(self.contract, {
             "action": "create", "name": "待清理", "asset_ids": [1],
@@ -1940,7 +1741,7 @@ class WebDataTests(unittest.TestCase):
         result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
 
         self.assertEqual((result["purged"], result["blocked"]), (1, []))
-        self.assertFalse(path.exists(), "回收站的彻底删除必须真的删掉文件")
+        self.assertTrue(path.is_file(), "媒体在网盘上，删除只动账本行")
         self.assertIsNone(self.row(1), "数据库行也要一起消失")
         con = sqlite3.connect(self.db_path)
         for table in rm_web.ASSET_REFERENCE_TABLES:
@@ -1954,114 +1755,8 @@ class WebDataTests(unittest.TestCase):
         ).fetchone()[0])
         con.close()
 
-    def test_recycle_bin_delete_translates_windows_ledger_path_to_mounted_media(self):
-        source_root = (Path(self.tmp.name) / "mounted-media").resolve()
-        source_root.mkdir()
-        path = source_root / "one.mp4"
-        path.write_bytes(b"test media")
-        ledger_path = r"R:\Media\one.mp4"
-        with closing(sqlite3.connect(self.db_path)) as con:
-            con.execute("UPDATE asset SET path=?,snapshot_path=NULL WHERE id=1", (ledger_path,))
-            con.commit()
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-
-        def translate(raw):
-            if str(raw).casefold() == r"r:\media".casefold():
-                return source_root
-            if str(raw).casefold() == ledger_path.casefold():
-                return path
-            return Path(raw)
-
-        with mock.patch.object(web_batch, "LOCATION_ROOT_DECLARATIONS",
-                               {"local": (r"R:\Media",)}), \
-                mock.patch.object(web_batch, "translate_ledger_path", side_effect=translate):
-            result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
-
-        self.assertEqual((result["purged"], result["blocked"]), (1, []))
-        self.assertFalse(path.exists(), "永久删除要删除路径映射后的实际媒体文件")
-        self.assertIsNone(self.row(1))
-
-    def test_recycle_bin_delete_keeps_windows_asset_when_its_source_is_unavailable(self):
-        source_root = Path(self.tmp.name).resolve() / "offline-media"
-        path = source_root / "one.mp4"
-        path.parent.mkdir()
-        path.write_bytes(b"test media")
-        ledger_path = r"R:\Media\one.mp4"
-        with closing(sqlite3.connect(self.db_path)) as con:
-            con.execute("UPDATE asset SET path=?,snapshot_path=NULL WHERE id=1", (ledger_path,))
-            con.commit()
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-
-        def translate(raw):
-            if str(raw).casefold() == r"r:\media".casefold():
-                return source_root / "not-mounted"
-            if str(raw).casefold() == ledger_path.casefold():
-                return path
-            return Path(raw)
-
-        with mock.patch.object(web_batch, "LOCATION_ROOT_DECLARATIONS",
-                               {"local": (r"R:\Media",)}), \
-                mock.patch.object(web_batch, "translate_ledger_path", side_effect=translate):
-            result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
-
-        self.assertEqual(result["purged"], 0)
-        self.assertEqual([item["id"] for item in result["blocked"]], [1])
-        self.assertTrue(path.is_file())
-        self.assertEqual(self.row(1)["disposal"], "trash")
-
-    def test_unmapped_paths_keep_media_and_rows_for_delete_and_missing_cleanup(self):
-        from peach.platform import UNMAPPED_ROOT
-
-        media = self.stage_media(1)
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-        for missing_only in (False, True):
-            with self.subTest(missing_only=missing_only), \
-                    mock.patch.object(web_batch, "translate_ledger_path", return_value=UNMAPPED_ROOT / "one.mp4"):
-                with self.contract.write_transaction() as connection:
-                    result = web_batch.purge_assets(connection, [self.row(1)], missing_only=missing_only)
-            self.assertEqual(result["purged"], 0)
-            self.assertEqual([item["id"] for item in result["blocked"]], [1])
-            self.assertTrue(media.is_file())
-            self.assertEqual(self.row(1)["disposal"], "trash")
-
-    def test_unreadable_media_keeps_rows_for_delete_and_missing_cleanup(self):
-        media = self.stage_media(1)
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-        original_stat = Path.stat
-
-        def stat(path, *args, **kwargs):
-            if path == media:
-                raise PermissionError("media unavailable")
-            return original_stat(path, *args, **kwargs)
-
-        for missing_only in (False, True):
-            with self.subTest(missing_only=missing_only), mock.patch.object(Path, "stat", stat):
-                with self.contract.write_transaction() as connection:
-                    result = web_batch.purge_assets(connection, [self.row(1)], missing_only=missing_only)
-            self.assertEqual(result["purged"], 0)
-            self.assertEqual([item["id"] for item in result["blocked"]], [1])
-            self.assertTrue(media.is_file())
-            self.assertEqual(self.row(1)["disposal"], "trash")
-
-    def test_permanent_delete_removes_newly_empty_parents_but_keeps_the_source_root(self):
-        source_root = Path(self.tmp.name) / "source"
-        media = source_root / "creator" / "release" / "junk.url"
-        media.parent.mkdir(parents=True)
-        media.write_text("junk", encoding="utf-8")
-        con = sqlite3.connect(self.db_path)
-        con.execute("UPDATE asset SET path=?,snapshot_path=NULL WHERE id=1", (str(media),))
-        con.commit(); con.close()
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-
-        with mock.patch.object(
-                web_batch, "LOCATION_ROOT_DECLARATIONS", {"local": (str(source_root),)}):
-            result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
-
-        self.assertEqual(result["empty_dirs_removed"], 2)
-        self.assertTrue(source_root.is_dir(), "声明的来源根绝不能随空目录一起删除")
-        self.assertFalse((source_root / "creator").exists())
-
-    def test_failed_database_commit_restores_quarantined_media(self):
+    def test_failed_database_commit_keeps_the_bin_row(self):
+        """事务失败整批回滚：账本行原样留在回收站，媒体文件从头到尾没被碰过。"""
         path = self.stage_media(1, "commit-failure.mp4")
         rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
 
@@ -2079,9 +1774,8 @@ class WebDataTests(unittest.TestCase):
             with self.assertRaisesRegex(sqlite3.OperationalError, "commit failure"):
                 rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
 
-        self.assertTrue(path.is_file(), "数据库失败后媒体必须恢复原名")
+        self.assertTrue(path.is_file())
         self.assertEqual(self.row(1)["disposal"], "trash")
-        self.assertEqual(list(path.parent.glob(".*.peach-purge-*.tmp")), [])
 
     def test_delete_and_restore_refuse_assets_outside_the_recycle_bin(self):
         """彻底删除只能作用于回收站，否则一次误选就能删掉在库作品。"""
@@ -2108,57 +1802,30 @@ class WebDataTests(unittest.TestCase):
         result = rm_web.w_empty_trash(self.contract)
 
         self.assertEqual(result["purged"], 1)
-        self.assertFalse(binned.exists())
         self.assertIsNone(self.row(1))
-        self.assertTrue(kept.exists(), "不在回收站的媒体一个都不能碰")
-        self.assertIsNotNone(self.row(2))
+        self.assertIsNotNone(self.row(2), "不在回收站的资产一个都不能碰")
+        self.assertTrue(binned.is_file() and kept.is_file(), "清空回收站不删网盘上的媒体")
 
-    def test_empty_trash_moves_media_outside_the_write_lock_and_spares_rows_restored_meanwhile(self):
-        """网盘上逐个 stat、改名不占写锁；这期间被还原出回收站的，事务里复核时留下、文件放回原处。"""
-        binned = self.stage_media(1, "binned.mp4")
+    def test_empty_trash_spares_rows_restored_meanwhile(self):
+        """读出行之后、删之前被还原出回收站的，事务里复核时留下并进 `blocked`。"""
+        self.stage_media(1, "binned.mp4")
         restored = self.stage_media(2, "restored.mp4")
         rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
         rm_web.w_feedback(self.contract, {"id": 2, "kind": "dispose"})
-        quarantine = web_batch._quarantine_media
-        locked = []
+        purge = web_batch._purge_outside_lock
 
-        def outside_lock(original, **kwargs):
-            locked.append(self.contract.database.write_lock.locked())
-            moved = quarantine(original, **kwargs)
-            if original == restored and not locked[-1]:
-                rm_web.w_feedback(self.contract, {"id": 2, "kind": "dispose"})
-            return moved
-        with mock.patch.object(web_batch, "_quarantine_media", side_effect=outside_lock):
+        def restore_first(contract, rows, **kwargs):
+            rm_web.w_batch(self.contract, {"ids": [2], "operation": "restore"})
+            return purge(contract, rows, **kwargs)
+
+        with mock.patch.object(web_batch, "_purge_outside_lock", side_effect=restore_first):
             result = rm_web.w_empty_trash(self.contract)
 
-        self.assertEqual(locked, [False, False])
         self.assertEqual(result["purged"], 1)
         self.assertEqual([item["id"] for item in result["blocked"]], [2])
-        self.assertFalse(binned.exists())
         self.assertIsNone(self.row(1))
-        self.assertTrue(restored.is_file(), "隔离期间被还原的，文件放回原处")
-        self.assertIsNone(self.row(2)["disposal"])
-
-    def test_a_purge_cleans_only_what_the_deleted_rows_left_behind(self):
-        """删完不再把整个派生目录扫一遍：只清这几部留下的产物，别的孤儿留给资源同步那一轮。"""
-        self.stage_media(1, "binned.mp4")
-        root = Path(self.tmp.name).resolve()
-        transcodes, streams = root / "transcodes", root / "stream-segments"
-        (streams / "1" / "v").mkdir(parents=True)
-        transcodes.mkdir()
-        mine, segment, stranger = transcodes / "1-5-6.mp4", streams / "1" / "v" / "0.ts", transcodes / "999-5-6.mp4"
-        for path in (mine, segment, stranger):
-            path.write_bytes(b"cache")
-        self.contract.transcode_root, self.contract.stream_root = transcodes, streams
-        self.contract.resource_cleanup_enabled = True
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-
-        result = rm_web.w_empty_trash(self.contract)
-
-        self.assertEqual((result["purged"], result["cache_removed"]), (1, 2))
-        self.assertFalse(mine.exists())
-        self.assertFalse((streams / "1").exists())
-        self.assertTrue(stranger.is_file(), "别的孤儿留给资源同步那一轮")
+        self.assertIsNone(self.row(2)["disposal"], "复核没过的行留在库里")
+        self.assertTrue(restored.is_file())
 
     def test_empty_trash_withdraws_candidates_and_decisions_pinned_to_purged_assets(self):
         # #486：删掉的资产留下的候选与决定，之后同一路径重新登记拿到新编号时就悬空了。
@@ -2194,126 +1861,6 @@ class WebDataTests(unittest.TestCase):
                 "SELECT category,item_key FROM review_decision ORDER BY category,item_key").fetchall(),
                 [("creator_tags", "asset:1:title"), ("metadata_fields", "asset:11:title"),
                  ("metadata_fields", "asset:2:title")])
-
-    def test_rclone_mount_detection_uses_the_most_specific_mountpoint(self):
-        mountinfo = Path(self.tmp.name) / "mountinfo"
-        mountinfo.write_text(
-            "36 25 0:41 / /media rw - ext4 /dev/root rw\n"
-            "37 36 0:62 / /media/115 rw - fuse.rclone remote:library rw\n"
-            "38 37 0:63 / /media/115/local rw - ext4 /dev/data rw\n",
-            encoding="utf-8",
-        )
-
-        with mock.patch.object(web_batch, "MOUNTINFO_PATH", mountinfo):
-            self.assertTrue(web_batch._is_rclone_mount(Path("/media/115/movie.mp4")))
-            self.assertFalse(web_batch._is_rclone_mount(Path("/media/115-old/movie.mp4")))
-            self.assertFalse(web_batch._is_rclone_mount(Path("/media/115/local/movie.mp4")))
-
-    def test_rclone_mount_detection_handles_escapes_and_normalizes_parent_segments(self):
-        mountinfo = Path(self.tmp.name).resolve() / "mountinfo"
-        mountinfo.write_text(
-            "36 25 0:41 / /media rw - ext4 /dev/root rw\n"
-            "37 36 0:62 / /media/cloud\\040drive rw - fuse.rclone remote:library rw\n",
-            encoding="utf-8")
-        with mock.patch.object(web_batch, "MOUNTINFO_PATH", mountinfo):
-            self.assertTrue(web_batch._is_rclone_mount(Path("/media/cloud drive/movie.mp4")))
-            self.assertFalse(web_batch._is_rclone_mount(Path("/media/cloud drive/../local/movie.mp4")))
-
-    def test_rclone_mount_detection_uses_mount_parents_for_stacked_mounts(self):
-        mountinfo = Path(self.tmp.name).resolve() / "mountinfo"
-        rows = ["36 25 0:41 / /media rw - ext4 /dev/root rw\n",
-                "38 37 0:63 / /media/115 rw - ext4 /dev/data rw\n",
-                "37 36 0:62 / /media/115 rw - fuse.rclone remote:library rw\n"]
-        for lines in (rows, list(reversed(rows))):
-            mountinfo.write_text("".join(lines), encoding="utf-8")
-            with mock.patch.object(web_batch, "MOUNTINFO_PATH", mountinfo):
-                self.assertFalse(web_batch._is_rclone_mount(Path("/media/115/movie.mp4")))
-
-    def test_unknown_mount_information_keeps_the_local_isolation_policy(self):
-        mountinfo = Path(self.tmp.name).resolve() / "mountinfo"
-        with mock.patch.object(web_batch, "MOUNTINFO_PATH", mountinfo):
-            self.assertFalse(web_batch._is_rclone_mount(Path("/media/115/movie.mp4")))
-            mountinfo.write_text("invalid mount entry\n", encoding="utf-8")
-            self.assertFalse(web_batch._is_rclone_mount(Path("/media/115/movie.mp4")))
-
-    def test_empty_trash_unlinks_115_rclone_media_without_remote_rename(self):
-        media = self.stage_media(2, "rclone-115.mp4")
-        media.write_bytes(b"x" * (1024 * 1024 + 1))
-        rm_web.w_feedback(self.contract, {"id": 2, "kind": "dispose"})
-
-        with mock.patch.object(web_batch, "_is_rclone_mount", return_value=True), \
-                mock.patch.object(web_batch.os, "rename") as rename:
-            result = rm_web.w_empty_trash(self.contract)
-
-        self.assertEqual((result["purged"], result["blocked"]), (1, []))
-        self.assertFalse(media.exists())
-        self.assertIsNone(self.row(2))
-        rename.assert_not_called()
-
-    def test_rclone_unlink_database_failure_leaves_a_retryable_trash_row(self):
-        local = self.stage_media(1, "local-commit-failure.mp4")
-        media = self.stage_media(2, "rclone-commit-failure.mp4")
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-        rm_web.w_feedback(self.contract, {"id": 2, "kind": "dispose"})
-
-        @contextmanager
-        def fail_after_body():
-            connection = self.contract.database.connect(write=True)
-            try:
-                yield connection
-                connection.rollback()
-                raise sqlite3.OperationalError("simulated commit failure")
-            finally:
-                connection.close()
-
-        with mock.patch.object(web_batch, "_is_rclone_mount", side_effect=lambda path: path == media), \
-                mock.patch.object(self.contract, "write_transaction", fail_after_body):
-            with self.assertRaisesRegex(sqlite3.OperationalError, "commit failure"):
-                rm_web.w_empty_trash(self.contract)
-
-        self.assertFalse(media.exists(), "远端删除已完成，数据库失败时不能假称文件已恢复")
-        self.assertTrue(local.is_file())
-        self.assertEqual(self.row(1)["disposal"], "trash")
-        self.assertEqual(self.row(2)["disposal"], "trash")
-
-        retry = rm_web.w_empty_trash(self.contract)
-        self.assertEqual((retry["purged"], retry["blocked"]), (2, []))
-        self.assertFalse(local.exists())
-        self.assertIsNone(self.row(2), "重试应只清理已不存在媒体对应的回收站记录")
-
-    def test_rclone_delete_failure_keeps_media_and_a_retryable_trash_row(self):
-        media = self.stage_media(2, "rclone-delete-failure.mp4")
-        rm_web.w_feedback(self.contract, {"id": 2, "kind": "dispose"})
-        original_unlink = Path.unlink
-
-        def unlink(path, *args, **kwargs):
-            if path == media:
-                raise PermissionError("remote delete denied")
-            return original_unlink(path, *args, **kwargs)
-
-        with mock.patch.object(web_batch, "_is_rclone_mount", return_value=True), \
-                mock.patch.object(Path, "unlink", unlink):
-            result = rm_web.w_empty_trash(self.contract)
-        self.assertEqual(result["purged"], 0)
-        self.assertEqual([item["id"] for item in result["blocked"]], [2])
-        self.assertTrue(media.is_file())
-        self.assertEqual(self.row(2)["disposal"], "trash")
-
-    def test_undeletable_media_keeps_its_row_in_the_bin_instead_of_orphaning_the_file(self):
-        """文件删不掉时保留账本行：留一条能重试的回收站条目，好过留一个没人认领的文件。"""
-        blocked_path = Path(self.tmp.name) / "locked"
-        blocked_path.mkdir()          # 目录删不掉，等价于文件被占用/网盘离线
-        con = sqlite3.connect(self.db_path)
-        con.execute("UPDATE asset SET path=? WHERE id=1", (str(blocked_path),))
-        con.commit(); con.close()
-        rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
-
-        result = rm_web.w_empty_trash(self.contract)
-
-        self.assertEqual(result["purged"], 0)
-        self.assertEqual([item["id"] for item in result["blocked"]], [1])
-        self.assertTrue(blocked_path.exists())
-        self.assertEqual(self.row(1)["disposal"], "trash", "删不掉就该留在回收站里等重试")
 
     def test_batch_markers_are_bounded_and_preserve_like_reason(self):
         rm_web.w_preference(self.contract, {"id": 1, "liked": False, "reason": "保留原文"})
@@ -2952,21 +2499,14 @@ class WebDataTests(unittest.TestCase):
         con.close()
 
     def test_post_setup_tutorial_only_carries_progress_counts(self):
-        """安装教程的聚合只带六个读数，不带馆藏明细、口味分析、关注列表与候选全文。
+        """安装教程的聚合只带五个读数，不带馆藏明细、关注列表与候选全文。
 
-        首页右下角那张卡每次切路由都取一次；六个页面的完整载荷拼在一起，真实馆藏上要二十多秒、
+        首页右下角那张卡每次切路由都取一次；所有页面的完整载荷拼在一起，真实馆藏上要二十多秒、
         三百多 KB。这里钉住每一段的键集合，多出一个键就是明细搬进来了。
         """
-        from peach import taste_history
         root = Path(self.tmp.name).resolve()
         (root / "candidates").mkdir()
         (root / "secrets").mkdir()
-        store = root / "history.db"
-        with closing(sqlite3.connect(store)) as history:
-            taste_history._prepare_store(history)
-            history.execute(
-                "INSERT INTO history_source VALUES('k1','chrome','Default','pc','h','2026-01-01','2026-01-02')")
-            history.commit()
         con = sqlite3.connect(self.db_path)
         con.execute(
             "INSERT INTO follow_source(provider,ref,label,url,enabled,created_at,updated_at) "
@@ -2976,13 +2516,11 @@ class WebDataTests(unittest.TestCase):
         con.close()
         contract = rm_web.WebContract(
             Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-            candidate_root=root / "candidates", follow_secrets_root=root / "secrets",
-            taste_history_store=store)
+            candidate_root=root / "candidates", follow_secrets_root=root / "secrets")
         payload = rm_web.dispatch_api_get(contract, "/api/post-setup-tutorial", {})
-        self.assertEqual(set(payload), {"library", "scraping", "taste", "follow", "credentials", "review"})
+        self.assertEqual(set(payload), {"library", "scraping", "follow", "credentials", "review"})
         # 馆藏读数与首页列表同一条 WHERE：图片与回收站不算。
         self.assertEqual(payload["library"], {"total": 2})
-        self.assertEqual(payload["taste"], {"history_sources": 1})
         self.assertEqual(payload["follow"], {"sources": [
             {"provider": "kemono", "enabled": True}, {"provider": "rule34", "enabled": False}]})
         self.assertTrue(payload["scraping"]["sources"])
@@ -3686,15 +3224,15 @@ class DuplicateDetectionTests(unittest.TestCase):
         self.next_id = 1
         self.contract = rm_web.WebContract(Path(self.db_path))
 
-    def add(self, code, duration, size, drive="B", name=None, hash_=None):
+    def add(self, code, duration, size, location="onedrive", name=None, hash_=None):
         asset_id = self.next_id
         self.next_id += 1
         self.con.execute(
             "INSERT INTO asset(id,location,path,name,medium,code,size,duration,"
-            "hash,first_seen) VALUES(?,'local',?,?,'video',?,?,?,?,'2026-08-19')",
+            "hash,first_seen) VALUES(?,?,?,?,'video',?,?,?,?,'2026-08-19')",
             # 默认名不能以数字结尾：`ABW-232-1.mp4` 会被正确识别成分卷标记，
             # 于是每个夹具文件都成了「不同部分」。用 ripN 避开这个约定。
-            (asset_id, rf"{drive}:\{asset_id}.mp4", name or f"{code} rip{asset_id}.mp4",
+            (asset_id, location, f"{location}:/{asset_id}.mp4", name or f"{code} rip{asset_id}.mp4",
              code, size, duration, hash_))
         self.con.commit()
         return asset_id
@@ -3712,8 +3250,8 @@ class DuplicateDetectionTests(unittest.TestCase):
     def test_shared_filename_rips_with_missing_duration_are_candidates(self):
         """同名且已知时长在容差内的副本进入重复候选，缺测量的一份保留。"""
         kept = self.add("SSIS-001", 7200, 9_000_000_000, name="SSIS-001.mp4")
-        drifted = self.add("SSIS-001", 7380, 4_000_000_000, drive="R", name="SSIS-001.mp4")
-        unprobed = self.add("SSIS-001", None, 3_000_000_000, drive="A", name="SSIS-001.mp4")
+        drifted = self.add("SSIS-001", 7380, 4_000_000_000, location="onedrive", name="SSIS-001.mp4")
+        unprobed = self.add("SSIS-001", None, 3_000_000_000, location="gdrive", name="SSIS-001.mp4")
         result = self.groups()
         self.assertEqual(result["total"], 1)
         self.assertEqual({item["id"] for item in result["groups"][0]["files"]},
@@ -3729,9 +3267,9 @@ class DuplicateDetectionTests(unittest.TestCase):
     def test_a_shared_name_does_not_drag_in_the_other_parts(self):
         """并的是同名那几份，别的簇不跟着合。"""
         self.add("PPT-019", 6000, 5_000_000_000, name="PPT-019-A.mp4")
-        self.add("PPT-019", 6000, 4_000_000_000, drive="R", name="PPT-019-A.mp4")
+        self.add("PPT-019", 6000, 4_000_000_000, location="onedrive", name="PPT-019-A.mp4")
         self.add("PPT-019", 9000, 5_000_000_000, name="PPT-019-B.mp4")
-        self.add("PPT-019", 9000, 4_000_000_000, drive="R", name="PPT-019-B.mp4")
+        self.add("PPT-019", 9000, 4_000_000_000, location="onedrive", name="PPT-019-B.mp4")
         result = self.groups()
         self.assertEqual(result["total"], 2)
         self.assertTrue(all(group["count"] == 2 for group in result["groups"]))
@@ -3794,15 +3332,15 @@ class DuplicateDetectionTests(unittest.TestCase):
         self.assertFalse(self.groups()["groups"][0]["identical"])
 
     def test_cross_drive_duplicates_are_flagged(self):
-        self.add("SSIS-057", 7200, 5_000_000_000, drive="A")
-        self.add("SSIS-057", 7200, 4_000_000_000, drive="B")
+        self.add("SSIS-057", 7200, 5_000_000_000, location="gdrive")
+        self.add("SSIS-057", 7200, 4_000_000_000, location="onedrive")
         group = self.groups()["groups"][0]
         self.assertTrue(group["cross_drive"])
-        self.assertEqual(group["drives"], ["A:", "B:"])
+        self.assertEqual(group["drives"], ["gdrive", "onedrive"])
 
     def test_kept_group_leaves_the_list_until_its_members_change(self):
-        first = self.add("SSIS-057", 7200, 5_000_000_000, drive="A")
-        second = self.add("SSIS-057", 7200, 4_000_000_000, drive="B")
+        first = self.add("SSIS-057", 7200, 5_000_000_000, location="gdrive")
+        second = self.add("SSIS-057", 7200, 4_000_000_000, location="onedrive")
         other = [self.add("ABW-232", 7200, 5_000_000_000), self.add("ABW-232", 7200, 3_000_000_000)]
         rm_web.w_batch(self.contract, {"ids": [second, first], "operation": "keep-duplicates"})
         result = self.groups()
@@ -3811,7 +3349,7 @@ class DuplicateDetectionTests(unittest.TestCase):
                          "标过都保留的组不计入组数、文件数与可回收")
         self.assertEqual(result["reclaimable"], 3_000_000_000)
 
-        third = self.add("SSIS-057", 7200, 3_000_000_000, drive="C")
+        third = self.add("SSIS-057", 7200, 3_000_000_000, location="gdrive")
         result = self.groups()
         self.assertEqual(result["kept"], 0, "多出一份副本，这组要重新列出")
         regrouped = next(group for group in result["groups"] if group["code"] == "SSIS-057")
@@ -3825,11 +3363,11 @@ class DuplicateDetectionTests(unittest.TestCase):
             rm_web.w_batch(self.contract, {"ids": other[:1], "operation": "keep-duplicates"})
 
     def test_duplicate_rows_keep_the_full_path_for_review(self):
-        self.add("SSIS-057", 7200, 5_000_000_000, drive="A")
-        self.add("SSIS-057", 7200, 4_000_000_000, drive="B")
-        files = {row["drive"]: row for row in self.groups()["groups"][0]["files"]}
-        self.assertEqual(files["A:"]["path"], r"A:\1.mp4")
-        self.assertEqual(files["B:"]["path"], r"B:\2.mp4")
+        self.add("SSIS-057", 7200, 5_000_000_000, location="gdrive")
+        self.add("SSIS-057", 7200, 4_000_000_000, location="onedrive")
+        files = {row["location"]: row for row in self.groups()["groups"][0]["files"]}
+        self.assertEqual(files["gdrive"]["path"], "gdrive:/1.mp4")
+        self.assertEqual(files["onedrive"]["path"], "onedrive:/2.mp4")
 
     def test_reclaimable_keeps_the_largest_of_each_cluster(self):
         self.add("WAAA-415", 7200, 5_000_000_000)

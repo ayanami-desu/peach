@@ -1,382 +1,149 @@
 # 测试与依赖
 
-这份文档讲三件事：依赖怎么装、怎么升级；改完代码要跑哪些测试、CI 怎么分；新测试该写成什么样。
-
-Windows 发布制品的覆盖升级在 Actions 的「Windows 覆盖升级验收」手动执行：填写已发布的起始版本、目标版本及目标制品的完整构建提交。工作流分别验证 ZIP 原位解压和安装包原位安装，每种路径覆盖默认数据目录与 `PEACH_DATA_ROOT` 指定目录，并上传日志。它使用已发布制品，不重新构建或发布；在线更新和失败回滚仍由 `scripts/smoke_online_update.py` 单独验证。
-
-Release 工作流还在干净的 Windows runner 上运行 `smoke_update_tasks.py --apply`，使用临时账本验证安装接受正在运行的采集任务、暂停并保留任务标识、覆盖后自动续跑，以及配置保留。脚本默认只预演；本机可以验证 ZIP 与安装助手协议，安装包实装限干净的 Actions runner。
-
-## 环境与锁文件
-
-纯文档 CI 仍在 Windows 和 macOS 执行 checks，但不安装前端依赖、FFmpeg 或配置 Chrome；混合运行时改动与未知输入保留完整工具。集成按同一选测边界识别文档，显式映射到运行时验收的 Markdown 不豁免全量锁。代码集成先等待全量锁，再取得集成锁，避免等待中的代码任务阻挡文档交付。
-
-依赖由 uv 按锁文件精确复现。源码安装用 `uv sync --locked`。开发、测试和构建在隔离工作树里建自己的 `.venv`，工作树不碰正在服务的环境；主检出的依赖同步与迁移由重启流程负责，见 [运行与配置](OPERATIONS.md) 的「刷新源码运行态」一节（ADR-0091）。
-
-安装全部测试依赖（先完成前端依赖安装和构建，再开始正式验证）：
-
-```text
-uv sync --locked --all-extras
-```
-
-添加直接依赖并同时更新清单和传递锁文件；版本必须精确固定：
-
-```text
-uv add "包名==版本"
-```
-
-构建环境只选择构建依赖：
-
-```text
-uv sync --locked --extra build
-```
-
-提交 `pyproject.toml` 与 `uv.lock`。CI 用 `--locked` 拒绝过期锁文件；Dependabot 的 `uv` 生态负责更新。`uv pip install` 只用于临时环境或安装产物，不用来维护项目依赖。普通 pip 安装 wheel 的冒烟另外独立验证打包声明。
-
-### 接手 Dependabot 的升级
-
-Dependabot 的 PR 一律在本地接管，不在网页上合：
-
-依赖升级须同时提交派生产物。只改 npm 清单与锁文件时，vendor 版本记录或构建结果可能与 Git 中的文件不一致，相关门槛会拒绝；这本身不代表依赖存在兼容性问题。Test 工作流先完成所选前端检查，通过后才启动 Python、浏览器与 wheel 回归。缺少产物时先本地接管重算，不能跳过一致性检查后直接合并。
-
-- npm 的两份清单各有一层派生产物：根 `package.json` 对应 `web/vendor/**` 与 `web/index.html` 的版本注释，`frontend/package.json` 对应 `web/dist/` 的主界面与独立页面包。Dependabot 算不出这些，它的 workflow 拿到的 token 又是只读的，推不回 `dependabot/**`，所以 `npm run check:vendor` 或前端产物检查会失败。
-- uv 与 github-actions 没有派生产物，但 master 在本机集成、通常领先 origin。在网页上合会让两边分叉，回并要在主检出 master 上 merge，被 `scripts/githooks/` 拒收。
-
-每周的升级在一个隔离工作树里一次接完：
-
-1. 运行 `scripts/adopt_dependency_bump.py --all-open --co-author '<工具> (<模型>) <厂商 noreply>'`，看它列出的 PR 与各自的清单。
-2. 加 `--apply`，按编号从小到大一个 PR 一个提交：取回分支，只把它自己对清单的改动三方合并套进来，npm 重算派生产物，uv 跑 `uv lock --check`。
-3. 两个 PR 改到相邻行时脚本停下，报出冲突文件并在 `build/adopt-pr-<编号>.txt` 备好提交说明。按它印出的步骤解冲突、重算、提交，再跑一次 `--all-open --apply`；已接管的 PR 按提交说明跳过。
-4. 跑 `test.ps1 full`，走 ready / integrate，推送 master 后按它印出的 `gh pr close` 逐个关 PR。PR 显示为 Closed 而不是 Merged，因为提交是在本地重做的。
-5. 同一轮跑 `scripts/check_reference_updates.py check --cadence weekly --diff`，查 Dependabot 管不到的上游：按 sha 钉住的 amane 是否前移，Peach 代码直接消费或逐字复制的参考来源是否变化。审阅与 `accept` 按 `peach-reference-evidence` 技能；amane 前移单开分支升级。
-
-单个 PR 用 `--pr <编号>`，流程相同。`.github/dependabot.yml` 把每个生态的 minor 与 patch 合成一个 PR，semver-major 照常一个包一个 PR，接管前先读变更说明。需要改代码的大版本在隔离工作树完成迁移和验证；TanStack Table 的大版本也由 Dependabot 检查。
-
-版本来自 `src/peach/__init__.py`，已纳入 uv 缓存键；源码版本更新后再次同步会刷新安装元数据。缓存规则采用 [uv 官方动态元数据机制](https://docs.astral.sh/uv/concepts/cache/#dynamic-metadata)。
-
-### 每次发版检查
-
-依赖升级是定版前的固定批次。发版授权包含检查、适用升级、兼容修改、派生产物、验证和集成，不能只列出可用更新就进入定版。
-
-1. 开工先做只读发版审阅和两份 npm 高危审计，覆盖两份 Python 清单与锁、两份 npm 清单、Docker 镜像、GitHub Actions、SHA 固定的运行依赖及登记的参考来源。`scripts/release_review.py` 的 `--public-github` 模式匿名读取 GitHub 元数据；审计使用 `scripts/npm_audit.py`，分别指定根目录和 `frontend`。审阅先于升级方案、全量回归与制品构建。
-2. 在隔离工作树中优先接管 Dependabot 的独立差集，保留来源，再核对稳定版本和未被 PR 覆盖的更新。审阅大版本迁移、真实消费者、字段语义、许可证和平台兼容性，固定版本与锁并重算 vendor 和前端产物。运行时遵守平台范围和官方支持周期；参考变化只作证据。不能升级的逐项记录新旧版本、具体兼容问题、失败证据和恢复条件，其余升级继续完成。
-3. 完成定向回归和适用预览确认后，在重型验证前复核依赖及安全更新，记录提交、清单、锁与固定来源，冻结本批输入。检查未完成或仍有待处理安全更新时，先处理输入，不启动全量回归或制品构建；不能把冻结检查推迟到集成、打包或生产重启后。
-4. 对冻结输入完成 Windows、macOS 正式全量与适用制品验证，再走 ready / integrate 和运行核验。同环境的有效测试按正式入口复用，只补受变更影响的检查；制品按其实际源码、锁、构建入口和目标平台判断能否复用。文档或维护 CLI 改动不触发运行内容未变的桥和 Docker 验证制品重建。版本提交的 CI 演练和标签发布仍遵守既有门槛。
-5. 在干净 master 上运行 `release_tag.py --bump auto --apply`，保留定版及标签前的安全复查，再确认发行说明并继续 `--ship --apply`。冻结后出现的普通更新登记到后续批次；发现必须处理的安全更新时返回独立补充，重新冻结并验证实际影响，不整批无差别重跑。
-
-`release_tag.py --bump auto --apply` 在写版本前调用 `release_review.py`，检查两份 Python 锁、两份 npm 清单的可用更新、Dependabot 待处理 PR、SHA 固定的运行依赖及其最新稳定发布，以及登记表中全部非 manual 参考来源。独立检查入口为 `scripts/release_review.py`；报告存于 `build/release-review.json`，含提交、时间、差异与逐项错误。Docker 与 GitHub Actions 的更新以 Dependabot PR 为线索，不据空 PR 列表断言全部最新。
-
-网络失败记为「未取得」，其余检查继续；检查不全时版本文件保持原样。审计门槛仍由发布入口执行，不能用暂缓升级的说明放过高危漏洞。原文证据按 `peach-reference-evidence` 审阅后接受，人工笔记不被网页覆盖。升级批次是发布工作流程；现有 `release_tag.py` 不自动改依赖或创建升级分支。
-
-用户手动提供的公开参考正文可通过 `--reference-evidence SOURCE=FILE` 明确用于本次检查。报告记录用户取证渠道、原始 URL 与正文 SHA-256，直接网络取证仍标为「未取得」；参数不修改来源登记、快照或后续发版的默认检查。
-
-## 验证频率
-
-测试直接使用项目入口，不设置机器级资源槽位、CPU、内存或进程数限额。每轮并发由 `-Jobs` / `--jobs` 选择，默认按本机核数取最多四路，显式正整数不设机器级上限。取消时只按已创建的 PID 清理本轮子进程树；全量测试与集成仍按代码一致性要求互斥。
-
-Python 静态检查使用开发依赖 Ruff，随每个正式测试域扫描全仓自有 Python 文件，覆盖应用、脚本、测试和打包入口。规则为 Pyflakes（`F`）、Ruff 支持的 Pylint 错误规则（`PLE`），以及可变默认参数、`finally` 跳转、无效表达式和循环闭包规则（`B006`、`B012`、`B018`、`B023`）。生成的 `downloads_clouddrive_pb2.py` 排除；公开导出的导入用显式同名别名声明。命名、行数、空行和复杂度偏好不属于这套 lint 门槛。
-
-无效转义由 Ruff `W605` 阻断，Windows 路径使用原始字符串或双反斜杠。正式入口和定向调试都将未处理的后台线程异常记为测试错误，保留原始 traceback；临时账本须在线程退出后清理。Starlette TestClient 使用开发依赖 `httpx2`，应用的 HTTP 客户端仍按运行时清单安装。
-
-前端通过 `allowScripts` 逐项登记安装脚本策略，未登记脚本由 `frontend/.npmrc` 拒绝安装。`@sentry/cli` 使用锁文件中的平台二进制包，禁用额外下载脚本；`fsevents` 的可选原生构建也禁用，文件监听沿用 Node 提供的能力。升级后核对实际安装、构建和 CLI 可用性，不批量放行脚本。
-
-文档与文案检查包含 seiso 稳定规则和最终状态检查，随正式入口执行。分类、范围、独立检查与预览规则用法见 [文档与界面文案](WRITING.md#检查与复核)。seiso 由开发依赖与锁文件固定，运行 Peach 不需要它。
-
-不是每次都跑全量：本机按改动涉及的域选测，CI 按提交类型决定覆盖多宽。
-调试先跑相关用例，冻结代码后运行一次 `auto`；不要手写逐域循环重复执行公共用例。测试失败先定向复现，修复后由 `auto` 判断哪些域需要补测。
-
-| 场景 | 验证 |
-| --- | --- |
-| 本机修改 | 正式入口默认 `auto`，按影响域取并集；同代码、环境与范围的有效记录可复用；受信 CI 证明也可用于集成交付，见下节 |
-| 普通 PR | Python 3.14：macOS 与 Windows 均按影响域验证 |
-| 普通主线提交 | Python 3.14：相对最近成功且属于当前祖先的主线 Test，选择 macOS、Windows 的影响域及适用前端、浏览器与 wheel |
-| 实际依赖、迁移、共享测试设施、未知影响面 | Windows 与 macOS 的 Python 3.14 全量 |
-| 手动 CI | 完整系统矩阵 |
-| wheel | Windows 与 macOS 各一次 Python 3.14 独立最小安装 |
-| Release | 复用同 SHA 主线成功 CI；Windows 独立 EXE 与 Apple Silicon、Intel DMG 分别构建和验收 |
-
-Python 全量按文件稳定分片，Windows 四片、macOS 两片。`auto` 按影响域选择文件；唯一选测文件达到 150 个时，两平台复用各自的分片数；更小的 `auto` 两端均用单片。Windows 独立 Python 分片按 `scripts/ci-python-timings.json` 的成功日志耗时分配，不计已经交给浏览器任务的本机耗时先验；macOS 保持文件名轮转。每片使用独立 runner，仍按同一基线和影响域运行，汇总任务要求所有分片和计划选择的任务成功。分片子进程不签发记录。
-
-Test 工作流的 `web-bundle` 在 Ubuntu 上统一执行 tsc、lint、Vitest、构建及产物差异检查；lint 同时检查无诊断且扫描文件数大于零。CI 的 Python 任务把这三个工具用例交给前端任务，把两个真实浏览器用例交给浏览器矩阵；同模块的契约测试仍执行。任务身份由固定工作流与 job 名识别，未知任务和本机保留完整测试。承担部分 CI 职责的运行不签发本机测试记录。
-
-浏览器用例由 `web-e2e` 的六个 Windows runner 分担，每片有自己的服务、演示库与日志。`ci_plan.py` 按 `ci-browser-timings.json` 的实测秒数分配文件，新文件使用默认权重；每个文件恰好执行一次。每片经项目入口的 `-Focus` 运行分配的浏览器文件，首启文件始终归首次设置服务。它装 Node 24、前端依赖、ffmpeg，并经 `PEACH_E2E_CHROME` 指定 Chrome。本机浏览器入口与并发语义保持完整。
-
-PR 与普通主线计划按改动选择前端、vendor、wheel 与浏览器任务，文档只执行适用检查；实际依赖、未知影响、无已验证基线与手动验证包含全部任务。`frontend-ready` 汇总所选前端检查，失败时不启动后续完整回归；未选择前端任务的计划可正常执行。产物差异以文件统计显示。`verified` 根据计划核对必需任务，缺失、失败、取消及必需任务跳过均判失败。Actions 工作流本身由固定版 actionlint 检查语法、表达式、依赖与脚本。PR 更新取消同 PR 的过期运行，主线 Test 按提交各自保留结果。GitHub 的计划任务与 Python 任务使用同一个已验证基线，不以最近一次失败的推送提交代替。
-
-### 受信 CI 测试证明
-
-最后内容、测试和构建完成，适用预览确认后提交并执行工作树 `preflight`，再选择本机正式入口或 PR Test。输入冻结期间不补无关润色；新增失败由原入口按实际影响补验，不同时启动两条完整回归。
-
-Test 的计划任务导出内容树、实际检出提交、基线、范围、完整矩阵与运行尝试，上传 `test-proof-<尝试编号>`。`ready --ci-run <运行编号>` 经 GitHub 官方 API 核对同仓库、相同 HEAD、成功 Test、内容树、完整计划和全部必需平台及分片；下载的证明 ZIP 须与服务端 SHA-256 相符。主检出核验工作树时，文件选择、导入索引、浏览器和权重均显式读取待交付根目录，索引缓存按根区分。全量计划不依赖已有差异基线。缺失、失败、取消、过期、fork 来源与内容不符均拒收。
-
-证明协议和执行入口须与当前目标主线保持相同逻辑；逻辑改动先经本机完整验证，再成为主线的受信协议，Python 纯注释按内容指纹判断。协议文件集合由 `ci_test_evidence.py` 维护，见 [ADR-0151](adr/0151-trusted-ci-test-proof.md)。CI 中保留 `Fresh`，每个 runner 仍执行自己的必要任务；本机复用不依赖复制 runner 的临时目录。
-
-回执只保存运行定位信息与核验摘要，`ready` 和 `integrate` 每次都重新查询远端状态，不把 CI 证明写成本机环境的通过记录。只重跑失败作业时，使用该运行各任务的最新结果，并核对原计划的同一内容；旧失败不会因合并多个尝试而隐藏。已取得有效本机记录时仍可沿用本机路径。CI 证明不替代明确要求的本机桌面、特殊硬件、真实数据或生产生效核验。
-
-独立 Star 图工作流只生成图表并写入专用分支，改动选择 `tooling` 与工作流检查；混合提交仍按其他文件补齐影响域，未知工作流保留全量判断。
-
-Python 分片上传完整测试输出；浏览器分片上传 TAP、服务日志及已脱敏网络日志，保留 14 天。npm 审计遇到 high 或 critical 漏洞直接失败；只有临时网络错误最多请求三次，在前两次失败后分别等待 15 与 30 秒，未知响应不当成通过。
-
-GitGud 流水线（`.gitlab-ci.yml`）的 `verify-linux`、`verify-windows`、`verify-macos` 在分支与合并请求上跑改动域加本平台的平台敏感用例：基线是最近一条成功的主线流水线里、作为本提交祖先的那个提交，由 `scripts/ci_scope.py` 判定；先用正式入口跑 `auto --base <基线>`，选域与退回全量的规则同本机 `auto`，再用 `-Focus` 跑 `PLATFORM_TESTS` 里本平台的用例。取不到基线（首次推送、强推、接口不可达）、改了 `.gitlab-ci.yml` 本身，或改动落到必须全量的面时只跑一次全量。版本提交（`chore(release): 版本 X`）的主线流水线是发布演练：三平台全量、媒体构建、桌面安装升级与镜像验收都成功后登记候选；`--ship` 等演练成功才打标签。标签核对同一提交、验证任务和产物 SHA-256，发布已验收的相同文件与镜像，不重新构建。候选身份、保留与回收见 [ADR-0127](adr/0127-verified-release-artifact-promotion.md)，全量范围见 [ADR-0119](adr/0119-mainline-changed-scope-release-full-suite.md)。
-
-演练先读取发布桶真实占用，媒体编译可与正式回归并行；构建清单齐备后在安装冒烟前核对包含暂存与公开副本的精确峰值，候选登记与正式上传仍复查。媒体缓存身份绑定固定源码、构建脚本、工具链、平台与架构；GitHub 外层键和包内回执使用同一身份，两平台二进制和对应源码均逐文件校验。缓存未取得或校验不符时重新构建，缓存不代替独立制品验收。Docker 发布核对演练记录的 image ID、提交与版本，在桌面包和 Release 就绪后推送。版本发布与覆盖升级验收不取消进行中的同目标运行；覆盖升级需明确选择目标版本及完整构建提交。
-
-浏览器用例覆盖 `frontend/e2e` 下全部 `*.test.ts`，包括子目录。`setup.test.ts` 由 `SetupE2ETests` 在首次设置服务上执行，其余文件在已配置的演示库服务上按文件并发、文件内串行。并发数取 `PEACH_E2E_CONCURRENCY`；未设时本机取逻辑核数的四分之一、上限 4，CI（`GITHUB_ACTIONS=true`）为 1。每个文件单独起一次 Node，限时 600 秒，取得自己的完整 TAP；空出的通道马上领下一个文件，没有批与批之间的等待。并发时文件按 `scripts/ci-browser-timings.json` 的实测秒数先长后短排队（没测过的按 30 秒算），测量动画、密度切换与等待态替换的文件（`tests/test_web_e2e.py` 的 `TIMING_SENSITIVE_SUITES`）在并发文件全部结束后逐个串行；并发为 1 时按设计决定、交互回归和路由冒烟的顺序逐个执行。任一文件失败或超时，整轮验证失败。并发的文件共用一个服务和演示库：用例触发的写请求只能落在别的用例不断言的状态上，否则用 `page.route` 拦下或归进时序敏感的串行文件。控制台在每个文件结束时输出成败与耗时；每个文件的 TAP 日志 `e2e-<文件名>.tap`、首启的 `setup.tap` 与服务访问日志 `serve.log` 保存在 `build/agent-verification/browser/`，CI 在测试结束后上传其中的 TAP 日志。
-
-需要外部前置条件（Node、ffmpeg、Chrome 等）的用例，本机缺条件时跳过，在 CI（`GITHUB_ACTIONS=true`）里判失败，判定集中在 `tests/support/conditions.py` 的 `missing_prerequisite`。所以 `python` 矩阵里 `core` 以外的行也装 Node，Windows 行另装 ffmpeg 与 Chrome。
-
-本机默认并行：入口传 `--jobs auto`（Windows `-Jobs`）。选中的快速检查先执行，包含仓库与资源位置、参考资料登记，以及前端类型、样式和文案检查；失败时不启动后续测试。普通测试切成并发数四倍的片，按实测耗时分配，每个子进程各领一片、先完成的接着领下一片。内部已并行的 Vitest 与浏览器容器分别独立执行，不与普通分片或彼此重叠。`-Jobs 1` 使用同一阶段顺序，普通分片串行运行。父进程汇总成败、用例数与耗时后签发一份记录，一片红整轮红。
-
-每次运行把各测试文件的墙钟（含类级准备）并进共享记录目录的 `test-timings.json`，普通分片按它先长后短装进当前最空的一片（没测过的文件取中位数）。父进程把划分交给子进程，父子用同一份；CI 的 Windows 使用固定实测权重，macOS 按文件名轮转。测试账本、仓库夹具与端口须彼此隔离。运行器为每次运行创建 `peach-test-run-<时间戳>-*` 目录，`TEMP`、`TMP`、`TMPDIR` 与 `tempfile.tempdir` 指向它，分片子进程沿用同一目录，结束时删除；中断遗留超过一天的运行目录在下次启动时清扫。用例仍负责回收自己的临时资源。
-
-分片结果分别显示真实退出码、是否取得完整报告及补验覆盖状态；失败明细列出分配文件、报告解析错误及是否因完成后未退出而回收。报告成功不代替正常退出，正文通过但覆盖未完整也不签发成功记录。后台线程测试在断言失败时同样释放事件、请求停止并等待线程退出，再清理临时账本。
-
-正式记录的 `phases` 保存输入快照、历史记录读取、恢复规划、测试执行和结束核验耗时；测试执行内另列快速门槛、普通测试及各前端容器。父子阶段有包含关系，不能相加。`elapsed` 从取得输入快照前开始计时，不包含入口安装依赖、工具预检与取得全量锁前的等待。恢复规划在同一输入快照内复用域集合、测试导入图与路径影响；检查点发现输入改变时重新规划，不沿用旧图。
-
-Windows 的路径、挂载、托盘、证书、进程编码、更新、认证及迁移属于 `core`。构建和工作流修改选择 `packaging` 与 `tooling`；测试调度自身仍全量。仅 uv 工具版本或项目展示字段变化不算依赖图变化；无法解析时全量。
-
-人名对照等业务测试保留：修改相关域时执行，主线全量也执行。测试数据库从真实迁移生成模板，各用例复制独立临时库；迁移测试直接执行迁移。重试测试注入 sleeper 并断言退避序列。重复继承的测试只保留一份。
-
-## 写什么测试
-
-纯 HTTP 请求契约可使用 `tests/support/web.py` 的 `route_client`：请求经过真实路由、中间件和依赖，不启动后台服务；调用方仍须准备完整临时账本。服务启动、恢复与关闭语义使用正常 lifespan，由集成测试覆盖。
-
-浏览器入口通过 `PEACH_E2E_NET_LOG_DIR` 保存 Chromium 网络事件日志；模式为 `HeavilyRedacted`，文件位于 `build/agent-verification/browser/network/`，CI 与 TAP 一起上传。网络请求失败仍使测试失败；排查 `ERR_NO_BUFFER_SPACE` 时同时核对 TAP 与该次浏览器的网络事件，不根据错误字样推断机器资源状态，也不添加放行重试。
-
-[Chromium 572515601](https://issuetracker.google.com/issues/572515601) 的 Windows 回环建连缺陷由 Playwright 默认禁用的 `TcpPortRandomizationWin` 规避，隔离 E2E 浏览器不另传 `--disable-features`：同名开关的最后一个值会覆盖整串默认值。`browser-launch.test.ts` 用真实 Chrome 启动参数与原生 Playwright 对照，确认默认列表保留且包含该项。生产浏览器、页面断言、请求失败判据及机器网络配置不变；独立的启动超时不能据此标为已修复。
-
-测试应在用户可感知的行为错误时失败。页面的请求、缓存、选择、错误反馈和路由由组件测试与浏览器测试验证；CSS 层叠、主题、尺寸和交互后的样式由浏览器读取计算值。
-
-源码检查集中在通用规范、隐私边界、产物、依赖和跨语言常量一致性。组件名称、变量名、某个函数是否被调用、端点字面量出现几次和文档的具体措辞，不单独设门槛。一个失败模式优先在最便宜且能真实触发它的层验证；组件已验证的业务分支，不在 Python 中再逐段比对其源码。浏览器保留真实导航、布局、焦点与层叠等需要浏览器才能成立的检查。
-
-按下面的分工写：
-
-- 行为（点了发出什么请求、状态怎么变、算出什么值）写 vitest（`frontend/test/`）或 `tests/test_web_js.py`；后端调用真函数或真接口。
-- 用户定过的设计决定写进对应区域的 `frontend/e2e/design-*.test.ts`（共用 `design-fixture.ts`），读 `getComputedStyle`；布局与运行期不变量进 `smoke.test.ts`。
-- 源码文本断言只减不增，由 `tests/test_source_assertion_ratchet.py` 按文件计数拦截。已有行为或浏览器验证的实现文本断言直接清退；确有行为缺口时才补用例，并同步降低基线。
-- 先列失败模式再写用例。异步请求的中间态用手动放行的 Promise 验证；假 fetch 在同一个 `act` 里就回话，会掩盖请求未完成时的时序问题。
-- 修缺陷先写一条会失败的用例，看它红了再修；修完按同一写法搜别处，有同类就收成共用实现。没有行为缺口的改动（文案、纯样式）不补回归用例。
-- 使用应用 lifespan 的测试应显式准备账本状态：正常后台服务使用完整迁移的临时账本，缺失或迁移未就绪的场景验证后台服务保持停止。用 `assertNoLogs("peach", level="ERROR")` 覆盖服务启动、请求和正常退出；故障注入用 `assertLogs` 核对预期原因，不能仅凭接口返回成功放过非预期后台错误，也不能全局屏蔽错误日志。
-- `support.gitrepo.seed_repository` 的临时仓库在命令返回前完成 Git 自动维护；仓库局部设置 `maintenance.autoDetach=false` 与 `gc.autoDetach=false`，避免后台写入与模板复制、临时目录回收竞争。保留正常维护和清理错误，不修改机器的 Git 配置。
-- 不写同义反复的用例：断言常量等于它自己、mock 掉被测对象再断言 mock 被调用，都证明不了什么。
-
-### 采集、任务与资料的回归边界
-
-只覆盖本次真实风险，复用既有样本和适当测试层；相关修复可共享临时样本与验证，不把每个任务分别扩成全量。
-
-| 修改范围 | 验证内容 |
-| --- | --- |
-| 番号解析与来源匹配 | 从真实失败文件名经过规范番号、站点查询到候选身份。覆盖确需等价的分隔符、前后缀和补零写法，以及不能合并的反例；只用站内写法不能证明流水线输入有效。同番号多作品不以字符串等价直接合并。 |
-| 暂停、取消与恢复 | 按已声明的控制边界分别核对父任务、已开始的工作、后继任务、浏览器及检查点；页面或状态字段显示暂停不能单独证明执行停止。 |
-| 来源失败与诊断 | 区分成功、正常无结果和失败；相关记录能关联任务、影片或文件、来源、阶段、异常原因及适用的构建/采集器版本，并验证脱敏。与故障无关的字段不强制填充。 |
-| 人工资料与来源刷新 | 按[人工资料与身份边界](SOURCING.md#人工资料与身份边界)验证字段保护，以及清空、恢复来源、修改归属和身份合并各自的语义。 |
-
-旧编号、快照或已完成断点可能挡住修复时，按[升级生效范围](../.claude/skills/peach-worktree/SKILL.md#修复的升级生效范围)验证定向补修。测试结论说明实际环境、覆盖范围、跳过及未取得项，不以用例数量代替原场景验收。
-
-### 来源录制回放
-
-`tests/fixtures/source-replay/<来源>/<番号>.json` 是站点真实响应的录制，`tests/test_metadata_replay.py` 用 [`sources/replay.py`](../src/peach/sources/replay.py) 的 `ReplayTransport` 离线重跑同一次 `query`，结局须与录制当日一致：成功时整份 payload 逐键相同，失败时细档与措辞相同。回放期间套接字建连与域名解析一律抛错；录制里没有的请求、录了却没被问到的请求都判失败。改了取页方式或解析结果，按差异核对后重录。
-
-录制按「方法 + 规范化 URL + 请求体 SHA-256」匹配，不比请求头。响应只存状态、最终地址与 `content-type`；图片只存尺寸与哈希，回放时生成同尺寸灰图；视频只存字节数。录制里的 payload 是当日解析器的输出、经人工过目，用例另核番号、标题、日期、女优、厂牌与封面地址的形状。
-
-录制只由 `scripts/record_source_fixtures.py 来源:番号` 联网取得，CI 里该脚本直接拒绝。它把代理设置、连接设置与生产冷却记录复制进临时根再请求，冷却期内的站照样不发；不写 ledger，也不写生产冷却。默认不带 Cookie；`--with-credentials` 只用于不登录拿不到作品页的站，Cookie 值、CSRF 令牌与账号标识换成固定假值。去掉脚本、样式等与解析无关的区块后，脱敏与瘦身两步各回放一次，结局变了就不采用这一步。连接失败、冷却、限流、验证页、封禁与地区限制不写入录制文件，记为「未取得」。已有录制要加 `--update` 才重录。番号取站上公开作品，不从个人馆藏挑选。
+测试跑在 Python 的 unittest 上，由一个入口负责选域、准备环境、签发记录与分发分片。测试文件在 `tests/` 下；前端另有一套 vitest 与浏览器用例，由 `web` 域转交执行。
 
 ## 正式入口
 
-测试只从下面两个入口跑，入口负责选测、签发测试记录和环境预检，自己拼的命令拿不到有效记录。
+两个平台各一个入口，契约相同：
 
-Windows 按影响域验证：
-
-```powershell
-& .\scripts\test.ps1
+```text
+./scripts/test.sh auto
+./scripts/test.sh checks
+./scripts/test.sh media --fresh
+./scripts/test.sh auto --resume
+./scripts/test.sh web --focus tests/test_web_ui.py
+powershell -File scripts\test.ps1 -Scope auto
+powershell -File scripts\test.ps1 -Scope web -Focus frontend/test/keyboard-shortcut.test.ts
 ```
 
-macOS 按影响域验证：
+- `scripts/test.sh` 的第一个参数是域，其余参数原样透传给运行器；`scripts\test.ps1` 按参数名接收（`-Scope`、`-Fresh`、`-Resume`、`-Focus`、`-Base`、`-ShardIndex`、`-ShardCount`、`-Jobs`）。两边接受的域名集合一致。
+- 不带域时按 `auto` 判域。
+- 入口先定位 venv：本工作树有 `.venv` 就用它，否则用主检出（`git rev-parse --git-common-dir` 的父目录）那一份；随后设 `PYTHONPATH=src` 调 `scripts/test_runner.py`，并核对 `peach.__file__` 确实落在当前工作树的 `src/` 下，免得拿别处源码跑出绿结果来。
+- `python -m unittest discover` 不能当验收结论：它不判域、不准备环境、不签发记录，也不排分片；验收只用 `scripts/test.sh` 或 `scripts\test.ps1`。只跑几条指定用例见[定向调试](#定向调试与局部记录)。
 
-```sh
-./scripts/test.sh
-```
+`scripts/test_runner.py --list-scopes` 打印运行器当前接受的域名。
 
-显式全量用 Windows `-Scope full` 或 macOS 首参数 `full`。入口通过 `scripts/test_environment.py` 准备 Python 依赖，再核对源码位置、选测并记录慢测试。隔离工作树按 `uv sync --locked --all-extras` 同步自己的 `.venv`；缺少本地环境时用主检出的 Python 启动准备，测试仍在新建的本地环境里运行。同步保留启动解释器的 Python 版本，忽略外部 `VIRTUAL_ENV` 和 `UV_PROJECT_ENVIRONMENT`，拒绝工作树环境指向主检出。
+## 测试域
 
-主检出只按 ADR-0091 只读检查依赖；缺包或检查失败时以 `3` 退出，依赖变更由重启流程执行。找不到 uv、锁文件过期或同步失败也会停止测试。前端依赖与构建仍按上文安装。完成安装和编辑后再启动最终验证；运行中发生改动时，完整批次按下述规则保留未受影响的文件结果。
+域是 `scripts/test_runner.py` 里的 `SCOPES` 表：每行是一组测试文件名或通配，表本身是域名与文件归属的唯一来源。
 
-测试入口不取得机器级重负载锁。全量验证与集成只按下文的仓库代码一致性锁互斥；浏览器和 Vitest 的阶段顺序由测试入口安排。
+| 域 | 覆盖 |
+| --- | --- |
+| `checks` | 仓库策略与文档层：文案、依赖清单、脚本策略、文档契约 |
+| `catalog` | 目录、索引、资料页与库内操作 |
+| `follow` | 关注源、订阅与抓取 |
+| `media` | 媒体文件、探测与取流 |
+| `metadata` | 刮削、识别与实体合并 |
+| `packaging` | 打包与发布产物 |
+| `tooling` | 仓库脚本与工具链 |
+| `web` | 前端产物、界面用例与浏览器用例 |
+| `core` | 核心运行时：配置、API 骨架、任务、错误上报 |
 
-全量先单独跑一片秒级检查（`test_runner.GATE_TESTS`：仓库策略、编码、文案终态、上下文预算、源码断言棘轮、复杂度、Python lint、外发代理、仓库整洁与依赖清单，合计约 1 分钟），有一项不过就不起其余分片。
+`full` 跑全部域并取得机器级全量锁。
 
-全量失败后，入口从逐条结果里取出失败的 Python 用例、e2e 文件与 vitest 文件，不超过 6 个文件时用定向入口逐个单独重跑一次。单独重跑通过的，记录照样签为通过，名字写进记录的 `flaky` 字段并打印出来；单独重跑仍失败、失败面更大、或浏览器容器整个没起来的，按真实失败处理。同一用例反复出现在 `flaky` 里，说明它的等待写法或时限需要修。
+`auto` 的判定过程：取相对 `--base`（默认 `master`）的改动文件，已提交、工作树与未跟踪文件都算；先按 `AUTO_SCOPE_FILES` 精确匹配文件名，再按 `AUTO_SCOPE_PREFIXES` 匹配路径前缀，命中的域全部选上。没有改动时只跑 `checks`；有文件落不进任何规则、或落在必须整体验证的面（依赖清单、构建配置、流水线定义一类）上时，跑 `full`。
 
-本机全量验证与代码集成共用 `full-suite.lock`，从取得代码和环境快照一直持有到记录写入完成。仅修改两份 README 或 `docs/` 下 Markdown 的集成只取得 `integration.lock`，仍核对工作树、验证记录与冲突，不等待无关全量测试。
-锁忙时按到达先后排队：等待者在锁旁的 `full-suite.lock.queue/` 放一张以纳秒时刻开头的票，
-前面没有活票时才去抢锁，拿到即撤票；提示里打印持有者与前面排队的个数。票主进程退出后，
-它的票由后来者清掉。最长等 30 分钟；超时撤票退出，不执行测试或合并。集成事务本身仍由
-`integration.lock` 串行保护。部分域验证与 CI 分片不签发独立的本机全量记录。
+同一个测试文件可以属于多个域，几个域一起选时文件只跑一次。新增测试文件要登记进 `SCOPES`：`tests/test_scripts.py` 有一项检查会列出不属于任何域的 `tests/test_*.py` 并失败。
 
-锁旁的持有者信息用独立文件锁保护读写和清理；主锁仍负责验证与集成互斥。等锁线程关闭记录文件后，持有者才删除记录，避免 Windows 文件共享冲突。
+## 环境与锁文件
 
-测试入口退出码：`0` 验证有效，`1` 用例失败，`2` 参数或锁等待失败，`3` 环境预检失败，
-`4` 验证期间代码或依赖变化，尚未取得当前状态的完整记录。Windows 托盘遇到 `4` 最多执行三轮完整验证，
-只有取得有效记录才继续打包；用例失败直接停止。
+- Python 依赖锁在 `uv.lock`，版本写在 `pyproject.toml`。入口调 `scripts/test_environment.py`：主检出的 `.venv` 是部署与本地服务共用的那一份，只读检查是否就绪；隔离工作树各自按 `uv sync --locked --all-extras --no-install-project` 同步一次，免得拿旧依赖跑新代码。同步失败退出码 3。
+- 文档检查走 `uv run --locked --extra dev seiso check`；`dev` extra 里是 `filelock`、`ruff`、`seiso` 与测试用的 `httpx2`。
+- 前端依赖锁在 `package-lock.json`：根目录那份供 `web/vendor/` 的第三方资源，`frontend/` 那份供构建与测试。装齐用 `npm ci`；`package.json` 里的版本精确钉住，不带范围符。
+- 外部前置条件缺失按 `tests/support/conditions.py` 的 `missing_prerequisite` 处理：本机没有 Node、`frontend/node_modules`、ffmpeg 或浏览器时显式跳过；`GITHUB_ACTIONS` 或 `GITLAB_CI` 为 `true` 时判失败，因为那里缺前置条件是工作流写错，跳过会让用例永远不执行。
+- 起分片之前有一次外部工具预检：只判本次域真的会用到的工具，用不到的只作提示。被权限挡住的工具会让本次运行退出码 3；确认与本次改动无关时用 `PEACH_SKIP_PREFLIGHT=1` 跳过预检，不要改测试或跳过用例。
 
-正式入口会在创建测试分片前探测 PATH 中的外部工具。工具路径存在但当前权限不能启动时，
-入口以一条环境结论退出，不把同一个 `CreateProcess` 权限错误散落到多个用例。整条
-`scripts/test.ps1` 要在正常 PowerShell 权限下运行；权限不足时补权限再原样重跑，
-不拆成单测也不跳过用例。
+## 运行记录与锁
 
-判失败的只有本次所选域真的会用到的工具，其余启动受限的工具只打印一行提示：受限环境里
-ffmpeg 起不来是事实，但它不该挡住一次只改文档的 `checks`。域由选中的测试源码推出来。
-确认本次无关时用 `PEACH_SKIP_PREFLIGHT=1` 整体跳过预检；分片子进程不重复预检。
+- 记录写在主工作树的 `build/agent-verification` 下（由 `git-common-dir` 的父目录定位），一个仓库的所有工作树共用同一批记录。
+- 一份记录的键是输入快照摘要：代码、依赖清单与环境指纹一起算。24 小时内、输入与范围都匹配的记录直接复用并打印一行说明，不重跑。`--fresh` 强制实际重跑。
+- 正式运行取锁：`full` 先取全量锁 `full-suite.lock`，等待上限 1800 秒（`--lock-timeout`，取值 0 表示锁忙时立即返回）；再按状态摘要在同目录取一把 `<摘要>.lock`，同一状态的验证不会并行两轮。
+- 锁忙时退出码 2，并打印持锁的一方与在跑的范围。
+- 退出码：0 通过；1 有测试失败；2 锁忙或参数不合法；3 环境或外部工具不可用；4 验证期间输入改变，已保留未受影响的结果，用 `auto` 补齐。
 
-### 交付预检与 PR 绑定
+## 分片与并行
 
-最后交付提交完成后，先在当前隔离工作树根目录运行元数据预检，再开始耗时验证或推送。预检核对工作树干净、目标分支已纳入，以及提交主题和署名。
-
-Windows（PowerShell 7）运行预检：
-
-```powershell
-& .\.venv\Scripts\python.exe -X utf8 .\scripts\agent_worktree.py preflight
-```
-
-macOS/Linux（zsh）运行同一预检：
-
-```zsh
-./.venv/bin/python -X utf8 scripts/agent_worktree.py preflight
-```
-
-`preflight` 不安装依赖、不计算测试环境身份、不读取或签发测试证明，也不访问远端 PR。退出码为 `0` 只表示元数据通过；`tests` 与 `pull_request` 仍是 `not_checked`。`ready` 和 `integrate` 继续使用相同元数据判据，并核对当前内容对应的正式测试记录。
-
-`integrate` 在合并前通过工作树的 GitHub CLI 仓库上下文取得 PR。PR 必须开放，`headRefOid` 等于工作者当前提交，`baseRefName` 等于集成目标分支；成功回执保留 PR 链接及这两个身份。未取得 PR、字段无效或身份不匹配时停止，不改变主线内容。此核对不替代 PR 审阅、对应提交的 CI 与既有预览确认。
+- 本机：`--jobs auto` 按核数决定同时跑几个分片子进程，默认串行，正式入口传 `auto`。
+- CI：`--shard-index` 与 `--shard-count` 让各片独立跑；`--shard-plan` 是父进程按耗时数据划好的逐片名单，`--timings` 回传每片的成败与逐用例耗时。不给计划时按文件名轮转。
+- 分片不签发本机记录，只把成败与逐用例结果交回父进程汇总；每次运行不论串行还是分片，都照常写运行历史。
+- `web` 域里既有纯粹读产物的断言，也有要跑 `tsc`、`oxlint`、`vitest` 与浏览器的容器用例，后者按阶段单独执行，不与其他文件混在同一批。
 
 ## 定向调试与局部记录
 
-Windows 的 `-Focus` 接受 Python 模块、类、方法或仓库相对路径，可传数组；通过 `pwsh -File` 调用时也接受一个逗号分隔参数。macOS/Linux 对每个选择器重复传 `--focus`。入口统一去重，拒绝空项并核对源码及隔离依赖。选择器不存在、浏览器路径超出 `frontend/e2e` 或与分片混用时拒绝执行。浏览器用例只收单个 `frontend/e2e/*.test.ts` 文件，不收目录；要跑全部 e2e 时把文件逐个列进数组。
+改一个模块时用 `--focus` 只跑相关用例，几秒到几十秒出结果：
 
-浏览器冒烟逐个文件执行，一个文件失败仍跑完其余文件，最后把各失败文件的输出与日志路径一起报出；一轮全量就能看到所有 e2e 失败。搜索建议、键盘列宽调整和嵌套弹层的失败输出另保留当时的输入、焦点、弹层、等待态与无障碍树，原异常作为 cause 保留。取证不延长等待、不重试交互，也不忽略运行期错误。
-
-React Aria 表格首次取得焦点时先建立行导航。键盘列宽测试先进入行并确认公开焦点状态，再聚焦手柄，核对真实 `activeElement` 后按 Enter；不把直接调用 `focus()` 已返回当成焦点仍在手柄的证明，也不用等待时长或重复按键消除竞态。
-
-定向调试 Python 回归：
-
-```powershell
-& .\scripts\test.ps1 -Focus test_test_evidence
+```text
+./scripts/test.sh auto --focus tests/test_drive_stream.py
+./scripts/test.sh auto --focus tests/test_drive_stream.StreamTests
+./scripts/test.sh auto --focus tests/test_drive_stream.StreamTests.test_proxy_forwards_range_and_passes_through_status
+./scripts/test.sh web --focus frontend/test/keyboard-shortcut.test.ts
 ```
 
-定向调试一个浏览器文件，包括它的桌面和手机用例：
+- 选择器给 `tests/` 下的文件、`模块.类` 或 `模块.类.方法`，`tests/` 前缀与 `.py` 后缀可省；也可以给 `frontend/test/` 下的一条 vitest 用例路径。
+- `frontend/e2e/` 的浏览器用例不走这个入口，直接在 `frontend/` 里跑 `npm run e2e`；把 e2e 路径塞进 `--focus` 会被拒绝并提示这一点。
+- 可重复给 `--focus`，也可以逗号分隔。
+- 定向调试不签发记录，也不取机器级锁，因此不能当作验收凭据：验收要跑 `auto`、`checks`、`full` 之一并留下记录。
+- 环境变量 `PEACH_TEST_FOCUS`、`PEACH_E2E_FILES`、`PEACH_VITEST_FILES` 只服务于内部转交；带着它们跑正式运行会被拒绝。
+- 记下局部结果时使用运行历史：`scripts/test_history.py` 在 `build/test-history/YYYY-MM.jsonl` 里按月追加，先写一行运行头（范围、平台、提交、分支、工作树、是否 CI、涉及的文件），再逐条写非通过的用例与耗时不少于 5 秒的通过用例。写历史失败只告警，不影响测试判定。
 
-```powershell
-& .\scripts\test.ps1 -Focus frontend/e2e/jav-detail.test.ts
+## 测试怎么组织
+
+- `tests/` 下每个文件是测试模块，`tests/support/` 放共用夹具与平台条件。
+- 五个文件在每一个域里都跑，作为各域共用的地基：`test_context_budget.py`、`test_test_collection.py`、`test_complexity_ratchet.py`、`test_source_assertion_ratchet.py`、`test_python_lint.py`。
+- 有 12 项秒级检查在起分片之前先跑一遍（脚本策略、文案终态、上下文预算、复杂度与断言棘轮、依赖策略、仓库卫生、前端预检一类），合计约一分钟；其中有一项不过就打印「快速门槛未通过，其余测试本轮不跑」并直接返回，免得等二十分钟才看到结论。
+- 一轮跑完后失败的文件单独重跑一次，最多六个；失败面更大时多半是真回归，重跑只是再等一轮。
+- 用例需要外部程序时调用 `tests/support/conditions.py` 的 `missing_prerequisite`，不要在本机缺前置时把整域拖红，也不要为了让它过而删断言。
+- 每次运行的临时文件都落在本次专用目录（环境变量 `PEACH_TEST_RUN_TEMP`），结束时整个删掉；被强行结束的运行留下的目录超过一天由下一次运行清掉。错误上报的日志目录也指到临时目录，不写真实数据目录。
+- 前端两层：`frontend/test/` 是 vitest（happy-dom），只把 `@peach/legacy/ui` 换成桩，其余别名指向真实源码，保证模块身份与生产一致；`frontend/e2e/` 是 playwright-core 驱动的浏览器用例，`harness.ts` 提供启动、访问与稳定等待。两者的验收命令见 [前端](FRONTEND.md#检查)。
+
+## 来源录制回放
+
+联网抓取的解析用例不现场访问站点：把一次真实查询的请求与响应录成 cassette，测试离线回放同一次查询。夹具在 `tests/fixtures/source-replay/<站点>/`。
+
+- 匹配键是「方法 + 规范化 URL + 请求体哈希」，不比请求头；查不到抛 `ReplayMiss`，测试据此失败。回放传输不持有网络客户端，`Session` 的 `fetch`、`parse` 与分档逻辑一行不改。
+- 文件只存回放需要的东西：响应留状态、最终地址与 `content-type`，不留 `Set-Cookie`；请求只存匹配键，请求头与 Cookie 不写盘。图片只留尺寸与哈希，回放时生成同尺寸灰图；视频只留字节数。
+- 正文在录制时按 `minimize` 去掉与解析无关的区块，按 `redact` 把凭据值、CSRF 令牌换成固定假值 `PEACH-REDACTED`（短于 8 个字符的片段不替换，否则会误伤正文）。去之前与去之后各回放一次，解析结局不一致就不采用这一步。
+- 结局是连接失败、冷却、预算、限流、验证页、封禁或地区限制的，不落成夹具，记为「未取得」。
+
+录制（默认不带登录态；只有不登录拿不到作品页的站才加 `--with-credentials`，其中的 Cookie 值、CSRF 令牌与 `uid`、`formhash` 一类账号标识都换成固定假值）：
+
+```text
+python scripts/record_source_fixtures.py javbus:SSIS-001 avbase:SSIS-001
+python scripts/record_source_fixtures.py --update javbus:SSIS-001
+python scripts/record_source_fixtures.py --with-credentials javdb:SSIS-001
 ```
 
-macOS/Linux 的相同入口：
+录制只读：不写账本，不写生产环境的来源冷却；代理设置与冷却记录从 `--secrets`（默认本机数据根的 secrets）复制进临时根再用，录制中撞出的新冷却只落在临时根。录制格式的版本是 `FORMAT = 1`，字段含义变化时才升。
 
-```sh
-./scripts/test.sh auto --focus frontend/e2e/jav-detail.test.ts
-```
+## 文档与策略检查
 
-定向调试一个或几个 vitest 文件（路径从 `frontend/test/` 起），只跑这几个文件：
+这些脚本各有入口，多数由 `tests/` 下的用例带进正式运行，也能单独跑：
 
-```powershell
-& .\scripts\test.ps1 -Focus frontend/test/jav-card-title.test.ts
-```
-
-定向调试不签发记录，不能作为 `ready` / `integrate` 的验收证明。浏览器文件选择只在调试环境生效；正式入口拒绝残留的 `PEACH_TEST_FOCUS` / `PEACH_E2E_FILES` / `PEACH_VITEST_FILES`，防止局部运行被签成整域。浏览器文件失败或超时时保留它的完整 TAP 与服务日志。
-
-浏览器沿用 Playwright 的默认进程模型与静音设置，不限制渲染进程数，也不把 GPU 或音频服务强制并入浏览器进程。原生浏览器启动限时 60 秒，页面主体等待限时 15 秒，每批限时 600 秒；进程启动与页面行为分别验收。需要任务状态桩的页面通过 `visit` 的准备回调在首次导航前安装响应，等对应的 React 主体出现后再检查任务状态；进行中的任务不作为主体等待态。页面主体等待失败时保留 URL、关闭状态、已收集的运行期问题与无障碍树，夹具关闭本次浏览器上下文。
-
-Windows Release 工作流使用 `uv sync --locked --all-extras` 准备完整依赖。安装目录回归与 PyInstaller 构建共用这份 venv，测试入口按完整锁文件核验依赖。
-
-Windows 独立制品验收的宿主从同一检出的 `scripts/` 加载辅助验证模块，并按发行锁核对随包采集工具。临时应用与采集工具自检清除 `PYTHONPATH`，使用移除开发工具的 PATH；源码路径只供验收宿主使用。
-
-macOS Release 使用 `macos-15`（Apple Silicon）和 `macos-15-intel`（Intel）分别构建，解释器、依赖与目标架构必须一致。独立验收任务只下载候选制品与冒烟脚本，挂载只读 DMG，核对 Applications 链接、许可证、签名与原生架构，再执行 `scripts/smoke_macos.py`。该脚本将应用移到源码树外，在移除开发工具的 PATH 下验证首次设置、迁移、单机账本、登录、前端资源与配置保存，数据全部使用临时目录。所有平台验收成功才发布；普通 push 不构建安装包，手动运行 Release 不上传公开资产。
-
-`auto` 扫描同环境的有效记录，按测试文件合并 24 小时内、未受输入差异影响的成功结果；记录数量没有固定搜索上限。每项保留原通过时间，最新的失败或未完成状态阻止旧成功结果恢复。缺少、损坏、过期或未来时间的证明不计入覆盖；单份损坏记录不影响其他候选。`-Fresh` 始终实际执行请求范围，显式 `full` 默认也实际执行；`-Resume` / `--resume` 允许全量验证按完整批次来源续跑，与 `Fresh` 互斥。
-
-在当前隔离工作树根目录续跑全量验证：
-
-```powershell
-& .\scripts\test.ps1 -Scope full -Resume
-```
-
-macOS/Linux 使用相同的恢复规则：
-
-```sh
-./scripts/test.sh full --resume
-```
-
-GitGud 的三平台验证使用正式恢复入口，通过 GitLab 原生缓存保存证明 JSON。缓存按作业、分支和保护状态隔离，成功或失败后均保存；锁文件不进入缓存。重试作业恢复缓存后，仍逐项核对当前代码、依赖、环境、通过时间和完整批次。缓存缺失或证明无效时执行必要测试，不能仅凭缓存存在取得通过结论。并行分片在预计总耗时相同时按文件数分配，实测耗时为零的文件也会分散到非空分片。
-
-正式父运行在开始时原子保存待验证状态，每个分片完成后立即保存检查点。失败批次仍保留成功文件、成功补充用例及其时间；整文件状态不覆盖已取得的单项结果。共享输入变化和 `Fresh` 同时作用于文件及其补充用例。快速门槛失败时，其余文件保持未完成。进程中断后，下一次 `auto` 在所需范围内补齐缺少的文件，串行与并行使用相同结果模型。分片报告必须完整且格式有效，结束码须与报告一致；异常退出不能产生该片的成功证明。分片写出完成报告后仍未退出的进程，等待 15 秒后回收该片的进程树，不给尚在执行的测试设置额外时限。
-
-浏览器与 Vitest 容器内按外部测试文件保存完成结果，只有逐条输出不能证明整个文件完成。恢复计划绑定当前输入快照、完整文件集合及每个省略项的成功时间。Python 容器用例自身也必须有成功证明，才能连同其外部文件一起省略；容器的后置检查失败仍需补测。选择参数只在对应容器用例执行期间启用，普通 Python 用例不继承这些参数；失败或退出时恢复环境。外部选择仅由正式父运行生成，`Focus` 和独立 CI 分片不签发正式记录。
-
-全量证明还要求所有文件与容器检查属于同一个完整批次。独立局部运行可以补齐所需域，不能拼成 `full`；有完整批次来源的中断或失败运行，补齐缺少项后可恢复全量证明。每次写入时清退写盘超过 24 小时的记录、持锁说明与残留临时文件；锁文件和非记录文件不动。
-
-选测比较文件内容：Python 只有注释或格式变化、npm 清单只有 description/keywords 变化、TOML 只有注释或格式变化时选 `checks`。Python docstring、运行时字串和类型注释属于有效内容。Python 构建元数据变化选 `packaging`，实际依赖变化、文件模式变化、解析失败和未知影响面保留完整验证。
-
-新增、删除文件按所属功能域选测；已有文件的执行权限变化和符号链接保持 `full`。
-
-只在 `SCOPES` 的现有域末尾追加精确 `test_*.py` 文件名、且登记表外的 AST 完全不变时，选择新增测试所属域、checks 与 tooling；这两项保留选测计划、登记完整性和证明协议回归。删除、改序、通配符、新域、既有路径映射和执行逻辑变化仍按完整验证处理。普通 `scripts/` 脚本已有 tooling 前缀映射，同域时不再添加重复的 `AUTO_SCOPE_FILES` 条目。记录快照和 CI 使用同一内容判据；无法识别的旧记录保持保守判断。
-
-`src/peach/` 的已知模块合并直接导入它的测试所在域，名称或显式映射不排除直接消费者。按名字推不出测试文件的模块，还并上直接导入它的源码文件按同一套规则推出的域；互相导入的一组模块合起来算。导入者推不出域、谁都不导入它，或未知模块被共享测试设施 `tests/support` 使用时仍 `full`。不沿导入链一路扩散：函数里的延迟导入把几乎所有模块连成一团，传递闭包等于全量。随应用分发的 `resources/` 按加载它的模块与打包面选域；`.gitlab-ci.yml` 与 `MANIFEST.in` 在本机选 `packaging` 与 `tooling`（主线流水线改 `.gitlab-ci.yml` 时三平台仍跑全量）；只登记在 `core` 或 `packaging` 的测试文件改动时跑登记它的那个域。
-
-README 的 Python 下限和双语入口由 checks 的安装契约检查，普通文档不选择整个 tooling。静态文件输入识别以仓库根及其别名为依据，临时夹具的同名写入不属于仓库读取。缺失文件不进入当前快照，删除由前后文件集合识别，暂存或提交相同删除不会改变内容证明。
-
-运行中输入改变时，无论该批次是否全部通过，都按差异保留未受影响的成功结果和原时间；退出 `4`，随后 `auto` 补齐缺少项。独立 Python 测试文件的逻辑变化使该文件、直接或间接导入它的测试及公共门槛失效；浏览器测试文件变化使该文件及相应容器检查失效。共享设施、未知范围、执行模式或环境变化仍按完整影响范围重新验证。
-
-首次设置目录 `frontend/src/react/pages/setup/`、素材 `resources/setup/` 和独立页面产物 `web/dist/peach-pages.js`、`web/dist/peach-pages.css` 的补测保留主应用浏览器结果，仍检查首次设置浏览器流程、全部相关 Python 契约、组件与打包。首次设置浏览器用例集中在 `frontend/e2e/setup.test.ts`；新增独立页面浏览器容器时须同步扩充这份对应关系。主应用产物、共享样式或公共组件同时改变时，主应用浏览器结果照常失效。
-
-测试记录格式升级时，主检出的入口可能无法识别新格式。先在工作树通过 `ready`，再由主检出调用该工作树中已验收的 `scripts/agent_worktree.py`，用 `--repo` 指定主检出并执行 `integrate`。该方式仍检查测试记录、目标分支和集成锁；不要手工改写记录或跳过门槛。集成后主检出使用同一版本的入口。
-
-PR 与普通主线的浏览器 CI 根据界面、Web API、认证与浏览器用例选择；普通后端单测不单独触发浏览器任务。工作流按职责选测，发布工作流触发打包验证，看板等管理工作流只触发工具检查。无可用基线、未知影响与手动完整验证覆盖全部 CI 任务，发布演练和制品验收按其独立门槛执行。
-
-## 记录的环境身份
-
-记录只在「代码、环境、范围」三项都匹配时可复用，环境那一项由 `scripts/test_evidence.py`
-的 `environment()` 算成一个摘要：Python 版本、实现与运行时文件内容、规范化的已安装包名称和版本、平台、影响行为的环境变量、前端安装锁的规范化 JSON、实际 Chrome 文件内容，以及 node／npm／git／ffmpeg／ffprobe／openssl 六个外部工具。相同运行时和依赖位于不同工作树、安装锁只有排序或缩进差异、CI 运行编号或工作目录变化，不改变环境身份。CI 工作流和 job 职责、浏览器安装状态与内容变化仍参与判断。
-测试入口强制设置的 `PEACH_REPORTING_TEST_MODE` 防外发标记不参与环境选择；入口源码仍参与代码快照。
-
-GitLab 的作业令牌、容器仓库密码和依赖代理密码按是否存在记录；`CI_REPOSITORY_URL` 保留协议、主机、路径、用户名及认证存在性，密码值不参与身份。`CI_JOB_RETRY_COUNT`、`CI_JOB_STARTED_AT_SLUG` 和 `CI_BUILD_NETWORK_NAME` 表示本次运行的计数、时间与网络名称；`CI_TRACEPARENT` 和 `CI_TRACESTATE` 标识作业的分布式追踪上下文。这些运行元信息不参与身份。作业职责、覆盖模式和应用行为变量仍参与判断。变量含义见 [GitLab 预定义变量](https://docs.gitlab.com/ci/variables/predefined_variables/)。
-
-uv 只探针、不进指纹：它负责建环境，装出来的解释器与包已经逐个记在摘要里，而它自己由
-winget 自动升级。把它的版本也算进去的话，升级当天全部记录一起失效，被验证的那套环境
-却一个字节都没变。
-
-工具身份取它**自报的版本**，不取 PATH 解析到的路径与文件字节。同一套 Git 安装在
-PowerShell 里解析到 `Git\cmd\git.exe`、在 Git Bash 里解析到 `Git\mingw64\bin\git.exe`，
-两个前端字节不同而版本和行为相同；按路径记身份会把记录绑在 shell 上：在一个 shell 里
-跑出记录，换另一个 shell 跑 `integrate` 就报「缺少有效测试记录」，回到工作树跑 `auto`
-又说「复用记录」，两句查的是两个键，代价是白跑一遍全量。
-
-改环境身份、内容签名或记录结构时，主检出的旧算法可能算不出新键或读不了新记录，无法验证带着新格式的分支。
-那一次的 `integrate` 用分支自己的脚本和判据，并把仓库指到主检出；不重复执行已取得有效记录的测试。`--repo` 是顶层参数，
-放在子命令前面，放后面会被 argparse 拒收：
-
-```powershell
-& .\.venv\Scripts\python.exe -X utf8 <工作树>\scripts\agent_worktree.py `
-  --repo <主检出> integrate --branch <分支>
-```
-
-## 测试结果历史
-
-正式入口与定向调试每次运行都把逐条结果追加进测试结果历史，用来统计每条测试抓到回归的比率，并区分抖动、期望过时与环境失败。实现在 `scripts/test_history.py`。
-
-文件是 Git common directory 上一级的 `build/test-history/YYYY-MM.jsonl`：本机落在主检出的 `build/` 下，与测试记录 `build/agent-verification/` 同级，所有工作树共用；CI 上就是作业目录的 `build/test-history/`，由流水线作为 artifact 上传。JSON Lines 按月分文件、只追加，多个进程同时写时由旁边的 `.lock` 串行。
-
-每次运行先写一行运行头：
-
-| 字段 | 含义 |
+| 脚本 | 判据 |
 | --- | --- |
-| `type` | 固定为 `run` |
-| `run` | 本次运行的编号，逐条结果用它关联 |
-| `time` | 写入时刻 |
-| `scope` | 请求与实际范围，如 `auto:catalog web`、`full:full`、`focus:<选择器>`；CI 独立分片带 `shard i/n` |
-| `platform`、`python` | 平台与解释器版本 |
-| `head`、`branch`、`worktree` | 提交、分支（分离头指针时取 CI 的分支变量）与工作树路径 |
-| `ci` | `CI`、`GITLAB_CI`、`GITHUB_ACTIONS` 任一非空即为真 |
-| `files`、`count` | 本次跑到的测试文件模块名与用例总数 |
+| `scripts/check_copy_final_state.py` | 按 `scripts/copy-rules.json` 查 Python、HTML 与文档的文案 |
+| `scripts/check_context_budget.py` | AGENTS.md、CLAUDE.md、SKILL.md 的行数与字节预算，「最后复核」日期 |
+| `scripts/check_reference_updates.py` | 锁定快照与上游 Markdown 之间的漂移；来源按 `weekly`/`monthly`/`quarterly` 分档，钉版本依赖按 40 位 sha 记 |
+| `scripts/check_commit_message.py` | `agent/*` 分支提交的 trailer 形态 |
+| `scripts/check_mdns.py` | 从终端确认 `peach.local` 在本机网络上有没有人应答 |
+| `scripts/check_ui_preview.py` | 用户验收预览的数据清单、记录来源与独立缓存 |
 
-之后逐条写 `type` 为 `test` 的行：`run`、`id`、`outcome`（`pass`、`fail`、`error`、`skip`）与 `seconds`，失败与报错另有 `message`，取最后一行异常，遮掉 `token=`、`password=` 一类的值，截断到 200 字。Python 用例名为 `模块.类.方法`，vitest 为 `vitest:文件 > 分组 > 标题`，浏览器用例为 `e2e:文件 > 分组 > 标题`。
+`scripts/check_readme_impact.py` 不是独立入口：它提供 README 安装契约与提交检查共用的 Git 读取。`scripts/check_mdns.py` 只能从终端跑——macOS 的本地网络授权按进程判，服务进程探自己必然收不到回应。
 
-为控制体积，只逐条写非通过的用例与耗时不少于 5 秒的通过用例。一次全量约一万条结果，全部逐条写约 2.4 MB；按这个口径约 250 行、75 KB。某条用例跑了几次，用运行头的 `files` 推算：文件在场、没被记成 `skip` 的用例都跑过；逐文件耗时另见 `test-timings.json`。
+`check_context_budget.py` 的退出码里 1 表示结构或预算不合规，3 表示只有「最后复核」过期、其余都合规。
 
-写历史失败只打印一行告警，不改变测试判定。历史不经环境变量传递，也不在被快照的工作树里，测试记录的环境指纹与有效期不受影响。用例里调用运行器的那些测试不写真实历史，也不取走外层运行收集中的 vitest 与浏览器结果。
+## 每次发版检查
+
+发版前的固定动作：
+
+1. 跑一次全量：`./scripts/test.sh full`（Windows 用 `powershell -File scripts\test.ps1 -Scope full`），要求退出码 0。锁忙时等前一轮收尾，不要另起一次。
+2. 发版结论只用这一次跑出来的结果：`full` 默认不复用旧记录，`--resume` 才会沿用已完成的证明。
+3. 跑文档检查 `uv run --locked --extra dev seiso check --output-format=concise`，并核对 [变更日志](../CHANGELOG.md) 里已有本次的条目。
+4. 对比构建产物与源码：`npm --prefix frontend run build` 之后要求 `git diff --exit-code web/dist` 为空。
+
+## 流水线侧选测
+
+流水线复用同一套运行器，选测逻辑分两个脚本，本机入口都不经过它们：
+
+- `scripts/ci_scope.py` 用于主线选测：在当前分支最近 20 条成功流水线（`PIPELINE_WINDOW`）里找一条不是本次提交、且是本次提交祖先的作为已验证基线，输出基线提交与按平台划定的敏感用例，交给入口的 `--base` 与 `--focus`。取不到基线、基线不在当前历史上、改动落在流水线定义这类必须整体验证的面、或 `auto` 本身判定要 `full` 时，退回 `full`。
+- `scripts/ci_plan.py` 按事件与改动文件生成作业矩阵与必需作业：改动只涉及文档时只排检查类作业，不装运行时工具；涉及前端产物时排 web-bundle 与 web-e2e。

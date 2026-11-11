@@ -23,31 +23,23 @@ class _Completed:
 
 
 class CaptureFrameTests(unittest.TestCase):
-    def test_hardware_decode_failure_retries_software_and_keeps_both_receipts(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory).resolve()
-            destination = root / 'frame.jpg'
-            calls = []
-            def run(command, **kwargs):
-                calls.append(command)
-                if '-hwaccel' in command:
-                    return subprocess.CompletedProcess(command, 1, stderr=b'unsupported hardware decoder')
-                Image.new('RGB', (480, 270)).save(command[-1], format='JPEG')
-                return subprocess.CompletedProcess(command, 0, stderr=b'')
-            for options in (None, ('-hwaccel', 'videotoolbox'), ()):
-                calls.clear()
-                detail = {}
-                with self.subTest(decode_options=options), \
-                        patch('peach.hardware_transcode.frame_decode_options', return_value=('-hwaccel', 'videotoolbox')) as probe, \
-                        patch.object(frame_capture.subprocess, 'run', side_effect=run):
-                    self.assertTrue(frame_capture.capture_with_retry(
-                        'ffmpeg', 'sample.mp4', 1, destination, diagnostics=detail, decode_options=options))
-                expected = [False] if options == () else [True, False]
-                self.assertEqual(len(calls), len(expected))
-                self.assertNotIn('-hwaccel', calls[-1])
-                self.assertEqual([attempt['hardware_decode'] for attempt in detail['attempts']], expected)
-                if options is not None:
-                    probe.assert_not_called()
+    def test_headers_for_a_drive_link_go_into_one_crlf_block(self):
+        """网盘直链要带授权头。FFmpeg 的 `-headers` 只认一整段文本，每行 CRLF 结尾。"""
+        self.assertEqual(frame_capture.headers_option(None), [])
+        self.assertEqual(frame_capture.headers_option({}), [])
+        self.assertEqual(frame_capture.headers_option({'Authorization': 'Bearer a', 'Referer': 'b'}),
+                         ['-headers', 'Authorization: Bearer a\r\nReferer: b\r\n'])
+
+    def test_the_headers_reach_the_command_before_the_input(self):
+        with self._run():
+            ok, _ = frame_capture.capture_frame('ffmpeg', 'https://example/drive', 1,
+                                                self.root / 'drive.jpg',
+                                                headers={'Authorization': 'Bearer token'})
+        self.assertTrue(ok)
+        command = self.commands[0]
+        self.assertEqual(command[command.index('-headers') + 1], 'Authorization: Bearer token\r\n')
+        self.assertLess(command.index('-headers'), command.index('-i'))
+        self.assertEqual(command[command.index('-i') + 1], 'https://example/drive')
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="frame-capture-")).resolve()
@@ -219,22 +211,13 @@ class FFmpegCaptureIntegrationTests(unittest.TestCase):
             self.assertEqual(measured[7:9], ('横屏', '2K'))
             for index in range(9):
                 self.assertTrue(frame_capture.capture_with_retry(str(ffmpeg.path), str(source), .1,
-                    root / f's{index:02d}.jpg', width=480, decode_options=()))
+                    root / f's{index:02d}.jpg', width=480))
             with Image.open(root / 's00.jpg') as frame:
                 self.assertEqual(frame.size, (480, 270))
             target = root / 'grid.jpg'
             self.assertTrue(frame_capture.tile_frames(str(ffmpeg.path), str(root / 's%02d.jpg'), 3, 3, target))
             with Image.open(target) as grid:
                 self.assertEqual(grid.size, (1440, 810))
-
-    def test_av1_software_decode_uses_the_desktop_release_gate(self):
-        from scripts.smoke_desktop import assert_av1_decoder
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            choice = FFmpegResolver(root).ffmpeg()
-            if choice is None:
-                missing_prerequisite('AV1 解码回归需要 FFmpeg')
-            assert_av1_decoder(choice.path, root)
 
     def test_real_small_jpegs_and_unicode_paths_produce_a_grid(self):
         with tempfile.TemporaryDirectory() as temporary:

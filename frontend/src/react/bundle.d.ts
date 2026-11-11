@@ -32,21 +32,6 @@ export type { ItemDetailProps };
 
 export interface AccessState { mode: 'open' | 'password' | 'legacy' | 'locked'; revision: string }
 
-export interface TunnelState {
-  enabled: boolean;
-  state: 'stopped' | 'starting' | 'running' | 'error';
-  url: string;
-  error: string;
-  available: boolean;
-  mode: 'quick' | 'named';
-  /** 命名隧道绑定的公开主机名，临时链接模式下为空。 */
-  hostname: string;
-  /** 隧道令牌存没存过。令牌本身不回传，页面只据此显示已保存。 */
-  token_set: boolean;
-  /** 这台部署能不能用命名隧道；独立包为 false，那一块整个不渲染。 */
-  named_available: boolean;
-}
-
 export interface AccessSettingsProps {
   initial: AccessState;
   receipt(message: string): void;
@@ -110,41 +95,6 @@ export interface EntryLinkSite {
 }
 
 export interface EntryLinksState { sites: EntryLinkSite[] }
-
-/** 一条「CloudDrive2 里的路径前缀 → 哪个媒体根」的对应。 */
-export interface PushDiscoveryPrefix { prefix: string; root: string }
-
-export interface PushDiscoveryQueue {
-  pending: number; submitted: number; ingested: number; missing: number;
-  dropped: number; timed_out: number; failed: number;
-  last_path?: string; last_ingested_at?: number; last_error?: string;
-}
-
-export interface PushDiscoveryState {
-  enabled: boolean;
-  watch_local: boolean;
-  cloud: boolean;
-  prefixes: PushDiscoveryPrefix[];
-  /** 这台机器是数据库写入端才为真；只读端不起任何监听。 */
-  available: boolean;
-  secret: string;
-  secret_set: boolean;
-  endpoint: string;
-  local_running: boolean;
-  local_message: string;
-  local_roots: string[];
-  queue: PushDiscoveryQueue;
-  /** 可选的媒体根，前缀表里的下拉就从这里取。 */
-  media_roots: string[];
-  /** CloudDrive2 该往哪个地址推。没开 TLS 或这台机器不知道自己的地址时是空串。 */
-  origin: string;
-  /** 整段抄进 CloudDrive2「配置内容」的 TOML；地址或密钥缺一样就是空串。 */
-  config_toml: string;
-}
-
-export interface AutomaticUpdateState {
-  mode: string; interval_hours: number; available: boolean; download_available: boolean; error?: string;
-}
 
 /** 媒体库中可用的直连渠道与 CloudDrive2 路径渠道。 */
 export type DownloadProviderKey = '115' | 'pikpak' | `clouddrive:${string}:${string}`;
@@ -259,47 +209,11 @@ export interface DownloadSubmitResult {
   task: DownloadTask;
 }
 
-export interface ReleaseState {
-  current_version: string;
-  latest_version: string | null;
-  channel: string;
-  installation: string;
-  state: string;
-  message: string;
-  release_url: string;
-  checked_at?: number;
-  /** `installer` 是 macOS 的 DMG：没有应用内安装，下载后手动替换。 */
-  package_kind?: 'update' | 'full' | 'installer';
-  asset_url?: string;
-  asset_size?: number;
-  /** 能在页面里下载并重启安装；只有 Windows 独立包是 true。 */
-  in_app_update?: boolean;
-  /** 容器换新版要在宿主机上做的几步；其他安装方式是空表。 */
-  steps?: { text: string; command: string }[];
-  /** Docker 镜像检查到新镜像时才有：能否经 Watchtower 一键更新（ADR-0140），不能时 `reason` 说明为什么。 */
-  one_click?: { available: boolean; reason: string };
-}
-
-export interface UpdateJob {
-  state: string; progress: number; message?: string; downloaded?: number; total?: number; version?: string;
-}
-
-export interface MediaSource {
-  transport?: 'filesystem' | 'smb'; smb_username?: string; smb_password_saved?: boolean; smb_encrypt?: boolean;
-  root_id?: string; library_id?: string;
-  /** `online`：挂载可达性快照，`null` 是检测超时或还没检测（`media_configuration.reachability_states`）。 */
-  location: string; root: string; path: string; online?: boolean | null; library?: string; library_icon?: string; cost?: 'free' | 'metered';
-  /** 媒体库来源色（强调色键名，空串不上色）与处理方式；`library_stages` 是自定义时所选步骤，逗号分隔。 */
-  library_color?: string; library_policy?: 'auto' | 'local' | 'custom'; library_stages?: string;
-}
-
 export interface ConfigurationFact {
   term: string;
   value: string;
   download_url?: string;
   download_label?: string;
-  /** 能由 Peach 装进数据目录的缺失工具（`ffmpeg`、`untrunc`），有它就不给下载外链。 */
-  install_tool?: string;
 }
 
 export interface ConfigurationData {
@@ -312,33 +226,15 @@ export interface ConfigurationData {
   storage?: StorageState;
   peach_proxy?: PeachProxyState;
   entry_links?: EntryLinksState;
-  push_discovery?: PushDiscoveryState;
-  downloads?: DownloadSettingsState;
-  updates?: ReleaseState;
-  update_job?: UpdateJob;
-  automatic_updates?: AutomaticUpdateState;
   access?: AccessState;
   api_token?: import('./settings/api-token-settings').ApiTokenState;
-  /** 没有 HTTPS 服务或没有本机 CA 时为 null，那一块整个不渲染。 */
-  certificate?: import('./settings/certificate-trust').CertificateState | null;
-  tunnel?: TunnelState;
   editable: boolean;
   /** 不能编辑时给用户看的原因，可编辑时为空。 */
   notice: string;
   /** 设置文件的指纹，保存时带回去，服务端据此拒绝盖掉别处的改动。 */
   revision: string;
-  media_dirs: string[];
-  media_sources?: MediaSource[];
-  /** 媒体库个数，服务端按侧栏媒体库切换器那一份分组数好（同名的文件夹算一个）。 */
-  library_count: number;
   windows?: boolean;
   port: number;
-  port_editable?: boolean;
-  network?: {
-    editable: boolean; host: string; mdns_name: string; scope: 'local' | 'lan';
-    local_url: string; lan_url: string; ip_url: string;
-  };
-  mount_dependencies?: { name: string; available: boolean; download_url: string }[];
   facts: ConfigurationFact[];
 }
 
@@ -360,7 +256,7 @@ export interface ConfigurationPanel {
   active: boolean;
 }
 
-/** Peach 配置的分组：媒体库与入库、来源与订阅、下载渠道、网络与访问、应用与维护。
+/** Peach 配置的分组：网盘、访问与安全、API 令牌、设备会话、任务速度、系统诊断。
  *  `panel` 只在配置页里给，单独挂一组时没有。 */
 export interface ConfigurationGroupProps extends Pick<ConfigurationProps, 'receipt'> {
   data: ConfigurationData;
@@ -370,8 +266,6 @@ export interface ConfigurationGroupProps extends Pick<ConfigurationProps, 'recei
 
 /** 高清版目标页仍由遗留层提供的能力。全是纯函数或导航，页面不持有它们的状态。 */
 export interface QualityGoalsProps {
-  /** 写操作在服务端落地之后的过去时回执。 */
-  toast(message: string): void;
   /** 打开作品详情（遗留层的整页视图，含播放器与队列）。 */
   openItem(id: number): void;
   /** 番号 + 版次徽章 + 标题的 HTML。非 JAV 条目退化成转义后的文件名。 */

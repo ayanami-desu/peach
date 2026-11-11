@@ -3,7 +3,6 @@ import json
 import os
 import shutil
 import sqlite3
-import sys
 import tempfile
 import threading
 import time
@@ -13,12 +12,28 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from peach import data_storage, distribution, settings_file
+from peach import data_storage, settings_file
 
 
 def write(path: Path, size: int = 10) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"x" * size)
+    return path
+
+
+def write_thumbnail(path: Path, size: int = 10, *, source: Path | None = None,
+                    mtime: float | None = None) -> Path:
+    """缩略图落在 `generated/cover-thumbs` 或 `generated/avatar-thumbs` 下。
+
+    给了源图就按真实规则登记旁的 `.rule`：只有登记过且原图还在的 `.webp` 才算可自动清理的
+    产物。登记记录文件代际，所以先改时间再登记，反过来签名对不上。
+    """
+    path = write(path, size)
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
+    if source is not None:
+        from peach import artifact_rules
+        artifact_rules.remember(path, source=source)
     return path
 
 
@@ -53,10 +68,9 @@ class DataStorageTests(unittest.TestCase):
         os.utime(old, (time.time() - 7200, time.time() - 7200))
         write(self.data / "database" / "ledger.pre-script-20260102-000000.db", 100)
         write(self.data / "generated" / "organize-backups" / "ledger.pre-download-1-20260101-000000.db", 50)
-        write(self.data / "generated" / "transcodes" / "12-main.mp4", 30)
-        write(self.data / "generated" / "transcodes" / "12-main.mp4hdr", 7)
-        write(self.data / "generated" / "stream-segments" / "12" / "0001.ts", 20)
-        write(self.data / "generated" / "cover-thumbs" / "ABC-001.jpg", 5)
+        write(self.data / "generated" / "cover-thumbs" / "ABC-001.1600.90.previews-v2.webp", 30)
+        write(self.data / "generated" / "cover-thumbs" / "ABC-001.1600.90.previews-v2.webp.rule", 7)
+        write(self.data / "generated" / "avatar-thumbs" / "performer-7.640.80.previews-v2.webp", 20)
         write(self.data / "generated" / "snapshots" / "local" / "aa" / "x.jpg", 40)
         write(self.data / "generated" / "covers" / "ABC-001.jpg", 60)
         write(self.data / "generated" / "review.csv", 3)
@@ -84,9 +98,7 @@ class DataStorageTests(unittest.TestCase):
 
         self.assertEqual(groups["backups"]["bytes"], 250)
         self.assertEqual(groups["backups"]["reclaimable"], 100)
-        self.assertEqual(groups["playback"]["bytes"], 57)
-        self.assertEqual(groups["playback"]["reclaimable"], 50)
-        self.assertEqual(groups["thumbnails"], {"bytes": 5, "files": 1, "reclaimable": 5})
+        self.assertEqual(groups["thumbnails"], {"bytes": 57, "files": 3, "reclaimable": 57})
         self.assertEqual(groups["previews"]["bytes"], 40)
         self.assertEqual(groups["downloads"]["bytes"], 60)
         self.assertEqual(groups["sources"]["bytes"], 9)
@@ -97,19 +109,21 @@ class DataStorageTests(unittest.TestCase):
 
     def test_cleaning_removes_only_rebuildable_files(self):
         config = self.config()
-        write(self.data / "generated" / "transcodes" / "12-main.mp4", 30)
-        header = write(self.data / "generated" / "transcodes" / "12-main.mp4hdr", 7)
-        write(self.data / "generated" / "stream-segments" / "12" / "0001.ts", 20)
+        write(self.data / "generated" / "cover-thumbs" / "ABC-001.webp", 30)
+        write(self.data / "generated" / "avatar-thumbs" / "performer-7.webp", 20)
+        cover = write(self.data / "generated" / "covers" / "ABC-001.jpg", 5)
         live_log = write(self.data / "logs" / "tray.log", 4)
         write(self.data / "logs" / "tray.until-20260101.log", 6)
 
-        self.assertEqual(data_storage.clean(config, "playback"), {"files": 2, "bytes": 50, "failed": 0})
+        self.assertEqual(data_storage.clean(config, "thumbnails"), {"files": 2, "bytes": 50, "failed": 0})
         self.assertEqual(data_storage.clean(config, "logs"), {"files": 1, "bytes": 6, "failed": 0})
-        self.assertTrue(header.is_file())
+        self.assertTrue(cover.is_file())
         self.assertTrue(live_log.is_file())
-        self.assertEqual(list((self.data / "generated" / "stream-segments").iterdir()), [])
-        with self.assertRaises(ValueError):
-            data_storage.clean(config, "downloads")
+        self.assertEqual(list((self.data / "generated" / "cover-thumbs").iterdir()), [])
+        self.assertEqual(list((self.data / "generated" / "avatar-thumbs").iterdir()), [])
+        for category in ("downloads", "previews", "database"):
+            with self.assertRaises(ValueError):
+                data_storage.clean(config, category)
 
     def test_cleaning_backups_keeps_the_newest_one_in_each_directory(self):
         make_ledger(self.data / "database" / "ledger.db")
@@ -127,343 +141,6 @@ class DataStorageTests(unittest.TestCase):
                          ["ledger.pre-b-20260102-000000.db"])
         self.assertEqual([path.name for path in (self.data / "generated/organize-backups").iterdir()],
                          ["ledger.pre-download-2-20260102-000000.db"])
-
-    def test_target_must_be_a_separate_empty_folder(self):
-        config = self.config()
-        cases = {
-            str(self.data): "相同或互相包含",
-            str(self.data / "inner"): "相同或互相包含",
-            str(self.program / "data"): "程序目录",
-            str(Path(self.base.anchor)): "磁盘根目录",
-            "relative\\path": "",
-        }
-        for raw, reason in cases.items():
-            with self.subTest(raw=raw), self.assertRaisesRegex(ValueError, reason):
-                data_storage.check_target(config, raw, program=self.program)
-        busy = write(self.base / "busy" / "file.txt").parent
-        with self.assertRaisesRegex(ValueError, "空文件夹"):
-            data_storage.check_target(config, str(busy), program=self.program)
-        media = replace(config, locations={"local": (str(self.base / "media"),)})
-        with self.assertRaisesRegex(ValueError, "媒体目录"):
-            data_storage.check_target(media, str(self.base / "media" / "peach"), program=self.program)
-        vacated = write(self.base / "vacated" / "state" / settings_file.DATA_ROOT_LOCATION).parents[1]
-        self.assertEqual(data_storage.check_target(config, str(vacated), program=self.program), vacated)
-        self.assertEqual(data_storage.check_target(config, str(self.base / "new" / "peach-data"), program=self.program),
-                         self.base / "new" / "peach-data")
-
-    def test_rename_moves_everything_rewrites_ledger_paths_and_points_both_locators(self):
-        snapshot = str(self.data / "generated" / "snapshots" / "local" / "aa" / "x.jpg")
-        evidence = str(self.data / "sources" / "follow" / "page.html")
-        # 路径比较按本机 normcase：折叠大小写的系统上，账本里换了大小写的旧路径也要认出来。
-        folds_case = os.path.normcase("A") == "a"
-        make_ledger(self.data / "database" / "ledger.db",
-                    snapshot=snapshot.upper() if folds_case else snapshot, evidence=evidence)
-        write(self.data / "generated" / "covers" / "ABC-001.jpg")
-        bootstrap = self.base / "default" / "peach-data"
-        target = self.base / "new" / "peach-data"
-
-        copied = data_storage.relocate(self.config(), target, bootstrap=bootstrap)
-
-        self.assertFalse(copied)
-        self.assertTrue((target / "generated" / "covers" / "ABC-001.jpg").is_file())
-        for root in (bootstrap, self.data):
-            self.assertEqual((root / "state" / settings_file.DATA_ROOT_LOCATION).read_text(encoding="utf-8"), str(target))
-        self.assertEqual(settings_file.discover_data_root(environ={settings_file.DATA_ROOT_ENV: str(self.data)}),
-                         (target, True))
-        connection = sqlite3.connect(target / "database" / "ledger.db")
-        paths = [row[0] for row in connection.execute("SELECT snapshot_path FROM asset ORDER BY id")]
-        evidence_path = connection.execute("SELECT evidence_path FROM follow_item").fetchone()[0]
-        connection.close()
-        self.assertEqual(os.path.normcase(paths[0]),
-                         os.path.normcase(str(target / "generated" / "snapshots" / "local" / "aa" / "x.jpg")))
-        self.assertEqual(paths[1:], [r"R:\elsewhere\a.jpg", None])
-        self.assertEqual(evidence_path, str(target / "sources" / "follow" / "page.html"))
-
-    def test_moving_back_to_the_default_location_leaves_no_loop(self):
-        bootstrap = self.base / "default" / "peach-data"
-        write(bootstrap / "state" / settings_file.DATA_ROOT_LOCATION).write_text(str(self.data), encoding="utf-8")
-        make_ledger(self.data / "database" / "ledger.db")
-
-        data_storage.relocate(self.config(), bootstrap, bootstrap=bootstrap)
-
-        self.assertFalse((bootstrap / "state" / settings_file.DATA_ROOT_LOCATION).exists())
-        self.assertEqual(settings_file.discover_data_root(environ={settings_file.DATA_ROOT_ENV: str(bootstrap)}),
-                         (bootstrap, True))
-        self.assertEqual(settings_file.discover_data_root(environ={settings_file.DATA_ROOT_ENV: str(self.data)}),
-                         (bootstrap, True))
-
-    def test_incomplete_copy_is_discarded_and_the_source_stays_in_use(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        write(self.data / "generated" / "covers" / "ABC-001.jpg")
-        target = self.base / "other-disk" / "peach-data"
-
-        def lossy(source, destination):
-            shutil.copytree(source, destination, dirs_exist_ok=True)
-            (destination / "generated" / "covers" / "ABC-001.jpg").unlink()
-
-        with patch.object(data_storage, "_same_volume", return_value=False), \
-                self.assertRaisesRegex(RuntimeError, "复制结果不完整"):
-            data_storage.relocate(self.config(), target, bootstrap=self.base / "default", copy=lossy)
-
-        self.assertFalse(target.exists())
-        self.assertTrue((self.data / "generated" / "covers" / "ABC-001.jpg").is_file())
-        self.assertFalse((self.data / "state" / settings_file.DATA_ROOT_LOCATION).exists())
-
-    def test_copy_rechecks_free_space_with_the_actual_size(self):
-        write(self.data / "generated" / "covers" / "ABC-001.jpg", 4096)
-        target = self.base / "other-disk" / "peach-data"
-        copy = Mock()
-        with patch.object(data_storage, "_same_volume", return_value=False), \
-                patch.object(data_storage.shutil, "disk_usage", return_value=SimpleNamespace(free=10)), \
-                self.assertRaisesRegex(ValueError, "剩余"):
-            data_storage.relocate(self.config(), target, bootstrap=self.base / "default", copy=copy)
-        copy.assert_not_called()
-        self.assertFalse(target.exists())
-
-    def test_a_rename_that_cannot_be_undone_still_points_to_the_new_location(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        target = self.base / "new" / "peach-data"
-        calls = []
-
-        def rename_once(source, destination):
-            calls.append(destination)
-            if len(calls) > 1:
-                raise OSError("拒绝访问")
-            os.rename(source, destination)
-
-        with patch.object(data_storage, "rewrite_ledger_paths", side_effect=RuntimeError("数据库被占用")), \
-                patch.object(data_storage, "_rename", side_effect=rename_once), \
-                self.assertRaisesRegex(data_storage.MovedWithoutRewrite, "数据库被占用"):
-            data_storage.relocate(self.config(), target, bootstrap=self.base / "default")
-        self.assertTrue((target / "database" / "ledger.db").is_file())
-        self.assertEqual((self.base / "default" / "state" / settings_file.DATA_ROOT_LOCATION).read_text(encoding="utf-8"),
-                         str(target))
-
-    def test_copied_source_is_emptied_except_its_locator(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        write(self.data / "generated" / "covers" / "ABC-001.jpg")
-        write(self.data / "state" / "follow.json")
-        target = self.base / "other-disk" / "peach-data"
-        with patch.object(data_storage, "_same_volume", return_value=False):
-            copied = data_storage.relocate(self.config(), target, bootstrap=self.data,
-                                           copy=lambda source, destination: shutil.copytree(
-                                               source, destination, dirs_exist_ok=True))
-        self.assertTrue(copied)
-        self.assertEqual(data_storage.remove_source(self.data), 0)
-        self.assertEqual([path.relative_to(self.data).as_posix() for path in self.data.rglob("*") if path.is_file()],
-                         [f"state/{settings_file.DATA_ROOT_LOCATION}"])
-        self.assertTrue((target / "state" / "follow.json").is_file())
-
-    def request_file(self, target: Path) -> Path:
-        path = self.data / "state" / data_storage.REQUEST_NAME
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"source": str(self.data), "target": str(target), "token": "",
-                                    "requested_at": time.time()}), encoding="utf-8")
-        return path
-
-    def test_helper_moves_the_data_restarts_the_tray_on_the_new_location_and_records_it(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        target = self.base / "new" / "peach-data"
-        request = self.request_file(target)
-        started = []
-        with patch.object(data_storage, "_startup", return_value=None), \
-                patch("peach.windows_restart.process_alive", return_value=False), \
-                patch.object(data_storage, "_bootstrap", return_value=self.base / "default" / "peach-data"):
-            code = data_storage.apply(request, 1, environ={}, start=lambda exe, env: started.append(env))
-
-        self.assertEqual(code, 0)
-        self.assertEqual(started[0][settings_file.DATA_ROOT_ENV], str(target))
-        result = data_storage.read_result(self.config(target))
-        self.assertEqual((result["state"], result["target"]), ("done", str(target)))
-        self.assertFalse((target / "state" / data_storage.REQUEST_NAME).exists())
-
-    def test_helper_failure_keeps_the_old_location_and_explains_why(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        busy = write(self.base / "busy" / "file.txt").parent
-        request = self.request_file(busy)
-        started = []
-        with patch.object(data_storage, "_startup", return_value=None), \
-                patch("peach.windows_restart.process_alive", return_value=False), \
-                patch.object(data_storage, "_bootstrap", return_value=self.base / "default" / "peach-data"):
-            code = data_storage.apply(request, 1, environ={}, start=lambda exe, env: started.append(env))
-
-        self.assertEqual(code, 1)
-        self.assertEqual(started[0][settings_file.DATA_ROOT_ENV], str(self.data))
-        result = data_storage.read_result(self.config())
-        self.assertEqual(result["state"], "error")
-        self.assertIn("仍在原位置", result["message"])
-        self.assertFalse(request.exists())
-
-    def test_request_needs_a_measurement_and_room_on_the_target_disk(self):
-        from peach.storage_budget import layout
-        config = self.config()
-        target = self.base / "new" / "peach-data"
-        with patch.object(data_storage, "availability", return_value=(True, "")), \
-                patch("peach.standalone_update.public", return_value={"state": "idle"}):
-            with self.assertRaisesRegex(ValueError, "请先统计"):
-                data_storage.request(config, str(target))
-            (self.data / "state").mkdir(exist_ok=True)
-            (self.data / "state" / data_storage.USAGE_NAME).write_text(json.dumps(
-                {"root": str(self.data), "total_bytes": 1 << 50,
-                 "layout": layout(config)}), encoding="utf-8")
-            with patch.object(data_storage, "_same_volume", return_value=False), \
-                    self.assertRaisesRegex(ValueError, "剩余"):
-                data_storage.request(config, str(target))
-            receipt = data_storage.request(config, str(target))
-        self.assertTrue(receipt["accepted"])
-        written = json.loads((self.data / "state" / data_storage.REQUEST_NAME).read_text(encoding="utf-8"))
-        self.assertEqual((written["source"], written["target"]), (str(self.data), str(target)))
-
-    def availability_with(self, **environ):
-        names = ("PEACH_DISTRIBUTION", "PEACH_TRAY_MANAGED", "PEACH_HEADLESS_MANAGED")
-        clean = {key: value for key, value in os.environ.items() if key not in names}
-        with patch.object(distribution, "standalone", return_value=False), \
-                patch.dict(os.environ, {**clean, **environ}, clear=True):
-            return data_storage.availability(self.config()), data_storage.manual_steps()
-
-    def test_tray_and_headless_services_can_relocate_from_the_settings_page(self):
-        for marker in ("PEACH_TRAY_MANAGED", "PEACH_HEADLESS_MANAGED"):
-            with self.subTest(marker):
-                (available, message), steps = self.availability_with(**{marker: "1"})
-                self.assertEqual((available, message, steps), (True, "", []))
-
-    def test_a_directly_started_service_explains_how_to_relocate(self):
-        (available, message), steps = self.availability_with()
-        self.assertFalse(available)
-        self.assertIn("PEACH_DATA_ROOT", message)
-        self.assertEqual(steps, [])
-
-    def test_containers_get_host_side_steps_instead_of_a_relocation(self):
-        (available, message), steps = self.availability_with(PEACH_DISTRIBUTION="docker", PEACH_HEADLESS_MANAGED="1")
-        self.assertFalse(available)
-        self.assertIn("宿主机", message)
-        self.assertEqual([step["command"] for step in steps][1:2], ["docker compose down"])
-        self.assertIn("<新文件夹>:/data", steps[-1]["text"])
-
-    def test_relocation_never_redirects_another_live_data_directory(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        other = self.base / "default" / "peach-data"
-        write(other / "config.toml", 0)
-        target = self.base / "new" / "peach-data"
-
-        data_storage.relocate(self.config(), target, bootstrap=other)
-
-        self.assertFalse((other / "state" / settings_file.DATA_ROOT_LOCATION).exists())
-        self.assertEqual((self.data / "state" / settings_file.DATA_ROOT_LOCATION).read_text(encoding="utf-8"),
-                         str(target))
-
-    def test_headless_supervisor_stops_the_service_moves_the_data_and_restarts_there(self):
-        make_ledger(self.data / "database" / "ledger.db")
-        target = self.base / "new" / "peach-data"
-        request = self.request_file(target)
-        stopped, restarted = [], []
-        original = settings_file.load_config
-
-        def load(environ=None):
-            # 看守进程自己读设置时还在原位置；助手读新旧两处时给的是显式环境。
-            return original(environ=environ if environ is not None else {settings_file.DATA_ROOT_ENV: str(self.data)})
-
-        with patch.object(settings_file, "load_config", side_effect=load), \
-                patch.object(data_storage, "_startup", return_value=None), \
-                patch.object(data_storage, "_bootstrap", return_value=self.base / "default" / "peach-data"), \
-                patch("peach.update_tasks.reserve", return_value="token-1"), \
-                patch("peach.update_tasks.wait_quiescent", return_value=True), \
-                patch("peach.update_tasks.release"):
-            handled = data_storage.poll_headless(lambda: stopped.append(True), restarted.append)
-
-        self.assertTrue(handled)
-        self.assertEqual(stopped, [True])
-        self.assertEqual(restarted[0][settings_file.DATA_ROOT_ENV], str(target))
-        self.assertFalse(request.exists())
-        self.assertEqual(data_storage.read_result(self.config(target))["state"], "done")
-
-    def tray(self):
-        return SimpleNamespace(_action_lock=threading.Lock(), icon=Mock(), exit=Mock())
-
-    def poll_with(self, tray, popen):
-        config = self.config()
-        with patch.object(distribution, "standalone", return_value=True), \
-                patch.object(settings_file, "load_config", return_value=config), \
-                patch("peach.update_tasks.reserve", return_value="token-1"), \
-                patch("peach.update_tasks.wait_quiescent", return_value=True), \
-                patch("peach.update_tasks.transfer") as transfer, \
-                patch("peach.update_tasks.release") as release, \
-                patch.object(data_storage.subprocess, "Popen", popen):
-            data_storage.poll(tray)
-        return transfer, release
-
-    @unittest.skipUnless(sys.platform == "win32", "安装版助手的命令按 Windows 的 Peach.exe 写")
-    def test_tray_hands_the_request_to_the_helper_and_exits(self):
-        target = self.base / "new" / "peach-data"
-        request = self.request_file(target)
-        tray = self.tray()
-        popen = Mock(return_value=SimpleNamespace(pid=4321))
-
-        transfer, release = self.poll_with(tray, popen)
-
-        argv = popen.call_args.args[0]
-        self.assertEqual(argv[1:], [data_storage.HELPER_FLAG, str(request), str(os.getpid())])
-        self.assertTrue(argv[0].endswith("Peach.exe"))
-        self.assertEqual(json.loads(request.read_text(encoding="utf-8"))["token"], "token-1")
-        transfer.assert_called_once()
-        self.assertEqual(transfer.call_args.args[1:], ("token-1", 4321))
-        release.assert_not_called()
-        tray.exit.assert_called_once_with(reason="data-relocation")
-        self.assertFalse(tray._action_lock.locked())
-
-    @unittest.skipUnless(sys.platform == "win32", "安装版助手的命令按 Windows 的 Peach.exe 写")
-    def test_tray_failure_releases_the_reservation_and_keeps_running(self):
-        request = self.request_file(self.base / "new" / "peach-data")
-        tray = self.tray()
-
-        _transfer, release = self.poll_with(tray, Mock(side_effect=OSError("找不到 Peach.exe")))
-
-        release.assert_called_once()
-        self.assertEqual(release.call_args.args[1], "token-1")
-        self.assertFalse(request.exists())
-        tray.exit.assert_not_called()
-        result = data_storage.read_result(self.config())
-        self.assertEqual(result["state"], "error")
-        self.assertIn("找不到 Peach.exe", result["message"])
-
-    def test_storage_routes_validate_categories_and_report_target_errors_by_field(self):
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-        from peach import routes_configuration
-        from peach.routes_auth import require_auth
-        app = FastAPI()
-        app.include_router(routes_configuration.router)
-        app.dependency_overrides[require_auth] = lambda: None
-        config = self.config()
-        with TestClient(app, base_url="http://127.0.0.1", client=("127.0.0.1", 123)) as client, \
-                patch.object(settings_file, "load_config", return_value=config), \
-                patch.object(data_storage, "availability", return_value=(True, "")), \
-                patch("peach.standalone_update.public", return_value={"state": "idle"}):
-            snapshot = client.get("/api/configuration/storage").json()
-            self.assertEqual((snapshot["data_root"], snapshot["usage"]), (str(self.data), None))
-            saved = client.post('/api/configuration/storage/policy', json={'data_max_gib': 64})
-            self.assertEqual(saved.status_code, 200)
-            self.assertEqual(saved.json()['budget']['policy']['data_max_gib'], 64)
-            self.assertEqual(client.get('/api/configuration/storage').json()['budget']['policy']['data_max_gib'], 64)
-            with patch('peach.storage_external_cache.read', return_value={'path': str(self.base / 'cache')}) as read:
-                detected = client.get('/api/configuration/storage/external-cache')
-                self.assertEqual(detected.json(), {'path': str(self.base / 'cache')})
-                read.assert_called_once_with(config)
-            with patch('peach.storage_external_cache.read', side_effect=ValueError('需要查看系统设置权限')):
-                self.assertEqual(client.get('/api/configuration/storage/external-cache').status_code, 400)
-            self.assertEqual(client.post('/api/configuration/storage/policy', json={'cache_max_gib': True}).status_code, 400)
-            self.assertEqual(client.post('/api/configuration/storage/policy', json={'data_max_gib': 32},
-                                         headers={'origin':'https://other.invalid'}).status_code, 403)
-            self.assertEqual(client.get('/api/configuration/storage').json()['budget']['policy']['data_max_gib'], 64)
-            self.assertEqual(client.post("/api/configuration/storage/clean", json={"category": "downloads"}).status_code, 400)
-            self.assertEqual(client.post("/api/configuration/storage/clean",
-                                         json={"categories": ["logs", "previews"]}).status_code, 400)
-            self.assertEqual(client.post("/api/configuration/storage/clean", json={"categories": []}).status_code, 400)
-            self.assertEqual(client.post("/api/configuration/storage/measure",
-                                         headers={"origin": "https://other.invalid"}).status_code, 403)
-            refused = client.post("/api/configuration/storage/relocate", json={"target": str(self.data / "inner")})
-            self.assertEqual(refused.status_code, 400)
-            self.assertIn("互相包含", refused.json()["detail"]["errors"]["target"])
 
     def test_jobs_measure_in_the_background_and_report_cleaning(self):
         config = self.config()
@@ -490,22 +167,22 @@ class DataStorageTests(unittest.TestCase):
     def test_jobs_clean_several_categories_in_one_pass_and_estimate_from_the_last_count(self):
         config = self.config()
         write(self.data / "logs" / "tray.until-20260101.log", 2048)
-        write(self.data / "generated" / "stream-segments" / "1" / "0001.ts", 1024)
+        write(self.data / "generated" / "cover-thumbs" / "ABC-001.webp", 1024)
         jobs = data_storage.StorageJobs()
         jobs.start(config, "measure")
         jobs.join(10)
         counted = data_storage.read_usage(config)["total_files"]
 
         with patch.object(data_storage, "measure", wraps=data_storage.measure) as measured:
-            started = jobs.start(config, ["logs", "playback"])
+            started = jobs.start(config, ["logs", "thumbnails"])
             jobs.join(10)
 
         # 按类别表的顺序依次清理，统计只在最后做一次；进度条按上次的文件数估。
-        self.assertEqual((started["state"], started["categories"]), ("cleaning", ["playback", "logs"]))
+        self.assertEqual((started["state"], started["categories"]), ("cleaning", ["thumbnails", "logs"]))
         self.assertEqual(started["expected_files"], counted)
         measured.assert_called_once()
         message = jobs.snapshot()["message"]
-        self.assertIn("播放缓存、日志", message)
+        self.assertIn("缩略图、日志", message)
         self.assertIn("释放 3 KB", message)
         with self.assertRaisesRegex(ValueError, "不能在这里清理"):
             jobs.start(config, ["logs", "downloads"])
@@ -534,30 +211,20 @@ class CapacityProtectionTests(unittest.TestCase):
             self.budget.CapacityGuard(config).check(force=True)
 
     def test_hardlinks_count_once_in_allocated_data_and_cache_but_retain_directory_entries(self):
-        cached = write(self.root / 'generated/transcodes/1-key.mp4', 2048)
-        alias = cached.with_name('2-key.mp4')
+        cached = write(self.root / 'generated/cover-thumbs/1-key.webp', 2048)
+        alias = cached.with_name('2-key.webp')
         os.link(cached, alias)
         with patch.object(self.budget, 'allocated_bytes', return_value=64):
             self.assertEqual(self.budget.data_usage(self.config), 64)
             self.assertEqual(self.budget.cache_usage(self.config)['managed_cache_bytes'], 64)
             measured = data_storage.measure(self.config)
         self.assertEqual(measured['allocated_bytes'], 64)
-        self.assertEqual(measured['categories']['playback']['files'], 2)
-        self.assertEqual(measured['categories']['playback']['bytes'], 4096)
-
-    def test_cleaning_a_hardlink_with_a_retained_alias_does_not_claim_freed_allocation(self):
-        cached = write(self.root / 'generated/transcodes/1-key.mp4', 2048)
-        kept = self.root / 'retained.mp4'
-        os.link(cached, kept)
-        with patch.object(self.budget, 'allocated_bytes', return_value=64):
-            data_storage.clean(self.config, 'playback')
-        self.assertTrue(kept.is_file())
-        from peach.capacity_history import project
-        self.assertIsNone(project(self.config)['windows']['7d']['cleaned_bytes'])
+        self.assertEqual(measured['categories']['thumbnails']['files'], 2)
+        self.assertEqual(measured['categories']['thumbnails']['bytes'], 4096)
 
     def test_relocated_directories_invalidate_cached_measurements_within_the_scan_interval(self):
-        write(self.root / 'first-cache/transcodes/1-key.mp4', 7)
-        write(self.root / 'second-cache/transcodes/1-key.mp4', 19)
+        write(self.root / 'first-cache/cover-thumbs/1-key.webp', 7)
+        write(self.root / 'second-cache/cover-thumbs/1-key.webp', 19)
         first = replace(self.config, directories={'generated': str(self.root / 'first-cache')})
         second = replace(self.config, directories={'generated': str(self.root / 'second-cache')})
         policy = self.budget.StoragePolicy(cache_max_gib=100)
@@ -593,8 +260,8 @@ class CapacityProtectionTests(unittest.TestCase):
 
     def test_directory_alias_retargeting_keeps_configuration_and_invalidates_old_usage(self):
         first, second = self.root / 'first', self.root / 'second'
-        write(first / 'transcodes/1-key.mp4', 7)
-        write(second / 'transcodes/1-key.mp4', 19)
+        write(first / 'cover-thumbs/1-key.webp', 7)
+        write(second / 'cover-thumbs/1-key.webp', 19)
         alias = self.root / 'cache-alias'
         try:
             alias.symlink_to(first, target_is_directory=True)
@@ -606,7 +273,7 @@ class CapacityProtectionTests(unittest.TestCase):
         with patch.object(self.budget, 'allocated_bytes', side_effect=lambda _path, info: info.st_size):
             measured = data_storage.measure(config)
             (self.root / 'state' / data_storage.USAGE_NAME).write_text(json.dumps(measured), encoding='utf-8')
-            self.assertEqual(measured['categories']['playback']['bytes'], 7)
+            self.assertEqual(measured['categories']['thumbnails']['bytes'], 7)
             alias.unlink()
             alias.symlink_to(second, target_is_directory=True)
             self.assertIsNone(data_storage.read_usage(config))
@@ -623,8 +290,8 @@ class CapacityProtectionTests(unittest.TestCase):
 
     def test_manual_cleanup_preserves_linked_directories_inside_cache(self):
         retained = write(self.root / 'retained/source.mp4', 19)
-        cache = self.root / 'generated/stream-segments/1'
-        write(cache / 'segment.ts', 7)
+        cache = self.root / 'generated/cover-thumbs'
+        write(cache / 'segment.webp', 7)
         alias = cache / 'moved-directory'
         try:
             alias.symlink_to(retained.parent, target_is_directory=True)
@@ -632,10 +299,10 @@ class CapacityProtectionTests(unittest.TestCase):
             if getattr(error, 'winerror', None) == 1314:
                 self.skipTest('当前 Windows 账号不能创建目录符号链接')
             raise
-        data_storage.clean(self.config, 'playback')
+        data_storage.clean(self.config, 'thumbnails')
         self.assertTrue(retained.is_file())
         self.assertTrue(alias.is_symlink())
-        self.assertFalse((cache / 'segment.ts').exists())
+        self.assertFalse((cache / 'segment.webp').exists())
 
     def test_missing_external_directory_pauses_instead_of_checking_its_parent_volume(self):
         from peach.jobs import DiskSpaceDenied
@@ -672,51 +339,9 @@ class CapacityProtectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '可读取'):
             self.policy(enabled=True, external_cache_path=offline)
 
-    def test_cloud_cache_discovery_requires_local_service_permission_and_readable_directory(self):
-        from peach import storage_external_cache
-        from peach import downloads_clouddrive_pb2 as pb
-        from peach.downloads import DownloadSettings
-        DownloadSettings(self.config.directory('state')).save({'clouddrive_address': 'http://127.0.0.1:19798'}, {})
-        client = Mock(address='http://127.0.0.1:19798')
-        client.__enter__ = Mock(return_value=client)
-        client.__exit__ = Mock(return_value=False)
-        client.token_info.return_value = pb.TokenInfo(permissions=pb.TokenPermissions(allow_get_system_settings=True))
-        client.call.return_value = pb.SystemSettings(fileBufferDiskCacheLocation=str(self.root))
-        with patch.object(storage_external_cache, 'client_for', return_value=client):
-            self.assertEqual(storage_external_cache.read(self.config), {'path': str(self.root)})
-            client.address = 'http://192.0.2.1:19798'
-            with self.assertRaisesRegex(ValueError, '远程'):
-                storage_external_cache.read(self.config)
-            client.address = 'http://localhost:19798'
-            client.token_info.return_value.permissions.allow_get_system_settings = False
-            with self.assertRaisesRegex(ValueError, '权限'):
-                storage_external_cache.read(self.config)
-            client.token_info.return_value.permissions.allow_get_system_settings = True
-            client.call.return_value = pb.SystemSettings()
-            with self.assertRaisesRegex(ValueError, '未返回'):
-                storage_external_cache.read(self.config)
-            client.call.return_value = pb.SystemSettings(fileBufferDiskCacheLocation=str(self.root / 'missing'))
-            with self.assertRaisesRegex(ValueError, '可读取'):
-                storage_external_cache.read(self.config)
-
-    def test_unconfigured_cloud_cache_discovery_does_not_contact_a_service(self):
-        from peach import storage_external_cache
-        with patch.object(storage_external_cache, 'client_for') as connect:
-            self.assertEqual(storage_external_cache.read(self.config), {'configured': False})
-            connect.assert_not_called()
-
-    def test_manual_cache_cleanup_records_allocated_bytes_and_excludes_logs(self):
-        from peach.capacity_history import project
-        write(self.root / 'generated/transcodes/1-key.mp4', 1024)
-        write(self.root / 'logs/tray.until-20260101.log', 1024)
-        with patch.object(self.budget, 'allocated_bytes', return_value=64):
-            self.assertEqual(data_storage.clean(self.config, 'playback')['bytes'], 1024)
-            data_storage.clean(self.config, 'logs')
-        self.assertEqual(project(self.config)['windows']['7d']['cleaned_bytes'], 64)
-
     def test_manual_cleanup_invalidates_budget_measurement_before_immediate_retry(self):
         from peach.jobs import DiskSpaceDenied
-        write(self.root / 'generated/transcodes/1-key.mp4', 2048)
+        write(self.root / 'generated/cover-thumbs/1-key.webp', 2048)
         self.policy(cache_max_gib=1, auto_clean=False)
         guard = self.budget.CapacityGuard(self.config)
         with patch.object(self.budget, 'GIB', 1024), \
@@ -724,7 +349,7 @@ class CapacityProtectionTests(unittest.TestCase):
             self.budget.refresh_usage(self.config)
             with self.assertRaises(DiskSpaceDenied):
                 guard.check(force=True)
-            data_storage.clean(self.config, 'playback')
+            data_storage.clean(self.config, 'thumbnails')
             self.assertFalse(guard.check(force=True)['paused'])
 
     def setUp(self):
@@ -839,27 +464,27 @@ class CapacityProtectionTests(unittest.TestCase):
         self.assertFalse(Path(str(thumbnail) + '.rule').exists())
         self.assertTrue(all(path.is_file() for path in protected))
 
-    def test_over_limit_cleans_segments_then_the_oldest_transcode_and_keeps_writes_in_progress(self):
-        def aged(path, mtime):
-            os.utime(path, (mtime, mtime))
-            return path
-        writing = aged(write(self.root / 'generated/transcodes/1-old.0123abcd.tmp.mp4', 2048), 100)
-        oldest = aged(write(self.root / 'generated/transcodes/1-old.mp4', 2048), 200)
-        segment = aged(write(self.root / 'generated/stream-segments/2/key/0.ts', 2048), 300)
-        newest = aged(write(self.root / 'generated/transcodes/3-new.mp4', 2048), 400)
-        download = aged(write(self.root / 'generated/covers/source.jpg', 2048), 50)
-        # 共 8 KB、上限 5 KB：差 3 KB。分段重建最便宜先清，再清最久没用的转码副本。
+    def test_over_limit_cleans_the_oldest_thumbnails_and_keeps_the_newest(self):
+        source = write(self.root / 'generated/covers/source.jpg', 512)
+        # 没登记 `.rule` 的缩略图不算重建得了的产物；`generated/covers` 是可下载的资料，都不清。
+        unsigned = write_thumbnail(self.root / 'generated/cover-thumbs/0-unsigned.webp', 2048, mtime=50)
+        oldest = write_thumbnail(self.root / 'generated/cover-thumbs/1-old.webp', 2048, source=source, mtime=100)
+        middle = write_thumbnail(self.root / 'generated/cover-thumbs/2-mid.webp', 2048, source=source, mtime=200)
+        newest = write_thumbnail(self.root / 'generated/cover-thumbs/3-new.webp', 2048, source=source, mtime=400)
+        # 共 8 KB、上限 5 KB：差 3 KB，从最久没用过的缩略图清起，凑够就停。
         self.policy(cache_max_gib=5)
         with patch.object(self.budget, 'GIB', 1024), \
-                patch.object(self.budget, 'allocated_bytes', side_effect=lambda path, info: info.st_size):
+                patch.object(self.budget, 'allocated_bytes',
+                             side_effect=lambda path, info: 0 if path.name.endswith('.rule') else info.st_size):
             self.budget.refresh_usage(self.config)
             result = self.budget.CapacityGuard(self.config).check(force=True)
             again = self.budget.CapacityGuard(self.config).check(force=True)
         self.assertFalse(result['paused'])
         self.assertEqual(result['freed_bytes'], 4096)
-        self.assertFalse(segment.exists())
         self.assertFalse(oldest.exists())
-        self.assertTrue(all(path.is_file() for path in (writing, newest, download)))
+        self.assertFalse(middle.exists())
+        self.assertFalse(Path(str(oldest) + '.rule').exists())
+        self.assertTrue(all(path.is_file() for path in (unsigned, newest, source, Path(str(newest) + '.rule'))))
         # 清理量记进最近读数，下一次后台统计前不会再清一轮。
         self.assertEqual(again['freed_bytes'], 0)
         self.assertFalse(again['paused'])
@@ -958,7 +583,8 @@ class CapacityProtectionTests(unittest.TestCase):
     def test_playback_guard_cleans_over_limit_but_only_low_disk_refuses(self):
         from peach.jobs import DiskSpaceDenied
         write(self.root / 'database/ledger.db', 4096)
-        cached = write(self.root / 'generated/transcodes/1-old.mp4', 2048)
+        cached = write_thumbnail(self.root / 'generated/cover-thumbs/1-old.webp', 2048,
+                                 source=write(self.root / 'generated/covers/source.jpg', 512))
         self.policy(data_max_gib=1)
         playback = self.budget.CapacityGuard(self.config, foreground=True)
         with patch.object(self.budget, 'GIB', 1024), \
@@ -977,6 +603,7 @@ class CapacityProtectionTests(unittest.TestCase):
             self.assertTrue(walkers)
             # 数据超限：后台清了缓存，仍超限也照常播放；前台不写状态文件。
             self.assertFalse(cached.exists())
+            self.assertFalse(Path(str(cached) + '.rule').exists())
             self.assertTrue(result['paused'])
             self.assertFalse((self.root / 'state' / self.budget.STATUS_NAME).exists())
             with self.assertRaisesRegex(DiskSpaceDenied, 'Peach 数据'):
@@ -1000,8 +627,9 @@ class CapacityProtectionTests(unittest.TestCase):
         cleaned.assert_called_once()
 
     def test_cleaning_recomputes_the_gap_after_another_check_already_cleaned_it(self):
-        write(self.root / 'generated/transcodes/1-a.mp4', 2048)
-        write(self.root / 'generated/transcodes/2-b.mp4', 2048)
+        source = write(self.root / 'generated/covers/source.jpg', 512)
+        write_thumbnail(self.root / 'generated/cover-thumbs/1-a.webp', 2048, source=source)
+        write_thumbnail(self.root / 'generated/cover-thumbs/2-b.webp', 2048, source=source)
         self.policy(cache_max_gib=3)
         with patch.object(self.budget, 'GIB', 1024), \
                 patch.object(self.budget, 'allocated_bytes', side_effect=lambda path, info: info.st_size):
@@ -1017,10 +645,12 @@ class CapacityProtectionTests(unittest.TestCase):
                 stale.check(force=True)
 
     def test_recently_used_cache_is_not_cleaned(self):
-        recent = write(self.root / 'generated/transcodes/1-playing.mp4', 2048)
+        recent = write_thumbnail(self.root / 'generated/cover-thumbs/1-playing.webp', 2048,
+                                 source=write(self.root / 'generated/covers/source.jpg', 512))
         with patch.object(self.budget, 'RECENT_SECONDS', 600):
             self.assertEqual(self.budget._clean_rebuildable(self.config, 10 ** 9), 0)
-        self.assertTrue(recent.exists())
+        self.assertTrue(recent.is_file())
+        self.assertTrue(Path(str(recent) + '.rule').is_file())
 
     def test_playback_guard_keeps_playing_when_the_check_itself_fails(self):
         self.policy(data_max_gib=1)
@@ -1092,16 +722,6 @@ class CapacityProtectionTests(unittest.TestCase):
         for target in (self.root, self.root.parent, managed):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, '独立'):
                 self.policy(external_cache_path=str(target))
-
-    def test_default_request_guard_does_not_walk_data_or_cache_for_research_sampling(self):
-        with patch.object(self.budget, 'data_roots', side_effect=AssertionError('未设置数据上限')), \
-                patch.object(self.budget, 'cache_roots', side_effect=AssertionError('未设置缓存上限')), \
-                patch.object(self.budget, '_files', side_effect=AssertionError('前台不能全树扫描')), \
-                patch.object(self.budget, '_history_due', side_effect=AssertionError('日采样不属于请求')):
-            result = self.budget.CapacityGuard(self.config).check(force=True)
-        self.assertIsNone(result['data_bytes'])
-        self.assertIsNone(result['cache_bytes'])
-        self.assertIsNone(result['external_cache_bytes'])
 
     def test_external_directory_without_a_limit_does_not_trigger_foreground_scan(self):
         policy = self.budget.StoragePolicy(external_cache_path=str(self.root))

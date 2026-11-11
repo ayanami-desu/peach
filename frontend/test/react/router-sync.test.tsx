@@ -101,10 +101,10 @@ it('没人认领的历史变化各领一个页面打开序号、按代次挂的�
   expect(new Set(seen.epochs).size).toBe(4);
 });
 
-it('路由元数据登记的就是管理区、播放列表与关注、索引、资料与目录那几页，加上改写过去的旧直达地址、沉浸与覆盖的六条', async () => {
+it('路由元数据登记的就是管理区、个人设置、播放列表与关注、索引、资料、目录、沉浸与覆盖那几页，一处不多一处不少', async () => {
   const r = await load();
   expect(new Set(Object.keys(r.ROUTE_META))).toEqual(new Set([
-    ...Object.keys(r.MANAGED_ROUTES), ...Object.keys(r.REDIRECT_ROUTES), ...Object.keys(r.BROWSE_ROUTES),
+    ...Object.keys(r.MANAGED_ROUTES), ...r.PREFERENCE_PATHS, ...Object.keys(r.BROWSE_ROUTES),
     ...Object.keys(r.INDEX_ROUTES), ...Object.keys(r.ENTITY_ROUTES), ...r.CATALOG_PATHS,
-    ...Object.keys(r.IMMERSE_ROUTES), ...r.OVERLAY_PATHS, ...r.PREFERENCE_PATHS]));
+    ...Object.keys(r.IMMERSE_ROUTES), ...r.OVERLAY_PATHS]));
 });

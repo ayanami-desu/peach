@@ -2,8 +2,7 @@
  *
  * 这一屏要回答三个问题，顺序就是它们的紧迫程度：现在有什么在跑、有哪一轮被挡下了、
  * 刚跑完的那些怎么样。三段共用 `/api/tasks` 一次请求的结果。最前面的「需要处理」是后台服务
- * 此刻的问题，末尾的「云下载」段是网盘离线任务，两者各自取数与轮询（`background-issues.tsx`、
- * `downloads-panel.tsx`），和这三段互不牵连。
+ * 此刻的问题，自己取数与轮询（`background-issues.tsx`），和这三段互不牵连。
  *
  * 轮询交给 Query 的 `refetchInterval`：间隔按上一次拿到的内容算，有东西在跑两秒一次，
  * 全是终态十秒一次。它是后台刷新，不写 `aria-busy`——页面上的内容一直是完整的，写了
@@ -32,7 +31,6 @@ import { Progress } from '../components/progress';
 import { DataTableFooter } from '../components/table-controls';
 import { Disclosure } from '../settings/section';
 import { BackgroundIssues } from './background-issues';
-import { DownloadsPanel } from './downloads-panel';
 import { ErrorDetails, ErrorExcerpt } from './error-excerpt';
 import { TaskControlFeedback, TaskControls } from './task-controls';
 import { TaskIcon } from './task-icon';
@@ -461,8 +459,6 @@ export function ActivityPage() {
                 </Section>
               : null}
           </>}
-      {/* 离线下载跑在网盘那头，自己一张表、自己轮询；任务中心为空时它照样在。 */}
-      <DownloadsPanel />
     </Page>
   );
 }

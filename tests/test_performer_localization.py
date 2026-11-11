@@ -2,6 +2,7 @@
 import csv
 import json
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,14 +11,16 @@ import opencc
 
 from peach.migrations import upgrade
 from peach import entry_links
-from scripts.audit_performer_entry_names import collect as audit_entries
-from scripts.localize_performer_names import (
+
+ROOT = Path(__file__).resolve().parents[1]
+# 审阅脚本按「在 scripts/ 里直接跑」写成，同级模块是裸名导入。
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from scripts.localize_performer_names import (  # noqa: E402
     JP_KANJI_TO_SIMPLIFIED, KANJI_ALIAS_SOURCE, apply_rows, collect, main,
     read_identity_review, read_mapping, report_conflicts, simplify_kanji,
     strip_zero_width,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
 OPENCC_T2S = opencc.OpenCC("t2s")
 OPENCC_JP2T = opencc.OpenCC("jp2t")
 
@@ -303,34 +306,6 @@ class PerformerLocalizationTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["action"], "conflict")
         self.assertEqual(rows[0]["resolution"], "partial-merge-group-selection")
-
-    def test_full_entry_audit_includes_release_and_account_performers(self):
-        self.con.execute("INSERT INTO entity_alias VALUES(18,'坂本マリア','坂本マリア','auto:performer-alias',1)")
-        self.con.execute("INSERT INTO entity_external_ref(entity_id,provider,external_kind,external_id) "
-                         "VALUES(18,'javdb','performer','sample')")
-        rows = {row["entity_id"]: row for row in audit_entries(self.con)}
-        self.assertEqual(len(rows), self.con.execute("SELECT count(*) FROM entity WHERE kind='performer'").fetchone()[0])
-        self.assertEqual(rows[18]["entry_name"], "飯岡かなこ")
-        self.assertEqual(rows[18]["name_changed"], 1)
-        self.assertIn("/dm3/cn/actresses/", rows[18]["url"])
-        self.assertEqual(rows[18]["cn_status"], "假名规范名，中文来源未取得")
-        self.assertEqual(rows[14]["cn_status"], "非发行艺人，不判中译")
-        self.assertEqual(rows[14]["url"], "")
-
-    def test_entry_audit_uses_the_source_glyphs_for_missav(self):
-        self.con.execute("UPDATE entity SET canonical_name='七泽美亚',metadata_json='{}' WHERE id=18")
-        self.con.execute("DELETE FROM entity_alias WHERE entity_id=18")
-        self.con.execute("INSERT INTO entity_alias VALUES(18,'七沢みあ','七沢みあ','javdb-actor-page',1)")
-        self.con.execute("INSERT INTO entity_external_ref(entity_id,provider,external_kind,external_id) "
-                         "VALUES(18,'javdb','performer','sample')")
-        directory = entry_links.directory_index({"source": entry_links.DIRECTORY_URL,
-            "entries": [{"name": "七泽美亚", "url": "https://missav.ws/dm3/cn/actresses/"
-                         "%E4%B8%83%E6%B2%A2%E3%81%BF%E3%81%82"}]})
-        rows = {row["entity_id"]: row for row in audit_entries(self.con, directory)}
-        self.assertEqual(rows[18]["entry_name"], "七沢みあ")
-        self.assertEqual(rows[18]["directory_status"], "已匹配")
-        self.assertEqual(rows[18]["url"], "https://missav.ws/dm3/cn/actresses/"
-                         "%E4%B8%83%E6%B2%A2%E3%81%BF%E3%81%82")
 
 
 class KanjiTableAgainstOpenCCTests(unittest.TestCase):

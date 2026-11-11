@@ -165,11 +165,9 @@ def _cover(contract, row: dict, thumbs: dict) -> tuple[str | None, bool]:
 
 
 def _payload(contract, row: dict, today: date, thumbs: dict) -> dict:
-    from .wants_magnets import search_for
     cover, remote = _cover(contract, row, thumbs)
     return {
         "id": int(row["id"]), "code": row["code"], "origin": row["origin"],
-        "has_magnets": search_for(contract.follow_secrets_root).known_magnets(row['code'], row['release_date']) if row['code'] else None,
         "title": row["title"], "link": row["link"], "release_date": row["release_date"],
         "studio": row["studio"], "performers": row["performers"],
         "phase": wants.phase(row, today), "fresh": wants.is_fresh(row["release_date"], today),
@@ -210,26 +208,6 @@ def _ids(body) -> list[int]:
     if not ids:
         raise ValueError("ids must be a nonempty list of want ids")
     return ids
-
-
-def q_want_magnets(contract, args) -> dict:
-    """只读资源查询；未发售、已入库与没有番号的条目不请求来源。"""
-    from .javdb_public import public_cache_scope
-    from .wants_magnets import search_for
-
-    raw = str(args.get("id") or "")
-    if not raw.isdigit():
-        raise ValueError("缺少想要条目编号")
-    with contract.database.read_connection() as connection:
-        row = wants.get(connection, int(raw))
-    if row is None:
-        raise KeyError("想要条目不存在")
-    if not row["code"] or wants.phase(row, date.today()) in {"unreleased", "acquired"}:
-        return {"ok": True, "state": "unavailable", "items": [], "error": "", "checked_at": None}
-    # JavDB 匿名资料与详情页共用快照目录。
-    with public_cache_scope(contract.cover_root.parent / 'jav-public'):
-        return search_for(contract.follow_secrets_root).query(
-            row["code"], refresh=str(args.get('refresh') or '') == '1', released=row['release_date'])
 
 
 def _add(connection, body) -> dict:

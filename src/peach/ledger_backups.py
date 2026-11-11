@@ -620,15 +620,25 @@ class LedgerBackups:
                    for job in (self.backup_job, self._restoring))
 
     def snapshot(self) -> dict:
-        from .runtime_prepare import configured_ledger_writer
-        writer, reason = configured_ledger_writer(self.config)
         return {
             "backups": catalog(self.live, self.organize),
             "backup": self.backup_job.snapshot() or {"status": "idle"},
             "restore": self._restoring.snapshot() or {"status": "idle"},
-            "writer": writer, "writer_reason": "" if writer else reason,
             "last_restore": read_result(self.live),
         }
+
+    def _running_tasks(self, readable: bool) -> list[str]:
+        """任务中心里还在跑的任务名字。表读不出来就没有可查的，恢复正好是给它修表。"""
+        from .task_runs import task_label
+        runs = self.restore_job.runs
+        if runs is None or not readable:
+            return []
+        try:
+            rows = runs.query(status='active', limit=50)
+        except Exception:
+            log.warning("读取任务中心失败，未能确认有没有后台任务在跑", exc_info=True)
+            return []
+        return [task_label(run.task_key) for run in rows]
 
     def start_backup(self) -> dict:
         with self.lock:
@@ -646,17 +656,12 @@ class LedgerBackups:
 
     def start_restore(self, ident: object) -> dict:
         from .health import inspect_database
-        from .runtime_prepare import configured_ledger_writer
-        from . import update_tasks
-        writer, reason = configured_ledger_writer(self.config)
-        if not writer:
-            raise BackupRejected(f"只有写入端能恢复账本：{reason}")
         backup = resolve(self.live, self.organize, ident)
         readable = bool(inspect_database(self.live, self.migrations_dir)["readable"])
         with self.lock:
             if self._busy():
                 raise BackupRejected("备份或恢复正在进行，请等它完成")
-            busy = update_tasks.running(self.live, task_rows=readable)
+            busy = self._running_tasks(readable)
             if busy:
                 raise BackupRejected(f"还有后台任务在运行：{'、'.join(busy)}。请等它们结束或停止后再恢复")
             job = self.restore_job if readable else self.offline_restore
@@ -665,17 +670,8 @@ class LedgerBackups:
 
             def work(identity):
                 from .config import MIGRATIONS_DIR
-                token = update_tasks.reserve(self.live, busy="正在从备份恢复账本，暂时不能启动新任务。")
-                try:
-                    own_files, own_runs = job.registration(identity)
-                    late = update_tasks.running(self.live, own_files=own_files, own_runs=own_runs,
-                                                task_rows=readable)
-                    if late:
-                        raise BackupRejected(f"还有后台任务在运行：{'、'.join(late)}。没有恢复")
-                    outcome = restore(self.live, backup, migrations_dir=migrations_dir or MIGRATIONS_DIR,
-                                      progress=lambda **values: job.update(identity, **values))
-                finally:
-                    update_tasks.release(self.live, token)
+                outcome = restore(self.live, backup, migrations_dir=migrations_dir or MIGRATIONS_DIR,
+                                  progress=lambda **values: job.update(identity, **values))
                 if self.after_restore is not None:
                     try:
                         self.after_restore()

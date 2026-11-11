@@ -12,7 +12,7 @@ import {
   type QualityGoal, type QualityGoalsData,
 } from '../../src/react/quality-goals/quality-goals';
 
-import { click, mount, mountRoot, settle } from './render';
+import { click, mount, mountRoot } from './render';
 
 // 客户端是模块级的单例（所有 React 根共用一个），用例之间不清就互相喂数据。
 afterEach(() => queryClient.clear());
@@ -40,7 +40,6 @@ const payload = (items: QualityGoal[], total = items.length): QualityGoalsData =
 
 /** 遗留层交出来的那几个助手，换成可辨认的最小实现。 */
 const legacyProps = () => ({
-  toast: vi.fn(),
   openItem: vi.fn<(id: number) => void>(),
   javTitleHtml: (item: QualityGoal) => `<strong class="ui-javcode">${item.name}</strong>`,
   javDisplayName: (item: QualityGoal) => `名称 ${item.name}`,
@@ -50,11 +49,7 @@ const legacyProps = () => ({
 /** 依次回这几份数据，最后一份之后一直回它。`null` 那一份回 500。 */
 function serve(...responses: (QualityGoalsData | null)[]) {
   let at = 0;
-  const fetcher = vi.fn(async (input: string, _init?: RequestInit) => {
-    // 云下载弹层自己取下载配置，那一路回一份没配渠道的空表，不占这几份数据的次序。
-    if (input.startsWith('/api/downloads')) {
-      return { ok: true, status: 200, json: async () => ({ available: true, providers: [], tasks: [] }) };
-    }
+  const fetcher = vi.fn(async (_input: string, _init?: RequestInit) => {
     const body = responses[Math.min(at, responses.length - 1)] ?? null;
     at += 1;
     return body
@@ -136,16 +131,6 @@ it('封面、标题和页脚三处都打开同一部作品，无障碍名称用�
   await click(host.querySelector('h3 button'));
   await click([...host.querySelectorAll('button')].find((node) => node.textContent === '查看版本'));
   expect(props.openItem.mock.calls).toEqual([[42], [42], [42]]);
-});
-
-it('搜索资源原地打开云下载弹层，带入番号与原版本目标；无番号只提供查看版本', async () => {
-  const { host } = await open(payload([goal({ id: 42, code: 'ABC-123', reason: '中字' }), goal({ id: 43 })]));
-  const buttons = [...host.querySelectorAll('button')].filter((node) => node.textContent === '查找资源');
-  expect(buttons).toHaveLength(1);
-  await click(buttons[0]);
-  await settle();
-  const dialog = document.querySelector('[role=dialog]');
-  expect(dialog?.textContent).toContain('ABC-123 · 名称 one.mp4');
 });
 
 it('一条目标都没有时给空态，不是一片白', async () => {

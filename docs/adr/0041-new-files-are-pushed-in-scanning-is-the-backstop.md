@@ -78,6 +78,6 @@ CloudDrive2 会在 Peach 没起来的那段时间推空，前缀表配错会整�
 
 - 新依赖 `watchdog==6.0.0`，进依赖清单与 Dependabot。
 - 多一个 POST 端点、一份设置（`push-discovery.json`）、一份密钥文件。
-- CloudDrive2 那一侧要用户自己配一次 `webhook.toml`，步骤写在 [docs/CLOUDDRIVE.md](../CLOUDDRIVE.md)；这需要
+- CloudDrive2 那一侧要用户自己配一次 `webhook.toml`，步骤写在 [docs/CLOUDDRIVE.md](../EXTERNAL_PLAYERS.md)；这需要
   CloudDrive2 的会员功能。配不了也不影响本地通道和全量扫描。
 - README 的运行方式多一句：新文件默认等扫描，打开推送发现后是秒级。

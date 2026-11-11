@@ -206,14 +206,13 @@ class ExtractionTests(unittest.TestCase):
                 self.assertEqual(release_code_from_filename(name), code)
 
     def test_scannable_media_suffixes_preserve_short_release_codes(self):
-        from peach.scan import IMAGE, VIDEO
-        for suffix in sorted(VIDEO | IMAGE):
+        from peach.catalog_rules import VIDEO_EXTENSIONS
+        for suffix in sorted(VIDEO_EXTENSIONS):
             for name, code in ((f'LAF-41{suffix}', 'LAF-041'),
                                (f'MEYD911{suffix.upper()}', 'MEYD-911')):
                 with self.subTest(name=name):
                     self.assertEqual(release_code_from_filename(name), code)
-                    if suffix in VIDEO:
-                        self.assertEqual(jav_fallback_title(name, code), '')
+                    self.assertEqual(jav_fallback_title(name, code), '')
 
     def test_media_suffixes_preserve_volumes_and_exclude_camera_names(self):
         for suffix in ('.mpg', '.flv', '.rmvb', '.m2ts', '.iso', '.strm'):

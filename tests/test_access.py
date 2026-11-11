@@ -19,7 +19,7 @@ class AccessTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name).resolve() / "access.json"
         self.app = FastAPI()
-        self.app.state.settings = SimpleNamespace(token="internal-test-token", access_path=self.path, configured=True, mdns_name="peach")
+        self.app.state.settings = SimpleNamespace(token="internal-test-token", access_path=self.path, configured=True)
         self.app.include_router(routes_auth.router)
         self.app.include_router(routes_configuration.router)
         @self.app.get("/private")
@@ -181,13 +181,16 @@ class AccessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/private")).status_code, 401)
 
     async def test_open_browsing_does_not_grant_configuration_access(self):
-        access.save(self.path, "")
-        self.app.state.automatic_updates = SimpleNamespace(snapshot=lambda: {"mode": "off"})
-        path = "/api/configuration/automatic-updates"
+        policy = access.save(self.path, "")
+        body = {"revision": policy["revision"], "action": "set", "password": "correct-password",
+                "confirmation": "correct-password"}
         self.assertEqual((await self.client.get("/private")).status_code, 200)
-        self.assertEqual((await self.client.get(path)).status_code, 401)
-        self.assertEqual((await self.client.get(path, headers={"X-Token": "wrong"})).status_code, 401)
-        self.assertEqual((await self.client.get(path, headers={"X-Token": "internal-test-token"})).status_code, 200)
+        self.assertEqual((await self.client.post("/api/configuration/access", json=body)).status_code, 401)
+        self.assertEqual((await self.client.post("/api/configuration/access", json=body,
+                                                 headers={"X-Token": "wrong"})).status_code, 401)
+        self.assertEqual((await self.client.post("/api/configuration/access", json=body,
+                                                 headers={"X-Token": "internal-test-token"})).status_code, 200)
+        self.assertEqual(access.load(self.path)["mode"], "password")
 
     async def test_untrusted_proxy_cannot_assert_external_origin(self):
         access.save(self.path, "correct-password")
@@ -218,12 +221,12 @@ class AccessTests(unittest.IsolatedAsyncioTestCase):
         path = config.directory("secrets") / "access.json"
         tree = SimpleNamespace(token_created=True)
         with patch.object(onboarding, "configure", return_value=config), patch.object(onboarding, "create_data_tree", return_value=tree), patch.object(settings_file, "write", return_value=config.path):
-            onboarding.apply(config, None, windows=True, access_password="correct-password")
+            onboarding.apply(config, None, access_password="correct-password")
             self.assertTrue(access.verify(access.load(path), "correct-password"))
-            onboarding.apply(config, None, windows=True)
+            onboarding.apply(config, None)
             self.assertTrue(access.verify(access.load(path), "correct-password"))
             path.unlink()
-            onboarding.apply(config, None, windows=True)
+            onboarding.apply(config, None)
             self.assertEqual(access.load(path)["mode"], "open")
 
 
@@ -291,9 +294,8 @@ class DeviceSessionTests(unittest.IsolatedAsyncioTestCase):
         phone = await self.sign_in(self.device(SAFARI_IPHONE, ("198.51.100.20", 5000)))
         rows = (await self.listing(desk))["sessions"]
         own, other = rows[0]["id"], rows[1]["id"]
-        self.assertFalse((await self.listing(phone))["manageable"])
+        self.assertTrue((await self.listing(phone))["manageable"], "管理权只看凭据，不看物理位置")
         self.assertEqual((await self.revoke(desk, id=own)).status_code, 400, "本机不在这里撤")
-        self.assertEqual((await self.revoke(phone, id=own)).status_code, 403, "撤销只在运行 Peach 的电脑上做")
         self.assertEqual((await self.revoke(desk, id=other, revision="stale")).status_code, 409)
         response = await self.revoke(desk, id=other)
         self.assertEqual(response.status_code, 200, response.text)
@@ -405,8 +407,7 @@ class ConfigurationPageCase(unittest.IsolatedAsyncioTestCase):
         self.app = FastAPI()
         self.app.state.settings = replace(
             PeachSettings(), token=self.old, token_file=auth.token_path(self.secrets), access_path=self.path,
-            configured=True, mdns_name="peach", review_writer_origin="", secrets_root=self.secrets)
-        self.app.state.review_mirror = SimpleNamespace(token=self.old)
+            configured=True, secrets_root=self.secrets)
         self.app.include_router(routes_auth.router)
         self.app.include_router(routes_configuration.router)
 
@@ -450,7 +451,6 @@ class TokenRotationTests(ConfigurationPageCase):
         self.assertEqual((body["mode"], body["signed_out"]), ("password", 0))
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(auth.read_token(self.secrets), new, "口令文件换成新值，下次启动读到同一份")
-        self.assertEqual(self.app.state.review_mirror.token, new, "复核镜像发的也是新口令")
         self.assertEqual((await script.get("/private", headers={"X-Token": self.old})).status_code, 401, "不用重启旧口令就失效")
         self.assertEqual((await script.get("/private", headers={"X-Token": new})).status_code, 200)
         for browser in (desk, phone):
@@ -469,9 +469,8 @@ class TokenRotationTests(ConfigurationPageCase):
         self.assertEqual([row["current"] for row in rows], [True], "失效设备的记录一并清掉")
         await self.sign_in(phone, response.json()["token"])
 
-    async def test_rotation_is_refused_off_this_machine_cross_origin_and_for_overridden_tokens(self):
+    async def test_rotation_is_refused_cross_origin_and_for_overridden_tokens(self):
         access.save(self.path, "")
-        self.assertEqual((await self.rotate(self.device(peer=("192.0.2.2", 1)))).status_code, 403)
         self.assertEqual((await self.rotate(self.device(), Origin="https://evil.example")).status_code, 403)
         settings = self.app.state.settings
         for changed, reason in (({"token_file": None}, "PEACH_TOKEN"), ({"token": "", "token_file": None}, "没有使用访问口令")):
@@ -482,92 +481,16 @@ class TokenRotationTests(ConfigurationPageCase):
                 self.assertIn(reason, response.text)
         self.app.state.settings = settings
         state = routes_configuration.api_token_payload(SimpleNamespace(app=self.app))
-        self.assertEqual(state, {"rotatable": True, "reason": "", "paired": routes_configuration.REPLICATION_ENABLED})
-
-
-def _ca_pem(with_key: bool = False) -> bytes:
-    """测试用的自签 CA，用 cryptography 现场生成，不依赖 openssl。"""
-    from datetime import datetime, timedelta, timezone
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID
-
-    key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Peach Local CA")])
-    now = datetime.now(timezone.utc)
-    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
-            .serial_number(1).not_valid_before(now).not_valid_after(now + timedelta(days=3650))
-            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-            .sign(key, hashes.SHA256()))
-    pem = cert.public_bytes(serialization.Encoding.PEM)
-    if with_key:
-        pem += key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                                 serialization.NoEncryption())
-    return pem
-
-
-class CertificateTrustTests(ConfigurationPageCase):
-    """其他设备装本机 CA：只下发公开证书，手机凭限时签名下载，不用先登录。"""
-
-    async def asyncSetUp(self):
-        await super().asyncSetUp()
-        self.app.state.settings = replace(self.app.state.settings, tls_enabled=True, mdns_port=443)
-        access.save(self.path, "correct-password")
-        self.ca = self.secrets / "tls" / "peach-local-ca.crt"
-        self.ca.parent.mkdir()
-        self.ca.write_bytes(_ca_pem(with_key=True))
-
-    async def test_fingerprint_matches_and_the_download_never_carries_a_private_key(self):
-        from cryptography import x509
-        from cryptography.hazmat.primitives import hashes
-        desk = await self.sign_in(self.device())
-        response = await desk.get("/api/configuration/certificate")
-        self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json()
-        expected = x509.load_pem_x509_certificate(self.ca.read_bytes()).fingerprint(hashes.SHA256()).hex().upper()
-        self.assertEqual(payload["fingerprint"].replace(":", ""), expected)
-        self.assertRegex(payload["fingerprint"], r"^([0-9A-F]{2}:){31}[0-9A-F]{2}$")
-        self.assertTrue(payload["phone_url"].startswith("https://peach.local/api/configuration/certificate/peach-local-ca.crt?k="),
-                        "从回环打开配置页时，手机地址换成 mDNS 名字")
-        self.assertTrue(payload["qr"] and set("".join(payload["qr"])) <= {"0", "1"})
-        self.assertEqual(len(payload["qr"]), len(payload["qr"][0]), "二维码是方阵")
-        download = await desk.get(payload["download"])
-        self.assertEqual(download.status_code, 200)
-        self.assertEqual(download.headers["content-type"], "application/x-x509-ca-cert")
-        self.assertIn('filename="peach-local-ca.crt"', download.headers["content-disposition"])
-        self.assertIn(b"BEGIN CERTIFICATE", download.content)
-        self.assertNotIn(b"PRIVATE KEY", download.content, "文件里拼了私钥也不外发")
-
-    async def test_phone_downloads_with_the_signed_link_and_nothing_else_without_login(self):
-        desk = await self.sign_in(self.device())
-        path = (await desk.get("/api/configuration/certificate")).json()["phone_url"].removeprefix("https://peach.local")
-        phone = self.device(SAFARI_IPHONE, ("198.51.100.20", 5000))
-        self.assertEqual((await phone.get(path)).status_code, 200, "扫码下载不用先登录")
-        self.assertEqual((await phone.get("/api/configuration/certificate/peach-local-ca.crt")).status_code, 401)
-        self.assertEqual((await phone.get(path + "x")).status_code, 403)
-        self.assertEqual((await phone.get("/api/configuration/certificate")).status_code, 401)
-        await self.sign_in(phone)
-        self.assertEqual((await phone.get("/api/configuration/certificate")).status_code, 403,
-                         "指纹与二维码只在运行 Peach 的电脑上给")
-        with patch.object(routes_configuration, "_LINK_AGE", -1):
-            stranger = self.device(SAFARI_IPHONE, ("198.51.100.21", 5000))
-            self.assertEqual((await stranger.get(path)).status_code, 403, "过期的二维码不认")
-
-    async def test_no_https_service_or_no_ca_means_no_section(self):
-        desk = await self.sign_in(self.device())
-        self.app.state.settings = replace(self.app.state.settings, tls_enabled=False)
-        self.assertIsNone(routes_configuration.certificate_payload(SimpleNamespace(app=self.app)))
-        self.assertEqual((await desk.get("/api/configuration/certificate/peach-local-ca.crt")).status_code, 404)
-        self.app.state.settings = replace(self.app.state.settings, tls_enabled=True)
-        self.ca.unlink()
-        self.assertEqual((await desk.get("/api/configuration/certificate")).status_code, 404)
+        self.assertEqual(state, {"rotatable": True, "reason": ""})
 
 
 class DockerFirstAccessTests(ConfigurationPageCase):
-    """Docker 还没有访问策略时，登录页换成访问设置；只收本机与私有网络、不带转发头的来源（ADR-0149）。"""
+    """Docker 还没有访问策略时可以在登录页之外的设置页设访问密码；来源只看 Origin。
 
-    DOCKER = {"PEACH_DISTRIBUTION": "docker", "PEACH_HEADLESS_MANAGED": "1"}
+    来源判定不再区分本机、私有网络与转发头（ADR-0157）：浏览器写请求过了 Origin 就收。
+    """
+
+    DOCKER = {"PEACH_DISTRIBUTION": "docker"}
 
     async def asyncSetUp(self):
         await super().asyncSetUp()
@@ -585,27 +508,16 @@ class DockerFirstAccessTests(ConfigurationPageCase):
     async def submit(self, client, **body):
         return await client.post("/api/configuration/access/first", json=body)
 
-    async def test_docker_without_a_policy_opens_access_setup_for_local_and_private_peers(self):
-        for peer in ("127.0.0.1", "198.51.100.1", "192.0.2.20", "fd00::5"):
+    async def test_a_docker_deployment_without_a_policy_shows_the_token_login(self):
+        for peer in ("127.0.0.1", "198.51.100.1", "8.8.8.8", "fd00::5"):
             with self.subTest(peer=peer):
                 page = await self.device(peer=(peer, 1)).get("/login", params={"next": "/stats"})
                 self.assertEqual(page.status_code, 200)
-                self.assertEqual(self.mode(page), "setup")
-                self.assertIn("<title>Peach · 访问设置</title>", page.text)
+                self.assertEqual(self.mode(page), "legacy")
+                self.assertIn("<title>登录 Peach</title>", page.text)
 
-    async def test_public_peers_and_forwarded_requests_get_the_explanation_and_cannot_submit(self):
+    async def test_the_first_access_submit_only_turns_away_cross_origin_requests(self):
         body = {"mode": "password", "password": "correct-password", "confirmation": "correct-password"}
-        cases = ((("8.8.8.8", 1), {}), (("192.0.2.20", 1), {"X-Forwarded-For": "8.8.8.8"}),
-                 (("127.0.0.1", 1), {"Forwarded": "for=8.8.8.8"}), (("198.51.100.1", 1), {"CF-Connecting-IP": "8.8.8.8"}))
-        for peer, headers in cases:
-            with self.subTest(peer=peer, headers=headers):
-                client = self.device(peer=peer)
-                client.headers.update(headers)
-                page = await client.get("/login")
-                self.assertEqual(self.mode(page), "denied")
-                refused = await self.submit(client, **body)
-                self.assertEqual(refused.status_code, 403)
-                self.assertEqual(refused.json()["detail"], routes_auth.FIRST_ACCESS_DENIED)
         foreign = await self.device().post("/api/configuration/access/first", json=body,
                                            headers={"Origin": "https://evil.example"})
         self.assertEqual(foreign.status_code, 403)
@@ -664,7 +576,7 @@ class ProxyLoginLimitTests(unittest.TestCase):
 
     def request(self, peer="127.0.0.1", **headers):
         return Request({"type": "http", "client": (peer, 1234),
-                        "app": SimpleNamespace(state=SimpleNamespace(tunnel=None)),
+                        "app": SimpleNamespace(state=SimpleNamespace()),
                         "headers": [(name.replace("_", "-").encode(), value.encode())
                                     for name, value in headers.items()]})
 

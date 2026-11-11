@@ -17,9 +17,6 @@ class PerformerDeleteTests(unittest.TestCase):
         self.root = Path(temp.name).resolve()
         self.contract = WebContract(fresh_ledger(self.root), avatar_root=self.root / 'avatars')
         self.contract.resource_cleanup_enabled = False
-        roots = mock.patch('peach.web_batch.LOCATION_ROOT_DECLARATIONS', {'local': (str(self.root),)})
-        roots.start()
-        self.addCleanup(roots.stop)
         with self.contract.write_transaction() as c:
             for entity_id, kind in ((1, 'performer'), (2, 'performer'), (3, 'studio')):
                 c.execute("INSERT INTO entity(id,kind,canonical_name,normalized_name,created_at,updated_at) "
@@ -87,7 +84,7 @@ class PerformerDeleteTests(unittest.TestCase):
         result = self.delete(self.plan())
         self.assertEqual(result['purged'], 201)
         self.assertEqual(result['blocked'], [])
-        self.assertFalse((self.root / '1.mp4').exists())
+        self.assertTrue((self.root / '1.mp4').is_file(), "删除只动账本行，网盘上的媒体不碰")
         self.assertTrue(photo.exists())
         self.assertTrue(other.exists())
         with self.contract.read_connection() as c:
@@ -95,17 +92,7 @@ class PerformerDeleteTests(unittest.TestCase):
             self.assertEqual([r[0] for r in c.execute('SELECT id FROM asset ORDER BY id')], [202, 203])
             self.assertEqual(c.execute('PRAGMA foreign_key_check').fetchall(), [])
 
-    def test_file_failure_preserves_its_ledger_row_and_reports_the_reason(self):
-        path = self.add(1)
-        with mock.patch('peach.web_batch._quarantine_media', side_effect=PermissionError('file locked')):
-            result = self.delete(self.plan())
-        self.assertEqual(result['purged'], 0)
-        self.assertEqual(result['blocked'][0]['id'], 1)
-        self.assertIn('file locked', result['blocked'][0]['reason'])
-        self.assertTrue(path.exists())
-        self.assertEqual(self.plan()['total'], 1)
-
-    def test_database_failure_restores_quarantined_media_and_ledger(self):
+    def test_database_failure_keeps_the_ledger_row(self):
         path = self.add(1)
         with self.contract.write_transaction() as c:
             c.execute("CREATE TRIGGER reject_delete BEFORE DELETE ON asset BEGIN SELECT RAISE(ABORT,'blocked delete'); END")

@@ -104,9 +104,8 @@ const siteName=(url:unknown)=>{
    传的是链接 id 而不是地址。跟 `/follow-stream` 同一条规矩：服务端只取数据库里已有的
    地址，绝不去取前端递过来的任意 URL——那等于开一个任意地址抓取的口子。 */
 const linkMarkUrl=(link:{link_id?:number|null})=>`/link-mark?id=${encodeURIComponent(link.link_id ?? '')}`;
-/* 采集来源和口味排行里那些站点的圆标，同一条规矩的另一个入口：递的是服务端已经
-   知道的键——采集来源键，或口味域名白名单里的那条后缀——不是地址。 */
-const siteMarkUrl=(params:{source:string}|{domain:string})=>`/site-mark?${new URLSearchParams(params)}`;
+/* 采集来源的圆标，同一条规矩的另一个入口：递的是服务端已经知道的采集来源键，不是地址。 */
+const siteMarkUrl=(params:{source:string})=>`/site-mark?${new URLSearchParams(params)}`;
 /* 图标库里有的常见社媒走内联品牌标记，连 favicon 都不取。
 
    favicon 是别人服务器上的一张小位图：X 和 Instagram 直接挡掉爬取，资料页上只剩一只

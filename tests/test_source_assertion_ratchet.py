@@ -32,27 +32,21 @@ TESTS = pathlib.Path(__file__).resolve().parent
 #: 键是测试文件名，值是这个文件里源码文本断言的调用点数。
 BASELINE: dict[str, int] = {
     "test_agency_entity.py": 2,
-    "test_buildinfo.py": 3,
-    "test_cloudflared_packaging.py": 2,
     "test_dependency_policy.py": 25,
-    "test_desktop_settings.py": 5,
     "test_face_detect.py": 3,
     "test_fastapi_api.py": 4,
     "test_follow_assets.py": 1,
     "test_follow_web.py": 1,
-    "test_frontend_build.py": 20,
+    "test_frontend_build.py": 18,
     "test_job_status.py": 1,
     "test_metadata_library.py": 4,
     "test_repo_hygiene.py": 1,
-    "test_scripts.py": 11,
+    "test_scripts.py": 10,
     "test_social_avatar_harvest.py": 2,
     "test_studio_icon_variants.py": 2,
     "test_studio_site_harvest.py": 1,
-    "test_subprocess_encoding.py": 2,
-    "test_tray.py": 3,
     "test_web_js.py": 1,
     "test_web_ui.py": 14,
-    "test_windows_update.py": 3,
 }
 
 MEMBERSHIP = {"assertIn", "assertNotIn"}

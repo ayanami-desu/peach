@@ -204,18 +204,13 @@ export function problemDestination(run: TaskRunPayload, latest = true): { href: 
   if (!hasResultProblems(run) && run.status !== 'failed') return null;
   if (LATEST_ONLY.has(run.task_key) && !latest) return null;
   const targets: Record<string, [string, string]> = {
-    'link-check': ['/data-cleanup#link-manager', '查看有问题的链接'],
-    'link-prune': ['/data-cleanup#link-manager', '查看有问题的链接'],
+    'link-check': ['/data-cleanup/links', '查看有问题的链接'],
+    'link-prune': ['/data-cleanup/links', '查看有问题的链接'],
     // 「需要处理」不收这里的可重试项：问题清单有几百项，先看清单再在那张卡上重试。
     'library-processing': ['/data-cleanup#libraryProcessing', '查看未完成项'],
     'follow-check': ['/subscriptions', '查看关注来源'],
     'feed-check': ['/subscriptions', '查看订阅源'],
     'follow-resolve': ['/subscriptions?tab=add', '查看来源查找'],
-    'resource-scan': ['/data-cleanup#resource-sync', '查看资源同步'],
-    'resource-apply': ['/data-cleanup#resource-sync', '查看资源同步'],
-    'media-repair': ['/data-cleanup#mediaRepair', '查看媒体修复'],
-    'taste-refresh': ['/taste', '查看口味数据来源'],
-    'follow-evidence-reclaim': ['/settings/maintenance/repairs', '查看修复与迁移'],
   };
   const target = targets[run.task_key];
   return target ? { href: target[0], label: target[1] } : null;

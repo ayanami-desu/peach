@@ -5,7 +5,7 @@ import json
 import re
 import time
 from functools import cache, lru_cache
-from pathlib import PureWindowsPath
+from pathlib import PurePosixPath
 
 from .catalog_rules import (
     _jav_code_pattern, is_jav_code, promo_free_key, release_code_from_filename, without_store_prefix,
@@ -150,18 +150,19 @@ REPEATED_COPY_MAX_BYTES = 16 * 1024**2
 
 
 @lru_cache(maxsize=1 << 18)
-def _windows_path(text: str) -> PureWindowsPath:
-    """账本路径的解析结果。一次评分要过十万行，每行在多处判据里各解析同一条路径好几次。
+def _ledger_path(text: str) -> PurePosixPath:
+    """账本路径（`来源:/目录/文件`）的解析结果。一次评分要过十万行，每行在多处判据里
+    各解析同一条路径好几次。
 
-    `PureWindowsPath` 不可变，按字符串缓存与当场构造等价。
+    `PurePosixPath` 不可变，按字符串缓存与当场构造等价。
     """
-    return PureWindowsPath(text)
+    return PurePosixPath(text)
 
 
 @lru_cache(maxsize=1 << 18)
-def _windows_parent(text: str) -> PureWindowsPath:
-    """`_windows_path(text).parent`；`parent` 每次访问都新造一个路径对象。"""
-    return _windows_path(text).parent
+def _ledger_parent(text: str) -> PurePosixPath:
+    """`_ledger_path(text).parent`；`parent` 每次访问都新造一个路径对象。"""
+    return _ledger_path(text).parent
 
 
 @lru_cache(maxsize=1 << 16)
@@ -209,8 +210,8 @@ def _folder_index(connection, *, roots=None) -> tuple[dict[str, int], dict[str, 
     """每个目录里有多少资产，以及其中正片的文件名主体。
 
     两条判据都要看候选的邻居而不只是它自己：成套资源看目录规模，封面与截图看
-    同目录有没有同名正片。`rsplit` 而不是 `PureWindowsPath`：ledger 路径统统是
-    Windows 形态，这里要跑全表七万多行，只取目录名不值得为每行造一个路径对象。
+    同目录有没有同名正片。`rpartition` 而不是路径对象：这里要跑全表七万多行，
+    只取目录名不值得为每行造一个对象。
 
     正片不限于 `medium='video'`：蓝光原盘在账本里是 `other`，它同样是海报要配的那份
     内容。用体积兜住这一类，不去猜扩展名——`.iso`、`.mds`、`BDMV` 之外还有什么，
@@ -221,7 +222,7 @@ def _folder_index(connection, *, roots=None) -> tuple[dict[str, int], dict[str, 
     scope, parameters = _scope_clause(roots=roots)
     for path, medium, size in connection.execute(
             "SELECT path,medium,size FROM asset WHERE path IS NOT NULL AND path<>''" + scope, parameters):
-        folder, _, filename = str(path).rpartition("\\")
+        folder, _, filename = str(path).rpartition("/")
         counts[folder] = counts.get(folder, 0) + 1
         if medium == "video" or (size or 0) >= CONTENT_BYTES:
             stem = filename.rsplit(".", 1)[0] if "." in filename else filename
@@ -244,7 +245,7 @@ def has_sibling_original(stem: str, sibling_videos: set[str]) -> bool:
 def is_decorated_name(stem: str) -> bool:
     """名字挂着两个以上装饰符，没有任何实质描述。
 
-    样本是 `B:\\xxr\\0208 (23)` 里那批 7~20 KB 的 `❤91短视频❤.png`。
+    样本是 `gdrive:/夹带/0208 (23)` 里那批 7~20 KB 的 `❤91短视频❤.png`。
     只挂一个爱心不算：Telegram 导出与正常标题里单个爱心常见，两个以上才是装饰性命名。
     """
     return sum(str(stem or "").count(mark) for mark in DECOR_MARKS) >= 2
@@ -268,8 +269,8 @@ def _scope_clause(*, asset_ids=None, roots=None):
         return "", ()
     clauses, values = [], []
     for location, root in roots:
-        root = str(PureWindowsPath(root)).rstrip("\\")
-        prefix = root + "\\"
+        root = str(root).rstrip("/")
+        prefix = root + "/"
         clauses.append("(location=? AND (path=? COLLATE NOCASE OR substr(path,1,?)=? COLLATE NOCASE))")
         values.extend((location, root, len(prefix), prefix))
     return (" AND (" + " OR ".join(clauses) + ")", tuple(values)) if clauses else (" AND 0", ())
@@ -293,7 +294,7 @@ def _junk_rows(connection, *, asset_ids=None, roots=None):
 
 def _junk_file_eligible(row) -> bool:
     """资料边车、STRM指针和文件自身带番号的分卷不属于垃圾附件。"""
-    item = _windows_path(row["name"] or row["path"] or "")
+    item = _ledger_path(row["name"] or row["path"] or "")
     # STRM 的大小与名字描述的是链接文件，不能作为远端影片的垃圾证据。
     if item.suffix.casefold() in MEDIA_SIDECAR_SUFFIXES or item.suffix.casefold() == '.strm':
         return False
@@ -307,13 +308,13 @@ def _promo_neighbour_counts(rows) -> dict[str, int]:
     """统计同目录中缺少内容描述的推广名。"""
     counts: dict[str, int] = {}
     for row in rows:
-        name = row["name"] or _windows_path(row["path"] or "").name
-        stem = _windows_path(name).stem
+        name = row["name"] or _ledger_path(row["path"] or "").name
+        stem = _ledger_path(name).stem
         if not (PROMO_PHRASE.search(stem) or PROMO_DOMAIN.search(stem)):
             continue
         if promo_residue(stem) >= 14:
             continue
-        folder = str(row["path"] or name).rpartition("\\")[0]
+        folder = str(row["path"] or name).rpartition("/")[0]
         counts[folder] = counts.get(folder, 0) + 1
     return counts
 
@@ -341,13 +342,13 @@ def promo_name_rules() -> tuple[dict, ...]:
 
 def _promo_name_reason(suffix: str, path: str, size: int) -> str:
     """命中词库里推广附件固定命名的理由；只够进复核队列，见 `AUTO_TRASH_SCORE`。"""
-    item = _windows_path(path)
+    item = _ledger_path(path)
     stem = item.stem
     compact = None
     for rule in promo_name_rules():
         if suffix not in rule["suffixes"] or not 0 < size <= rule["max_bytes"]:
             continue
-        if rule["parent_is_name"] and _windows_parent(path).name != stem:
+        if rule["parent_is_name"] and _ledger_parent(path).name != stem:
             continue
         if compact is None:
             compact = re.sub(r"\s", "", stem).casefold()
@@ -360,8 +361,8 @@ def _attachment_junk_reason(suffix: str, path: str, size: int) -> str:
     """区分安装附件与网页存档组件。"""
     if suffix in INSTALLER_SUFFIXES and size < 64 * 1024**2:
         return "媒体目录中的安装附件"
-    item = _windows_path(path)
-    folder = _windows_parent(path)
+    item = _ledger_path(path)
+    folder = _ledger_parent(path)
     if suffix in PAGE_COMPONENT_SUFFIXES and any(
             part.casefold().endswith("_files") for part in folder.parts):
         return "网页存档的脚本或样式附件"
@@ -377,7 +378,7 @@ def _attachment_junk_reason(suffix: str, path: str, size: int) -> str:
 
 def _short_attachment(row) -> bool:
     """有测量值、没有自身作品身份或分卷标记的极短视频。"""
-    stem = _windows_path(row["name"] or row["path"] or "").stem
+    stem = _ledger_path(row["name"] or row["path"] or "").stem
     owner = row["creator"] or ""
     return (row["medium"] == "video"
             and 0 < (row["duration"] or 0) <= SHORT_ATTACHMENT_SECONDS
@@ -396,7 +397,7 @@ def _release_main_videos(connection, *, roots=None) -> dict[str, list[tuple[floa
             "SELECT path,duration,size FROM asset WHERE disposal IS NULL AND medium='video' "
             f"AND location IN ({marks}) AND duration>=1200 AND size>=? AND path IS NOT NULL" + scope,
             (*SCANNABLE_LOCATIONS, JUNK_VIDEO_MAX_BYTES, *parameters)):
-        item = PureWindowsPath(path)
+        item = PurePosixPath(path)
         key = promo_free_key(item.stem)
         if key and key == promo_free_key(item.parent.name):
             mains.setdefault(str(item.parent).casefold(), []).append((duration, size))
@@ -415,7 +416,7 @@ def _short_attachment_reasons(connection, rows, *, roots=None) -> dict[int, str]
     for row in rows:
         if not _short_attachment(row):
             continue
-        path = PureWindowsPath(row["path"] or "")
+        path = PurePosixPath(row["path"] or "")
         folder = str(path.parent).casefold()
         if not any(duration >= row["duration"] * 40 and size >= row["size"] * 10
                    for duration, size in mains.get(folder, ())):
@@ -455,7 +456,7 @@ def _download_folders(connection) -> dict[str, tuple[str, int, float]]:
             "SELECT t.ledger_path,t.code,t.asset_id,a.duration FROM download_task t "
             "LEFT JOIN asset a ON a.id=t.asset_id WHERE t.state='ingested' "
             "AND t.asset_id IS NOT NULL AND t.code IS NOT NULL AND t.ledger_path IS NOT NULL"):
-        folder = PureWindowsPath(path)
+        folder = PurePosixPath(path)
         if len(folder.parts) >= 3:
             folders[str(folder).casefold()] = (code, main, duration or 0)
             roots.add(str(folder.parent))
@@ -473,13 +474,13 @@ def _untracked_download_folders(connection, roots, tracked) -> dict[str, tuple[s
     """
     found: dict[str, tuple[str, int, float]] = {}
     for root in roots:
-        prefix = root.rstrip("\\") + "\\"
+        prefix = root.rstrip("/") + "/"
         for asset_id, path, duration in connection.execute(
                 "SELECT id,path,duration FROM asset WHERE disposal IS NULL AND medium='video' "
                 "AND duration>0 AND substr(path,1,?)=? COLLATE NOCASE", (len(prefix), prefix)):
-            name, _, rest = str(path)[len(prefix):].partition("\\")
+            name, _, rest = str(path)[len(prefix):].partition("/")
             key = (prefix + name).casefold()
-            code = rest and key not in tracked and release_code_from_filename(PureWindowsPath(rest).stem)
+            code = rest and key not in tracked and release_code_from_filename(PurePosixPath(rest).stem)
             if code and names_release(name, code) and duration > found.get(key, ("", 0, 0.0))[2]:
                 found[key] = (code, asset_id, duration)
     return found
@@ -498,7 +499,7 @@ def _download_attachment_reasons(connection, rows) -> dict[int, tuple[str, bool]
     if not folders:
         return reasons
     for row in rows:
-        path = PureWindowsPath(row["path"] or "")
+        path = PurePosixPath(row["path"] or "")
         task = next((folders[key] for key in (str(parent).casefold() for parent in path.parents)
                      if key in folders), None)
         if task is None or row["id"] == task[1]:
@@ -534,9 +535,9 @@ def _repeated_copies(connection, *, roots=None) -> dict[tuple[str, int], int]:
             "AND size>0 AND size<? AND path IS NOT NULL "
             "AND (COALESCE(medium,'other')<>'video' OR duration IS NULL OR duration<=1200)" + scope,
             (*SCANNABLE_LOCATIONS, JUNK_VIDEO_MAX_BYTES, *parameters)):
-        folder = str(path).rpartition("\\")[0]
+        folder = str(path).rpartition("/")[0]
         if folder not in releases:
-            releases[folder] = bool(release_code_from_filename(folder.rpartition("\\")[2]))
+            releases[folder] = bool(release_code_from_filename(folder.rpartition("/")[2]))
         if not releases[folder]:
             continue
         key = (str(name or "").casefold(), int(size))
@@ -546,7 +547,7 @@ def _repeated_copies(connection, *, roots=None) -> dict[tuple[str, int], int]:
 
 def _repeated_copy_reason(row, copies: dict[tuple[str, int], int]) -> str:
     """散布在多个目录的同一份小附件；带作品番号的文件与作品图名不算。"""
-    item = _windows_path(row["name"] or row["path"] or "")
+    item = _ledger_path(row["name"] or row["path"] or "")
     size = int(row["size"] or 0)
     count = copies.get((item.name.casefold(), size), 0)
     if (not count or (row["medium"] != "video" and size > REPEATED_COPY_MAX_BYTES)
@@ -648,8 +649,8 @@ def scored_candidates(database, *, asset_ids=None, roots=None) -> tuple[list[dic
     try:
         return _scored_candidates(database, asset_ids=asset_ids, roots=roots)
     finally:
-        _windows_path.cache_clear()
-        _windows_parent.cache_clear()
+        _ledger_path.cache_clear()
+        _ledger_parent.cache_clear()
         _promo_directory_parts.cache_clear()
 
 
@@ -662,8 +663,8 @@ def _scored_candidates(database, *, asset_ids, roots) -> tuple[list[dict], froze
     for r in rows:
         d = dict(r)
         s, why = 0, []
-        name = d.get("name") or _windows_path(d.get("path") or "").name
-        name_path = _windows_path(name)
+        name = d.get("name") or _ledger_path(d.get("path") or "").name
+        name_path = _ledger_path(name)
         nm = name_path.stem
         suffix = name_path.suffix.casefold()
         d["junk_kind"] = (
@@ -691,10 +692,9 @@ def _scored_candidates(database, *, asset_ids, roots) -> tuple[list[dict], froze
         owner = d.get("creator") or ""
         owner_is_promo = bool(AD_DOMAIN.search(owner))
         real_owner = bool(owner) and not owner_is_promo
-        # ledger 路径在两个平台都是 Windows 形态。`rpartition` 没有平台依赖，
-        # 键也与 `_folder_index` 完全同源；`os.path.dirname` 在 macOS 会把整条
-        # 反斜杠路径当成文件名。
-        folder = str(d.get("path") or name).rpartition("\\")[0]
+        # 账本路径是 `来源:/目录/文件`。`rpartition` 没有平台依赖，键也与
+        # `_folder_index` 完全同源。
+        folder = str(d.get("path") or name).rpartition("/")[0]
         # 成套下载的资源包里，域名是打包渠道给整包起的名，不是插页的自我暴露。
         bundled = folder_assets.get(folder, 0) >= BUNDLE_DIR_ASSETS
         # 目录名带推广站域名只说明「从哪个站下的」，说明不了这个文件是广告。
@@ -709,7 +709,7 @@ def _scored_candidates(database, *, asset_ids, roots) -> tuple[list[dict], froze
             or (d.get("size") or 0) >= CONTENT_BYTES
             or has_sibling_original(nm, folder_videos.get(folder, frozenset()))
         )
-        promo_dir = _promo_directory(_windows_parent(d.get("path") or name).parts)
+        promo_dir = _promo_directory(_ledger_parent(d.get("path") or name).parts)
         if promo and residue < 6 and not bundled:
             # 名字剥完只剩广告本身，这是最硬的信号。
             s += 60; why.append("整个名字都是推广语")
@@ -801,7 +801,7 @@ def _can_isolate(connection, current, evidence, holders) -> bool:
         return False
     if current['medium'] == 'video' and (current['duration'] is None or current['duration'] <= 0):
         return False
-    stem = PureWindowsPath(current['name'] or current['path'] or '').stem
+    stem = PurePosixPath(current['name'] or current['path'] or '').stem
     identity = PART_MARK.sub('', PROMO_DOMAIN.sub('', stem)).strip('@._- ')
     return not (current['medium'] == 'video' and release_code_from_filename(identity))
 

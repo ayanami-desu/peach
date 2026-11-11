@@ -1,4 +1,4 @@
-/* JAV 想要：按状态分组的作品卡，复用资源链接查询与查找资源弹层。 */
+/* JAV 想要：按状态分组的作品卡，复用资源链接查询。 */
 import { useState } from 'react';
 import { Radio } from 'react-aria-components';
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -8,11 +8,8 @@ import { RiStarLine, RiExternalLinkLine, RiDeleteBinLine } from '@remixicon/reac
 import { Button, ButtonLink } from '@/components/base/buttons/button';
 import { Input } from '@/components/base/input/input';
 
-import { apiGet, errorMessage } from '../../api';
+import { errorMessage } from '../../api';
 import { javContentSkeleton } from '../../jav-skeleton';
-import type { DownloadsSnapshot } from '../bundle';
-import { CloudDownloadDialog, type DownloadPrefill } from '../activity/cloud-download-dialog';
-import { DOWNLOADS_KEY, DOWNLOADS_URL } from '../activity/downloads-panel';
 import { cardClass } from '../components/card';
 import { EmptyState, EmptyFocusButton } from '../components/empty-state';
 import { Note } from '../components/note';
@@ -52,9 +49,9 @@ function Cover({ want }: { want: Want }) {
   );
 }
 
-function WantRow({ want, readOnly, busy, onReset, onRemove, onCloudDownload, downloads, provider, toast }: {
-  want: Want; readOnly: boolean; busy: string; downloads?: DownloadsSnapshot; provider: string; toast(message: string): void;
-  onReset(): void; onRemove(): void; onCloudDownload(): void;
+function WantRow({ want, readOnly, busy, onReset, onRemove, toast }: {
+  want: Want; readOnly: boolean; busy: string; toast(message: string): void;
+  onReset(): void; onRemove(): void;
 }) {
   const [resolvedSource, setResolvedSource] = useState('');
   const source = want.link || resolvedSource || (want.code ? `https://javdb.com/search?q=${encodeURIComponent(want.code)}&f=all` : '');
@@ -82,15 +79,11 @@ function WantRow({ want, readOnly, busy, onReset, onRemove, onCloudDownload, dow
             <Button variant="secondary" size="small" disabled={readOnly} {...busyProps(busy === `reset:${want.id}`)}
               onClick={onReset}>重新查找</Button>
           ) : null}
-          {/* 还在找的两段才给云下载：未发售的没有资源可下，已入库的已经到手。 */}
-          {want.phase === 'searching' || want.phase === 'given_up' ? (
-            <Button variant="secondary" size="small" onClick={onCloudDownload}>查找资源</Button>
-          ) : null}
         </div>
       </div>
       </div>
       {want.code && (want.phase === 'searching' || want.phase === 'given_up')
-        ? <WantMagnets want={want} readOnly={readOnly} downloads={downloads} provider={provider} toast={toast} onSource={setResolvedSource} /> : null}
+        ? <WantMagnets want={want} toast={toast} onSource={setResolvedSource} /> : null}
     </li>
   );
 }
@@ -144,7 +137,6 @@ export interface WantListProps {
 
 export function WantList({ readOnly, toast, query = '', clearQuery }: WantListProps) {
   const [code, setCode] = useState('');
-  const [download, setDownload] = useState<DownloadPrefill | null>(null);
   const action = useAction();
   const wants = useQuery({
     queryKey: WANTS_KEY, queryFn: ({ signal }) => fetchWants(signal),
@@ -181,13 +173,6 @@ export function WantList({ readOnly, toast, query = '', clearQuery }: WantListPr
   const data = wants.data;
   const items = (data?.items || []).filter(want => !query || [want.code, want.title, want.performers]
     .join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase()));
-  const downloads = useQuery({
-    queryKey: DOWNLOADS_KEY,
-    queryFn: ({ signal }) => apiGet<DownloadsSnapshot>(`${DOWNLOADS_URL}?limit=100`, signal),
-    enabled: items.some((want) => want.code && (want.phase === 'searching' || want.phase === 'given_up')),
-  });
-  const configured = downloads.data?.providers.filter((row) => row.configured) || [];
-  const selected = configured[0]?.key || '';
   return (
     <div aria-busy={wants.isPending} className="flex flex-col gap-8">
       <div className={cardClass({ padding: 'none', className: 'flex flex-col gap-4 px-6 py-5 max-sm:px-4' })}>
@@ -206,9 +191,6 @@ export function WantList({ readOnly, toast, query = '', clearQuery }: WantListPr
       {wants.error ? <Note tone="error" title="想要清单读取失败">{errorMessage(wants.error)}</Note> : null}
       {wants.isPending ? <div role="status" aria-label="正在读取想要" dangerouslySetInnerHTML={{ __html: javContentSkeleton('wants') }} /> : null}
       {data?.scraping ? <Help role="status">正在给刚加入的番号取资料与封面。</Help> : null}
-      {downloads.error ? <Note tone="error" title="下载配置未取得">{errorMessage(downloads.error)}</Note> : null}
-      {downloads.data && !configured.length ? <Note tone="neutral">尚未配置下载渠道。<a href={'/settings/library?section=' + encodeURIComponent('下载渠道')}>下载渠道设置</a></Note> : null}
-      {downloads.data && !downloads.data.available ? <Note tone="neutral">云下载只在允许修改数据库的设备上可用。</Note> : null}
 
       {data && !items.length ? (
         <EmptyState size="compact" icon={RiStarLine} title={query ? '没有符合条件的作品' : '还没有想要的作品'}
@@ -223,17 +205,11 @@ export function WantList({ readOnly, toast, query = '', clearQuery }: WantListPr
         if (!rows.length) return null;
         return (
           <WantPhase key={phase} phase={phase} label={label} rows={rows} row={(want) => (
-            <WantRow key={want.id} want={want} readOnly={readOnly} busy={action.busy}
-              downloads={downloads.data} provider={selected} toast={toast}
-              onReset={() => reset(want)} onRemove={() => remove(want)}
-              onCloudDownload={() => setDownload({
-                code: want.code || '', title: want.title || '', origin: `wishlist:${want.id}`,
-                cover: want.cover || '', performers: want.performers || '', release_date: want.release_date || '', studio: want.studio || '',
-              })} />
+            <WantRow key={want.id} want={want} readOnly={readOnly} busy={action.busy} toast={toast}
+              onReset={() => reset(want)} onRemove={() => remove(want)} />
           )} />
         );
       })}
-      <CloudDownloadDialog prefill={download} close={() => setDownload(null)} receipt={toast} provider={selected} />
     </div>
   );
 }

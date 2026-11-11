@@ -1,7 +1,6 @@
 """函数复杂度棘轮：函数变复杂必须有人判断过，不许「顺手加一个 if」悄悄堆上去。
 
-2026-09-13 全仓盘点，`src/peach/` 与 `scripts/` 里分支数达到 30 的函数有 42 个，
-最大的两个（`library_processing.process_library`、`web_batch.q_ads`）分别是 91 与 85。
+2026-09-13 全仓盘点，`src/peach/` 与 `scripts/` 里分支数达到 30 的函数有 42 个。
 它们不是一次写成的，是每次「顺手加一个 if」堆出来的；这个门槛拦的就是那一个 if。
 
 计数是纯 AST 分支数：每个 `if`／`elif`／`for`／`while`／`except`／`with`／`assert`、
@@ -38,7 +37,6 @@ LIMIT = 30
 BASELINE: dict[str, int] = {
     "src/peach/junk.py:_scored_candidates": 53,
     "scripts/localize_performer_names.py:collect": 63,
-    "src/peach/web_resource_sync.py:_resource_orphan_plan": 50,
     "src/peach/web_review.py:_review_rows": 38,
     "src/peach/fanbox.py:normalize_fanbox_post": 59,
     "scripts/merge_duplicate_identities.py:collect": 50,
@@ -48,7 +46,6 @@ BASELINE: dict[str, int] = {
     "scripts/fetch_studio_avatar_candidates.py:main": 44,
     "src/peach/web_catalog.py:q_item": 44,
     "src/peach/web_follow.py:_follow_author_rows": 35,
-    "src/peach/taste_history.py:_taste_analysis": 40,
     "src/peach/web_catalog.py:catalog_filter": 40,
     "scripts/audit_domain_codes.py:collect": 39,
     "scripts/harvest_social_avatars.py:harvest_entity": 37,
@@ -63,23 +60,14 @@ BASELINE: dict[str, int] = {
 
 #: 判过就该这么长的函数：`(分支数, 为什么拆开更差)`。键与 `BASELINE` 同形、不重叠。
 ACCEPTED: dict[str, tuple[int, str]] = {
-    "src/peach/api.py:create_app": (
-        40, "应用工厂：按启动顺序构造数据库、各项后台服务（含可选分享）与路由并接成一个 app，每个可注入的"
-            "依赖各带一个缺省；挂载探测按配置状态启动。拆开会把同一条构造顺序分散到几处"),
     "src/peach/library_processing.py:process_library": (
-        55, "顺序流水线：垃圾检查、媒体属性、本地资料、本地预览、联网采集、写候选、收尾共用一份进度状态"
+        41, "顺序流水线：垃圾检查、媒体属性、联网采集、写候选、接触印相、收尾共用一份进度状态"
             "与问题记录；按番号重新匹配复用同一条逐项处理，只改采集参数；来源扫描、资产查询与"
             "外部会话分别归 `_scan_sources`、`_collection_rows`、`_RemoteSession`，剩下的是"
             "任务编排、逐项目资料处理与指定范围的存量重新核查"),
     "src/peach/jav_cover_fetch.py:run": (
         50, "批处理的主循环：每个番号依次量本机尺寸、择优、比较、落盘、记日志，统计、日志行"
             "和出错后换新的连接池在整轮里共用，逐段拆开只是把这几样来回传"),
-    "scripts/probe.py:run": (
-        41, "媒体批处理：选择允许读取的资产、检查垃圾、并行探测、串行提交与重判共用日志、"
-            "停止标志和磁盘闸门；提交后的资产列表必须跨缓冲批次保留，拆散会割裂中止时的收尾"),
-    "scripts/sheets.py:run": (
-        43, "媒体批处理：按来源选择资产并检查垃圾、并行抽帧、串行登记共用日志、计数和停止标志；"
-            "已有产物复用与磁盘闸门属于同一工作循环，拆开会把退出与失败统计分散到多处"),
 }
 
 #: 一句理由至少要说清「是哪种形状、拆开差在哪」，短于这个长度的多半只是占位。

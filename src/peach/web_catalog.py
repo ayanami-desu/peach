@@ -93,8 +93,8 @@ CARD_PERFORMERS = 6
 def attach_artwork_fields(contract: WebContract, item: dict) -> None:
     """列表、详情与推荐共用本地官方封面和版本投影。"""
     from .strm import is_pointer
-    from .media_identity import ownership
-    item.update(ownership(settings_file.active(), item.get('path') or ''))
+    from .media_libraries import ownership
+    item.update(ownership(settings_file.active(), item.get('location'), item.get('drive_root')))
     if is_pointer(item.get('path') or item.get('name') or ''):
         item['size'] = None
         item['is_strm'] = True
@@ -478,7 +478,7 @@ def q_items(contract: WebContract, args):
     off = max(0, int(args.get("offset", 0)))
     include_total = args.get("count", "1") != "0"
     fetch_limit = lim if include_total else lim + 1
-    sql = ("SELECT a.id,a.location,a.path,a.name,a.catalog_title,a.original_title,a.medium,"
+    sql = ("SELECT a.id,a.location,a.path,a.drive_root,a.name,a.catalog_title,a.original_title,a.medium,"
            "a.creator,a.studio,a.code,a.release_date,a.size,"
            "a.duration,a.width,a.height,a.ctx_length,a.ctx_orient,a.snapshot_path,"
            "a.play_count,a.first_seen,a.last_played,a.leave_ratio,a.feedback,a.disposal,a.disposal_reason,a.rating,a.o_count,"

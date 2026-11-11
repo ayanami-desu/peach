@@ -42,9 +42,10 @@ it('刮削记录显示后台进度并支持取消', async () => {
   expect(host.querySelector('[role="progressbar"]')).toBeNull();
   expect(fetch).toHaveBeenCalledWith('/api/diagnostics/exports/export/cancel', expect.objectContaining({ method: 'POST' }));
 });
+/** 服务端按现在的分区地址给 target：网盘那一格带 `#drives` 锚点，访问安全直接指 `/settings/access`。 */
 const data = (): DiagnosticReport => ({ version: 'test', status: 'warning', checks: {
-  media_mounts: { label: '媒体挂载', status: 'warning', reason: '来源不存在', action: '检查媒体目录', target: '/settings/library', details: {} },
-  security: { label: '访问安全', status: 'warning', reason: '密码未开启', action: '开启密码', target: '/settings/library', details: {} },
+  media_mounts: { label: '媒体挂载', status: 'warning', reason: '来源不存在', action: '检查媒体目录', target: '/settings#drives', details: {} },
+  security: { label: '访问安全', status: 'warning', reason: '密码未开启', action: '开启密码', target: '/settings/access', details: {} },
   data_root: { label: '数据目录', status: 'failed', reason: '没有权限', action: '调整权限', target: null, details: {} },
 }, library: { issue_at: null, groups: {
   duration: { label: '缺时长', count: 2, status: 'ok', truncated: false, items: [
@@ -61,9 +62,9 @@ async function open(report = data()) {
 }
 it('诊断跳到具体配置分栏，系统权限项只显示动作', async () => {
   const { host } = await open();
-  expect(linkNamed('打开媒体库与入库', host)?.getAttribute('href')).toBe('/settings/library');
-  expect(linkNamed('打开网络与访问', host)?.getAttribute('href')).toBe('/settings/network');
-  expect(buttonNamed('打开媒体库与入库', host)).toBeNull();
+  expect(linkNamed('打开网盘', host)?.getAttribute('href')).toBe('/settings#drives');
+  expect(linkNamed('打开访问与安全', host)?.getAttribute('href')).toBe('/settings/access');
+  expect(buttonNamed('打开网盘', host)).toBeNull();
   const root = [...host.querySelectorAll('h3')].find(node => node.textContent === '数据目录')!.parentElement!.parentElement!;
   expect(root.textContent).toContain('调整权限');
   expect(root.querySelector('button, a')).toBeNull();
@@ -115,8 +116,8 @@ it('恢复动作的名称与实际目标一致', async () => {
   report.checks.ffmpeg = { label: '媒体工具', status: 'warning', reason: '缺少 FFmpeg', action: '安装工具', target: '/settings/maintenance', details: {} };
   report.checks.tasks = { label: '后台任务', status: 'warning', reason: '有任务失败', action: '查看原因', target: '/tasks', details: {} };
   const { host } = await open(report);
-  expect(linkNamed('打开网络与访问', host)?.getAttribute('href')).toBe('/settings/network');
-  expect(linkNamed('打开应用与维护', host)?.getAttribute('href')).toBe('/settings/maintenance');
+  expect(linkNamed('打开访问与安全', host)?.getAttribute('href')).toBe('/settings/access');
+  expect(linkNamed('打开系统诊断', host)?.getAttribute('href')).toBe('/settings/diagnostics');
   expect(linkNamed('查看任务', host)?.getAttribute('href')).toBe('/tasks');
   expect(linkNamed('打开来源和凭证', host)?.getAttribute('href')).toBe('/sources');
 });

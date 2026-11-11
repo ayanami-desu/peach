@@ -1,41 +1,64 @@
----
-kind: reference
----
+# 视频预览
 
-# 已有时间轴预览
+进度条悬停时要看到那一刻的画面。现在只有一层在产：按固定间隔抽帧拼成的接触印相，第一次打开某部影片的播放页时给它现做一套，之后一直命中。整库预生成没有这一趟活——两万部按每 10 秒一帧算，每一帧都是一次远端读取，流量按 TB 计。
 
-播放器进度条优先读取与视频准确配对的已有预览，其次使用 Peach 的时间轴缓存，再退回九宫格。读取已有预览只访问索引和图片，不启动 FFmpeg。时间轴采集遇到可用的已有预览时计为跳过，不重复抽帧。
+九宫格海报格是第二层：一张 3×3 的接触印相（`src/peach/preview_sheets.py`），处理链跑完采集之后对还没图的行生成，卡片封面与悬停扫格都从它裁格。
 
-详情、小窗和沉浸模式的进度条共用同一块预览（`frontend/src/player/seek-preview.ts`）：鼠标悬停时显示，触屏按住拖动时显示、抬手收起。九宫格只从已有快照裁格，快照也取不到时只显示时间。Peach 自有缓存在指针第一次碰到进度条时按页预取一次，不超过 12 张；外部来源按需读取。
+## 接触印相
 
-## 格式与配对
+一张图 10 列 10 行、共 100 帧，帧宽 320。第 n 格就是第 n 个采样点，采样时刻是
 
-以 `movie.mp4` 为例，配对保留完整文件主名，包括版本和分卷后缀，不按番号合并不同视频。
+```
+秒数 = (所在张 × 100 + 格号) × 间隔 + 片长 × 0.01
+```
 
-| 格式 | 视频旁的入口 | 读取范围 |
-| --- | --- | --- |
-| WebVTT 图片索引 | `movie.vtt`、`movie.mp4.vtt`、`movie.thumbnails.vtt`、`movie-thumbs.vtt`、`movie.storyboard.vtt` | cue 时间范围与独立图片，或带 `#xywh=x,y,w,h` 的 JPEG、PNG、WebP 拼图；支持不等间隔和时间空隙 |
-| HLS 图片播放列表 | 同一组主名的 `.m3u8` 文件 | VOD 的 `EXT-X-IMAGES-ONLY`、`EXT-X-TILES` 与独立图片分段；主列表通过 `EXT-X-IMAGE-STREAM-INF` 指向图片列表 |
-| DASH 图片轨 | 同一组主名的 `.mpd` 文件 | 静态 MPD 的图片 AdaptationSet、`thumbnail_tile`、`SegmentTemplate`、`SegmentTimeline`、时间尺度、起始编号、时间偏移与多 Period；模板支持 `$Number$`、`$Time$`、`$RepresentationID$`、`$Bandwidth$` 与数字补零 |
-| BIF v0 | `movie.bif`、`movie-320-10.bif`、`movie-sd.bif`、`movie-hd.bif`、`movie-fhd.bif` | 读取文件内的真实时间戳、时间乘数和 JPEG 偏移；Emby、Roku 及从 Plex 导出的 BIF 共用此读取器 |
-| Jellyfin Trickplay | `movie.trickplay/320 - 10x10/0.jpg`、`1.jpg`… | 从目录读取网格，数字序号须从 0 连续；末张维持完整网格，按有效帧数限制选择范围 |
+末尾那个 1% 是给头尾让开的余量：片头黑场和片尾字幕板扫过去什么都看不出来，把采样点往里推一点，不影响格号与秒数的对应关系。前端按同一条式子反算，不需要为每部片子另取一份索引。
 
-同一视频有多个可用格式时按表格顺序选择，缺失或损坏的候选跳过。索引引用的图片和子播放列表须留在视频所在目录及其子目录中。绝对路径、远端 URL、越目录引用、加密或字节范围 HLS、直播清单不参与本地读取。DASH 的 SegmentList、SegmentBase 和动态清单不在读取范围内。
+- 间隔两档：`precise` 10 秒、`coarse` 30 秒；`off` 表示不再生成。三个值既是接口契约也是设置页的选项（`timeline_sheets.MODES`）。
+- 帧数 `max(0, min(100 × 999, ⌊片长 ÷ 间隔⌋))`，少于两帧就不做。
+- 产物目录 `generated/timeline/<资产 ID 末两位>/<资产 ID>/`：图名 `001.jpg`、`002.jpg`…，索引 `meta.json` 记 `interval`、`frames`、`sheets`、`columns`、`rows`、`frame_width`、`made_at`。按末两位分桶，是因为几千部挤在一个目录里列目录会变慢。
+- 抽帧的源是网盘给的预授权地址加它要求的请求头（`MediaEngine.ffmpeg_input`），每一帧都带。
+- 某几帧解不出来时用邻近那一帧补上：序号不能断，`image2` 会在缺口停下；也不能让后面整体前移一格——图还是满的，位置却错了，事后看不出来。补进去的那一格画面重复，位置不动。
+- 中途按停不写 `meta.json`：没有索引就是没做过，下一趟从头来，不会留下一份「说有 700 帧、实际只有 300 帧」的记录。
+- 换档位等于整套重做，旧的一套先整个清掉，免得较少的新图旁边留着旧的多余张数。
 
-Plex 的内部 `index-sd.bif` 需要先导出并按视频主名配对。Peach 不自动扫描 Plex 的内部元数据目录，也不凭同目录唯一视频猜测 BIF 归属。Kodi 的 `.tbn` 是单张 artwork，不带时间索引，不作为时间轴预览。
+末张通常不满 10 行，行数按 `frames` 反算（`ceil(剩余帧数 ÷ 列数)`），按满行去铺格子会取到图外面的空白。
 
-## Jellyfin 的时间信息
+## 生成入口
 
-`320 - 10x10` 只表达单帧宽度和网格，无法记录采样间隔和末张有效帧数。Jellyfin 数据库与 API 的 TrickplayInfo 才包含 `Interval`、`ThumbnailCount` 等字段。
+`GET /timeline?id=<资产 ID>&s=<第几张>` 只发已经铺好的图。这一张不在盘上时回 404 `{"error":"unavailable"}`，同时把这一部的生成排进线程池，页面当场退回九宫格，下一次翻回来就有图了。一张图要抽上百帧，现抽要几分钟，等在悬停上的人早走了——所以不在请求线程里做。
 
-从 Jellyfin 导出的 TrickplayInfo 可保存在分辨率目录的 `trickplay.json` 中，供 Peach 精确读取。这是 Peach 接受的导出边车，不是 Jellyfin 原生生成的文件。字段为 `Width`、`TileWidth`、`TileHeight`、`Interval`（毫秒）与 `ThumbnailCount`，须与目录尺寸和拼图数量一致。
+同一个资产连点几下只排一套（`_IN_FLIGHT` 按（产物根，资产 ID）去重）；档位是 `off` 时不排；没有 ffmpeg、或者网盘侧拿不到字节（授权失效、文件被删、限流）时什么都不做，返回的图就是没有，播放本身照常。
 
-只有 JPG 时，Peach 在时长、拼图数量与默认 10 秒间隔一致的条件下提供估算预览，接口标记 `estimated: true`。自定义间隔无法从目录名可靠还原；数量不一致时不采用默认值。黑色画面可以是真实内容，不用黑色比例猜测有效帧数。
+索引单独一条：`GET /api/timeline?id=<资产 ID>` 返回 `meta.json` 的全部字段加 `source: "peach"`，没生成过回 `{}`。它不随列表下发——一页六十张卡里真正被悬停的是个位数，为每行多读一份 `meta.json` 等于把六十次文件读摊到每一次翻页上。
 
-## 接口与缓存
+## 档位
 
-`GET /api/timeline?id=<资产 ID>` 对已有预览返回 `source`、`frames`、`estimated`、`cues`。`cues` 中每项为 `[开始秒数, 结束秒数]`，`interval` 为 0，`columns` 和 `rows` 为 1。Peach 自有缓存继续返回固定间隔和拼图尺寸。
+`GET /api/thumbnail-jobs` 返回 `{mode, modes, intervals}`；`POST /api/thumbnail-jobs` 用 `{mode}` 选档位。非法档位回 400「采集密度无效」。
 
-已有预览的 `GET /timeline?id=<资产 ID>&s=<帧号>&source=<来源>` 返回裁切后的 JPEG；自有缓存的 `source` 为 `peach`，`s` 表示拼图编号。前端按索引确定编号含义。有自有缓存时，已有预览的索引还包含 `fallback`；目标时刻未覆盖或图片未取得时先读取自有缓存，再退回九宫格。图片支持 HEAD、ETag 与私有缓存复验。
+档位存在服务端（`state/timeline-thumbnails.json`），因为这是这台机器的策略：从另一台设备打开设置，看到的应该是这台机器的选择。读不出来就当作 `off`——这条链会读片子，不能靠猜来开。
 
-索引与裁切结果使用应用内有界短时缓存，不写账本，不在磁盘展开全部 BIF 或复制拼图，原索引与图片保持只读。格式取证和依赖选择见[预览格式取证](reference-snapshots/video-preview-formats.md)。
+资料管理模式下不能开启：`metadata_only` 为真时选 `off` 以外的档位回 400「视频预览生成已关闭，请先在媒体库设置中开启」。`GET /api/media-processing` 的 `video_previews` 就是这一位的反相。
+
+选 `off` 只是不再按需生成，已经生成的图留在盘上；要不要删那几 GB 产物是清理链的事，不在切换开关时顺手做掉。
+
+## 九宫格
+
+`GET /poster?id=<资产 ID>&c=<0..8>` 从接触印相裁一格，裁 `iw/3:ih/3`、最长边 640，落到 `generated/posters/<资产 ID>_<格>.jpg`。取不到时回 404 `{"error":"unavailable","reason":...}`，`reason` 说明卡在哪一步。
+
+只有 `has_thumb` 为真的资产才会被请求：判据是账本里 `asset.snapshot_path` 指向的文件还在盘上（`has_snapshot`）。九格同源，一格取不到就不再逐格去试，整块预览直接收起。
+
+这张图的来源是 `preview_sheets.generate`：取 `media_engine.ffmpeg_input` 给的直链与请求头，在片长的 3% 到 97% 之间等距抽九帧，拼成 3×3，存到 `generated/snapshots/<来源>/<摘要前两位>/<摘要>.jpg` 再写回 `asset.snapshot_path`。它挂在处理链采集之后的「生成预览图」一步，只做还没有图的行；资料管理模式（`metadata_only`）为真时整段跳过，因为那一档承诺不读视频字节。网盘侧取不到字节时不写库、不留半成品，卡片退回占位图。
+
+## 前端取用
+
+`frontend/src/player/seek-preview.ts` 是详情、小窗与沉浸三处共用的一块：宿主元素加进度比例，不认具体事件。
+
+1. 打开时取 `GET /api/timeline?id=`；拿到索引才算铺好。
+2. 指针移动时按 `sheetTile(seconds, sheet)` 算出第几张、第几格，图源是 `/timeline?id=&s=<第几张>&source=peach`，用背景位移把那一格移到取景框里；取景框按片源比例。
+3. 页数不超过 `PRELOAD_PAGES = 12` 时整部预热（两小时的片子 10 秒一帧是 8 张），更长的按需取。
+4. 索引还没到、或者图取不到时退回九宫格；两者都没有就只留时间。
+
+## 磁盘
+
+产物全在 `generated/timeline/`，归数据管理的「预览图」一类。这一类不提供清理入口，理由是重建要重新读取整部影片，网盘里的影片会重新下载。详见[媒体缓存](MEDIA_CACHE.md)。

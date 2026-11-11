@@ -126,15 +126,17 @@ class ProcessingControlTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
         self.config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                                  locations={'local': ('R:\\Media',)})
+                                  drive_roots={'gdrive': ('root-1',)})
         self.db = fresh_ledger(self.root)
 
     def seed(self, count=10):
         import sqlite3
         with closing(sqlite3.connect(self.db)) as connection, connection:
             for index in range(count):
-                connection.execute('INSERT INTO asset(location,path,name,medium,size) VALUES(?,?,?,?,?)',
-                                   ('local', f'R:\\Media\\{index}.mp4', f'{index}.mp4', 'video', 1024**3))
+                connection.execute('INSERT INTO asset(location,path,name,medium,size,remote_id,drive_root) '
+                                   'VALUES(?,?,?,?,?,?,?)',
+                                   ('gdrive', f'gdrive:/Media/{index}.mp4', f'{index}.mp4', 'video', 1024**3,
+                                    f'file-{index}', 'root-1'))
 
     def test_start_estimate_uses_known_count_size_and_scoped_selection(self):
         self.seed()
@@ -152,7 +154,7 @@ class ProcessingControlTests(unittest.TestCase):
         self.assertIn('未含未知新增', estimate['eta_scope'])
 
     def test_new_directory_reports_counting_without_invented_time(self):
-        estimate = initial_estimate(self.config, self.db, 'scan')
+        estimate = initial_estimate(self.config, self.db, 'all')
         self.assertIsNone(estimate['eta_seconds_min'])
         self.assertIsNone(estimate['eta_seconds_max'])
         self.assertIn('统计', estimate['eta_basis'])
@@ -160,7 +162,7 @@ class ProcessingControlTests(unittest.TestCase):
     def test_progress_calibrates_range_and_paused_time_does_not_count(self):
         self.seed()
         state = dict(initial_estimate(self.config, self.db, 'metadata'),
-                     requested_stage='metadata', status='running', stage='读取本地资料', checked=0, total=10)
+                     requested_stage='metadata', status='running', stage='检查配套文件', checked=0, total=10)
         with patch('peach.processing_control.time.monotonic', return_value=100):
             estimate = ProcessingEstimate(self.config, state, None)
             estimate.update(state)
@@ -180,7 +182,7 @@ class ProcessingControlTests(unittest.TestCase):
     def test_metadata_passes_use_independent_measured_samples(self):
         self.seed()
         state = dict(initial_estimate(self.config, self.db, 'metadata'),
-                     requested_stage='metadata', status='running', stage='读取本地资料', checked=0, total=10)
+                     requested_stage='metadata', status='running', stage='检查配套文件', checked=0, total=10)
         with patch('peach.processing_control.time.monotonic', return_value=100):
             estimate = ProcessingEstimate(self.config, state, None)
             estimate.update(state)
@@ -203,8 +205,8 @@ class ProcessingControlTests(unittest.TestCase):
 
     def test_total_estimate_includes_pending_media_and_collection(self):
         state = dict(speed_mode='standard', status='running', requested_stage='all',
-                     stage='读取本地资料', checked=0, total=10,
-                     estimate_pending={'local': 10, 'probe': 2, 'previews': 3, 'metadata': 10})
+                     stage='检查配套文件', checked=0, total=10,
+                     estimate_pending={'local': 10, 'metadata': 10})
         with patch('peach.processing_control.time.monotonic', return_value=100):
             estimate = ProcessingEstimate(self.config, state, None)
             estimate.update(state)
@@ -213,7 +215,8 @@ class ProcessingControlTests(unittest.TestCase):
             estimate.update(state)
         self.assertEqual(state['eta_scope'], '整趟任务')
         self.assertTrue(state['eta_initial'])
-        self.assertGreater(state['eta_seconds_min'], 40)
+        self.assertGreater(state['eta_seconds_min'], 30)
+        self.assertGreater(state['eta_seconds_max'], 150)
         state.update(checked=0, total=2, stage='采集缺失资料', estimate_pending={'metadata': 2})
         with patch('peach.processing_control.time.monotonic', return_value=120):
             estimate.update(state)
@@ -229,7 +232,7 @@ class ProcessingControlTests(unittest.TestCase):
 
     def test_slow_tail_uses_recent_completions_instead_of_the_fast_prefix(self):
         state = dict(speed_mode='standard', status='running', requested_stage='metadata',
-                     stage='读取本地资料', checked=0, total=120, estimate_pending={'local': 120})
+                     stage='检查配套文件', checked=0, total=120, estimate_pending={'local': 120})
         with patch('peach.processing_control.time.monotonic', return_value=100):
             estimate = ProcessingEstimate(self.config, state, None)
             estimate.update(state)
@@ -244,7 +247,7 @@ class ProcessingControlTests(unittest.TestCase):
     def test_progress_count_rewind_starts_a_new_sample_for_same_stage(self):
         self.seed()
         state = dict(initial_estimate(self.config, self.db, 'metadata'),
-                     requested_stage='metadata', status='running', stage='读取时长与分辨率', checked=0, total=10)
+                     requested_stage='metadata', status='running', stage='保存待确认资料', checked=0, total=10)
         with patch('peach.processing_control.time.monotonic', return_value=100):
             estimate = ProcessingEstimate(self.config, state, None)
             estimate.update(state)
@@ -300,7 +303,7 @@ class ProcessingControlTests(unittest.TestCase):
         restored = ProcessingControl(control.path)
         self.assertTrue(restored.paused)
         self.assertEqual(restored.mode, 'high')
-        job_recovery.save(self.db, 'library-processing', 'one', {'stage': 'scan'}, waiting=True)
+        job_recovery.save(self.db, 'library-processing', 'one', {'stage': 'scan'})
         handler = Mock()
         self.assertEqual(job_recovery.resume(self.db, {'library-processing': handler}), [])
         handler.assert_not_called()
@@ -397,9 +400,9 @@ class ProcessingControlTests(unittest.TestCase):
     def test_new_asset_range_imports_a_legacy_scan_checkpoint(self):
         import json
         from peach.library_new_assets import pending
-        from peach.update_tasks import state_for
+        from peach.task_state import state_root
         self.seed(3)
-        state=state_for(self.db).parent/'library-processing.json'
+        state=state_root(self.db)/'library-processing.json'
         state.parent.mkdir(parents=True,exist_ok=True)
         state.write_text(json.dumps({'status':'complete','requested_stage':'scan',
             'scan_checkpoints':{'root':{'result':{'new_ids':[1,2,3]}}},
@@ -410,9 +413,9 @@ class ProcessingControlTests(unittest.TestCase):
         """`remember` 持锁原子替换文件；Windows 替换瞬间读会撞上共享冲突，所以读也要等同一把锁。"""
         from filelock import FileLock
         from peach.library_new_assets import pending
-        from peach.update_tasks import state_for
+        from peach.task_state import state_root
         self.seed(3)
-        path=state_for(self.db).parent/'library-new-assets.json'
+        path=state_root(self.db)/'library-new-assets.json'
         path.parent.mkdir(parents=True,exist_ok=True)
         outcome={}
 
@@ -481,7 +484,7 @@ class ProcessingControlTests(unittest.TestCase):
         store = TaskRunStore(self.db)
         run = store.start('library-processing', trigger='manual')
         job_recovery.save(self.db, 'library-processing', 'one', {'stage':'metadata'},
-                          run_id=run.id, waiting=True)
+                          run_id=run.id)
         control = control_for(self.config)
         control.select_job('one')
         control.request('cancel', 'one')
@@ -686,60 +689,6 @@ class ProcessingControlTests(unittest.TestCase):
             self.assertEqual(task_control.speed_mode(db, initial['run_id']), 'low')
             self.assertEqual(runs.get(initial['run_id']).status, 'succeeded')
 
-    def test_legacy_library_recovery_preserves_speed_without_a_task_speed_file(self):
-        from peach import task_control, update_tasks
-        from peach.jobs import BackgroundJob
-        from peach.library_processing import _save, state_path
-        from peach.task_runs import TaskRunStore
-        from peach.web_job_recovery import restore
-        from peach.web_library_processing import q_library_processing
-        from peach.processing_control import default_mode
-        database_root = self.config.directory('database')
-        database_root.mkdir(parents=True)
-        db = fresh_ledger(database_root)
-        runs = TaskRunStore(db)
-        for mode, source in (('low', 'state'), ('high', 'state'), ('high', 'control')):
-            with self.subTest(mode=mode, source=source):
-                identity = f'legacy-{mode}-{source}'
-                run = runs.start('library-processing', trigger='manual')
-                runs.suspend(run.id)
-                speed_file = update_tasks.state_for(db).parent / 'task-controls' / f'{run.id}.speed.json'
-                speed_file.unlink()
-                control = control_for(self.config)
-                control.select_job(identity)
-                control.request('set_speed', mode=mode if source == 'control' else 'standard')
-                previous = dict(job_id=identity, requested_stage='metadata', status='paused',
-                                completed_metadata=['1:R:\\a.mp4'])
-                if source == 'state':
-                    previous['speed_mode'] = mode
-                _save(state_path(self.config), previous)
-                job_recovery.save(db, 'library-processing', identity, {'stage': 'metadata', 'speed_mode': mode},
-                                  run_id=run.id, waiting=True)
-                job_recovery.checkpoint(db, 'library-processing', identity, previous)
-                job = BackgroundJob('library-processing', runs=runs)
-                self.addCleanup(job.stop, timeout=None)
-                contract = SimpleNamespace(db_path=db, library_processing_job=job, task_runs=runs,
-                                           database=runs.database, candidate_root=self.root / 'candidates',
-                                           cover_root=self.root / 'covers', cache_bust=lambda: None)
-                observed = []
-                def process(*_args, observed=observed, **kwargs):
-                    observed.append((kwargs['speed_mode'], task_control.CURRENT.get().mode,
-                                     kwargs['resume_state']['completed_metadata']))
-                    return {'status': 'complete'}
-                with patch('peach.web_library_processing.settings_file.active', return_value=self.config), \
-                        patch('peach.web_library_processing.process_library', side_effect=process):
-                    self.assertEqual(q_library_processing(contract, {})['speed_mode'], mode)
-                    self.assertEqual(restore(contract), ['library-processing'])
-                    job.thread.join(5)
-                self.assertFalse(job.thread.is_alive())
-                self.assertEqual(observed, [(mode, mode, ['1:R:\\a.mp4'])])
-                self.assertEqual(job.snapshot()['run_id'], run.id)
-                self.assertEqual(job.snapshot()['speed_mode'], mode)
-                self.assertEqual(runs.get(run.id).status, 'succeeded')
-                self.assertTrue(speed_file.exists())
-                self.assertEqual(task_control.speed_mode(db, run.id), mode)
-                self.assertEqual(default_mode(runs.database), 'standard')
-
     def test_three_intensities_set_distinct_io_start_intervals(self):
         control = control_for(self.config)
         intervals = {}
@@ -793,20 +742,6 @@ class ProcessingControlTests(unittest.TestCase):
                     self.assertGreater(state['eta_seconds_max'], old)
                 else:
                     self.assertLess(state['eta_seconds_max'], old)
-
-    def test_high_intensity_honors_installation_pause(self):
-        from peach.jobs import JobPaused
-        from peach import update_tasks
-        control = control_for(self.config)
-        with control.bind('one', publish=lambda **_: None, active=lambda: True, db_path=self.db, mode='high'):
-            token = update_tasks.reserve(self.db)
-            try:
-                with self.assertRaises(JobPaused):
-                    checkpoint('frame')
-            finally:
-                update_tasks.release(self.db, token)
-            checkpoint('frame')
-            self.assertEqual(control.mode, 'high')
 
     def test_high_history_is_normalized_for_every_initial_intensity(self):
         self.seed()
@@ -913,75 +848,3 @@ class ProcessingControlTests(unittest.TestCase):
             self.assertEqual(selected['speed_mode'], 'high')
             from peach.web_library_processing import q_library_processing
             self.assertEqual(q_library_processing(contract, {})['speed_mode'], 'low')
-
-    def test_scan_progress_accumulates_discovered_counts_across_roots(self):
-        from peach.library_processing import _scan_sources
-        reports = []
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': ('R:\\Media', 'R:\\Other')})
-        def scan(*_args, **kwargs):
-            kwargs['progress'](1, 10)
-            kwargs['progress'](2, 30)
-            return SimpleNamespace(files=2, total_bytes=30, new_ids=(), junk_isolated=1)
-        with patch('peach.library_processing.scan_location', side_effect=scan), \
-                patch('peach.library_processing._online_source_root', return_value=self.root), \
-                patch('peach.library_processing._ffprobe_path', return_value=None), \
-                patch('peach.library_processing.probe_unmeasured', return_value=0), \
-                patch('peach.library_processing.reattach_in'):
-            result = _scan_sources(config, self.db, locations=config.locations, asset_ids=None,
-                                   stage='scan', guard=Mock(), update=lambda **values: reports.append(values),
-                                   issue=lambda *_args, **_kwargs: None)
-        discovering = [row for row in reports if row.get('current_action') == 'scanning_files']
-        self.assertEqual([row['scanned'] for row in discovering], [1, 2, 3, 4])
-        self.assertEqual([row['scanned_bytes'] for row in discovering], [10, 30, 40, 60])
-        self.assertTrue(all(row['total'] == 0 for row in discovering))
-        self.assertEqual((result.scanned, result.scanned_bytes), (4, 60))
-        self.assertEqual(result.junk_isolated, 2)
-
-    def test_incremental_scan_probes_rows_moved_onto_new_files(self):
-        """按番号改指到新文件的旧行不算新行，但文件换了，增量扫描照样要探它。"""
-        from peach.library_processing import _scan_sources
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True, locations={'local': ('R:\\Media',)})
-        scanned = SimpleNamespace(files=2, total_bytes=30, new_ids=(5,), relocated_ids=(7,), junk_isolated=0)
-        with patch('peach.library_processing.scan_location', return_value=scanned), \
-                patch('peach.library_processing._online_source_root', return_value=self.root), \
-                patch('peach.library_processing._ffprobe_path', return_value=None), \
-                patch('peach.library_processing.probe_unmeasured', return_value=0) as probe, \
-                patch('peach.library_processing.reattach_in') as reattach:
-            result = _scan_sources(config, self.db, locations=config.locations, asset_ids=None,
-                                   stage='scan', guard=Mock(), update=lambda **values: None,
-                                   issue=lambda *_args, **_kwargs: None, incremental=True)
-        self.assertEqual(probe.call_args.kwargs['asset_ids'], [5, 7])
-        self.assertEqual(result.new_ids, (5,), "改指的旧行不进新影片范围")
-        reattach.assert_called_once_with(self.db, (5,))
-
-    def test_library_scan_reports_conflicting_records_and_processes_both_roots(self):
-        import sqlite3
-        from peach.library_processing import _scan_sources
-        first, second = self.root / 'first', self.root / 'second'
-        first.mkdir()
-        second.mkdir()
-        (first / 'copy.mp4').write_bytes(b'copy')
-        (first / 'new.mp4').write_bytes(b'new')
-        (second / 'other.mp4').write_bytes(b'other')
-        config = PeachConfig(self.root, self.root / 'config.toml', present=True,
-                             locations={'local': ('R:\\Media', 'S:\\Other')},
-                             mounts={'local': (str(first), str(second))})
-        with closing(sqlite3.connect(self.db)) as connection, connection:
-            for path in ('R:\\Media\\copy.mp4', 'r:\\MEDIA\\COPY.MP4'):
-                connection.execute("INSERT INTO asset(location,path,name,medium) "
-                                   "VALUES('local',?,'copy.mp4','video')", (path,))
-        issues = []
-        with patch('peach.library_processing._online_source_root', return_value=first), \
-                patch('peach.library_processing._ffprobe_path', return_value=None), \
-                patch('peach.library_processing.probe_unmeasured', return_value=0):
-            result = _scan_sources(config, self.db, locations=config.locations, asset_ids=None,
-                                   stage='scan', guard=Mock(), update=lambda **values: None,
-                                   issue=lambda row, message, **values: issues.append((message, values)))
-        self.assertEqual((result.scanned, result.scanned_bytes), (3, 12))
-        self.assertEqual(len(issues), 1)
-        self.assertIn('记录 1、2', issues[0][0])
-        self.assertEqual(issues[0][1]['action'], 'scanning_files')
-        with closing(sqlite3.connect(self.db)) as connection:
-            self.assertEqual(connection.execute('SELECT count(*) FROM asset').fetchone()[0], 4)
-            self.assertIsNotNone(connection.execute("SELECT id FROM asset WHERE path='S:\\Other\\other.mp4'").fetchone())

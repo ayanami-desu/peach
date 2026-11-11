@@ -388,13 +388,13 @@ it('快进扫过和正常看完是两回事，一行里分得出来', async () =
   expect(entry.textContent).toContain('真实 50% · 到达 90%');
 });
 
-it('空馆藏提供添加媒体入口，链到媒体库设置', async () => {
+it('空馆藏提供添加媒体入口，链到网盘设置', async () => {
   const { host } = await open(payload({ by_loc: [], by_library: [] }));
   expect(host.querySelector('h3')?.textContent).toBe('还没有视频');
   expect(radialCharts(host)).toEqual([]);
   expect(host.querySelector('[role=tabpanel] section[aria-label]')).toBeNull();
   expect(buttonNamed('添加媒体', host)).toBeNull();
-  expect(linkNamed(host, '添加媒体')?.getAttribute('href')).toBe('/settings/library');
+  expect(linkNamed(host, '添加媒体')?.getAttribute('href')).toBe('/settings/drives');
 });
 
 it('媒体配置与添加关注是两个独立去向，次要的添加关注在左', async () => {

@@ -47,13 +47,10 @@ def w_play(contract: ActivityContract, body):
     contract.cache_bust()
     aid = int(body["id"])
     with contract.write_transaction() as connection:
-        changed = connection.execute(
+        connection.execute(
             "UPDATE asset SET play_count=COALESCE(play_count,0)+1, last_played=? WHERE id=?",
             (time.time(), aid),
-        ).rowcount
-    from .capacity_history import record_playback
-    if changed:
-        record_playback(contract)
+        )
     return {"ok": True}
 
 
@@ -90,8 +87,8 @@ def w_feedback(contract: ActivityContract, body):
                 "UPDATE asset SET o_count=MAX(COALESCE(o_count,0)-1,0) WHERE id=?", (aid,),
             )
         elif kind == "rate":
-            # 这一列的量纲是 0–100：它是 Stash 的 rating100 原样导进来的，
-            # taste_history 也按 rating/20 折算成 0–5 分。五颗星送出的因此是 20 的倍数。
+            # 这一列的量纲是 0–100：它是 Stash 的 rating100 原样导进来的，五颗星送出的
+            # 因此是 20 的倍数。
             # 撤销评分写回 NULL 而不是 0：排序用的是 NULLS LAST，写 0 会把「没评过」和
             # 「评了最低分」并成一档，没评过的一整库反而排在评了一星的前面。
             value = max(0, min(100, int(body.get("value", 0))))

@@ -1,164 +1,205 @@
-# 页面路由
+# 接口与路由
 
-`GET /api/items?summary_only=1` 按相同筛选只返回 `total`、`bytes` 和 `work_total`。馆藏网格先读取 `count=0` 的首屏条目，再独立取得统计和后续条目；既有调用不带该参数时行为不变。
+一个进程里同时提供单页界面与 JSON 接口，路由分五个模块装配：
 
-「应用与维护」的存储状态使用 `GET /api/configuration/storage`；`POST /api/configuration/storage/measure` 启动统计，`POST /api/configuration/storage/clean` 按所选类别清理，`POST /api/configuration/storage/policy` 保存本机容量保护（`enabled` 总开关默认开启）并返回同一状态形状。`GET /api/configuration/storage/external-cache` 只读本机 CloudDrive 缓存目录，不自动保存；需要登录与本机管理，未配置、远程地址、权限不足或路径不可读取返回 400。容量数值为整数 `GiB`，`0` 表示自动磁盘保留值或不设对应总量上限；外部缓存目录不会由 Peach 删除。写请求需要登录、本机管理与同源检查，字段或目录无效返回 400，跨站请求返回 403；统计或清理已在运行时返回 409。规则与清理边界见[容量保护](OPERATIONS.md#容量保护与显示尺寸补测)。
+| 模块 | 负责 |
+| --- | --- |
+| `routes_auth` | 访问策略、登录页、三个鉴权依赖与同源检查 |
+| `routes_pages` | 单页界面壳、静态资产、全部前端路由落点、首次设置 |
+| `routes_configuration` | 本机配置、网盘授权、媒体库分组、容量与备份 |
+| `routes_media` | 播放取流、缩图、封面、头像、外链圆标 |
+| `routes_api` | JSON 契约出口，含两条 `/api/{route:path}` catch-all |
 
-馆藏处理的 `POST /api/library-processing` 支持按 `job_id` 暂停、继续、取消及归档结束提示；`stopping` 仍占用当前范围，`cancelled` 不自动恢复。`scope=new` 在启动时解析成固定资产集合，不与 `asset_ids` 或失败重试混用。状态只返回新入库数量，不下发内部处理路径。
+装配顺序是契约，不是随手排的：`routes_api` 必须最后接入，否则它的 catch-all 会先吃掉 `/api/stream-plan` 这类具名接口。`/healthz` 与 `/vendor` 挂在应用本身。
 
-`GET /api/library-processing/issues` 返回任务号、内容摘要 `revision`、总数、偏移和记录。导出后续页传入首份摘要；同任务追加、恢复或记录替换时拒绝混合读取。旧完整问题数组可分页读取，原始记录缺失或损坏作为失败返回。
+## 鉴权口径
 
-列表使用一层路径，详情使用两层路径。查询参数表达筛选、排序与播放上下文；名称只用于展示和检索。
+服务没设访问口令时（`settings.token` 为空）所有请求都算通过，判据就是口令这一层根本没装。设了口令之后分四种访问策略：`open`（浏览不设限，写操作仍要凭据）、`password`（访问密码，带盐与哈希）、`legacy`（没有策略文件，用启动时生成的口令）、`locked`（策略读不出来，谁都进不来）。会话是 cookie `peach_session`，记在数据目录的 `browser-sessions.json` 里，可以在设置页按设备撤销。
 
-## 详情对象
+| 凭据 | 用法 |
+| --- | --- |
+| `?t=<口令>` | 页面地址带口令时换一次会话：303 跳回同一路径、去掉 `t`、保留原始编码与重复参数，并设下 cookie |
+| `X-Token: <口令>` | 接口与资产的请求头形式，与 `?t=` 等价 |
+| cookie `peach_session` | 登录后长期有效；`legacy` 策略另认 cookie `tok` |
 
-| 对象 | 规范地址 | 身份 |
+三种闸门按响应形态分工：
+
+| 依赖 | 用在哪 | 失败形态 |
 | --- | --- | --- |
-| 资产 | `/assets/:id` | ledger 中的一条媒体记录；不同文件版本有各自 ID |
-| 作品 | `/works/:code` | 规范番号；一个作品可对应多个馆藏资产 |
-| 关注条目 | `/posts/:id` | 关注来源的一条帖子，包含视频或图片 |
-| 艺人 | `/performers/:id` | `performer` 实体，含女优等艺人 |
-| 厂牌、片商 | `/studios/:id` | `studio` 实体；资料按厂牌与上级片商关系展示 |
-| 创作者 | `/creators/:id` | `creator` 实体，含 FC2 卖家与动画作者 |
-| 事务所 | `/agencies/:id` | `agency` 实体 |
-| 系列 | `/series/:id` | `series` 实体 |
-| 本地标签 | `/tags/:id` | `tag` 实体；聚合相关资产与图片 |
+| `require_page_auth` | 页面壳 | 303 到 `/login?next=<原地址>` |
+| `require_asset_auth` | 样式、脚本、图标等静态资产 | 401，正文「需要 ?t=口令」 |
+| `require_auth` | 接口与媒体端点 | 401 `{"error":"unauthorized"}` |
+| `require_authenticated_client` | 管理接口 | 401；开放浏览不授予管理权限，必须有有效会话或口令 |
 
-数字 ID 不包含名字。实体改名沿用同一地址；合并 ID 跳到最终身份。来源中的人物或厂牌没有本地身份时只显示名称。
+`/login` 的 `next` 只认站内路径，`//` 开头的协议相对地址一律回首页。登录表单可以选保持登录的天数（0–365），越界回 400「请选择有效的保持登录时间」；会话没能记到盘上时回 503「登录设备未能记下，请检查数据目录能否写入后重试」。
 
-作品路径的番号使用规范形式，例如 `/works/ABP-968`。资产和帖子使用正整数 ID。不存在或种类不匹配的实体 ID 返回 404。
+写操作另加同源检查：非 `GET`/`HEAD`/`OPTIONS` 的请求先比来源，`Sec-Fetch-Site: cross-site` 直接拒绝，其余比较 `Origin` 与自身地址（受信代理可另算一个 `X-Forwarded-Proto` 地址），不一致回 403「请从 Peach 配置页提交」，并留一条 `origin-mismatch` 本机取证（同一形态一分钟一条）。这条检查由各写端点自己调用，两条 `/api/{route:path}` catch-all 不做。
 
-站内详情链接在当前页面上打开覆盖层；关闭时返回来源地址，保留查询参数与页内锚点。未被控件接管的普通详情链接也使用这一入口，修饰键、新窗口与下载链接沿用浏览器行为。
+首次设置走另一套判据：已配置时 `/api/setup*` 一律 404，不暴露初始化入口；提交要求连接来源与自身主机名都是回环地址（403「setup is loopback-only」），Docker 部署的提交改用同源检查。
 
-播放器字幕记忆通过 `/api/subtitles/memory?video=` 读取（GET）与保存（PUT），沿用站内授权。`video` 使用 `item:<资产 ID>` 或 `follow:<帖子 ID>:<main 或媒体序号>`。PUT 的 `selected` 为轨道键或表示关闭的 `null`；可附 `track: {key, name, text}` 保存转换后的 WebVTT。读取返回 `selected` 和 `tracks: [{key, name, src}]`；字幕内容通过返回的 `src` 读取。无效视频标识返回 400，不存在的视频或字幕返回 404。加载的字幕和选择状态保存在服务端，再次播放时恢复。
+## 页面路由
 
-`GET /api/assets/:id/subtitles` 合并已登记字幕与视频同目录即时发现的配对字幕，按路径去重，不进入子目录、不写账本。返回的 `id` 按文件名保持稳定，`legacy_id` 用于恢复已保存的登记轨道选择。字幕内容使用返回的 `src`：`track` 参数绑定文件身份，目录列表变化不改变所取字幕；文件消失或身份无效返回 404。SRT、ASS、SSA、VTT 复用现有 WebVTT 转换与 4 MiB 读取上限；未获授权的媒体目录不参与发现。
-
-管理区锚点链接复用站内导航，等待目标页内容与字体就绪后平滑滚动；启用减少动态效果时直接定位。关闭详情保留背景页面的滚动位置。
-
-## 浏览入口
-
-馆藏查询的 `library` 参数使用持久 `library_id`。`GET /api/libraries` 返回 `id`、`name`、`icon`、`folders`、`metered` 与根目录身份列表；名称只用于展示。未知 ID 筛选为空集。`GET /api/items` 和 `/api/item` 的可归属资产附带 `root_id`、`library_id`，版本和分卷仍使用各自资产 ID。
-
-`GET /api/sources` 在来源行的 `roots` 中提供 `root_id`、`library_id`、根目录状态和检测时间；`offline_roots` 列出确认离线的根目录 ID，`offline` 保留全部根目录离线的来源摘要。媒体访问失败的 `offline` 响应同时包含对应 `root_id`。
-
-配置和首次设置的媒体行接受 `root_id`、`library_id`；新增媒体库使用独立 ID，同名不合并。既有根目录更改实际位置必须附 `change_mode: "relocate"`，保留 `root` 账本前缀；添加另一目录省略根目录身份。名称与图标在同一 `library_id` 的行间必须一致。非法路径、归属或身份通过原字段错误契约返回，不写配置。详见 [媒体库与存储根目录](OPERATIONS.md#媒体库与存储根目录)。
-
-`GET /api/configuration` 的可选区域独立读取。区域失败时省略该字段，在 `section_errors[区域键]` 提供 `title`、`message`、`error_id`；其余成功字段继续返回。页面按分区显示提示并支持重新读取，依赖未取得媒体来源的配置表单暂停显示。`downloads.problems` 列出地址、凭据及渠道探测的问题，`downloads.config` 保留可修正的已保存地址及有效偏好；下载配置写入对地址严格校验，非法端口返回 400，并保留设置文件与凭据。
+所有页面返回同一份界面壳，前端按地址渲染。目录与地址：
 
 | 地址 | 用途 |
 | --- | --- |
-| `/` | 全部馆藏，含本地硬盘与已挂载网盘；新作行使用作品详情地址 |
-| `/?browse=folders` | 按原目录浏览；`folder` 指定目录，`folder_recursive=0` 只看当前层 |
-| `/?jav=1` | JAV 馆藏 |
-| `/jav?tab=discover` | JAV 探索；`scope=library` 看馆藏，`scope=external` 看外部发现 |
-| `/jav?tab=wants` | 想要的作品 |
-| `/follow` | 关注更新；作者、来源、标签和观看状态使用查询参数 |
-| `/wall` | 视频播放墙 |
-| `/immerse` | 沉浸浏览；`id` 指定起始资产 |
-| `/performers` | 艺人名册；动画作者通过 `category=animation` 浏览 |
-| `/studios` | 厂牌、片商名册 |
-| `/creators` | FC2 卖家名册；资料对象属于创作者 |
-| `/agencies` | 事务所名册 |
-| `/series` | 系列总览；与厂牌、事务所共用资料类型切换 |
-| `/tags` | 本地或在线标签；在线标签通过关注页筛选 |
+| `/` | 全部馆藏 |
+| `/?browse=folders` | 按目录浏览，`folder` 指定目录，`folder_recursive=0` 只看当前层，见 [目录浏览](DIRECTORY_BROWSING.md) |
+| `/jav` | JAV 馆藏 |
+| `/works/{code}` | 作品详情，`code` 先规范化再判重定向 |
+| `/assets/{id}` | 资产详情 |
+| `/posts/{id}` | 关注条目详情 |
+| `/follow` | 关注更新 |
+| `/performers`、`/creators`、`/studios`、`/agencies`、`/series`、`/tags` | 实体名册 |
+| `/performers/{name:path}` 等六条同名族 | 按姓名进入实体页 |
 | `/playlists` | 播放列表 |
-| `/unseen` | 没看过 |
-| `/watch-later` | 稍后看 |
-| `/flagged` | 已标记 |
-| `/junk-files` | 垃圾文件 |
-| `/trash` | 回收站 |
+| `/unseen`、`/watch-later`、`/flagged`、`/junk-files`、`/trash` | 状态视图 |
+| `/wall`、`/immerse` | 播放墙与沉浸浏览 |
+| `/stats`、`/review`、`/quality-goals`、`/duplicates` | 统计、人工复核、高清目标、重复文件 |
+| `/data-cleanup`、`/data-cleanup/organize`、`/data-cleanup/orphan-records`、`/data-cleanup/links`、`/data-cleanup/batch-delete` | 数据管理与清理入口 |
+| `/tasks`、`/sources`、`/subscriptions` | 任务、来源、订阅 |
+| `/settings`、`/settings/{section}` | 设置分区；`section` 只认外观、播放、JAV、搜索、内容、媒体库、订阅、诊断，其余 404 |
+| `/login` | 登录页 |
 
-探索页将搜索词 `q`、标签 `tag`、排序 `sort`、方向 `dir` 与范围 `scope` 保存在地址中。点开详情和退出沿用原列表、滚动与筛选状态。
+旧地址与别名都是 307 跳转，查询参数与会话照原样带过去：
 
-馆藏支持 `year=2024,2023` 多选发行年份，`year=none` 筛选未知年份。年份按发行日期而非入库日期计算，与来源、实体、观看状态等条件共同生效；地址、保存筛选和侧栏使用同一口径。侧栏年份数量遵循其余筛选范围，保留其它年份以便继续多选。
-
-## 播放上下文
-
-| 地址示例 | 上下文 |
+| 地址 | 跳到 |
 | --- | --- |
-| `/assets/30741?playlist=7` | 播放列表 7 |
-| `/assets/30741?mix=30740` | 以资产 30740 为起点的 Mix |
-| `/assets/30741?parts=30740` | 资产 30740 所在分卷组 |
-| `/assets/30741?editions=30740` | 资产 30740 所在版本组 |
-
-路径始终标识当前资产。换条更新 ID，队列键标识来源。复制播放地址时保留当前时间与队列上下文。
-
-## 设置与管理
-
-| 地址 | 用途 |
-| --- | --- |
-| `/settings`、`/settings/appearance` | 外观与导航 |
-| `/settings/playback` | 浏览与播放 |
-| `/settings/jav` | JAV 与新作 |
-| `/settings/search` | 搜索与推荐 |
-| `/settings/content` | 内容显示 |
-| `/settings/library` | 媒体库与入库 |
-| `/settings/subscriptions` | 来源与订阅参数 |
-| `/settings/downloads` | 下载渠道 |
-| `/settings/network` | 网络与访问 |
-| `/settings/maintenance` | 应用与维护 |
-| `/settings/diagnostics` | 系统诊断：系统检查、库健康、来源会话与后台诊断、刮削记录导出 |
-| `/subscriptions` | 关注管理：关注列表统一管理创作者来源与 JAV 订阅；添加关注提供创作者、女优入口和别名管理，标签管理支持在线标签分页与批量操作 |
-| `/sources` | 来源和凭证：采集来源、访问方式与凭据状态，全部来源的连接检查 |
-| `/tasks` | 任务中心与云下载进度 |
-| `/stats` | 统计 |
-| `/taste` | 口味分析 |
-| `/review` | 人工复核；元数据字段下逐条列出核查结算自动写入的资料，可勾选后预览并撤回 |
-| `/data-cleanup` | 数据管理概览；日常扫描、待处理摘要、维护与清理入口 |
-| `/data-cleanup/organize` | 文件整理与批次历史 |
-| `/data-cleanup/resource-sync` | 核对文件与馆藏记录，清理失效条目、空目录与缓存 |
-| `/data-cleanup/orphan-records` | 处理文件已丢失但仍保留个人记录的作品 |
-| `/data-cleanup/media-repair` | 媒体修复 |
-| `/data-cleanup/links` | 链接检查与失效地址复核 |
-| `/data-cleanup/batch-delete` | 按女优批量永久删除关联影片 |
-| `/duplicates` | 重复文件 |
-| `/quality-goals` | 高清版目标 |
-| `/login` | 登录 |
-
-设置分区可直接打开、刷新和用浏览器前进后退。偏好面板从当前页面打开时保留背景；配置分区复用配置页及其权限检查。配置分类导航停在搜索栏下方，切换分类时显示所选分区的开头。
-
-用户脚本通过专用令牌调用 `POST /api/jav-browser/errors`，仅接收白名单错误字段并写入本机日志；批次、体积、限频与诊断包范围见 [浏览器添加 JAV](JAV_BROWSER.md)。状态接口 `GET /api/jav-browser` 同时投影真实下载与整理进度，`GET /api/jav-browser/active` 以同一结构列出进行中与最近结束的任务，均不授予配置、账号或账本写入权限。`POST /api/jav-browser/postprocess` 只能重试该番号已失败的整理，走任务中心同一入口。`POST /api/jav-browser/dismiss` 只记下脚本确认过哪些已结束的任务，不改任务与账本。`GET`/`POST /api/jav-browser/performer` 认出女优页是哪位并开关她的「订阅新作」，与人物页开关同一套订阅；编号没人持有时会新建女优并绑上编号，规则见 ADR-0143。
-
-`GET /api/review/auto-landings` 逐条列出 ADR-0139 两条规则仍在的自动写入：作品、封面地址、写入的字段与值、写入前的值或补上的标签、规则与时间；带 `items=<决定键>`（换行分隔）时只读返回这几条要改回的值、要删的标签、写入后被改过或已删除而不动的作品，以及计划摘要 `token`。`POST /api/review/auto-landings/revert` 接收 `items` 与 `token`，在写锁里重算计划，对不上返回 400 要求重新预览；对上后先备份账本再撤回，回执带备份文件名与未改动的作品。列表里没有的决定键一律拒绝，其余自动落库来源仍由 `scripts/revert_auto_landing.py` 撤回；只读端拒绝撤回（ADR-0141）。
-
-`GET /api/client-updates` 要求应用鉴权，返回运行版本与构建标记、发行版检查结果、安装状态、用户脚本版本和自动补修状态，不触发外部检查。`GET /api/jav-browser/updates` 使用用户脚本专用令牌，无需番号，返回运行与发行版、脚本版本快照，不暴露补修明细。`POST /api/configuration/upgrade-repairs/retry` 限本机同源请求，重试失败项；`GET /api/configuration/upgrade-repairs/review` 限本机管理权限，下载 JSON 复核记录，无记录时返回 404。
-
-Docker 镜像的一键更新（[ADR-0140](adr/0140-docker-one-click-update-via-watchtower.md)）：容器里的 `GET /api/configuration/updates` 在 Docker Hub 的版本号标签与 `edge` 指向同一镜像前返回 `state: pending`；有新镜像时多一个 `one_click`，`available` 表示镜像标签是 `edge`、令牌已生成且探测得到 Watchtower，不能时 `reason` 说明原因，没启用 Watchtower 时为空。`POST /api/configuration/docker-update` 请 Watchtower 异步拉取并重建容器，收到 202 后返回 `state: updating`；条件不满足、Watchtower 拒绝令牌或正忙返回 409。接口限本机同源请求，非 Docker 部署返回 404，从不回传令牌。
-
-`GET /api/configuration/cloud-proxies` 返回已添加媒体库对应的 CloudDrive 账号及 API／数据代理、未匹配媒体库和账号修订号，不回显代理密码；尚未填写 CloudDrive2 地址时返回空列表与 `configured: false`。`POST` 接受账号 `id`、`revision` 和本次修改的 `api`／`data`，写回 CloudDrive 后返回该账号当前状态；配置冲突返回 409。这两条接口均限本机管理权限，写入还要求同源请求。
-
-`POST /api/configuration/smb/test` 接受共享地址及连接字段，验证只读目录访问，返回 `readable` 和最多 500 个可进入子目录名。接口要求本机管理权限与同源请求；地址无效返回 400，无读取权限返回 403，共享不可达返回 502，不回显密码。配置读取只返回账号、加密要求与密码是否已保存。
-
-`POST /api/configuration/access/first` 是已配置、还没有访问策略的 Docker 部署的访问设置提交（[ADR-0149](adr/0149-docker-first-access-setup.md)），不要求登录。正文 `{mode, password, confirmation, next}`，`mode` 为 `password` 或 `open`；成功写入访问策略，返回站内地址 `url`，设了密码时同时设下会话 cookie。只在 Docker 且还没有访问策略时可用：非 Docker 返回 404，已有策略返回 409，来源不是本机或私有网络、带代理转发头或不同源时返回 403，密码错误按 `errors.password`、`errors.confirmation` 返回 400。
-
-`POST /api/configuration/access/token/rotate` 更换访问口令，运行中的服务立即改用新口令。接口要求本机管理权限与同源请求；口令由 `--token`、`PEACH_TOKEN` 指定或这次启动没有口令时返回 409，访问设置读不出时也返回 409。响应只在这一次带回新口令 `token`（`Cache-Control: no-store`），另有访问方式 `mode` 和被登出的其他设备数 `signed_out`。配置读取的 `api_token` 只给出 `rotatable`、`reason`、`paired`，不回显口令。
-
-`GET /api/configuration/certificate` 限本机管理权限，返回本机 CA 的 SHA-256 `fingerprint`、到期日 `not_after`、下载路径和二维码：`phone_url` 是带 10 分钟签名的下载地址，`qr` 是模块矩阵。没有 HTTPS 服务或没有 CA 时返回 404，配置读取的 `certificate` 为 null。`GET /api/configuration/certificate/peach-local-ca.crt` 只下发 CA 的公开证书（`application/x-x509-ca-cert`），任何私钥都不经过它；带有效签名 `k` 时不需要登录，签名无效或过期返回 403；不带签名时要求应用鉴权。
-
-## 兼容地址与服务接口
-
-| 兼容地址 | 规范去处 |
-| --- | --- |
-| `/item/:id` | `/assets/:id` |
-| `/jav/movie/:code` | `/works/:code` |
-| `/follow/item/:id` | `/posts/:id` |
-| `/mix/:seed/:item`、`/parts/:seed/:item`、`/editions/:seed/:item` | `/assets/:item` 加相应队列参数 |
-| `/playlists/:playlist/:item` | `/assets/:item?playlist=:playlist` |
-| 实体的姓名、别名路径 | 对应数字 ID 地址 |
+| `/item/{id}` | `/assets/{id}` |
+| `/mix/{seed}/{id}`、`/parts/{seed}/{id}`、`/editions/{seed}/{id}`、`/playlists/{seed}/{id}` | `/assets/{id}`，并记下取景上下文（`mix`、`parts`、`editions`、`playlist`） |
+| `/follow/item/{id}` | `/posts/{id}` |
+| `/jav/movie/{code}` | `/works/{规范化后的番号}` |
 | `/activity` | `/tasks` |
 | `/scraping` | `/sources` |
-| `/follow-manage` | `/subscriptions` |
 | `/configuration` | `/settings/library` |
+| `/follow-manage` | `/subscriptions` |
 | `/diagnostics` | `/settings/diagnostics` |
-| `/resource-sync` | `/data-cleanup/resource-sync` |
+| `/performers/`、`/creators/`、`/studios/`、`/agencies/`、`/series/`、`/tags/` | 去掉尾斜杠的同一地址 |
 
-兼容跳转保留查询参数；后退前进的背景信息留在历史条目中。索引尾斜杠跳到无尾斜杠路径。
+站内详情链接在当前页面打开覆盖层，关闭后回到来源地址并保留查询参数；修饰键、新窗口与下载链接沿用浏览器行为。番号规范化后为空时回 404。
 
-`/api/*`、`/stream`、`/follow-stream`、封面、图片及其他媒体端点使用各自的服务契约。实体只读接口 `/api/entity`、`/api/photos` 支持 `kind` 加 `id`，也接受 `kind` 加 `name`。鉴权与本机写入权限由服务端检查。
+设置分区可直接打开、刷新并用浏览器前进后退；从当前页面打开时保留背景页面。启用接口文档时 `/docs`、`/openapi.json` 是服务文档入口，未启用时这两条不存在。
 
-启用接口文档时，`/docs`、`/docs/oauth2-redirect` 和 `/openapi.json` 是服务文档入口；首次运行表单由未配置状态下的首页展示。
+## 静态资产
 
-远程媒体代理拒绝 HTML、SVG、XML 和未声明类型的内容；普通媒体和 HLS 清单使用被动响应策略。旧磁盘缓存同样校验类型，缓存字节可复用，浏览器须回源复验。图像响应及其 304 回执携带 CSP `sandbox` 和 `nosniff`。
+| 地址 | 内容 |
+| --- | --- |
+| `/app.css`、`/board.css` | 分区拼接的样式，带 `ETag`，`Cache-Control: no-cache` |
+| `/dist/peach-app.js`、`/dist/peach-app.css` | 应用主包，固定文件名，带 `ETag`，`Cache-Control: no-cache` |
+| `/dist/peach-pages.js`、`/dist/peach-pages.css` | 页面壳包；这两条不要会话，登录页要在拿到会话之前出图 |
+| `/dist/{name}` | 按页拆出的分块，名字里带内容哈希，`Cache-Control: private, max-age=31536000, immutable`；其余名字 404 |
+| `/vendor/*` | 第三方静态目录，`Cache-Control: public, max-age=31536000, immutable` |
+| `/dev/agentation.js` | 界面标注工具的本机构建产物，不存在时 404 |
+| `/site-icon/{name}` | 站点图标 |
+| `/robots.txt`、`/favicon.svg`、`/favicon.ico` | 抓取与站点图标 |
+| `/peach-logo.png`、`/peach-logo-64.png`、`/peach-logo-128.png` | 标识 |
 
-浏览器首次取得当前媒体策略的 HTML 页面时收到仅清理缓存的 `Clear-Site-Data`，策略 Cookie 避免反复清理，登录和偏好不清除。不支持该响应头的浏览器需手动清理旧站点缓存。
+## 播放取流
+
+| 地址 | 说明 |
+| --- | --- |
+| `GET`/`HEAD /stream?id=` | 播放入口。能交给浏览器的给 302，必须带鉴权的由 Peach 转发客户端 `Range`；透传 200/206、`Content-Range`、`Content-Length`、`ETag`、`Last-Modified`；响应带 `no-store`、`Referrer-Policy: no-referrer` 与媒体安全头；每次请求记一条 `playback-request` 本机事件 |
+| `GET /api/stream-plan?id=` | 播放计划：`protocol`、`mime_type`、`duration`、`src`、`reason`。只有 `range` 一种协议；`src` 指回 `/stream`，不下发预授权地址，因为那个地址在一次播放期间会过期 |
+| `POST /api/external-playback` | 外部播放器取地址：按请求头 `Origin`（没有就用自身地址）校验来源，签发 `ticket`，返回 `/external-stream/{id}` 与 `/external-playlist/{id}.m3u` 两条地址以及 `expires_in`；来源不合法 400「播放地址无效」，票据无效时 401「播放链接已失效，请在作品详情重新打开」 |
+| `GET /external-playlist/{id}.m3u` | 文本清单，正文里的播放地址是这个来源的绝对地址，`application/x-mpegurl`，`no-store`，`Referrer-Policy: no-referrer` |
+
+能不能播由媒体层判断：只看容器后缀，浏览器认可的五种（`.mp4`、`.m4v` 发 `video/mp4`，`.webm` 发 `video/webm`，`.ogv`、`.ogg` 发 `video/ogg`）按各自 MIME 发；其余容器没有可用的 MIME，`/stream` 与 `/api/stream-plan` 都回 404 `{"error":"unavailable"}`。拖动进度条就是客户端再发一个 `Range`，Peach 不改写字节，也不在服务端分片。
+
+## 图像端点
+
+图像端点只接受账本 id 或番号，自己查地址，上游地址一律不外露。
+
+| 地址 | 内容 |
+| --- | --- |
+| `/thumb?id=` | 账本里已生成的快照缩略图 |
+| `/photo?id=`、`/photo-thumb?id=` | 原始图片与图片墙缩略图 |
+| `/poster?id=&c=0..8` | 九宫格的一格，从 `asset.snapshot_path` 指向的 3×3 接触印相裁出 |
+| `/timeline?id=&s=` | 时间轴印相的一张（10×10 格），见 [视频预览](VIDEO_PREVIEWS.md) |
+| `/cover?code=&thumb=` | 官方封套原件；`thumb=1` 长边 1600、`thumb=2` 长边 800 |
+| `/cover-image?code=`、`/jav-image?code=&image=cover`、`/jav-preview/{code}/{ref}` | 采集到的封面、JAV 官方图与预览图 |
+| `/sample-thumb?code=&n=`、`/sample-image?code=&n=` | 官方样张与其缩略图 |
+| `/avatar?id=`、`/avatar-choice?kind=&id=`、`/entity-image?kind=&id=&thumb=` | 资产头像、实体图与派生缩略图 |
+| `/follow-avatar?service=&id=`、`/follow-image?id=&media=`、`/follow-cover?id=&media=` | 关注来源的头像、帖子图片与封面 |
+| `/work-icon?work=`、`/logo?studio=&variant=` | 作品与厂牌的标识 |
+| `/source-icon?provider=`、`/site-mark?source=`、`/link-mark?id=` | 来源图标与链接圆标 |
+| `/endcard-frame?id=&name=` | 片尾固定画面 |
+
+带写的几条：`POST /api/cover-crop` 只写封面旁的 `.poster.json`，`box` 是源图像素坐标（右下开区间），`null` 恢复默认裁切，不动图片字节；`POST /api/avatar-frame`、`POST /api/avatar-pick`、`POST /api/avatar-code-cover` 选头像取哪一帧或哪张图；`GET /api/avatar-choices` 列出可选图。`GET /api/follow-qualities` 列出某个关注条目可播的画质。
+
+## 网盘设置面
+
+| 地址 | 说明 |
+| --- | --- |
+| `GET /api/drive` | 设置页看到的网盘状态：`public_url` 与逐个来源的 `location`、`label`、`configured`、`connected`、`email`、`display_name`、`roots[{remote_id,name}]`、`synced_at`、`last_error` |
+| `POST /api/drive/{location}/authorize` | 生成授权地址，返回 `{"url": ...}`，浏览器带过去登录网盘 |
+| `GET /oauth/{location}/callback` | 网盘跳回来那一步。这里没有会话保证，因此不查登录凭据，边界是授权开始时服务端记下的 `state`（900 秒内有效）；成功 302 回 `/settings#drives`，失败 400 |
+| `POST /api/drive/{location}/roots` | 整条替换扫描根；空数组表示从账号根目录开始，非对象数组回 400「roots 要是对象数组」 |
+| `GET /api/drive/{location}/folders` | 列远端文件夹，只出目录，`parent_id` 缺省取第一个扫描根 |
+| `POST /api/drive/{location}/refresh` | 立刻做一次增量同步，返回该来源的状态 |
+| `DELETE /api/drive/{location}` | 忘掉这个网盘：删账号与扫描根，账本里已登记的资产不动 |
+
+失败按网盘侧的错误分档：需要重新授权 401、权限不足 403、文件或目录不存在 404、其余网盘错误 409；不认识的来源回 404「没有这个网盘」。写端点另要求同源检查。
+
+来源只认 Google Drive 与 OneDrive 两种，凭据落在数据目录的 `drive-accounts.json`（权限 0600），令牌提前 60 秒更换。没有填客户端凭据或没有对外地址时，`configured` 为假，授权按钮不可用。
+
+## 本机配置与维护
+
+| 地址 | 说明 |
+| --- | --- |
+| `GET /api/configuration` | 配置快照：可改字段、版本号、存储、访问、事实与口令状态；每一节独立读取，失败的一节写进 `section_errors`，其余照常返回；未完成首次设置回 409「请先完成首次设置」 |
+| `POST /api/configuration` | 保存媒体库分组（名称 1–80 个可见字符，图标取自内置列表），写设置文件 |
+| `POST /api/configuration/access`、`POST /api/configuration/access/first` | 保存访问策略；`first` 用于已配置但还没有策略的 Docker 部署，非 Docker 404、已有策略 409 |
+| `GET /api/configuration/access/sessions`、`POST /api/configuration/access/sessions/revoke` | 列出与撤销登录设备；接受 `id` 或 `scope: "others"`，版本不符 409，撤销本机 400 |
+| `POST /api/configuration/access/token/rotate` | 更换访问口令，运行中的服务当场改用新口令。只有口令来自口令文件时才可换：没有口令、或口令由 `--token`／`PEACH_TOKEN` 指定时回 409 并说明该去哪里换。新口令只在这一次回执里给出，`no-store`，同时回访问策略、被登出的设备数与是否需要重新登录 |
+| `GET /api/configuration/storage` | 数据目录各类占用 |
+| `POST /api/configuration/storage/measure` | 启动一次统计，已在跑 409 |
+| `POST /api/configuration/storage/policy` | 保存容量保护（`enabled` 总开关默认开启），返回同一状态 |
+| `POST /api/configuration/storage/clean` | 按类别清理；不在可清理清单里的分组回 400「这一类不能在这里清理」，任务在跑 409 |
+| `GET /api/configuration/ledger-backups`、`POST .../backup`、`POST .../restore` | 账本备份与恢复；恢复要求 `confirm: true`，否则 400「恢复会替换当前账本，请先确认」 |
+| `GET /api/diagnostics`、`GET /api/diagnostics/bundle` | 系统检查与诊断包 |
+| `GET`/`POST /api/diagnostics/exports`、`POST .../{identity}/cancel`、`GET .../{identity}/download` | 诊断记录导出 |
+| `POST /api/diagnostics/client-error` | 页面侧异常上报，按来源限频 |
+| `POST /api/pick-folder` | 在服务器这台机器上弹系统文件夹对话框，返回 `{"path": ...}`；已在弹 409，无法弹 501 |
+| `GET /api/setup/questions`、`POST /api/setup`、`POST /api/setup/restore` | 首次设置的问题、提交与从备份恢复 |
+
+容量、备份与访问策略这几条写端点都要求登录凭据与同源检查。
+
+## JSON 契约出口
+
+`GET /api/{route:path}` 与 `POST /api/{route:path}` 把其余接口交给 `web_contract`：GET 查账本，POST 写账本。只因带请求体才用 POST、实际不写账本的接口单独列了一张清单（标签预览、媒体处理偏好、目录预览、自定义元数据、刮削设置与检查、关注解析与凭据、链接检查、整理预览、人脸模型），它们不受写锁保护。
+
+`web_router` 里另有几个具名端点：
+
+| 地址 | 说明 |
+| --- | --- |
+| `GET /api/providers` | 各媒体来源的健康状态 |
+| `GET /api/providers/opencode-go/models` | 该来源的模型清单；不可用时 502 `{"error":"provider unavailable"}` |
+| `GET /api/libraries` | 媒体库分组：`id`、`name`、`icon`、`folders`、`color`、`policy`、`stages`、`roots[{root_id,location}]`、`metered` |
+| `GET /api/tasks/{run_id}`、`POST /api/tasks/{run_id}/control` | 任务进度与暂停、继续、取消 |
+| `GET /api/background-issues` | 后台问题清单 |
+
+响应体是紧凑 JSON（不额外缩进、UTF-8 不转义）。错误形状固定：
+
+| 情况 | 状态与正文 |
+| --- | --- |
+| 键不存在 | 404 `{"error":"not found"}` |
+| 参数类型或取值不对 | 400 `{"error":"<类型>: <说明>"}` |
+| 任务已取消 | 409 |
+| 任务或目录规则冲突 | 409 |
+| 版本冲突 | 409，带 `expected_revision` 与当前 `revisions` |
+| 其余异常 | 500 `{"error":"internal server error"}` |
+
+页面侧的失败另有形态：媒体 id 不存在 404 `{"error":"no such id"}`，取不到字节 404 `{"error":"unavailable"}`；导航请求（`GET`/`HEAD`、非 `/api/`、`Accept` 含 `text/html`）拿到 HTML 错误页而不是 JSON。未处理的异常回 500 `{"error":"服务处理失败，请导出诊断报告","error_id":...}`，响应头带 `X-Peach-Error-ID`，这一串就是诊断包里的定位线索。
+
+## 健康检查
+
+`GET`/`HEAD /healthz` 回 `ok`、服务名、版本、各项检查结果、这次启动有没有配置过、数据库与 ffmpeg 状态、调用方能不能改配置，以及每个网盘的连接状态。它不探测网盘、不迁移数据库、不读媒体字节，可以放心给探针用；加 `?ready=true` 时按就绪判据回 200 或 503，两种都带 `no-store`。
+
+## 响应头
+
+- 所有响应带 `X-Content-Type-Options: nosniff`。
+- 没自己设 `Cache-Control` 的一律补 `no-store`；长缓存只有两处：`/vendor/` 与 `/dist/` 里带内容哈希的分块。
+- 图像、视频、音频响应另加 CSP `sandbox; default-src 'none'; frame-ancestors 'none'`。
+- 浏览器第一次拿到媒体策略的 HTML 页面时收到 `Clear-Site-Data: "cache"`，并种下 `peach_media_policy=1` 不再重复清理；登录状态与偏好不受影响。
+- 全局带 `Referrer-Policy: same-origin` 与 `X-Robots-Tag`。
+- 压缩开着，但 `application/octet-stream`、`text/plain` 与已压缩的媒体类型不参与。

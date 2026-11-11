@@ -319,7 +319,6 @@ class ProcessingControl:
             self.publish = None
 
     def checkpoint(self, kind='work'):
-        from .update_tasks import check_pause
         from .task_control import CURRENT as TASK_CONTROL
         task = TASK_CONTROL.get()
         started = None
@@ -327,7 +326,6 @@ class ProcessingControl:
         while True:
             from .task_control import checkpoint as task_checkpoint
             task_checkpoint(None)
-            check_pause(self.db_path)
             self.refresh()
             self.check_item()
             if not self.active():
@@ -362,14 +360,14 @@ class ProcessingControl:
 
 
 def user_paused(db_path, job_id):
-    from .update_tasks import state_for
-    data = _read(state_for(db_path).parent / 'library-processing-control.json')
+    from .task_state import state_root
+    data = _read(state_root(db_path) / 'library-processing-control.json')
     return data.get('job_id') == job_id and data.get('paused') is True
 
 
 def user_cancelled(db_path, job_id):
-    from .update_tasks import state_for
-    data = _read(state_for(db_path).parent / 'library-processing-control.json')
+    from .task_state import state_root
+    data = _read(state_root(db_path) / 'library-processing-control.json')
     return bool(job_id) and data.get('job_id') == job_id and data.get('cancelled') is True
 
 
@@ -383,35 +381,27 @@ def initial_estimate(config, db_path, stage, asset_ids=None, mode=None, *, allow
     if asset_ids is not None:
         query += ' AND id IN (SELECT value FROM json_each(?))'
         parameters.append(json.dumps(asset_ids))
-    if stage == 'previews':
-        query += " AND location != 'online' AND (snapshot_path IS NULL OR snapshot_path='')"
-        if not allow_metered:
-            from .media_sources import cost_sql
-            expression, values = cost_sql(config=config)
-            query += f" AND {expression}='free'"
-            parameters += list(values)
-    if config.locations:
-        query += ' AND location IN (' + ','.join('?' * len(config.locations)) + ')'
-        parameters += list(config.locations)
+    if config.drive_roots:
+        query += ' AND location IN (' + ','.join('?' * len(config.drive_roots)) + ')'
+        parameters += list(config.drive_roots)
     with closing(sqlite3.connect(db_path, timeout=30)) as connection:
         count, size = connection.execute(query, parameters).fetchone()
     # 抽帧只读取局部数据；文件总大小仅作为编解码复杂度的温和修正，不按全量读取估时。
     size_factor = min(2.0, max(0.8, (size / max(1, count) / 1024**3) ** 0.15))
-    seconds = {'scan': 0.2, 'metadata': 8.0, 'previews': 12.0 * size_factor,
-               'collect': 20.0 * size_factor, 'all': 20.2 * size_factor}[stage]
+    seconds = {'metadata': 8.0, 'collect': 20.0 * size_factor, 'all': 20.2 * size_factor}[stage]
     history = _read(config.directory('state') / 'library-processing-timing.json')
     sample = history.get(stage)
     historical = isinstance(sample, (int, float)) and math.isfinite(sample) and sample > 0
     if historical:
         seconds = sample
     factor = MODE_FACTORS[valid_mode(mode)]
-    known = bool(count) or asset_ids is not None or stage not in ('scan', 'all')
+    known = bool(count) or asset_ids is not None or stage != 'all'
     estimate = count * seconds * factor
     return dict(speed_mode=mode,
                 eta_seconds_min=max(1, math.ceil(estimate * 0.4)) if known and count else 0 if known else None,
                 eta_seconds_max=max(1, math.ceil(estimate * 2.5)) if known and count else 0 if known else None,
                 eta_kind='historical' if historical else 'estimating', eta_initial=True,
-                eta_scope='本趟处理（已登记文件，未含未知新增）' if stage in ('scan', 'all') else '本趟处理',
+                eta_scope='本趟处理（已登记文件，未含未知新增）' if stage == 'all' else '本趟处理',
                 eta_basis=f'根据已登记的 {count} 个视频、{size / 1024**3:.1f} GiB'
                           + ('及本机同类历史耗时粗估' if historical else '粗估，运行后校准')
                           if known else '正在统计新目录的文件数量和大小',
@@ -437,7 +427,7 @@ class ProcessingEstimate:
 
     def _phase_estimate(self, state, phase, done, total):
         """阶段切换时用该阶段保守范围起算，采样只消费当前阶段的增量。"""
-        rates = {'local': 0.2, 'metadata': 8.0, 'previews': 12.0, 'probe': 1.0, 'images': 1.0}
+        rates = {'local': 0.2, 'metadata': 8.0}
         seconds = max(0, total - done) * rates.get(phase, 0) * MODE_FACTORS[self.mode]
         known = phase in rates and total > 0
         state.update(eta_seconds_min=math.ceil(seconds * 0.4) if known else None,
@@ -447,7 +437,7 @@ class ProcessingEstimate:
 
     def _total_estimate(self, state, phase, done, total, now):
         """当前阶段用独立样本校准，待执行阶段保留各自的粗估范围。"""
-        rates = {'local': 0.2, 'metadata': 8.0, 'previews': 12.0, 'probe': 1.0, 'images': 1.0}
+        rates = {'local': 0.2, 'metadata': 8.0}
         pending = state.get('estimate_pending')
         if pending is None:
             return
@@ -497,11 +487,9 @@ class ProcessingEstimate:
         if any(step['id'] == 'sources' and step['status'] == 'current' for step in state.get('steps', [])):
             return
         stage = state.get('stage')
-        phase = ('previews' if stage == '生成预览图' else
-                 'images' if stage == '读取配套图片' else
-                 'local' if stage in ('读取本地资料', '检查配套文件') else
-                 'metadata' if stage in ('采集缺失资料', '采集缺失封面', '保存待确认资料') else
-                 'probe' if stage == '读取时长与分辨率' else None)
+        phase = ('local' if stage in ('扫描文件', '检查配套文件') else
+                 'metadata' if stage in ('整理待采集的视频', '采集缺失资料', '采集缺失封面',
+                                         '保存待确认资料', '生成预览图') else None)
         done, total = state.get('checked', 0), state.get('total', 0)
         now = time.monotonic() - self.paused_elapsed()
         if phase != self.phase or done < self.last_done:

@@ -47,8 +47,8 @@ it('想要已有清单立即返回，陈旧数据在后台更新', async () => {
 });
 
 it('JAV 分区导航依次显示馆藏、想要、新作、发现，馆藏使用目录搜索', async () => {
-  const navigate = vi.fn(), find = vi.fn();
-  const host = await mount(<JavHeader tab="library" navigate={navigate} find={find} />);
+  const navigate = vi.fn();
+  const host = await mount(<JavHeader tab="library" navigate={navigate} />);
   const tabs = [...host.querySelectorAll('[role="tab"]')];
   expect(tabs.map(tab => tab.textContent?.trim())).toEqual(['馆藏', '想要', '新作', '发现']);
   expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
@@ -59,13 +59,11 @@ it('JAV 分区导航依次显示馆藏、想要、新作、发现，馆藏使用
   expect(navigate).toHaveBeenLastCalledWith('/jav?tab=releases');
   await click(tabs[3]);
   expect(navigate).toHaveBeenLastCalledWith('/jav?tab=discover');
-  await click(buttonNamed('查找资源', host));
-  expect(find).toHaveBeenCalledOnce();
 });
 
 it('从想要分区返回馆藏时打开 JAV 目录', async () => {
   const navigate = vi.fn();
-  const host = await mount(<JavHeader tab="wants" navigate={navigate} find={vi.fn()} />);
+  const host = await mount(<JavHeader tab="wants" navigate={navigate} />);
   expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe('想要');
   await click(host.querySelector('[role="tab"]'));
   expect(navigate).toHaveBeenCalledWith('/?jav=1');
@@ -84,7 +82,7 @@ it('发现按范围读取，清除文字和标签恢复列表，卡片打开对�
   const host = await mount(<QueryClientProvider client={queryClient}><JavPage tab="discover" readOnly navigate={navigate} receipt={vi.fn()} /></QueryClientProvider>);
   await settle();
   expect(host.querySelectorAll('[data-jav-card]')).toHaveLength(2);
-  expect(actionOrder(host.querySelector('[data-jav-card] [data-jav-actions]'))).toEqual(['作品来源', '想要', '查找资源']);
+  expect(actionOrder(host.querySelector('[data-jav-card] [data-jav-actions]'))).toEqual(['作品来源', '想要']);
   expect(host.querySelector('[data-jav-card] h3')?.textContent).toContain('ABC-001');
   await click(host.querySelector('[data-jav-card] [data-media-tag]'));
   expect(host.querySelectorAll('[data-jav-card]')).toHaveLength(1);
@@ -241,11 +239,11 @@ it('新作分区默认按发行时间倒序，排序键再点翻方向，换一�
   history.replaceState(null, '', before);
 });
 
-it('没有推荐时空态的查看口味在左，主入口在右', async () => {
+it('没有推荐时空态只留「浏览馆藏」这一个主入口', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) })));
   const host = await mount(<QueryClientProvider client={queryClient}><JavPage tab="discover" readOnly navigate={vi.fn()} receipt={vi.fn()} /></QueryClientProvider>);
   await settle();
-  expect(actionOrder(host.querySelector('[data-empty-state]'))).toEqual(['查看口味', '浏览馆藏']);
+  expect(actionOrder(host.querySelector('[data-empty-state]'))).toEqual(['浏览馆藏']);
   const main = [...host.querySelectorAll('[data-empty-state] a')].find((link) => link.textContent === '浏览馆藏');
   expect(main?.className).toContain('bg-button-primary');
 });

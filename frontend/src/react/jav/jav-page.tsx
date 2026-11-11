@@ -7,7 +7,6 @@ import { appSettingsStore, javLayout, storeJavLayout, JAV_LAYOUTS, cardRatio, gr
 import { wireHorizontalScroller } from '../../ui-kit/scroll';
 import { javContentSkeleton, javTagSkeleton, JAV_RECOMMENDATION_GRID } from '../../jav-skeleton';
 import { errorMessage } from '../../api';
-import { CloudDownloadDialog, type DownloadPrefill } from '../activity/cloud-download-dialog';
 import { Note } from '../components/note';
 import { EmptyState } from '../components/empty-state';
 import { WantList } from '../wants/want-list';
@@ -17,7 +16,7 @@ import { busyProps, useAction } from '../settings/use-action';
 import { controlDiscoveryMetadata, DISCOVERY_METADATA_KEY, DISCOVERY_REFRESH_MS, discoveryKey, fetchDiscoveries, fetchDiscoveryMetadata, writeJavQuery,
   type DiscoveryMetadataJob, type DiscoveryScope } from './jav';
 import { queryClient } from '../query';
-import { DiscoveryCard, resourcePrefill } from './discovery-card';
+import { DiscoveryCard } from './discovery-card';
 import { Releases } from './jav-releases';
 import { JavHeader } from './jav-header';
 import { IndexSearch } from '../index/index-search';
@@ -35,23 +34,21 @@ const SEARCH_LABELS: Record<string, string> = { releases: '筛选新作', discov
 export function JavPage({ tab, readOnly, navigate, receipt }: {
   tab: string; readOnly: boolean; navigate(path: string): void; receipt(message: string): void;
 }) {
-  const [download, setDownload] = useState<DownloadPrefill | null>(null);
   const [text, changeText] = useState(() => new URLSearchParams(location.search).get('q') || '');
   const setText = (value: string) => { changeText(value); writeJavQuery({ q: value }) };
   return <JavSelectionProvider key={tab} readOnly={readOnly} receipt={receipt}><div className="flex w-full flex-col gap-6">
-    <JavHeader tab={tab} navigate={navigate} find={() => setDownload({})}
+    <JavHeader tab={tab} navigate={navigate}
       search={<IndexSearch label={SEARCH_LABELS[tab] || '筛选'} value={text} onQuery={setText} />} />
     {tab === 'releases'
-      ? <Releases readOnly={readOnly} receipt={receipt} resource={setDownload} query={text.trim()} navigate={navigate} clearText={() => setText('')} />
+      ? <Releases readOnly={readOnly} receipt={receipt} query={text.trim()} navigate={navigate} clearText={() => setText('')} />
       : tab === 'discover'
-      ? <Discover readOnly={readOnly} receipt={receipt} resource={setDownload} query={text.trim()} navigate={navigate} clearText={() => setText('')} />
+      ? <Discover readOnly={readOnly} receipt={receipt} query={text.trim()} navigate={navigate} clearText={() => setText('')} />
       : <WantList readOnly={readOnly} toast={receipt} query={text.trim()} clearQuery={() => setText('')} />}
-    <CloudDownloadDialog prefill={download} close={() => setDownload(null)} receipt={receipt} />
   </div></JavSelectionProvider>;
 }
 
-function Discover({ readOnly, receipt, resource, query, navigate, clearText }: {
-  readOnly: boolean; receipt(message: string): void; resource(work: DownloadPrefill): void; query: string;
+function Discover({ readOnly, receipt, query, navigate, clearText }: {
+  readOnly: boolean; receipt(message: string): void; query: string;
   navigate(path: string): void; clearText(): void;
 }) {
   const params = new URLSearchParams(location.search);
@@ -170,12 +167,11 @@ function Discover({ readOnly, receipt, resource, query, navigate, clearText }: {
       ? <Note tone="neutral" action={<Button variant="secondary" {...busyProps(metadataAction.busy === 'retry')}
         aria-label="立即重试读取作品资料" onClick={() => updateMetadata('retry')}>立即重试</Button>}>{metadata.message || `作品资料 ${metadata.completed} / ${metadata.total} 部`}</Note> : null}
     {metadataAction.error ? <Note tone="error">{metadataAction.error}</Note> : null}
-    {!waiting && !discoveries.error && !items.length ? <EmptyState icon={RiCompassLine} title={query || tag ? '没有符合条件的推荐' : '暂无匹配口味的作品'}
-      actions={<><ButtonLink size="small" href="/taste" variant="secondary">查看口味</ButtonLink>
-        {query || tag ? <Button variant="primary" size="small" onClick={() => { clearText(); changeTag(''); writeJavQuery({ q: '', tag: '' }) }}>清除筛选</Button>
+    {!waiting && !discoveries.error && !items.length ? <EmptyState icon={RiCompassLine} title={query || tag ? '没有符合条件的推荐' : '暂无推荐的作品'}
+      actions={<>{query || tag ? <Button variant="primary" size="small" onClick={() => { clearText(); changeTag(''); writeJavQuery({ q: '', tag: '' }) }}>清除筛选</Button>
         : scope === 'library' ? <ButtonLink variant="primary" size="small" href="/">浏览馆藏</ButtonLink>
-        : <Button variant="primary" size="small" onClick={() => resource({})}>查找作品</Button>}</>}>
-      {query || tag ? '清除筛选后查看其他作品。' : scope === 'library' ? '观看或标记作品后，可以探索少看的馆藏。' : '可以查找番号，或更新关注来源。'}
+        : null}</>}>
+      {query || tag ? '清除筛选后查看其他作品。' : scope === 'library' ? '观看或标记作品后，这里会按你的记录推荐。' : '可以查找番号，或更新关注来源。'}
     </EmptyState> : null}
     {action.error ? <Note tone="error">{action.error}</Note> : null}
     <div data-media-grid="" className={JAV_RECOMMENDATION_GRID} style={{ '--card-ratio': ratio } as CSSProperties}>
@@ -189,7 +185,6 @@ function Discover({ readOnly, receipt, resource, query, navigate, clearText }: {
           onWant={() => { void action.run(String(item.id), signal => addWant({ code: item.code }, signal), () => {
             receipt('已加入想要'); void invalidateWants(); void discoveries.refetch();
           }) }}
-          onResource={() => resource(resourcePrefill(item))}
           badge={<button data-jav-taste-score="" type="button" title={scoreDetails} aria-label={`推荐分 ${recommendation.score}，${recommendation.label}`}
             className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring">
             <Chip color={recommendation.color}>{recommendation.label}</Chip>

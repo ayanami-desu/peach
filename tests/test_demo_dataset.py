@@ -13,26 +13,15 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import closing
 from pathlib import Path
-from unittest.mock import Mock
 
 from peach import catalog_rules
 from peach.ffmpeg import FFmpegResolver
-from peach.field_owners import review_owner
 from peach.library_nfo import local_art, read_nfo, sidecars
-from peach.library_processing import process_library
-from peach.review_csv import read_rows
-from peach.settings_file import PeachConfig
-from peach.metadata_auto_apply import _apply_metadata_candidate
-from support.conditions import windows_ledger_roots
-from support.ledger import fresh_ledger
-from support.demo import seed_metadata_cache
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -124,53 +113,6 @@ class DemoDatasetTests(unittest.TestCase):
         self.assertEqual(payload["id"], "")
         self.assertEqual(payload["title"], made.title)
 
-    @windows_ledger_roots
-    def test_scan_and_process_consume_the_tree_without_any_network_call(self):
-        media, items = self._generate("media")
-        db = fresh_ledger(self.root)
-        config = PeachConfig(self.root, self.root / "config.toml", present=True,
-                             locations={"local": (str(media),)})
-        seed_metadata_cache(media, config.directory('sources'))
-        factory = Mock()
-        result = process_library(config, db, self.root / "generated", self.root / "covers",
-                                 provider_factory=factory)
-        factory.assert_not_called()
-        coded = [item for item in items if item.kind == "coded"]
-        self.assertTrue([item for item in items if item.kind == "bare"], "演示树要有裸文件")
-        self.assertEqual(result["identified"], len(coded))
-        # 裸文件没有番号，和创作者作品一样只是没番号的条目，不是问题项。
-        self.assertEqual(result["issue_count"], 0)
-        self.assertEqual(result["status"], "complete")
-        for item in coded:
-            self.assertTrue((self.root / "covers" / f"{item.code}.jpg").is_file(), item.code)
-        with closing(sqlite3.connect(db)) as connection:
-            connection.row_factory = sqlite3.Row
-            videos = connection.execute("SELECT count(*) FROM asset WHERE medium='video'").fetchone()[0]
-            images = connection.execute("SELECT count(*) FROM asset WHERE medium='image'").fetchone()[0]
-            made_ids = [row["id"] for row in connection.execute(
-                "SELECT id FROM asset WHERE medium='video' AND (code IS NULL OR code='') "
-                "AND name LIKE '%.mp4' AND path NOT LIKE '%未整理%'")]
-        self.assertEqual(videos, len(items))
-        # 番号作品旁的 `-poster.jpg` 是附属文件，扫描不登记，封面照样从磁盘读（上面的 covers）。
-        listed = [item for item in items if item.poster and not item.poster.endswith("-poster.jpg")]
-        self.assertEqual(images, sum(len(item.gallery) for item in items) + len(listed))
-        for asset_id in made_ids:
-            self.assertTrue((self.root / "generated" / "posters" / f"{asset_id}_4.jpg").is_file())
-        rows = read_rows(self.root / "generated" / "library-metadata-field-candidates.csv")
-        fields = {(row["code"], row["field"]) for row in rows}
-        for item in coded:
-            for field in ("title", "original_title", "performers", "studio", "series", "release_date", "tags"):
-                self.assertIn((item.code, field), fields, (item.code, field))
-        studio_row = next(row for row in rows if row["code"] == coded[0].code and row["field"] == "studio")
-        candidate = json.loads(studio_row["candidates_json"])[0]
-        self.assertEqual(candidate["source"], "local_nfo")
-        with closing(sqlite3.connect(db)) as connection, connection:
-            connection.row_factory = sqlite3.Row
-            self.assertEqual(_apply_metadata_candidate(
-                connection, studio_row, candidate, "2026-09-11", review_owner("local_nfo")), 1)
-            self.assertEqual(connection.execute(
-                "SELECT canonical_name FROM entity WHERE kind='studio'").fetchone()[0], coded[0].studio)
-
     def test_ffmpeg_mode_encodes_a_playable_clip(self):
         choice = FFmpegResolver(self.root).ffmpeg()
         probe = FFmpegResolver(self.root).ffprobe()
@@ -193,10 +135,9 @@ class DemoDatasetTests(unittest.TestCase):
             self.demo.generate(self.root / "none", count=1, seed=1, video="ffmpeg", duration=2, ffmpeg=None)
         self.assertIn("--video stub", str(caught.exception))
 
-    def test_next_steps_name_the_settings_lines_and_the_manifest(self):
+    def test_next_steps_name_the_upload_step_and_the_manifest(self):
         text = self.demo.next_steps(self.root / "demo")
-        self.assertIn("[media.locations]", text)
-        self.assertIn("peach init", text)
+        self.assertIn("上传到网盘", text)
         self.assertIn("apply_metadata_tags.py", text)
         self.assertIn(self.demo.MANIFEST_NAME, text)
 

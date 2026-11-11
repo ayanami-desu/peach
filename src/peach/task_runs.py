@@ -285,25 +285,22 @@ class TaskRunStore:
               conflict: str = "skip", total: int | None = None,
               label: str = "", pid: int | None = None,
               summary: dict | None = None) -> TaskRun | None:
-        from .update_tasks import admission
-        with admission(self.database.db_path):
-            from .job_recovery import current_run
-            resumed = self._resume(current_run.get(), task_key)
-            if resumed is not None:
-                return resumed
-            return self._start(task_key, trigger=trigger, mutex_key=mutex_key,
-                               conflict=conflict, total=total, label=label, pid=pid,
-                               summary=summary)
+        from .job_recovery import current_run
+        resumed = self._resume(current_run.get(), task_key)
+        if resumed is not None:
+            return resumed
+        return self._start(task_key, trigger=trigger, mutex_key=mutex_key,
+                           conflict=conflict, total=total, label=label, pid=pid,
+                           summary=summary)
 
-    def suspend(self, run_id: int, *, label: str = '等待安装完成后继续',
-                paused_for_update: bool = True) -> None:
+    def suspend(self, run_id: int, *, label: str = '已暂停，等待继续') -> None:
+        """把这一轮改回 `pending`：参数已落盘，服务启动时按同一个 id 接着跑。"""
         if not self.enabled:
             return
         with self.database.write_transaction(notify=False) as connection:
             connection.execute(
-                "UPDATE task_run SET status='pending',pid=0,progress_label=?,result_summary=? "
-                "WHERE id=? AND status='running'",
-                (label, json.dumps({'paused_for_update': True} if paused_for_update else {}), run_id))
+                "UPDATE task_run SET status='pending',pid=0,progress_label=?,result_summary='{}' "
+                "WHERE id=? AND status='running'", (label, run_id))
 
     def _resume(self, run_id, task_key):
         if run_id is None or not self.enabled:
@@ -311,8 +308,7 @@ class TaskRunStore:
         with self.database.write_transaction(notify=False) as connection:
             cursor = connection.execute(
                 "UPDATE task_run SET status='running',pid=?,host=?,heartbeat_at=?,result_summary='{}' "
-                "WHERE id=? AND task_key=? AND status='pending' "
-                "AND json_extract(result_summary,'$.paused_for_update')=1",
+                "WHERE id=? AND task_key=? AND status='pending'",
                 (os.getpid(), self.host, stamp(), run_id, task_key))
         return self.get(run_id) if cursor.rowcount else None
 
@@ -499,8 +495,7 @@ class TaskRunStore:
         root = parent.root_run_id or parent.id
         moment = stamp()
         from .task_control import initialize_speed
-        from .update_tasks import gate, state_for
-        with gate(state_for(self.database.db_path)), self.database.write_transaction(notify=False) as connection:
+        with self.database.write_transaction(notify=False) as connection:
             # 父任务是裸任务时它就是这条链的根。补在这里而不是 `start`：开工那一刻还
             # 不知道这一轮会不会派后继，给每一行都填一个指向自己的 root 是无意义的噪声。
             connection.execute(
@@ -534,8 +529,7 @@ class TaskRunStore:
         if not self.enabled or not run.followup_key:
             return None
         from .task_control import initialize_speed
-        from .update_tasks import gate, state_for
-        with gate(state_for(self.database.db_path)), self.database.write_transaction(notify=False) as connection:
+        with self.database.write_transaction(notify=False) as connection:
             try:
                 cursor = connection.execute(
                     "INSERT INTO task_run(task_key,trigger,status,mutex_key,pid,host,"
@@ -552,17 +546,6 @@ class TaskRunStore:
         return run_id
 
     def claim_followup(self, task_keys, first=()) -> TaskRun | None:
-        """装更新期间返回 None；闸门锁被别人拿着时抛 `GateBusy`，调用方稍后再领。"""
-        from .update_tasks import admission, GateBusy, UpdateBusy
-        try:
-            with admission(self.database.db_path):
-                return self._claim_followup(task_keys, first)
-        except GateBusy:
-            raise
-        except UpdateBusy:
-            return None
-
-    def _claim_followup(self, task_keys, first=()) -> TaskRun | None:
         """领走这几类里最早的一条待跑后继并标 `running`；没有就返回 None。
 
         `task_keys` 是调用方这条通道负责的任务种类，`first` 是其中插队先领的那几类
@@ -682,11 +665,6 @@ class TaskRunStore:
         for run in self.query(status="active", limit=1000):
             if run.followup:
                 continue
-            if run.status == 'pending' and run.result_summary.get('paused_for_update'):
-                from .job_recovery import read
-                recovery = read(self.database.db_path, run.task_key)
-                if recovery.get('status') == 'active' and recovery.get('run_id') == run.id:
-                    continue
             local = run.host == self.host
             alive = (local and run.pid is not None and run.pid != os.getpid()
                      and process_matches(run.pid, run.heartbeat_at or run.started_at, alive=process_alive))
@@ -710,8 +688,10 @@ class TaskRunStore:
 
         活跃任务保留，指向已清退历史的父任务和根任务关联由删除触发器置空。
         随后清退整个数据根里已结束运行的控制文件（`task_control.prune_controls`），不限本 task_key。
-        后继使用 `keep_errors` 保留仍可重试的失败项；下载状态保留并清空已清退运行的链接。
+        后继使用 `keep_errors` 保留仍可重试的失败项。
         阈值用 `LIMIT 1 OFFSET keep` 取「第 keep+1 新的那条 id」。
+        `download_task.postprocess_run_id` 没有删除触发器，清退后指向已不存在的行会留下
+        悬空关联，这里一并置空。
         """
         if not self.enabled or keep < 0:
             return 0
@@ -723,14 +703,17 @@ class TaskRunStore:
                 f"SELECT id FROM task_run WHERE task_key=? AND status IN ({marks}) "
                 "ORDER BY id DESC LIMIT 1 OFFSET ?", (task_key, keep)).fetchone()
             if threshold is not None:
-                connection.execute(
-                    "UPDATE download_task SET postprocess_run_id=NULL WHERE postprocess_run_id IN ("
-                    f"SELECT id FROM task_run WHERE task_key=? AND status IN ({marks}) AND id<=?)",
-                    (task_key, threshold["id"]))
                 cursor = connection.execute(
                     f"DELETE FROM task_run WHERE task_key=? AND status IN ({marks}) "
                     "AND id<=?", (task_key, threshold["id"]))
                 removed = cursor.rowcount
+                if connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='download_task'"
+                ).fetchone() is not None:
+                    connection.execute(
+                        "UPDATE download_task SET postprocess_run_id=NULL "
+                        "WHERE postprocess_run_id IS NOT NULL "
+                        "AND postprocess_run_id NOT IN (SELECT id FROM task_run)")
         from .task_control import prune_controls
         prune_controls(self)
         return removed

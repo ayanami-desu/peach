@@ -1,14 +1,11 @@
-"""视频的时长、分辨率与编码：ffprobe 读一次文件头，写回 `asset`。
+"""视频的时长、分辨率与编码：ffprobe 读一次远端文件头，写回 `asset`。
 
-入库时顺手探一次，新文件一登记就带着时长和分辨率：全量扫描扫完一个根就探这个根下
-还没探过的视频，推送发现登记一个视频就探这一个。`scripts/probe.py` 只剩补历史空缺、
-重探失败和按 id 点名三件事。
-
-计费来源（PikPak）入库时一律不探。入库是自动发生的，没有人在场确认流量预算；要探就
-显式跑那个脚本并加 `--allow-metered`。
+网盘在列目录时一般自带时长与宽高（Google 的 `videoMediaMetadata`、OneDrive 的 `video`），
+扫描就顺手写进账本，不必再回源。只有元数据缺了的那几行才需要 ffprobe：它按 HTTP Range
+读文件头，不落本地文件，走的是同一个 `DriveStreamer`。
 
 拿不到时长写 -1，不写 0，也不留 NULL。0 会同时躲过 `duration IS NULL` 的待办和抽帧的
-`duration>2` 门槛，永久卡住；留 NULL 的话，每一轮入库都会把同一个坏文件再探一遍。
+`duration>2` 门槛，永久卡住；留 NULL 的话，每轮都会把同一个坏文件再探一遍。
 """
 from __future__ import annotations
 
@@ -16,31 +13,22 @@ import json
 import os
 import sqlite3
 import subprocess
-from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from contextlib import closing
-from contextvars import copy_context
 from fractions import Fraction
-from pathlib import PureWindowsPath
+from typing import Sequence
 
-from .jobs import ACTIVE_ASSET_SQL
-from .media_io import resolve_case_insensitive
-from .media_sources import cost_for
-from .strm import skip_background_read
-from .processing_control import current_control, checkpoint
-from .catalog_rules import is_local_extra
-from . import junk, record_rehome
+from .media import MediaEngine, MediaUnavailable
 
-#: 一次探测最多等多久。ffprobe 只读文件头，网盘上实测一两秒。
+#: 一次探测最多等多久。ffprobe 只读文件头，远端实测一两秒。
 TIMEOUT_SECONDS = 20.0
-#: 入库时同时探几个。网盘挂载上这是延迟受限的元数据读取，开多了只会把 CloudDrive 压住。
-WORKERS = 4
 
-#: 探测写的列；文件换了版本时 `record_rehome.CodeRelocator` 按这份清空。
+#: 探测写的列。
 PROBED_COLUMNS = ("duration", "width", "height", "vcodec", "fps", "has_audio",
                   "ctx_length", "ctx_orient", "ctx_quality")
 UPDATE = f"UPDATE asset SET {','.join(f'{column}=?' for column in PROBED_COLUMNS)} WHERE id=?"
-_UNMEASURED = f"medium='video' AND duration IS NULL AND location=? AND {ACTIVE_ASSET_SQL}"
+
+#: 缺时长的视频。
+_MISSING = "medium='video' AND duration IS NULL AND remote_id IS NOT NULL"
 
 
 def context_fields(width: int, height: int, duration: float) -> tuple[str | None, str | None, str | None]:
@@ -73,27 +61,29 @@ def display_dimensions(stream: dict) -> tuple[int, int]:
     return width, height
 
 
-def probe_file(ffprobe: str, path: str, timeout: float = TIMEOUT_SECONDS) -> tuple:
-    from .task_control import run as run_task_process
-    from .task_resources import media_input
-    media_input(path)
-    from .processing_traffic import CURRENT as TRAFFIC, media_statistics
-    if skip_background_read(path):
-        raise ValueError('STRM 和 ISO 不执行视频探测')
-    from .smb_media import input_url
-    path = input_url(path)
-    result = run_task_process(
+def _headers_argument(headers: dict[str, str]) -> list[str]:
+    """FFmpeg 的 `-headers` 要一整块文本，多行以 CRLF 连接、末尾也要换行。"""
+    if not headers:
+        return []
+    block = "".join(f"{key}: {value}\r\n" for key, value in headers.items())
+    return ["-headers", block]
+
+
+def probe(ffprobe: str, url: str, headers: dict[str, str] | None = None,
+          timeout: float = TIMEOUT_SECONDS) -> tuple:
+    """读一次远端文件头，返回 (时长, 宽, 高, 编码, 帧率, 是否有音轨)。"""
+    result = subprocess.run(
         [
-            ffprobe, "-v", "verbose" if TRAFFIC.get() is not None else "error", "-rw_timeout", "8000000",
+            ffprobe, "-v", "error", "-rw_timeout", "8000000",
+            *_headers_argument(headers or {}),
             "-select_streams", "v:0", "-show_entries",
             "format=duration:stream=width,height,sample_aspect_ratio,display_aspect_ratio,codec_name,avg_frame_rate",
-            "-of", "json", path,
+            "-of", "json", url,
         ],
         capture_output=True,
         timeout=timeout,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
-    media_statistics(path, result.stderr, kind='probe', successful=result.returncode == 0)
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, 'ffprobe', stderr=result.stderr)
     payload = json.loads(result.stdout or b"{}")
@@ -116,17 +106,14 @@ def probe_file(ffprobe: str, path: str, timeout: float = TIMEOUT_SECONDS) -> tup
     )
 
 
-def measure(ffprobe: str, asset_id: int, path: str, timeout: float = TIMEOUT_SECONDS) -> tuple:
+def measure(ffprobe: str, asset_id: int, url: str, headers: dict[str, str] | None = None,
+            timeout: float = TIMEOUT_SECONDS) -> tuple:
     """这一行的 `UPDATE` 参数。探不出来的一律是 -1 那一行，不抛。"""
     try:
-        duration, width, height, codec, fps, audio = probe_file(
-            ffprobe, resolve_case_insensitive(path), timeout)
+        duration, width, height, codec, fps, audio = probe(ffprobe, url, headers, timeout)
     except InterruptedError:
         raise
-    except Exception as error:  # 超时、文件读不到、输出不是 JSON：对这一行都是「没拿到」
-        if isinstance(error, subprocess.TimeoutExpired):
-            from .processing_traffic import media_statistics
-            media_statistics(path, error.stderr)
+    except Exception as error:  # 超时、地址过期、输出不是 JSON：对这一行都是「没拿到」
         from .error_reporting import subprocess_failure
         subprocess_failure('media-probe', tool=ffprobe, error=error, asset_id=asset_id,
                            returncode=getattr(error, 'returncode', None), timeout_seconds=timeout)
@@ -138,81 +125,36 @@ def measure(ffprobe: str, asset_id: int, path: str, timeout: float = TIMEOUT_SEC
             *context_fields(width, height, duration), asset_id)
 
 
-def probe_unmeasured(
-    db_path, ffprobe: str | None, location: str, root: str, *,
-    report: Callable[[int, int], None] = lambda done, total: None,
-    asset_ids: Sequence[int] | None = None,
-    config=None, protected_ids=(), on_junk=lambda result: None,
-) -> int:
-    """`root`（账本口径）下还没探过的视频逐个探一遍，返回探了几个。"""
+def probe_missing(db_path, engine: MediaEngine, ffprobe: str | None, *,
+                  asset_ids: Sequence[int] | None = None, limit: int = 20,
+                  timeout: float = TIMEOUT_SECONDS) -> int:
+    """把还缺时长的行探一遍，返回探成了几个。
+
+    `asset_ids` 给了就只探这些（播放页顺手补一条），不给就按 id 顺序补一批。远端地址过期、
+    文件读不到都算「没拿到」，写 -1 之后不再重复探。
+    """
     if not ffprobe:
         return 0
-    exact = str(PureWindowsPath(root)).rstrip("\\")
-    prefix = exact + "\\"
-    selected = ''
-    parameters = (location, exact, len(prefix), prefix)
-    if asset_ids is not None:
-        if not asset_ids:
-            return 0
-        selected = ' AND id IN (SELECT value FROM json_each(?))'
-        parameters += (json.dumps(list(asset_ids)),)
     with closing(sqlite3.connect(db_path, timeout=30)) as connection:
-        rows = connection.execute(
-            f"SELECT id,path FROM asset WHERE {_UNMEASURED} AND (path=? OR substr(path,1,?)=?){selected} ORDER BY id",
-            parameters).fetchall()
-    rows = [row for row in rows if cost_for(location, row[1], config) == 'free']
-    roots = tuple(value for values in config.locations.values() for value in values) if config else (root,)
-    return _record(db_path, ffprobe, rows, report, protected_ids=protected_ids, on_junk=on_junk,
-                   library_roots=roots)
-
-
-def probe_path(db_path, ffprobe: str | None, location: str, path: str, *, config=None) -> int:
-    """推送发现刚登记的这一个文件；不是视频、已经探过或来源计费都回 0。"""
-    if (not ffprobe or cost_for(location, path, config) == 'metered'
-            or skip_background_read(path)):
-        return 0
-    with closing(sqlite3.connect(db_path, timeout=30)) as connection:
-        rows = connection.execute(
-            f"SELECT id,path FROM asset WHERE {_UNMEASURED} AND path=?",
-            (location, str(PureWindowsPath(path)))).fetchall()
-    roots = tuple(value for values in config.locations.values() for value in values) if config else ()
-    return _record(db_path, ffprobe, rows, lambda done, total: None, library_roots=roots)
-
-
-def _record(db_path, ffprobe: str, rows: Sequence, report: Callable[[int, int], None], *,
-            protected_ids=(), on_junk=lambda result: None, library_roots=()) -> int:
-    """探完一条写一条。`report` 抛出来（任务被停）时，还没开始的那些不再探。"""
-    rows = [row for row in rows if not skip_background_read(row[1])
-            and not is_local_extra(PureWindowsPath(row[1]).name, row[1], library_roots=library_roots)]
-    if not rows:
-        return 0
+        sql = f"SELECT id FROM asset WHERE {_MISSING}"
+        parameters: tuple = ()
+        if asset_ids is not None:
+            if not asset_ids:
+                return 0
+            sql += " AND id IN (SELECT value FROM json_each(?))"
+            parameters = (json.dumps(list(asset_ids)),)
+        sql += " ORDER BY id LIMIT ?"
+        parameters += (limit,)
+        rows = [int(row[0]) for row in connection.execute(sql, parameters)]
     done = 0
-    with closing(sqlite3.connect(db_path, timeout=120)) as connection:
-        report(0, len(rows))
-        for measured in _measure_batches(ffprobe, rows):
+    for asset_id in rows:
+        try:
+            url, headers = engine.ffmpeg_input(asset_id)
+        except MediaUnavailable:
+            continue
+        measured = measure(ffprobe, asset_id, url, headers, timeout)
+        with closing(sqlite3.connect(db_path, timeout=120)) as connection:
             connection.execute(UPDATE, measured)
             connection.commit()
-            done += 1
-            report(done, len(rows))
-        record_rehome.reattach(connection, [row[0] for row in rows])
-        connection.commit()
-    on_junk(junk.isolate(db_path, asset_ids=[row[0] for row in rows], protected_ids=protected_ids))
+        done += 1
     return done
-
-
-def _measure_batches(ffprobe, rows):
-    """安全停点按档位领取探测，空闲后补位；退出时等待在途进程返回。"""
-    start = 0
-    futures = set()
-    with ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix='PeachProbe') as executor:
-        while start < len(rows) or futures:
-            checkpoint('probe')
-            control = current_control()
-            workers = {'low': 1, 'standard': 2, 'high': WORKERS}[control.mode] if control else WORKERS
-            while start < len(rows) and len(futures) < workers:
-                row = rows[start]
-                futures.add(executor.submit(copy_context().run, measure, ffprobe, row[0], row[1]))
-                start += 1
-            completed, futures = wait(futures, return_when=FIRST_COMPLETED)
-            for future in completed:
-                yield future.result()

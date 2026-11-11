@@ -1,41 +1,28 @@
-"""垃圾复核展示、批量决定、物理清除与回收站。
+"""垃圾复核展示、批量决定、永久删除与回收站。
 
-`junk` 提供各流程共用的证据与隔离规则；本模块将评分转成页面数据，并执行用户的
-批量决定。自动隔离只进入回收站，永久删除需要独立的确认与取证流程。
+`junk` 提供各流程共用的证据规则；本模块将评分转成页面数据，并执行用户的批量决定。
+自动判定只把资产送进回收站，永久删除需要独立的确认与取证流程。
 
-物理删除要清的引用表只写在 `personal_records.ASSET_REFERENCE_TABLES` 一处。本地文件先隔离，
-账本失败时可以恢复；rclone FUSE 挂载直接删除，账本失败时保留回收站行供重试。
+媒体只在网盘上，删除只动账本行：不核对本机文件是否存在，也不删任何文件。物理删除要清的
+引用表只写在 `personal_records.ASSET_REFERENCE_TABLES` 一处。
 """
 from __future__ import annotations
 
 import csv
-import hashlib
-import json
 import logging
-import os
-import re
-import stat
-import shutil
-import tempfile
 import time
-import uuid
 
 from pathlib import Path, PureWindowsPath
-from typing import Sequence
 
 from . import junk
 from .catalog_rules import duration_clusters, is_jav_code, normalise_code_key
-from .config import GENERATED_DIR, LOCATION_ROOT_DECLARATIONS
 from .field_owners import USER_MANUAL, write_owned_fields
-from .media_sources import SCANNABLE_LOCATIONS
+from .media_sources import SCANNABLE_LOCATIONS, cost_for
 from .personal_records import ASSET_REFERENCE_TABLES, VANISHED
-from .platform import is_unmapped, root_online, translate_ledger_path, within_root
 from .regions import normalize_region
 from .task_runs import TaskRunHandle
 from .web_activity import DEFAULT_PROFILE_ID
 from .web_catalog import attach_card_performers
-from .media_sources import cost_for
-from .web_resource_sync import _managed_cache_root, clean_purged_caches
 from .web_state import WebContract
 
 from .junk import (
@@ -64,9 +51,6 @@ LOGGER = logging.getLogger(__name__)
 #: 垃圾评分读的账本表。不声明时任何一次提交（关注检查、任务记录）都让下一次打开当场重评
 #: 十万行；声明后后台任务的提交先回上一份、后台重算（ADR-0146），前台写入照旧当场重算。
 JUNK_SCORE_TABLES = ("asset", "review_decision", "download_task")
-
-# Linux 容器可从 mountinfo 识别媒体实际所在的 FUSE 文件系统。
-MOUNTINFO_PATH = Path("/proc/self/mountinfo")
 
 #: 批量操作在活动页上的名字。表里存 `operation`，人看的是这一列。
 BATCH_LABELS = {
@@ -156,380 +140,80 @@ def _scored_junk(contract: WebContract) -> tuple[list[dict], frozenset[int]]:
     return out, dismissed
 
 
-def _restore_staged_media(staged):
-    """数据库失败时恢复隔离文件；本地备份带原路径与内容摘要。"""
-    for original, quarantine in reversed(staged):
-        if quarantine.exists() and not original.exists():
-            manifest = quarantine.parent / 'restore.json'
-            if quarantine.name == 'content' and manifest.is_file():
-                record = json.loads(manifest.read_text(encoding='utf-8'))
-                if record['original'] != str(original):
-                    raise ValueError('隔离恢复路径不符')
-                shutil.copyfile(quarantine, original)
-                if hashlib.sha256(original.read_bytes()).hexdigest() != record['sha256']:
-                    raise ValueError('隔离恢复内容不符')
-                quarantine.unlink()
-                manifest.unlink()
-                quarantine.parent.rmdir()
-            else:
-                quarantine.rename(original)
-
-
-def _mountinfo_field(value: str) -> str:
-    """解码 mountinfo 中空白字符和反斜杠的八进制转义。"""
-    return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
-
-
-def _is_rclone_mount(path: Path) -> bool:
-    """按最深挂载点与覆盖关系识别 rclone 文件系统；不确定时保留隔离流程。"""
-    from .smb_media import SmbResource
-    if isinstance(path, SmbResource):
-        return False
-    try:
-        lines = MOUNTINFO_PATH.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
-    except OSError:
-        return False
-
-    target = Path(os.path.abspath(path))
-    matches = []
-    for line in lines:
-        before, separator, after = line.partition(" - ")
-        if not separator:
-            continue
-        fields = before.split()
-        filesystem = after.split(maxsplit=1)
-        if len(fields) < 5 or not filesystem:
-            continue
-        try:
-            mount_id, parent_id = int(fields[0]), int(fields[1])
-        except ValueError:
-            continue
-        mountpoint = Path(os.path.abspath(_mountinfo_field(fields[4])))
-        try:
-            target.relative_to(mountpoint)
-        except ValueError:
-            continue
-        matches.append((len(mountpoint.parts), mount_id, parent_id, filesystem[0]))
-    if not matches:
-        return False
-    depth = max(item[0] for item in matches)
-    deepest = [item for item in matches if item[0] == depth]
-    covered = {item[2] for item in deepest if item[1] != item[2]}
-    visible = [item for item in deepest if item[1] not in covered]
-    return len(visible) == 1 and visible[0][3] == "fuse.rclone"
-
-
-def _quarantine_media(original: Path, *, location: str | None = None) -> Path:
-    """同目录改名不支持时，小文件先保留本地完整备份再删除原文件。"""
-    from .smb_media import SmbResource
-    key = uuid.uuid4().hex
-    name = (f'peach-purge-{key}.peach-quarantine'
-            if location == 'pikpak'
-            else f'.{original.name}.peach-purge-{key}.tmp')
-    quarantine = original.with_name(name)
-    if isinstance(original, SmbResource):
-        original.rename(quarantine)
-        return quarantine
-    try:
-        os.rename(original, quarantine)
-        return quarantine
-    except OSError as error:
-        if getattr(error, 'winerror', None) != 50 or original.is_symlink():
-            raise
-        stat = original.stat()
-        if stat.st_size > 1024 * 1024:
-            raise
-    staging = GENERATED_DIR / 'purge-staging'
-    staging.mkdir(parents=True, exist_ok=True)
-    folder = Path(tempfile.mkdtemp(prefix='purge-', dir=staging))
-    quarantine = folder / 'content'
-    manifest = folder / 'restore.json'
-    try:
-        shutil.copyfile(original, quarantine)
-        body = quarantine.read_bytes()
-        current = original.stat()
-        if len(body) != stat.st_size or (current.st_size, current.st_mtime_ns) != (stat.st_size, stat.st_mtime_ns):
-            raise OSError('文件在隔离备份期间发生变化')
-        record = dict(original=str(original), size=len(body),
-                      sha256=hashlib.sha256(body).hexdigest())
-        manifest.write_text(json.dumps(record, ensure_ascii=False), encoding='utf-8')
-        original.unlink()
-        return quarantine
-    except BaseException:
-        if original.exists():
-            quarantine.unlink(missing_ok=True)
-            manifest.unlink(missing_ok=True)
-            folder.rmdir()
-        raise
-
-
-def _online_source_roots() -> dict[str, tuple[Path, ...]]:
-    """Return only declared physical roots that can be enumerated now, per source."""
-    roots: dict[str, tuple[Path, ...]] = {}
-    for location, declarations in LOCATION_ROOT_DECLARATIONS.items():
-        online = []
-        for declaration in declarations:
-            from .smb_media import resolve
-            remote = resolve(declaration)
-            root = remote or translate_ledger_path(declaration)
-            if (remote is None and is_unmapped(root)) or not root.is_dir() or not root_online(root):
-                continue
-            online.append(root)
-        if online:
-            roots[location] = tuple(online)
-    return roots
-
-
-def _remove_empty_ancestors(parent: Path, source_roots: Sequence[Path]) -> list[Path]:
-    """Remove empty parents up to, but never including, a declared source root."""
-    source_root = next(
-        (root for root in sorted(source_roots, key=lambda item: len(item.parts), reverse=True)
-         if within_root(parent, root)),
-        None,
-    )
-    if source_root is None:
-        return []
-    removed: list[Path] = []
-    current = parent
-    while current != source_root and within_root(current, source_root):
-        if current.is_symlink():
-            break
-        next_parent = current.parent
-        try:
-            current.rmdir()
-        except FileNotFoundError:
-            # CloudDrive may collapse an empty layer as soon as its last file vanishes.
-            current = next_parent
-            continue
-        except OSError:
-            # Non-empty, offline, or protected directories are a normal stop boundary.
-            break
-        removed.append(current)
-        current = next_parent
-    return removed
-
-
-def purge_vanished_rows(contract: WebContract, rows) -> dict:
-    """永久删除文件已不在盘上的这些行，连同引用与派生产物；返回 `_finish_purge` 的回执。
-
-    带个人记录的在库行到不了这里：资源同步先把它们标「已消失」（ADR-0087）。
-
-    `missing_only`：到了删的这一刻文件又在了（复核之后网盘才同步回来），这一行整条
-    跳过进 `blocked`，媒体文件一个字节都不碰。这一批要删的只是账本行。
-    """
-    contract.cache_bust()
-    return _finish_purge(_purge_outside_lock(contract, rows, missing_only=True), contract)
-
-
-def _purge_outside_lock(contract: WebContract, rows, *, missing_only: bool = False,
-                        eligible=None, verify=None) -> dict:
-    """网盘上的 stat 与隔离在写事务外做（`stage_purge`），开事务复核后删行（`commit_purge`）。
+def _purge_outside_lock(contract: WebContract, rows, *, eligible=None, verify=None) -> dict:
+    """行在事务外读好，开写事务复核后删账本行。
 
     `verify(connection)` 在同一事务里先跑，用来核对调用方的前提（删除清单的口令）；抛错就整批
-    放弃，隔离文件全部放回。返回已提交、尚未 `_finish_purge` 的回执。
+    放弃。返回尚未 `_finish_purge` 的回执。
     """
-    outcome = stage_purge(rows, missing_only=missing_only)
-    try:
-        with contract.write_transaction() as connection:
-            if verify is not None:
-                verify(connection)
-            commit_purge(connection, outcome, eligible=eligible)
-    except BaseException:
-        _restore_staged_media(outcome["_staged"])
-        raise
-    return outcome
+    with contract.write_transaction() as connection:
+        if verify is not None:
+            verify(connection)
+        return purge_assets(connection, rows, eligible=eligible)
+
+
+def _own_data_root(contract, root) -> bool:
+    """候选件是否就在这本账自己的数据目录里。
+
+    生产上 `ledger.db` 在 `peach-data/database` 下，可重建产物在隔壁 `peach-data/generated`；
+    临时账本常把数据库直接放在临时根下。两种形状都靠数据库定出唯一允许改动的目录树，免得
+    临时账本配上默认目录时，把真实数据目录里的候选表当成自己的。
+    """
+    if root is None:
+        return False
+    database_parent = Path(contract.db_path).resolve().parent
+    data_root = (database_parent.parent if database_parent.name.casefold() == "database"
+                 else database_parent)
+    resolved = Path(root).resolve()
+    return resolved != data_root and resolved.is_relative_to(data_root)
 
 
 def _purge_receipt(contract: WebContract, outcome: dict, **fields) -> dict:
-    """删完之后的回执：清隔离件、放回复核没过的、只清这几部的派生产物。"""
-    purged = outcome.get("_codes", [])
-    result = {"ok": True, **fields, **_finish_purge(outcome, contract)}
-    result.update(clean_purged_caches(contract, purged))
-    return result
+    """删完之后的回执：撤下钉着这些资产的资料候选，带上调用方要的字段。"""
+    return {"ok": True, **fields, **_finish_purge(outcome, contract)}
 
 
 def _finish_purge(outcome, contract=None):
-    """Delete committed quarantine files; report any residue for explicit cleanup.
+    """撤下钉着这些资产的资料候选（#486），返回回执。
 
-    同时撤下钉着这些资产的资料候选（#486）。撤不成不影响删除结果：复核页按路径改挂或剔掉
-    悬空行；处理任务正拿着候选表时，它下一次写表也可能把这几行写回去。
-
-    事务里复核没过、没删的行（`commit_purge`），它们的隔离文件在这里放回原处。
+    撤不成不影响删除结果：复核页按路径改挂或剔掉悬空行；处理任务正拿着候选表时，
+    它下一次写表也可能把这几行写回去。
     """
-    _restore_staged_media(outcome.pop("_returned", []))
-    outcome.pop("_items", None)
-    outcome.pop("_codes", None)
     ids = outcome.pop("_ids", [])
     candidate_root = getattr(contract, "candidate_root", None)
-    # 只改这本账自己数据目录里的候选件：临时账本配上默认目录时，那是本机真实的候选表。
-    if ids and candidate_root is not None and _managed_cache_root(contract, candidate_root):
+    if ids and _own_data_root(contract, candidate_root):
         from .stale_candidates import withdraw_purged_rows
         try:
             withdraw_purged_rows(candidate_root, ids)
         except (OSError, ValueError, csv.Error):
             LOGGER.exception("撤下已删除资产的资料候选失败")
-    cleanup_pending = []
-    for _original, quarantine in outcome.pop("_staged"):
-        try:
-            quarantine.unlink(missing_ok=True)
-            manifest = quarantine.parent / 'restore.json'
-            if quarantine.name == 'content' and manifest.is_file():
-                manifest.unlink()
-                quarantine.parent.rmdir()
-        except OSError as error:
-            cleanup_pending.append({
-                "path": str(quarantine), "reason": error.strerror or str(error),
-            })
-    for snapshot in outcome.pop("_snapshots"):
-        try:
-            snapshot.unlink(missing_ok=True)
-        except OSError:
-            pass
-    source_roots = tuple(root for roots in _online_source_roots().values() for root in roots)
-    removed_directories: set[Path] = set()
-    for parent in outcome.pop("_parents"):
-        removed_directories.update(_remove_empty_ancestors(parent, source_roots))
-    outcome["cleanup_pending"] = cleanup_pending
-    outcome["empty_dirs_removed"] = len(removed_directories)
     return outcome
 
 
-def _purge_media_path(row, online_roots: dict[str, tuple[Path, ...]], *,
-                      missing_only: bool = False) -> Path:
-    """核对永久删除目标的路径映射和来源可读性，失败时拒绝删除。
+def purge_assets(connection, rows, *, missing_only: bool = False, eligible=None) -> dict:
+    """在写事务里删这些账本行；先逐行复核。
 
-    `missing_only` 只删账本行：媒体目录已从设置里移除时，这一行不在任何来源根下，
-    所在的盘可读就交给调用方 `stat`，文件确实不在才删。要删媒体文件的仍只认在线来源根。
+    媒体只在网盘上，删除只动账本行：不核对本机文件是否存在，也不删任何文件。孤儿记录那边
+    的 `missing_only` 到这里是同一种口径——两种调用都只删账本行。
+
+    行是调用方在事务外读出来的，这段时间里行可能被改：还原出回收站、换了路径、已被别处删掉。
+    `eligible(row)` 是调用方的删除条件（`row` 带 `id,path,disposal`），路径必须和读出来时一致。
+    复核不过的行不删，进 `blocked`。返回 `purged`、`blocked` 与删掉的 id。
     """
-    media = row["path"]
-    from .smb_media import resolve
-    if remote := resolve(media):
-        return remote
-    translated = translate_ledger_path(media)
-    if is_unmapped(translated):
-        raise OSError("媒体路径未映射到可访问的挂载目录")
-    if PureWindowsPath(str(media)).drive:
-        location = row["location"] if "location" in row.keys() else None
-        if any(within_root(translated, root) and root_online(root)
-               for root in online_roots.get(location, ())):
-            return translated
-        if missing_only and not _inside_declared_root(translated) and root_online(Path(translated.anchor)):
-            return translated
-        raise OSError("媒体来源未挂载或不可读取")
-    return translated
-
-
-def _inside_declared_root(path: Path) -> bool:
-    """路径是否落在设置里任一来源根下，包括此刻离线的根。SMB 根下的行由 `resolve` 先接走。"""
-    from .smb_media import resolve
-    return any(within_root(path, translate_ledger_path(declaration))
-               for declarations in LOCATION_ROOT_DECLARATIONS.values()
-               for declaration in declarations if resolve(declaration) is None)
-
-
-def purge_assets(connection, rows, *, missing_only: bool = False):
-    """删除媒体和账本行，调用方提交后清理隔离文件：`stage_purge` 加 `commit_purge`。
-
-    服务里的删除不走这里：先在写事务外 `stage_purge`，再开事务 `commit_purge`，网盘上逐个
-    stat、改名不占着写锁（`_purge_outside_lock`）。
-    """
-    outcome = stage_purge(rows, missing_only=missing_only)
-    try:
-        commit_purge(connection, outcome)
-    except BaseException:
-        _restore_staged_media(outcome["_staged"])
-        raise
-    return outcome
-
-
-def stage_purge(rows, *, missing_only: bool = False) -> dict:
-    """在写事务外处理媒体文件：核对路径与来源、stat、同目录隔离。
-
-    本地文件同目录隔离，账本事务失败时恢复。rclone FUSE 直接删除，避免远端改名
-    触发复制；账本事务失败时保留记录供重试，已经删除的远端媒体无法恢复。先删文件再删行
-    的次序不变（`peach-ledger-write`「删除」）。
-
-    网盘上每次 stat 和改名都是网络往返，一批几百个能走上几分钟；放在写事务里，期间播放
-    计数、评分等所有写入都排在后面。这一步不碰账本，`commit_purge` 在事务里复核后再删行。
-
-    ``missing_only`` 删的只是账本行：文件还在（或答不上在不在）的行进 ``blocked``。
-    """
-    items, blocked = [], []
-    online_roots = None
-    for row in rows:
-        media = row["path"]
-        translated = None
-        if media:
-            try:
-                if online_roots is None and PureWindowsPath(str(media)).drive:
-                    online_roots = _online_source_roots()
-                translated = _purge_media_path(row, online_roots or {}, missing_only=missing_only)
-            except OSError as error:
-                blocked.append({"id": row["id"], "path": media,
-                                "reason": error.strerror or str(error)})
-                continue
-        media_stat = None
-        if media:
-            try:
-                media_stat = translated.stat()
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                blocked.append({"id": row["id"], "path": media,
-                                "reason": error.strerror or str(error)})
-                continue
-        if media and missing_only:
-            if media_stat is not None:
-                blocked.append({"id": row["id"], "path": media, "reason": "文件仍在盘上"})
-                continue
-        staged = None
-        if media and not missing_only:
-            original = translated
-            try:
-                if media_stat is not None and not stat.S_ISREG(media_stat.st_mode):
-                    raise OSError("not a regular file")
-                if media_stat is not None:
-                    if _is_rclone_mount(original):
-                        original.unlink()
-                    else:
-                        staged = (original, _quarantine_media(
-                            original, location=row['location'] if 'location' in row.keys() else None))
-            except OSError as error:
-                blocked.append({"id": row["id"], "path": media,
-                                "reason": error.strerror or str(error)})
-                continue
-        snapshot = row["snapshot_path"]
-        items.append({"id": row["id"], "path": media, "staged": staged,
-                      "snapshot": Path(snapshot) if snapshot else None,
-                      "parent": translated.parent if media else None})
-    return {"purged": 0, "blocked": blocked, "_items": items,
-            "_staged": [item["staged"] for item in items if item["staged"]],
-            "_returned": [], "_snapshots": [], "_parents": [], "_ids": [], "_codes": []}
-
-
-def commit_purge(connection, outcome: dict, *, eligible=None) -> None:
-    """在写事务里删 `stage_purge` 处理过的行；先复核每一行。
-
-    隔离与删行之间不再持锁，这段时间里行可能被改：还原出回收站、换了路径、已被别处删掉。
-    `eligible(row)` 是调用方的删除条件（`row` 带 `id,path,disposal,code`），路径必须和隔离
-    时一致。复核不过的行不删，进 `blocked`，它的隔离文件留到提交后由 `_finish_purge` 放回原处。
-    异常时不改 `outcome`，调用方按 `_staged` 恢复全部隔离文件。
-    """
-    items = outcome["_items"]
     current = {}
-    if items:
-        marks = ",".join("?" * len(items))
+    if rows:
+        marks = ",".join("?" * len(rows))
         current = {row["id"]: row for row in connection.execute(
-            f"SELECT id,path,disposal,code FROM asset WHERE id IN ({marks})",
-            [item["id"] for item in items])}
+            f"SELECT id,path,disposal FROM asset WHERE id IN ({marks})",
+            [row["id"] for row in rows])}
     kept, returned = [], []
-    for item in items:
-        row = current.get(item["id"])
-        if row is not None and row["path"] == item["path"] and (eligible is None or eligible(row)):
-            kept.append(item)
+    for row in rows:
+        live = current.get(row["id"])
+        if live is not None and live["path"] == row["path"] and (eligible is None or eligible(live)):
+            kept.append(row)
         else:
-            returned.append(item)
-    purged = [item["id"] for item in kept]
+            returned.append(row)
+    purged = [row["id"] for row in kept]
     if purged:
         marks = ",".join("?" * len(purged))
         connection.execute(
@@ -548,16 +232,12 @@ def commit_purge(connection, outcome: dict, *, eligible=None) -> None:
             "DELETE FROM review_decision WHERE category='metadata_fields' AND item_key GLOB ?",
             [(f"asset:{asset_id}:*",) for asset_id in purged])
         connection.execute(f"DELETE FROM asset WHERE id IN ({marks})", purged)
-    outcome["blocked"].extend({"id": item["id"], "path": item["path"], "reason": "删除期间这一条已经变了"}
-                              for item in returned)
-    outcome.update(
-        purged=len(purged), _ids=purged,
-        _codes=[(item["id"], current[item["id"]]["code"]) for item in kept],
-        _staged=[item["staged"] for item in kept if item["staged"]],
-        _returned=[item["staged"] for item in returned if item["staged"]],
-        _snapshots=[item["snapshot"] for item in kept if item["snapshot"]],
-        _parents=[item["parent"] for item in kept if item["parent"]],
-    )
+    return {
+        "purged": len(purged),
+        "blocked": [{"id": row["id"], "path": row["path"], "reason": "删除期间这一条已经变了"}
+                    for row in returned],
+        "_ids": purged,
+    }
 
 
 def w_empty_trash(contract: WebContract):
@@ -565,9 +245,9 @@ def w_empty_trash(contract: WebContract):
     contract.cache_bust()
     with contract.read_connection() as connection:
         rows = connection.execute(
-            "SELECT id,location,path,snapshot_path FROM asset WHERE disposal='trash'",
+            "SELECT id,location,path FROM asset WHERE disposal='trash'",
         ).fetchall()
-    # 这期间被还原出回收站的，事务里复核时留下，文件放回原处。
+    # 这期间被还原出回收站的，事务里复核时留下。
     outcome = _purge_outside_lock(contract, rows, eligible=lambda row: row["disposal"] == "trash")
     return _purge_receipt(contract, outcome, operation="empty-trash")
 
@@ -677,9 +357,9 @@ def w_batch(contract: WebContract, body):
     contract.cache_bust()
     purge_outcome = None
     state_receipt = {}
-    # 批量是一次写、几秒就完的事，但删除那一支会真的动磁盘：事后「刚才那一批到底
-    # 删了多少、有没有半路失败」只有这条记录答得出。不声明互斥——两批不同的资产
-    # 各改各的，互斥只会把正常的连续操作挡住。
+    # 批量是一次写、几秒就完的事，但事后「刚才那一批到底删了多少、有没有半路失败」
+    # 只有这条记录答得出。不声明互斥——两批不同的资产各改各的，互斥只会把正常的
+    # 连续操作挡住。
     run = contract.task_runs.start("batch", trigger="manual", total=len(ids),
                                    label=BATCH_LABELS.get(operation, operation))
     handle = TaskRunHandle(contract.task_runs, run.id if run else None)
@@ -692,7 +372,7 @@ def w_batch(contract: WebContract, body):
                 else:
                     with contract.write_transaction() as connection:
                         found = connection.execute(
-                            f"SELECT id,path,snapshot_path,disposal,disposal_reason,location FROM asset WHERE id IN ({marks})", ids,
+                            f"SELECT id,disposal,disposal_reason,location FROM asset WHERE id IN ({marks})", ids,
                         ).fetchall()
                         valid_ids = [row["id"] for row in found]
                         if not valid_ids:
@@ -740,19 +420,19 @@ def w_batch(contract: WebContract, body):
 
 
 def _batch_purge(contract: WebContract, ids: list[int]):
-    """批量永久删除：选中的行先读出来，网盘操作在写事务外做，事务里复核仍在回收站或已消失。"""
+    """批量永久删除：选中的行先读出来，事务里复核仍在回收站或已消失。"""
     marks = ",".join("?" * len(ids))
     with contract.read_connection() as connection:
         found = connection.execute(
-            f"SELECT id,path,snapshot_path,disposal,disposal_reason,location FROM asset WHERE id IN ({marks})", ids,
+            f"SELECT id,path,disposal,disposal_reason,location FROM asset WHERE id IN ({marks})", ids,
         ).fetchall()
     valid_ids = [row["id"] for row in found]
     if not valid_ids:
         raise ValueError("assets not found")
     _reject_ineligible_targets("delete", found)
-    # 已消失的行文件本来就不在了，只删账本行；文件又回到盘上的那几条留着，
-    # 下一轮扫描会把它们接回在库。选中里有一条已消失的，整批都按这条口径删。
-    outcome = _purge_outside_lock(contract, found, missing_only=any(row["disposal"] == VANISHED for row in found),
+    # 已消失的行本来就不在网盘上，删的只是账本行；读出来之后又被还原出回收站的，
+    # 事务里复核时留下并进 `blocked`。
+    outcome = _purge_outside_lock(contract, found,
                                   eligible=lambda row: row["disposal"] in DISPOSED)
     return outcome, valid_ids
 
@@ -806,8 +486,9 @@ def _duplicate_groups(grouped: dict[str, list[dict]]):
                 # 必须每个文件都有 sha1 且完全相同才算确证字节一致。缺一个哈希
                 # 就只是「时长相近」的推断，不能对外宣称已确证。
                 "identical": len(hashes) == 1 and len(hashes_present) == len(cluster),
-                "drives": sorted({x["drive"] for x in cluster}),
-                "cross_drive": len({x["drive"] for x in cluster}) > 1,
+                # 来源是网盘（`gdrive`/`onedrive`），不是盘符：跨来源的两个文件搬不动。
+                "drives": sorted({x["location"] for x in cluster}),
+                "cross_drive": len({x["location"] for x in cluster}) > 1,
                 "reclaimable": sum(x.get("size") or 0 for x in cluster)
                 - (largest.get("size") or 0),
             })
@@ -854,8 +535,6 @@ def _duplicate_listing(contract: WebContract) -> tuple[list[dict], int]:
         if not is_jav_code(row["code"]):
             continue
         item = dict(row)
-        # 盘符只用于判定跨盘；重复项页面还要显示完整路径，不能在契约层丢掉。
-        item["drive"] = str(item.get("path") or "")[:2].upper()
         grouped.setdefault(normalise_code_key(row["code"]), []).append(item)
 
     found = _duplicate_groups(grouped)
