@@ -1,7 +1,6 @@
 """公开作品资料的发行日期缓存策略与可撤回磁盘快照。"""
 from __future__ import annotations
 
-from calendar import monthrange
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -21,35 +20,20 @@ DAY = 86400
 MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 
 
-def stable_after(released: str | None) -> date | None:
-    """发行满一个日历月的日期；月底按目标月份的最后一天计算。"""
-    try:
-        issued = date.fromisoformat((released or '')[:10])
-        year, month = divmod(issued.year * 12 + issued.month, 12)
-        return date(year, month + 1, min(issued.day, monthrange(year, month + 1)[1]))
-    except (ValueError, TypeError, OverflowError):
-        return None
-
-
-def cache_lifetime(released: str | None, today: date | None = None) -> int | None:
-    """新作及日期未知的资料保存一天，超过一个月的成功快照固定保存。"""
-    cutoff = stable_after(released)
-    return None if cutoff and (today or date.today()) > cutoff else DAY
-
-
 def cache_fresh(saved: float, released: str | None, now: float | None = None) -> bool:
-    """固定快照须在发行满一个月后取得；发行期内的快照可再补齐一次。"""
+    """成功抓到的资料一直有效；只有发行日之前抓到的会在发行之后再补一次。
+
+    盘上没有这一条、手动重试、`?refresh=1` 才重新问来源，所以这里不再按天数失效。
+    """
     now = time.time() if now is None else now
     if type(saved) not in (int, float) or not math.isfinite(saved) or saved < 0 or saved > now:
         return False
     try:
-        today, checked = datetime.fromtimestamp(now).date(), datetime.fromtimestamp(saved).date()
-    except (ValueError, OverflowError, OSError):
-        return False
-    lifetime = cache_lifetime(released, today)
-    if lifetime is None:
-        return checked > stable_after(released)
-    return now - saved < lifetime
+        issued = date.fromisoformat((released or '')[:10])
+        taken = datetime.fromtimestamp(saved).date()
+    except (ValueError, TypeError, OverflowError, OSError):
+        return True
+    return taken >= issued
 
 
 @dataclass(frozen=True)

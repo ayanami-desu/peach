@@ -6,7 +6,9 @@
    地址由代码判定，直接落，`source` 记 `auto:sample-images@<任务行 id>`，只填空，撤回就是删除。
 2. **来源**：先读本机来源快照（`sources/library-metadata/<番号>-<站>.json`，处理链问过的站已经
    把样张地址带回来了，一次网络都不用），再按番号分档问官方站：有码问 DMM 的 GraphQL
-   （`sources/dmm.py` 那一站），素人问 MGS 商品页。FC2、无码与其余档没有核实过的官方样张面，不问。
+   （`sources/dmm.py` 那一站），素人问 MGS 商品页。官方站说没有这部、或这一档根本没有官方
+   样张面（无码、FC2）时，退一步问 javdb 的详情页（`javdb_samples`）：它转存的是同一批画面，
+   覆盖面比片商官网宽，但不算官方判据，所以只做兜底。
 3. **失败记忆**：按站记「这一站说没有」，7 天内不再问同一站。冷却与预算用完不记：那是本趟
    没轮到，不是没有。
 4. **缓存**：地址进账本，图不进。第一次有人看才下载到 `generated/sample-cache/<番号>/<n>.jpg`，
@@ -57,6 +59,14 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 SITE_ORDER = ("dmm", "mgstage", "prestige", "faleno", "dahlia", "makers", "r18dev", "1pondo", "fc2")
 
 MGS_DETAIL = "https://www.mgstage.com/product/product_detail/{code}/"
+
+#: 兜底那一站。官方站说没有、或这一档没有官方样张面时才问，取到的东西照样进账本。
+FALLBACK_SITE = "javdb"
+JAVDB_BASE = "https://javdb.com"
+JAVDB_SEARCH = JAVDB_BASE + "/search?f=all&q={code}"
+#: 搜索结果里第一张片子；详情页的样张是 `<a class="tile-item" href="…_l_N.jpg">`。
+_JAVDB_VIDEO = re.compile(r'<a href="(/v/[A-Za-z0-9]+)" class="box"')
+_JAVDB_TILE = re.compile(r'<a class="tile-item"[^>]*href="([^"]+)"')
 
 _SAFE_KEY = re.compile(r"^[A-Za-z0-9_-]{2,40}$")
 #: DMM 两种样张地址都是 120×90 的小图：GraphQL 给 `awsimgsrc…/pics_dig/digital/video/<cid>/<cid>-N.jpg`，
@@ -291,7 +301,23 @@ def fetch_mgs(transport, code: str, *, deadline: float | None = None) -> list[st
     return parser.urls
 
 
-FETCHERS: dict[str, Callable] = {"dmm": fetch_dmm, "mgstage": fetch_mgs}
+def fetch_javdb(transport, code: str, *, deadline: float | None = None) -> list[str]:
+    """javdb 详情页上的样张。官方站没有这部时才走这条：它转存的是同一批画面，但不算官方判据。"""
+    from .jav_cover_fetch import _fetch
+    headers = {"Accept": "text/html,application/xhtml+xml"}
+    search = _fetch(transport, JAVDB_SEARCH.format(code=quote(code.upper())),
+                    referer=JAVDB_BASE + "/", limit=4 * 1024 * 1024,
+                    extra_headers=headers, deadline=deadline)
+    matched = _JAVDB_VIDEO.search(search.decode("utf-8", "ignore"))
+    if not matched:
+        return []
+    detail = _fetch(transport, urljoin(JAVDB_BASE, matched.group(1)),
+                    referer=JAVDB_BASE + "/", limit=4 * 1024 * 1024,
+                    extra_headers=headers, deadline=deadline)
+    return [urljoin(JAVDB_BASE, href) for href in _JAVDB_TILE.findall(detail.decode("utf-8", "ignore"))]
+
+
+FETCHERS: dict[str, Callable] = {"dmm": fetch_dmm, "mgstage": fetch_mgs, FALLBACK_SITE: fetch_javdb}
 
 
 class Misses:

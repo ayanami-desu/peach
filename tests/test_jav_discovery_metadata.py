@@ -73,7 +73,7 @@ class DiscoveryMetadataTests(unittest.TestCase):
         movie.assert_called_once_with('EXM-002', refresh=True)
         self.assertEqual(second.job.snapshot()['completed'], 2)
 
-    def test_sidecar_survives_restart_and_distinguishes_empty_unknown_and_stale(self):
+    def test_sidecar_survives_restart_and_distinguishes_empty_unknown_and_kept(self):
         movie = {"number": "EXM-001", "tags": [], "score": "4.23", "duration": 180,
                  "preview_video_url": "https://example.invalid/secret",
                  "actors": [{"name": "甲", "gender": 0, "avatar_url": "secret"}]}
@@ -86,7 +86,7 @@ class DiscoveryMetadataTests(unittest.TestCase):
         self.assertNotIn("avatar_url", source["actors"][0])
         self.assertEqual(restarted.peek("EXM-002")[1]["metadata_fields"]["tags"], "unavailable")
         self.now[0] += 86400
-        self.assertEqual(restarted.peek("EXM-001")[1]["metadata_state"], "stale")
+        self.assertEqual(restarted.peek("EXM-001")[1]["metadata_state"], "ready")
         self.cache.remember("EXM-002", error="资料未取得")
         self.assertEqual(self.cache.peek("EXM-002")[1]["metadata_state"], "unavailable")
 
@@ -152,23 +152,24 @@ class DiscoveryMetadataTests(unittest.TestCase):
             self.cache.job.thread.join(5)
             self.assertEqual(movie.call_count, 3)
 
-    def test_finished_collection_rechecks_expired_new_work_and_keeps_mature_work(self):
+    def test_a_finished_collection_keeps_what_it_already_fetched(self):
         self.now[0] = 1791892800.0
-        def movie_for(code):
+        def movie_for(code, **_):
             return {'number': code, 'release_date': '2026-10-01' if code == 'EXM-001' else '2020-01-01',
                     'tags': [], 'score': 4, 'duration': 120}
         with patch.object(self.api, 'movie', side_effect=movie_for) as movie:
             self.cache.ensure(['EXM-001', 'EXM-002'])
             self.cache.job.thread.join(5)
             saved = self.cache.peek('EXM-002')[1]['metadata_checked_at']
-            self.cache.ensure(['EXM-999'])
             self.assertEqual(movie.call_count, 2)
-            self.now[0] += 86400
-            self.cache.ensure(['EXM-999'])
+            self.now[0] += 365 * 86400
+            self.cache.ensure(['EXM-001', 'EXM-002'])
             self.cache.job.thread.join(5)
-            self.assertEqual(movie.call_count, 3)
-            self.assertEqual(movie.call_args.args, ('EXM-001',))
+            self.assertEqual(movie.call_count, 2)
             self.assertEqual(self.cache.peek('EXM-002')[1]['metadata_checked_at'], saved)
+            self.cache.ensure(['EXM-001', 'EXM-002'], refresh=True)
+            self.cache.job.thread.join(5)
+            self.assertEqual(movie.call_count, 4)
 
     def test_source_cache_read_and_failed_refresh_do_not_renew_source_timestamp(self):
         source = {'number': 'EXM-001', 'release_date': '2020-01-01', 'tags': [], 'score': 4, 'duration': 120}

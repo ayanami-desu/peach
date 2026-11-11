@@ -1,5 +1,5 @@
 """公开快照的发行边界、磁盘复用和并发原子读取。"""
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 import tempfile
 import json
 from pathlib import Path
@@ -9,7 +9,7 @@ from threading import Event
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
-from peach.jav_cache import DAY, PublicSnapshots, cache_fresh, cache_lifetime, stable_after
+from peach.jav_cache import DAY, PublicSnapshots, cache_fresh
 from peach.javdb_public import PublicAPI, PublicSourceUnavailable, public_cache_scope, cache_checked_at
 
 
@@ -51,21 +51,20 @@ class PublicationCacheTests(unittest.TestCase):
                 self.assertEqual(reader.reviews('EXM-001', 1), [{'id': 'review'}])
                 self.assertEqual(cache_checked_at('reviews:'), stamp('2026-10-13'))
                 self.assertEqual(reader.magnets('EXM-001'), [{'hash': 'resource'}])
-            reader._rows.assert_called_once_with('/v2/search', 'movies', {'q': 'EXM-001', 'type': 'movie', 'page': 1})
+            reader._rows.assert_not_called()
 
-    def test_daily_refresh_and_failed_manual_refresh_keep_good_snapshot(self):
+    def test_a_successful_snapshot_survives_until_a_manual_refresh(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             now = [stamp('2026-10-13')]
             api = self.api(root, now)
             fetch = Mock(return_value=['first'])
             api._cached('reviews:Exact:1', fetch, released='2026-10-01')
-            now[0] += DAY - 1
+            now[0] += 90 * DAY
             api._cached('reviews:Exact:1', fetch, released='2026-10-01')
             self.assertEqual(fetch.call_count, 1)
-            now[0] += 1
             fetch.return_value = ['second']
-            api._cached('reviews:Exact:1', fetch, released='2026-10-01')
+            api._cached('reviews:Exact:1', fetch, released='2026-10-01', refresh=True)
             self.assertEqual(fetch.call_count, 2)
             path = api._store().path('reviews:Exact:1')
             before = path.read_bytes()
@@ -135,24 +134,17 @@ class PublicationCacheTests(unittest.TestCase):
                 self.assertEqual(_cached_movie('EXM-001', contract), movie)
             self.assertEqual(metadata.peek('EXM-001')[1]['metadata_checked_at'], stamp('2026-10-13'))
 
-    def test_month_end_and_leap_year_boundaries(self):
-        self.assertEqual(stable_after('2024-01-31'), date(2024, 2, 29))
-        self.assertEqual(stable_after('2026-01-31'), date(2026, 2, 28))
-        self.assertEqual(stable_after('2026-12-31'), date(2027, 1, 31))
-        self.assertEqual(cache_lifetime('2026-09-13', date(2026, 10, 13)), DAY)
-        self.assertIsNone(cache_lifetime('2026-09-12', date(2026, 10, 13)))
-
-    def test_new_and_unknown_release_recheck_after_one_day(self):
+    def test_a_snapshot_stays_but_one_taken_before_the_release_is_retaken(self):
         saved = stamp('2026-10-12')
-        for released in ('2026-10-01', '2026-11-01', None, '', 'unknown'):
-            self.assertTrue(cache_fresh(saved, released, saved + DAY - 1))
-            self.assertFalse(cache_fresh(saved, released, saved + DAY))
+        for released in ('2026-10-01', None, '', 'unknown'):
+            self.assertTrue(cache_fresh(saved, released, saved + 365 * DAY))
+        self.assertFalse(cache_fresh(saved, '2026-11-01', saved + 365 * DAY))
 
-    def test_mature_work_requires_a_snapshot_after_the_release_month(self):
-        self.assertFalse(cache_fresh(stamp('2026-09-20'), '2026-09-01', stamp('2026-10-13')))
-        self.assertTrue(cache_fresh(stamp('2026-10-02'), '2026-09-01', stamp('2036-10-13')))
+    def test_only_a_plausible_timestamp_counts_as_taken(self):
+        self.assertTrue(cache_fresh(stamp('2026-09-20'), '2026-09-01', stamp('2036-10-13')))
         self.assertFalse(cache_fresh(float('nan'), '2020-01-01', stamp('2026-10-13')))
         self.assertFalse(cache_fresh(stamp('2026-10-14'), '2020-01-01', stamp('2026-10-13')))
+        self.assertFalse(cache_fresh(-1, '2020-01-01', stamp('2026-10-13')))
 
     def test_disk_snapshot_survives_reconstruction_and_keeps_its_timestamp(self):
         with tempfile.TemporaryDirectory() as directory:

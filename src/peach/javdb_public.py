@@ -12,7 +12,6 @@ from concurrent.futures import Future
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from contextvars import ContextVar
-from datetime import datetime
 from urllib.parse import urlencode, urlsplit
 
 from PIL import Image
@@ -20,8 +19,8 @@ from PIL import Image
 from .catalog_rules import normalise_code_key, release_identity, same_release_code
 from .http import HttpRequest, HttpxTransport, response_text
 from .scripting import HostLimiter
-from .user_agent import JAVDB_APP_USER_AGENT
-from .jav_cache import DAY, PublicSnapshots, cache_lifetime
+from .user_agent import JAVDB_APP_USER_AGENT, USER_AGENT
+from .jav_cache import DAY, PublicSnapshots
 from .javdb_identity import RULE, cache_key as identity_cache_key, current_evidence
 
 WEB = "https://catembylegacy.fastcdn.dpdns.org"
@@ -254,7 +253,7 @@ class PublicAPI:
         if budget:
             budget.check()
             limit = min(limit, budget.max_bytes - budget.bytes)
-        headers = {"Accept": "application/json" if signed else "*/*"}
+        headers = {"Accept": "application/json" if signed else "*/*", "User-Agent": USER_AGENT}
         if signed:
             stamp = str(int(time.time()))
             middle, suffix = self._signature()
@@ -430,8 +429,7 @@ class PublicAPI:
                 released = result.get('release_date') or released
             released = released if isinstance(released, str) else None
             snapshot = self._store().save(identity_cache_key(key), result, released)
-        lifetime = 6 * 3600 if image else cache_lifetime(snapshot.released, datetime.fromtimestamp(self.wallclock()).date())
-        remaining = lifetime if image else None if lifetime is None else max(0, snapshot.saved + lifetime - self.wallclock())
+        remaining = 6 * 3600 if image else None
         with self.lock:
             self.cache[cache_key] = (float('inf') if remaining is None else self.clock() + remaining, result)
             if snapshot is not None:
@@ -649,7 +647,7 @@ class PublicAPI:
                 "source_url": source_url, "magnet_failed": magnet_failed, "comments_failed": comments_failed}
 
     def official_preview(self, code, fetch, *, released=None, refresh=False, provider='prestige', source_id=None):
-        """预告按来源独立保存；DMM、JavDB 和未提供的预告每天可再检查。"""
+        """预告按来源独立保存；抓到的就留着，手动刷新或 `?refresh=1` 才再问。"""
         def read():
             url = fetch()
             return {'url': url, **({'release_date': released} if url and provider == 'prestige' else {})}

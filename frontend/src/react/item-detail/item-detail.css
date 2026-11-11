@@ -72,6 +72,35 @@
   color: var(--ink-2);
 }
 .peach-react [data-item-detail] [data-item-gate="offline"] button { cursor: pointer; margin-top: 4px; }
+/* 计流量闸：先给封面，再给一句话。图上压一条半透明说明，别让说明占掉画面。 */
+.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] {
+  position: relative;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: var(--ground);
+}
+.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] [data-catalog-picture] {
+  max-height: calc(76vh - 112px);
+  object-fit: contain;
+}
+.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] > span {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ground) 82%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] > span svg { width: 14px; height: 14px; }
 
 /* ── 队列行 ──
    徽章和标题同一行，标题那一行自己是 flex 容器：`[data-mix-item-text]` 的 b/span 都是块级的，并排只能靠

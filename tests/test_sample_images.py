@@ -221,16 +221,20 @@ class FollowupTests(LedgerCase):
         def dmm_fetch(_transport, code, *, deadline=None):
             raise NotFound("HTTP 404")
 
+        def javdb_fetch(_transport, code, *, deadline=None):
+            raise NotFound("HTTP 404")
+
         def mgs_fetch(_transport, code, *, deadline=None):
             raise SourcePaused("mgstage", 0.0, "冷却中")
 
-        summary = self.run_followup({"dmm": dmm_fetch, "mgstage": mgs_fetch})
+        summary = self.run_followup({"dmm": dmm_fetch, "mgstage": mgs_fetch, "javdb": javdb_fetch})
         self.assertEqual((summary["landed"], summary["absent"]), (0, 2))
         self.assertEqual(summary["paused"], ["mgstage"])
         self.assertEqual(summary["skipped"]["paused"], 1)
         self.assertEqual(summary["outcome"], "这一轮没有补上样张；跳过 1 部因来源冷却；还有 1 部待补，接着排下一轮")
         misses = sample_images.Misses(sample_images.misses_path(self.generated))
         self.assertTrue(misses.fresh("dmm", "SSIS-057"))
+        self.assertTrue(misses.fresh("javdb", "SSIS-057"), "官方站说没有之后问过兜底站，也说没有")
         self.assertFalse(misses.fresh("mgstage", "300MIUM-1000"), "冷却不是没有")
         with self.database.read_connection() as connection:
             self.assertEqual(sample_images.pending(connection, self.contract.has_cover, misses,
@@ -285,15 +289,25 @@ class FollowupTests(LedgerCase):
         self.assertEqual((second["remaining"], second["continue"]), (1, False))
         self.assertEqual(second["outcome"], "这一轮没有补上样张；跳过 1 部因来源冷却；还有 1 部待补，等下一次处理")
 
-    def test_codes_nobody_can_be_asked_about_are_counted_in_the_summary(self):
-        """快照里没样张、又没有官方样张站的番号（FC2）不联网也不算「没有」，摘要说清跳过了几部、为什么。"""
+    def test_a_code_without_an_official_site_goes_through_the_fallback(self):
+        """这一档没有官方样张站（FC2）时问兜底站，不再直接跳过：兜底站给的就落库。"""
         self.work(1, "FC2-PPV-1234567")
         self.work(2, "SSIS-057")
         self.snapshot("FC2-PPV-1234567", "dmm", {"title": "x"})
-        summary = self.run_followup({"dmm": lambda _t, _code, *, deadline=None: [dmm("ssis00057", 1, small=True)]})
-        self.assertEqual((summary["landed"], summary["deferred"]), (1, 0))
-        self.assertEqual(summary["skipped"], {"no_site": 1, "recent_miss": 0, "paused": 0})
-        self.assertEqual(summary["outcome"], "补上 1 部的样张（1 张）；跳过 1 部没有可问的官方站")
+        asked: list[str] = []
+
+        def javdb_fetch(_transport, code, *, deadline=None):
+            asked.append(code)
+            return ["https://c0.jdbstatic.com/samples/abc/abc_l_1.jpg"]
+
+        summary = self.run_followup({"dmm": lambda _t, _code, *, deadline=None: [dmm("ssis00057", 1, small=True)],
+                                     "javdb": javdb_fetch})
+        self.assertEqual(asked, ["FC2-PPV-1234567"])
+        self.assertEqual((summary["landed"], summary["images"], summary["deferred"]), (2, 2, 0))
+        self.assertEqual(summary["skipped"], {"recent_miss": 0, "paused": 0})
+        with self.database.read_connection() as connection:
+            self.assertEqual(sample_images.sample_url(connection, "FC2-PPV-1234567", 1),
+                             "https://c0.jdbstatic.com/samples/abc/abc_l_1.jpg")
 
     def test_a_landed_batch_is_reverted_by_the_script_and_not_landed_twice(self):
         self.work(1, "SSIS-057")
@@ -325,6 +339,29 @@ class MgsTests(unittest.TestCase):
             "https://image.mgstage.com/images/x/300mium/1000/cap_e_0_300mium-1000.jpg",
             "https://image.mgstage.com/images/x/300mium/1000/cap_e_1_300mium-1000.jpg"])
         self.assertEqual(transport.asked, [url])
+
+
+class JavdbTests(unittest.TestCase):
+    SEARCH = '<div class="movie-list"><a href="/v/VyExQ" class="box" title="SSIS-402 示例"></div>'
+    DETAIL = ('<div class="preview-images">'
+              '<a class="tile-item" href="https://c0.jdbstatic.com/samples/vy/VyExQ_l_0.jpg">'
+              '<a class="tile-item" href="/samples/vy/VyExQ_l_1.jpg"></div>')
+
+    def test_javdb_samples_come_from_the_first_hit_its_detail_page(self):
+        search = sample_images.JAVDB_SEARCH.format(code="SSIS-402")
+        detail = sample_images.JAVDB_BASE + "/v/VyExQ"
+        transport = PageTransport({search: (200, self.SEARCH.encode("utf-8")),
+                                   detail: (200, self.DETAIL.encode("utf-8"))})
+        self.assertEqual(sample_images.fetch_javdb(transport, "ssis-402"),
+                         ["https://c0.jdbstatic.com/samples/vy/VyExQ_l_0.jpg",
+                          sample_images.JAVDB_BASE + "/samples/vy/VyExQ_l_1.jpg"])
+        self.assertEqual(transport.asked, [search, detail])
+
+    def test_a_search_page_without_a_hit_costs_one_request_and_lands_nothing(self):
+        search = sample_images.JAVDB_SEARCH.format(code="SSIS-999")
+        transport = PageTransport({search: (200, b'<div class="movie-list"></div>')})
+        self.assertEqual(sample_images.fetch_javdb(transport, "SSIS-999"), [])
+        self.assertEqual(transport.asked, [search])
 
 
 class CacheTests(unittest.TestCase):

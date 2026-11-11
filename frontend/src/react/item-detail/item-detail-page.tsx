@@ -158,6 +158,8 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
     ...samples.map((sample, index) => ({ ...sample, label: `预览 ${index + 1}` })),
     { index: -2, label: '正片', video: true }] : [];
   const hasPictures = media.length > 1;
+  /* 计流量闸先给封面：只有封面、还没有预览图时也该给人看这一张，不当成「没有图」。 */
+  const cover = item.is_jav && !!item.code && !!item.has_cover;
   const selectImage = (index: number) => {
     if (index !== -2) frameRef.current?.querySelector('video')?.pause();
     setImage(index);
@@ -211,9 +213,11 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
             <button className="chip" id="openSavedFollow" type="button" onClick={actions.openSavedFollow}>打开已保存关注</button>
           </div>
         ) : gate === 'metered' && !started ? (
-          <div id="gate" data-item-gate="metered" onClick={() => setStarted('clicked')}>
+          <div id="gate" data-item-gate="metered" data-item-cover={cover ? '' : undefined} onClick={() => setStarted('clicked')}>
+            {cover ? <CatalogPicture key={item.id} item={item} image={-1}
+              source={samples.find(sample => sample.index === media[0]!.index)?.source} /> : null}
             <Html html={badge} />
-            <span>点此开始拉流 · {sizeText(item.size)}</span>
+            <span><Glyph name="play" />点此开始拉流 · {sizeText(item.size)}</span>
           </div>
         ) : null}
     </div>
@@ -380,6 +384,7 @@ function Side({ item, queue, write, helpers, actions }: {
   const online = item.location === 'online';
   const busy = write.busyAttrs;
   const [reasonOpen, setReasonOpen] = useState(false);
+  const [sampling, setSampling] = useState(false);
   return (
     <div data-stage-side="" data-item-side="">
       <div data-stage-side-content="">
@@ -406,7 +411,7 @@ function Side({ item, queue, write, helpers, actions }: {
         <Identity item={item} helpers={helpers} actions={actions} />
         <Tags item={item} write={write} helpers={helpers} actions={actions} />
         {item.medium === 'video' && item.is_jav && item.code && item.location !== 'online' ? (
-          <div className="flex">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" size="small" data-rematch={item.id}
               title={t('catalog:rematch.hint')}
               onClick={() => {
@@ -420,6 +425,19 @@ function Side({ item, queue, write, helpers, actions }: {
                   },
                 });
               }}>{t('catalog:rematch.action')}</Button>
+            <Button variant="secondary" size="small" data-samples-retry={item.id}
+              title={t('catalog:rematch.samplesHint')}
+              onClick={() => {
+                if (sampling) return;
+                setSampling(true);
+                void apiSend<{ count: number; message: string }>('/api/jav/samples', { code: item.code }, 'POST')
+                  .then(result => {
+                    actions.toast(result.message || t('catalog:rematch.samplesDone', { count: result.count }));
+                    if (result.count) void queryClient.invalidateQueries({ queryKey: itemKey(item.id) });
+                  })
+                  .catch(error => actions.toast(requestErrorMessage(error)))
+                  .finally(() => setSampling(false));
+              }}>{t('catalog:rematch.samples')}</Button>
           </div>
         ) : null}
         <LibraryCompletionPrompt assetIds={missingPreviewIds([item], helpers.javImage())}

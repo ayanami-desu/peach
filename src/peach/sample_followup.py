@@ -19,6 +19,8 @@ from pathlib import Path
 
 from . import sample_images
 from .followups import FollowupType, register
+from .jav_cover_fetch import DeadlineExceeded, HostLimitedTransport
+from .scraping_access import SourcePaused, SourceTransport
 
 TASK_KEY = "code-samples"
 TASK_LABEL = "番号样张采集"
@@ -56,12 +58,73 @@ def plan(database, config, cover_root) -> list[dict]:
     return [{"key": FOLLOWUP_KEY, "task_key": TASK_KEY, "label": TASK_LABEL}] if found else []
 
 
+def _sites(code: str) -> tuple[str, ...]:
+    """先问这一档的官方站，再问兜底站。官方站说没有、或这一档没有官方站，都由兜底站接。"""
+    official = sample_images.site_for(code) or ""
+    if not official:
+        return (sample_images.FALLBACK_SITE,)
+    return (official, sample_images.FALLBACK_SITE)
+
+
 def _missing(error: Exception) -> bool:
     """这一站明确说没有：传输层 404 或契约里 `not_found` 那一档。"""
     from .jav_cover_fetch import NotFound
     from .sources import FailureReason, SourceFailure
     return isinstance(error, NotFound) or (
         isinstance(error, SourceFailure) and error.reason == FailureReason.NOT_FOUND)
+
+
+class _Asker:
+    """按「官方站 → 兜底站」问一部，结果取 ok、paused、deferred、failed、absent。
+
+    一趟里被来源挡下来的站在 `paused` 里，后面的番号不再问它；预算与联网名额也记在这里，
+    免得一路把这些状态带进外层的计数里。
+    """
+
+    def __init__(self, transport, misses, *, clock, deadline: float, skipped: dict[str, int],
+                 limit: int | None = None, ignore_misses: bool = False) -> None:
+        self.transport = transport
+        self.misses = misses
+        self.clock = clock
+        self.deadline = deadline
+        self.skipped = skipped
+        self.limit = limit
+        self.ignore_misses = ignore_misses
+        self.paused: set[str] = set()
+        self.asked = 0
+
+    def __call__(self, code: str) -> tuple[str, list[str], str]:
+        for site in _sites(code):
+            if site not in sample_images.FETCHERS:
+                continue
+            if site in self.paused:
+                return site, [], "paused"
+            if self.misses.fresh(site, code) and not self.ignore_misses:
+                self.skipped["recent_miss"] += 1
+                continue
+            # 联网名额或预算用完：这一部留到下一轮，快照里现成的照样落
+            budget = BATCH if self.limit is None else self.limit
+            if self.asked >= budget or self.clock() >= self.deadline:
+                return site, [], "deferred"
+            self.asked += 1
+            try:
+                urls = sample_images.usable(
+                    sample_images.FETCHERS[site](self.transport, code, deadline=self.deadline))
+            except SourcePaused:
+                # 冷却或本趟预算用完：这一站后面的都不问，也不记「没有」。
+                self.paused.add(site)
+                return site, [], "paused"
+            except DeadlineExceeded:
+                return site, [], "deferred"
+            except Exception as error:  # noqa: BLE001 - 一部取不到不影响同批其余几部
+                if not _missing(error):
+                    return site, [], "failed"
+                self.misses.record(site, code)
+                continue
+            if urls:
+                return site, urls, "ok"
+            self.misses.record(site, code)
+        return "", [], "absent"
 
 
 class _SampleCheckpoint:
@@ -87,9 +150,6 @@ class _SampleCheckpoint:
 
 def run(contract, key: str, handle, *, transport=None, clock=time.monotonic) -> dict:
     """跑一条补样张后继，返回活动页上那一行的摘要。"""
-    from .jav_cover_fetch import DeadlineExceeded, HostLimitedTransport
-    from .scraping_access import SourcePaused, SourceTransport
-
     generated = Path(contract.candidate_root)
     misses = sample_images.Misses(sample_images.misses_path(generated))
     snapshots = sample_images.snapshot_index(Path(contract.follow_sources_root))
@@ -105,12 +165,14 @@ def run(contract, key: str, handle, *, transport=None, clock=time.monotonic) -> 
                             max_bytes=64 * 1024 * 1024, max_seconds=BUDGET_SECONDS), 2.0)
     deadline = clock() + BUDGET_SECONDS
     landed, images = checkpoint.landed, checkpoint.images
-    absent = failed = deferred = asked = 0
+    tally = {"paused": 0, "deferred": 0, "failed": 0, "absent": 0}
     #: 快照第一次看过、里面没有样张的部数：下一轮改为联网问，也算这一轮往前推了。
     probed = 0
-    #: 没问站就跳过的部数，按原因分：快照里没样张又没有可问的官方站、那一站近期说过没有、那一站冷却中。
-    skipped = {"no_site": 0, "recent_miss": 0, "paused": 0}
-    paused: set[str] = set()
+    #: 没问成站的部数，按原因分：那一站近期说过没有、那一站冷却中。
+    skipped = {"recent_miss": 0, "paused": 0}
+    ask = _Asker(transport, misses, clock=clock, deadline=deadline, skipped=skipped)
+    paused = ask.paused
+
     try:
         for index, code in enumerate(codes):
             if code in checkpoint.completed:
@@ -126,42 +188,9 @@ def run(contract, key: str, handle, *, transport=None, clock=time.monotonic) -> 
                 misses.record("snapshot", code)
                 probed += 1
             if not urls:
-                site = sample_images.site_for(code) or ""
-                if not site:
-                    skipped["no_site"] += 1
-                    continue
-                if site in paused:
-                    skipped["paused"] += 1
-                    continue
-                if misses.fresh(site, code):
-                    skipped["recent_miss"] += 1
-                    continue
-                # 联网名额或预算用完：这一部留到下一轮，后面快照里现成的照样落
-                if asked >= BATCH or clock() >= deadline:
-                    deferred += 1
-                    continue
-                asked += 1
-                try:
-                    urls = sample_images.usable(
-                        sample_images.FETCHERS[site](transport, code, deadline=deadline))
-                except SourcePaused:
-                    # 冷却或本趟预算用完：这一站后面的都不问，也不记「没有」。
-                    paused.add(site)
-                    skipped["paused"] += 1
-                    continue
-                except DeadlineExceeded:
-                    deferred += 1
-                    continue
-                except Exception as error:  # noqa: BLE001 - 一部取不到不影响同批其余几部
-                    if _missing(error):
-                        misses.record(site, code)
-                        absent += 1
-                    else:
-                        failed += 1
-                    continue
-                if not urls:
-                    misses.record(site, code)
-                    absent += 1
+                site, urls, outcome = ask(code)
+                if outcome != "ok":
+                    tally[outcome] = tally.get(outcome, 0) + 1
                     continue
             with contract.database.write_transaction() as connection:
                 count = sample_images.land(connection, code, site, urls, source=batch)
@@ -179,6 +208,8 @@ def run(contract, key: str, handle, *, transport=None, clock=time.monotonic) -> 
         handle.progress(current=len(codes), total=len(codes), label=TASK_LABEL, throttle=0)
     with contract.database.read_connection() as connection:
         remaining = len(sample_images.pending(connection, contract.has_cover, misses, snapshots, limit=10 ** 6))
+    skipped["paused"] += tally["paused"]
+    deferred, failed, absent = tally["deferred"], tally["failed"], tally["absent"]
     summary = {"codes": len(codes), "landed": landed, "images": images, "absent": absent, "failed": failed,
                "skipped": skipped, "deferred": deferred, "batch": batch, "remaining": remaining,
                # 这一轮推进了（落了、问出没有、快照看过）又还有要补的，就接着排下一轮（ADR-0084）。
@@ -193,8 +224,7 @@ def _outcome(summary: dict) -> str:
     """活动页上那一行：补上几部、跳过几部各为什么、还剩几部、接不接着跑。"""
     skipped, deferred, remaining = summary["skipped"], summary["deferred"], summary["remaining"]
     text = f"补上 {summary['landed']} 部的样张（{summary['images']} 张）" if summary["landed"] else "这一轮没有补上样张"
-    reasons = [line for count, line in ((skipped["no_site"], f"{skipped['no_site']} 部没有可问的官方站"),
-                                        (skipped["recent_miss"], f"{skipped['recent_miss']} 部那一站近期说过没有"),
+    reasons = [line for count, line in ((skipped["recent_miss"], f"{skipped['recent_miss']} 部那一站近期说过没有"),
                                         (skipped["paused"], f"{skipped['paused']} 部因来源冷却"),
                                         (deferred, f"{deferred} 部联网名额用完留到下一轮")) if count]
     if reasons:
@@ -202,6 +232,48 @@ def _outcome(summary: dict) -> str:
     if remaining:
         text += f"；还有 {remaining} 部待补，" + ("接着排下一轮" if summary["continue"] else "等下一次处理")
     return text
+
+
+#: 详情页「重新匹配样张」的联网预算：只问一部，两个站各一次请求。
+SAMPLE_SECONDS = 60.0
+
+
+def refresh_code(contract, code: str, *, transport=None, clock=time.monotonic) -> dict:
+    """当场按一个番号问样张：官方站先问，说没有或这一档没有官方站就退到兜底站。
+
+    详情页的「重新匹配样张」走这条：不看「这一站近期说过没有」的旧记录，取到就落账本，
+    返回这一部的结果。已经有样张的番号不重复联网，也不重写。
+    """
+    with contract.database.read_connection() as connection:
+        if sample_images.detail_refs(connection, code):
+            return {"ok": True, "code": code, "site": "", "count": 0, "message": "这一部已经有样张了"}
+    misses = sample_images.Misses(sample_images.misses_path(Path(contract.candidate_root)))
+    owned = transport is None
+    if owned:
+        transport = HostLimitedTransport(
+            SourceTransport(Path(contract.follow_secrets_root), max_requests=8,
+                            max_bytes=32 * 1024 * 1024, max_seconds=SAMPLE_SECONDS), 2.0)
+    skipped = {"recent_miss": 0, "paused": 0}
+    try:
+        ask = _Asker(transport, misses, clock=clock, deadline=clock() + SAMPLE_SECONDS,
+                     skipped=skipped, limit=4, ignore_misses=True)
+        site, urls, outcome = ask(code)
+        if outcome != "ok":
+            message = {"absent": "官方站与兜底站都说没有这一部的样张",
+                       "paused": "来源正在冷却，稍后再试",
+                       "deferred": "这一部还没问到，稍后再试",
+                       "failed": "取样张失败，稍后再试"}.get(outcome, "没有取到样张")
+            return {"ok": True, "code": code, "site": "", "count": 0, "message": message}
+        with contract.database.write_transaction() as connection:
+            count = sample_images.land(connection, code, site, urls,
+                                       source=sample_images.batch_for(None))
+    finally:
+        misses.save()
+        if owned:
+            transport.close()
+    contract.cache_bust()
+    return {"ok": True, "code": code, "site": site, "count": count,
+            "message": f"取到 {len(urls)} 张" if count else "这一部已经有样张了"}
 
 
 #: 写账本：样张地址写在 `code_sample_image`。联网在事务外做，每部写一次，很短；

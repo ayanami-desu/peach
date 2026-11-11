@@ -262,6 +262,16 @@ def w_jav_cover(contract, body) -> dict:
             "message": '' if covered else message or '没有找到可用的官方封面'}
 
 
+def w_jav_samples(contract, body) -> dict:
+    """详情页「重新匹配样张」：当场按番号问官方站，再退到 javdb，取到就落账本。
+
+    与补样张后继同一条路，只是不排队、不看旧记录；已经有样张的番号不重复联网。
+    """
+    from . import sample_followup
+    code = detail_code(body)
+    return sample_followup.refresh_code(contract, code)
+
+
 #: 来源图片在浏览器里留多久。样张与来源封面落盘后不再刷新；来源头像在服务端按
 #: `AVATAR_REFRESH_SECONDS` 换新，浏览器只留一天，换过的图第二天就看得到。
 JAV_IMAGE_MAX_AGE = 30 * 86400

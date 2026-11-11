@@ -104,6 +104,7 @@ process_library(config, db_path, candidate_root, cover_root, *,
 
 - 复核页全选通过，或按字段跑 `scripts/apply_metadata_tags.py --source <来源>` 落地。
 - 已经问过且答复是「没有」的番号记在 `_MissCache`，下一轮不重复问。
+- 公开资料快照（作品资料、评论、磁链、预告）抓到一次就留在 `generated/jav-public/`，不按天数失效：盘上没有、手动重试或带 `?refresh=1` 才再问来源。只有「发行日之前抓到的」会在发行之后再补一次（`src/peach/jav_cache.py` 的 `cache_fresh()`），日期认不出按永久算。
 - 垃圾判定规则在 `src/peach/junk.py`，扫描、后处理与页面共用一份；按范围隔离到回收站由 `process_library()` 自己做完（给了 `database` 才会动账本）。
 - 旧账本里已消失、同一番号又出现的记录，由 `record_rehome.reattach_in()` 把个人记录接到新资产上，判据优先番号，其次时长（`DURATION_TOLERANCE`），判不准就留成孤儿记录等人选。
 

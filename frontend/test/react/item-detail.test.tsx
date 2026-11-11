@@ -159,6 +159,19 @@ describe('详情重新匹配资料', () => {
   });
 });
 
+describe('详情重新匹配样张', () => {
+  it('当场按这一条番号取样张，取到几张就提示几张', async () => {
+    const fetcher = serve(() => ({ count: 3, message: '取到 3 张样张' }));
+    const { host, actions: given } = await show(item(1, {
+      medium: 'video', is_jav: true, code: 'ABW-123',
+    }));
+    await click(host.querySelector('[data-samples-retry]'));
+    await settle();
+    expect(posts(fetcher)).toEqual([['/api/jav/samples', { code: 'ABW-123' }]]);
+    expect(given.toast).toHaveBeenCalledWith('取到 3 张样张');
+  });
+});
+
 describe('停在队列哪一条', () => {
   it('分卷接同一版本的下一卷，版本边界保持停止', async () => {
     const versions = queue('editions', [1, 2, 3], {
@@ -357,6 +370,14 @@ describe('交给壳的', () => {
     await click(metered.host.querySelector('[data-item-gate="metered"]'));
     expect(metered.actions.mountPlayer).toHaveBeenCalledWith(metered.host.querySelector('[data-item-media="metered"]'), expect.objectContaining({ id: 2 }), null,
       { autoplay: true });
+  });
+
+  it('计费来源只有封面、没有预览图时，闸上先给封面，而不是只剩一行字', async () => {
+    serve();
+    const metered = await show(item(3, { cost: 'metered', is_jav: true, code: 'SSIS-001', has_cover: true } as Partial<DetailItem>));
+    const gate = metered.host.querySelector('[data-item-gate="metered"]')!;
+    expect(gate.hasAttribute('data-item-cover')).toBe(true);
+    expect(gate.querySelector('[data-catalog-picture]')).not.toBeNull();
   });
 
   it('队列里点另一条交给壳换，带着队列引用', async () => {
