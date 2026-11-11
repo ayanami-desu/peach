@@ -1,14 +1,14 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "f3363abc-9987-4df9-b4a9-077a6c7610a3", e._sentryDebugIdIdentifier = "sentry-dbid-f3363abc-9987-4df9-b4a9-077a6c7610a3");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "14fa1db0-0838-454d-b454-051550576378", e._sentryDebugIdIdentifier = "sentry-dbid-14fa1db0-0838-454d-b454-051550576378");
 	} catch {}
 })();
-import { ApiError as e, Button as t, CONFIGURATION_KEY as n, Checkbox as r, Chip as i, DRIVE_KEY as a, DRIVE_URL as o, E3 as s, ErrorText as c, Eu as l, Fact as u, FactList as d, Footer as f, Help as p, Input as m, L1 as h, Note as g, ProcessingMode as _, Rows as v, SETTINGS_KEY as y, Section as b, SectionSkeleton as x, SettingsRow as S, SortableBoardTabs as C, Stack as w, Uz as T, __toESM as E, _p as D, apiGet as O, apiSend as k, busyProps as A, confirmModal as j, d6 as M, devicesSkeleton as ee, errorMessage as N, fetchConfiguration as te, fetchDrives as ne, fetchSettings as re, l1 as ie, rememberShape as ae, require_jsx_runtime as oe, require_react as se, t as P, useAction as F, useQuery as I, useQueryClient as L, useSaveSettings as ce, z3 as R } from "./peach-app.js";
+import { ACCENT_CHOICES as e, ApiError as t, Button as n, CONFIGURATION_KEY as r, Checkbox as i, Chip as a, DRIVE_KEY as o, DRIVE_URL as s, E3 as c, ErrorText as l, Eu as u, Fact as d, FactList as f, Footer as p, Help as m, Input as h, L1 as g, Note as _, ProcessingMode as v, Rows as y, SETTINGS_KEY as b, Section as x, SectionSkeleton as S, Select$1 as C, SelectItem as w, SettingsRow as T, SortableBoardTabs as E, Stack as D, Uz as ee, __toESM as O, _p as k, apiGet as A, apiSend as j, busyProps as M, confirmModal as N, d6 as te, devicesSkeleton as ne, errorMessage as P, fetchConfiguration as re, fetchDrives as ie, fetchSettings as ae, l1 as oe, rememberShape as se, require_jsx_runtime as ce, require_react as le, t as F, useAction as I, useQuery as L, useQueryClient as R, useSaveSettings as ue, z3 as z } from "./peach-app.js";
 // src/react/settings/password-pair.tsx
-var z = /* @__PURE__ */ E(se(), 1), B = oe();
-function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmation: i, disabled: a = !1, passwordError: o, passwordHint: s, confirmationError: c, confirmationInvalid: l = !1 }) {
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [/* @__PURE__ */ (0, B.jsx)(m, {
+var B = /* @__PURE__ */ O(le(), 1), V = ce();
+function de({ label: e, password: t, confirmation: n, onPassword: r, onConfirmation: i, disabled: a = !1, passwordError: o, passwordHint: s, confirmationError: c, confirmationInvalid: l = !1 }) {
+	return /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [/* @__PURE__ */ (0, V.jsx)(h, {
 		id: "access-password",
 		type: "password",
 		label: e,
@@ -21,7 +21,7 @@ function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmat
 		validationBehavior: "aria",
 		isInvalid: !a && !!o,
 		hint: a ? s : o || s
-	}), /* @__PURE__ */ (0, B.jsx)(m, {
+	}), /* @__PURE__ */ (0, V.jsx)(h, {
 		id: "access-confirm",
 		type: "password",
 		label: "确认访问密码",
@@ -37,49 +37,49 @@ function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmat
 	})] });
 }
 // src/react/settings/access-settings.tsx
-var ue = {
+var fe = {
 	legacy: "当前使用系统生成的访问口令。改设自己的密码，或关闭登录要求。",
 	locked: "访问设置无法读取，请到服务器上检查配置文件。",
 	password: "已设置密码。新设备需要登录，登录时勾选「保持登录」可保持 30 天。"
 };
-function de({ initial: n, receipt: i, devices: a, after: o }) {
-	let [s, l] = (0, z.useState)(n), [u, d] = (0, z.useState)(""), [h, _] = (0, z.useState)(""), [v, y] = (0, z.useState)(""), [x, S] = (0, z.useState)(!1), [C, T] = (0, z.useState)({}), E = (0, z.useRef)(null), D = F(), O = (t) => {
-		t.preventDefault();
+function pe({ initial: e, receipt: r, devices: a, after: o }) {
+	let [s, c] = (0, B.useState)(e), [u, d] = (0, B.useState)(""), [f, g] = (0, B.useState)(""), [v, y] = (0, B.useState)(""), [b, S] = (0, B.useState)(!1), [C, w] = (0, B.useState)({}), T = (0, B.useRef)(null), E = I(), ee = (e) => {
+		e.preventDefault();
 		let n = {};
-		s.mode === "password" && !u && (n.current_password = "请输入当前访问密码"), x || ((h.length < 8 || h.length > 256) && (n.password = "访问密码需为 8–256 个字符"), h !== v && (n.confirmation = "两次输入的密码不一致")), T(n), Object.keys(n).length ? requestAnimationFrame(() => E.current?.querySelector("input[aria-invalid=\"true\"]")?.focus()) : D.run("save", (e) => k("/api/configuration/access", {
+		s.mode === "password" && !u && (n.current_password = "请输入当前访问密码"), b || ((f.length < 8 || f.length > 256) && (n.password = "访问密码需为 8–256 个字符"), f !== v && (n.confirmation = "两次输入的密码不一致")), w(n), Object.keys(n).length ? requestAnimationFrame(() => T.current?.querySelector("input[aria-invalid=\"true\"]")?.focus()) : E.run("save", (e) => j("/api/configuration/access", {
 			revision: s.revision,
-			action: x ? "disable" : "set",
-			confirm_disable: x,
+			action: b ? "disable" : "set",
+			confirm_disable: b,
 			current_password: u,
-			password: x ? "" : h,
-			confirmation: x ? "" : v
+			password: b ? "" : f,
+			confirmation: b ? "" : v
 		}, "POST", e), (e) => {
-			l(e), d(""), _(""), y(""), S(!1), T({}), i(e.mode === "open" ? "已关闭访问密码" : "已保存配置");
-		}, (t) => {
-			let n = t instanceof e ? t.body : null, r = n?.errors || n?.detail?.errors;
-			r ? T(r) : D.setError(N(t));
+			c(e), d(""), g(""), y(""), S(!1), w({}), r(e.mode === "open" ? "已关闭访问密码" : "已保存配置");
+		}, (e) => {
+			let n = e instanceof t ? e.body : null, r = n?.errors || n?.detail?.errors;
+			r ? w(r) : E.setError(P(e));
 		});
-	}, j = ue[s.mode], M = s.mode !== "locked";
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [
-		/* @__PURE__ */ (0, B.jsxs)(b, {
+	}, O = fe[s.mode], k = s.mode !== "locked";
+	return /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [
+		/* @__PURE__ */ (0, V.jsxs)(x, {
 			guide: "access",
 			title: "访问密码",
-			onSubmit: O,
-			children: [/* @__PURE__ */ (0, B.jsx)("div", {
-				ref: E,
-				children: /* @__PURE__ */ (0, B.jsxs)(w, { children: [
-					j ? /* @__PURE__ */ (0, B.jsx)(p, { children: j }) : null,
-					s.mode === "open" ? /* @__PURE__ */ (0, B.jsx)(g, {
+			onSubmit: ee,
+			children: [/* @__PURE__ */ (0, V.jsx)("div", {
+				ref: T,
+				children: /* @__PURE__ */ (0, V.jsxs)(D, { children: [
+					O ? /* @__PURE__ */ (0, V.jsx)(m, { children: O }) : null,
+					s.mode === "open" ? /* @__PURE__ */ (0, V.jsx)(_, {
 						tone: "warning",
 						title: "未设置访问密码",
 						children: "能连接到 Peach 的设备打开地址就能看馆藏，不需要登录。"
 					}) : null,
-					s.mode === "password" || s.mode === "legacy" ? /* @__PURE__ */ (0, B.jsx)(r, {
-						isSelected: x,
+					s.mode === "password" || s.mode === "legacy" ? /* @__PURE__ */ (0, V.jsx)(i, {
+						isSelected: b,
 						onChange: S,
 						children: "关闭访问密码"
 					}) : null,
-					s.mode === "password" ? /* @__PURE__ */ (0, B.jsx)(m, {
+					s.mode === "password" ? /* @__PURE__ */ (0, V.jsx)(h, {
 						id: "access-current",
 						type: "password",
 						label: "当前访问密码",
@@ -92,26 +92,26 @@ function de({ initial: n, receipt: i, devices: a, after: o }) {
 						isInvalid: !!C.current_password,
 						hint: C.current_password
 					}) : null,
-					M && !x ? /* @__PURE__ */ (0, B.jsx)(le, {
+					k && !b ? /* @__PURE__ */ (0, V.jsx)(de, {
 						label: s.mode === "password" ? "新访问密码" : "设置访问密码",
-						password: h,
+						password: f,
 						confirmation: v,
-						onPassword: _,
+						onPassword: g,
 						onConfirmation: y,
 						passwordError: C.password,
 						confirmationError: C.confirmation,
 						passwordHint: "至少 8 个字符。保存后其他设备需要重新登录。"
 					}) : null,
-					x ? /* @__PURE__ */ (0, B.jsx)(g, {
+					b ? /* @__PURE__ */ (0, V.jsx)(_, {
 						tone: "warning",
 						title: "访问范围",
 						children: "保存后，能连接到 Peach 的设备将直接访问馆藏。"
 					}) : null,
-					D.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: D.error }) : null
+					E.error ? /* @__PURE__ */ (0, V.jsx)(l, { children: E.error }) : null
 				] })
-			}), M ? /* @__PURE__ */ (0, B.jsx)(f, { children: /* @__PURE__ */ (0, B.jsx)(t, {
+			}), k ? /* @__PURE__ */ (0, V.jsx)(p, { children: /* @__PURE__ */ (0, V.jsx)(n, {
 				type: "submit",
-				...A(D.busy === "save"),
+				...M(E.busy === "save"),
 				children: "保存配置"
 			}) }) : null]
 		}),
@@ -120,63 +120,63 @@ function de({ initial: n, receipt: i, devices: a, after: o }) {
 	] });
 }
 // src/react/settings/api-token-settings.tsx
-var fe = "/api/configuration/access/token/rotate";
-function pe(e, t) {
+var me = "/api/configuration/access/token/rotate";
+function he(e, t) {
 	let n = "用旧口令的脚本和 API 调用会立即失效。", r = e === "legacy" ? `其他浏览器现在用这串口令登录，会全部退出，需要输入新口令重新登录；本机保持登录。${n}` : e === "open" ? `浏览器不需要登录，不受影响。${n}` : `用访问密码登录的浏览器不受影响。${n}`;
 	return t ? `${r}另一台电脑要换成同一份口令文件，两台之间才能继续互取复核结果。` : r;
 }
-function me({ initial: e, mode: n, receipt: r }) {
-	let [i, a] = (0, z.useState)(e), [o, s] = (0, z.useState)(null), c = F(), l = L();
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+function ge({ initial: e, mode: t, receipt: r }) {
+	let [i, a] = (0, B.useState)(e), [o, s] = (0, B.useState)(null), c = I(), l = R();
+	return /* @__PURE__ */ (0, V.jsxs)(x, {
 		guide: "token",
 		title: "访问口令",
-		children: [/* @__PURE__ */ (0, B.jsxs)(w, { children: [
-			/* @__PURE__ */ (0, B.jsx)(p, { children: "脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在服务端，页面不显示。" }),
-			o ? /* @__PURE__ */ (0, B.jsxs)("div", {
+		children: [/* @__PURE__ */ (0, V.jsxs)(D, { children: [
+			/* @__PURE__ */ (0, V.jsx)(m, { children: "脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在服务端，页面不显示。" }),
+			o ? /* @__PURE__ */ (0, V.jsxs)("div", {
 				className: "flex min-w-0 flex-col gap-2",
 				children: [
-					/* @__PURE__ */ (0, B.jsxs)("div", {
+					/* @__PURE__ */ (0, V.jsxs)("div", {
 						className: "flex min-w-0 flex-wrap items-end gap-2",
-						children: [/* @__PURE__ */ (0, B.jsx)(m, {
+						children: [/* @__PURE__ */ (0, V.jsx)(h, {
 							className: "min-w-0 flex-1",
 							label: "新访问口令",
 							value: o.token,
 							isReadOnly: !0,
 							autoComplete: "off"
-						}), /* @__PURE__ */ (0, B.jsx)(t, {
+						}), /* @__PURE__ */ (0, V.jsx)(n, {
 							variant: "secondary",
 							"aria-label": "复制新访问口令",
 							onClick: () => void c.run("copy", () => navigator.clipboard.writeText(o.token), () => r("已复制口令")),
 							children: "复制口令"
 						})]
 					}),
-					c.error ? /* @__PURE__ */ (0, B.jsx)(p, {
+					c.error ? /* @__PURE__ */ (0, V.jsx)(m, {
 						role: "status",
 						children: "复制失败，请选中口令复制。"
 					}) : null,
-					/* @__PURE__ */ (0, B.jsx)(g, {
+					/* @__PURE__ */ (0, V.jsx)(_, {
 						tone: "info",
 						title: "新口令只显示这一次",
 						children: "已经生效，不用重启。离开本页后不再显示，之后在终端运行 peach token 查看。"
 					})
 				]
 			}) : null,
-			o?.relogin ? /* @__PURE__ */ (0, B.jsx)(g, {
+			o?.relogin ? /* @__PURE__ */ (0, V.jsx)(_, {
 				tone: "warning",
 				title: "本机需要重新登录",
 				children: "刷新页面后用新口令登录。"
 			}) : null,
-			i.rotatable ? null : /* @__PURE__ */ (0, B.jsx)(p, { children: i.reason })
-		] }), i.rotatable ? /* @__PURE__ */ (0, B.jsx)(f, {
+			i.rotatable ? null : /* @__PURE__ */ (0, V.jsx)(m, { children: i.reason })
+		] }), i.rotatable ? /* @__PURE__ */ (0, V.jsx)(p, {
 			status: "更换后立即生效。",
-			children: /* @__PURE__ */ (0, B.jsx)(t, {
+			children: /* @__PURE__ */ (0, V.jsx)(n, {
 				variant: "secondary",
-				onClick: () => void j({
+				onClick: () => void N({
 					title: "更换访问口令",
-					body: pe(n, i.paired),
+					body: he(t, i.paired),
 					confirmLabel: "更换口令",
 					onConfirm: async () => {
-						let e = await k(fe, {});
+						let e = await j(me, {});
 						a(e), s(e), e.mode === "legacy" && l.invalidateQueries({ queryKey: ["access-sessions"] }), r(e.signed_out ? `已更换访问口令，${e.signed_out} 台设备需要重新登录` : "已更换访问口令");
 					}
 				}),
@@ -186,17 +186,17 @@ function me({ initial: e, mode: n, receipt: r }) {
 	});
 }
 // src/react/settings/configuration-panel.ts
-var V = "flex flex-col gap-6";
-function H(e) {
+var H = "flex flex-col gap-6";
+function U(e) {
 	return e ? {
-		className: e.active ? `${V} ui-board-group-active` : V,
+		className: e.active ? `${H} ui-board-group-active` : H,
 		"data-board-group": String(e.index),
 		id: e.id,
 		role: "tabpanel",
 		"aria-labelledby": e.labelledBy
-	} : { className: V };
+	} : { className: H };
 }
-var he = {
+var _e = {
 	version: 1,
 	note: "浏览器品牌标识仅用于识别相应数据源；商标归各自所有者。",
 	icons: [
@@ -1005,13 +1005,13 @@ var he = {
 			bytes: 29648
 		}
 	]
-}, U = (e) => e.normalize("NFKC").toLowerCase().replace(/[\s_-]/g, ""), ge = new Map(he.icons.flatMap((e) => e.aliases.map((t) => [U(t), e.id])));
-function W(e) {
-	return ge.get(U(e));
+}, ve = (e) => e.normalize("NFKC").toLowerCase().replace(/[\s_-]/g, ""), ye = new Map(_e.icons.flatMap((e) => e.aliases.map((t) => [ve(t), e.id])));
+function be(e) {
+	return ye.get(ve(e));
 }
-function G({ name: e, className: t }) {
-	let [n, r] = (0, z.useState)(""), i = W(e);
-	return i && n !== i ? /* @__PURE__ */ (0, B.jsx)("img", {
+function xe({ name: e, className: t }) {
+	let [n, r] = (0, B.useState)(""), i = be(e);
+	return i && n !== i ? /* @__PURE__ */ (0, V.jsx)("img", {
 		src: `/browser-icon/${i}`,
 		width: 24,
 		height: 24,
@@ -1020,184 +1020,184 @@ function G({ name: e, className: t }) {
 		loading: "lazy",
 		className: `${t ?? "size-6 shrink-0"} object-contain`,
 		onError: () => r(i)
-	}) : /* @__PURE__ */ (0, B.jsx)(s, {
+	}) : /* @__PURE__ */ (0, V.jsx)(c, {
 		"aria-hidden": !0,
 		className: `${t ?? "size-5 shrink-0"} text-foreground-icon-secondary`
 	});
 }
 // src/react/settings/device-sessions.tsx
-var K = "/api/configuration/access/sessions", q = (e) => e.device || "未识别的浏览器", J = {
-	glyph: h,
+var W = "/api/configuration/access/sessions", G = (e) => e.device || "未识别的浏览器", K = {
+	glyph: g,
 	brand: "apple"
-}, Y = {
-	glyph: ie,
+}, Se = {
+	glyph: oe,
 	brand: "android"
-}, X = {
+}, q = {
 	iPhone: {
-		platform: J,
-		terminal: D
+		platform: K,
+		terminal: k
 	},
 	iPad: {
-		platform: J,
-		terminal: l
+		platform: K,
+		terminal: u
 	},
 	Android: {
-		platform: Y,
-		terminal: D
+		platform: Se,
+		terminal: k
 	},
 	"Android 平板": {
-		platform: Y,
-		terminal: l
+		platform: Se,
+		terminal: u
 	},
 	ChromeOS: {
 		platform: { browser: "chrome" },
-		terminal: R
+		terminal: z
 	},
 	Windows: {
 		platform: {
-			glyph: T,
+			glyph: ee,
 			brand: "windows"
 		},
-		terminal: R
+		terminal: z
 	},
 	macOS: {
-		platform: J,
-		terminal: R
+		platform: K,
+		terminal: z
 	},
-	Linux: { terminal: R }
-}, Z = "inline size-4 -mt-0.5 mr-1 align-middle";
-function _e({ platform: e }) {
-	if ("browser" in e) return /* @__PURE__ */ (0, B.jsx)(G, {
+	Linux: { terminal: z }
+}, J = "inline size-4 -mt-0.5 mr-1 align-middle";
+function Ce({ platform: e }) {
+	if ("browser" in e) return /* @__PURE__ */ (0, V.jsx)(xe, {
 		name: e.browser,
-		className: Z
+		className: J
 	});
 	let { glyph: t, brand: n } = e;
-	return /* @__PURE__ */ (0, B.jsx)(t, {
+	return /* @__PURE__ */ (0, V.jsx)(t, {
 		"aria-hidden": !0,
 		"data-platform-mark": n,
-		className: Z
+		className: J
 	});
 }
-function ve({ row: e }) {
-	if (!e.device) return q(e);
-	let t = e.device.split(" · "), n = X[t.at(-1) ?? ""] ? t.pop() : "", r = t.join(" · "), i = n ? X[n].platform : void 0;
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [
-		r ? /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [W(r) ? /* @__PURE__ */ (0, B.jsx)(G, {
+function we({ row: e }) {
+	if (!e.device) return G(e);
+	let t = e.device.split(" · "), n = q[t.at(-1) ?? ""] ? t.pop() : "", r = t.join(" · "), i = n ? q[n].platform : void 0;
+	return /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [
+		r ? /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [be(r) ? /* @__PURE__ */ (0, V.jsx)(xe, {
 			name: r,
-			className: Z
+			className: J
 		}) : null, r] }) : null,
 		r && n ? " · " : null,
-		n ? /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [i ? /* @__PURE__ */ (0, B.jsx)(_e, { platform: i }) : null, n] }) : null
+		n ? /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [i ? /* @__PURE__ */ (0, V.jsx)(Ce, { platform: i }) : null, n] }) : null
 	] });
 }
-function ye({ row: e }) {
-	let t = X[e.device.split(" · ").at(-1) ?? ""]?.terminal ?? M;
-	return /* @__PURE__ */ (0, B.jsx)(t, {
+function Te({ row: e }) {
+	let t = q[e.device.split(" · ").at(-1) ?? ""]?.terminal ?? te;
+	return /* @__PURE__ */ (0, V.jsx)(t, {
 		"aria-hidden": !0,
 		className: "size-5 shrink-0 text-foreground-icon-secondary"
 	});
 }
-function be({ row: e, children: t }) {
-	return /* @__PURE__ */ (0, B.jsxs)("div", {
+function Ee({ row: e, children: t }) {
+	return /* @__PURE__ */ (0, V.jsxs)("div", {
 		className: "flex min-h-13 w-full items-center justify-between gap-4 border-b border-separator-border py-2.5 pr-2.5 last:border-b-0",
-		children: [/* @__PURE__ */ (0, B.jsxs)("div", {
+		children: [/* @__PURE__ */ (0, V.jsxs)("div", {
 			className: "flex min-w-0 items-center gap-3",
-			children: [/* @__PURE__ */ (0, B.jsx)(ye, { row: e }), /* @__PURE__ */ (0, B.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, V.jsx)(Te, { row: e }), /* @__PURE__ */ (0, V.jsxs)("div", {
 				className: "flex min-w-0 flex-col",
-				children: [/* @__PURE__ */ (0, B.jsx)("p", {
+				children: [/* @__PURE__ */ (0, V.jsx)("p", {
 					className: "text-body-regular text-text-primary",
-					children: /* @__PURE__ */ (0, B.jsx)(ve, { row: e })
-				}), /* @__PURE__ */ (0, B.jsx)("p", {
+					children: /* @__PURE__ */ (0, V.jsx)(we, { row: e })
+				}), /* @__PURE__ */ (0, V.jsx)("p", {
 					className: "text-body-2-regular text-text-secondary",
-					children: Ce(e)
+					children: ke(e)
 				})]
 			})]
 		}), t]
 	});
 }
-function xe(e, t = Date.now() / 1e3) {
+function De(e, t = Date.now() / 1e3) {
 	let n = Math.max(0, t - e);
 	return n < 60 ? "刚刚" : n < 3600 ? `${Math.floor(n / 60)} 分钟前` : n < 86400 ? `${Math.floor(n / 3600)} 小时前` : n < 2592e3 ? `${Math.floor(n / 86400)} 天前` : (/* @__PURE__ */ new Date(e * 1e3)).toLocaleDateString("zh-CN");
 }
-function Se(e) {
+function Oe(e) {
 	return e.network === "loopback" ? "运行 Peach 的电脑" : e.network ? e.remote ? `公网入口 · ${e.network}` : e.network : "";
 }
-var Ce = (e) => [`最近活动 ${xe(e.last_seen)}`, Se(e)].filter(Boolean).join(" · ");
-function we({ revision: e, receipt: t }) {
-	let n = I({
+var ke = (e) => [`最近活动 ${De(e.last_seen)}`, Oe(e)].filter(Boolean).join(" · ");
+function Ae({ revision: e, receipt: t }) {
+	let n = L({
 		queryKey: ["access-sessions", e],
 		refetchOnMount: "always",
-		queryFn: ({ signal: e }) => O(K, e)
+		queryFn: ({ signal: e }) => A(W, e)
 	});
-	return n.error ? /* @__PURE__ */ (0, B.jsx)(b, {
+	return n.error ? /* @__PURE__ */ (0, V.jsx)(x, {
 		guide: "devices",
 		title: "已登录的设备",
-		children: /* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(c, { children: N(n.error) }) })
-	}) : n.isFetching || !n.data ? /* @__PURE__ */ (0, B.jsx)(x, {
+		children: /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(l, { children: P(n.error) }) })
+	}) : n.isFetching || !n.data ? /* @__PURE__ */ (0, V.jsx)(S, {
 		label: "正在读取已登录的设备",
-		html: ee
-	}) : /* @__PURE__ */ (0, B.jsx)(Te, {
+		html: ne
+	}) : /* @__PURE__ */ (0, V.jsx)(je, {
 		initial: n.data,
 		receipt: t
 	});
 }
-function Te({ initial: e, receipt: n }) {
-	let [r, a] = (0, z.useState)(e);
-	(0, z.useEffect)(() => a(e), [e]);
+function je({ initial: e, receipt: t }) {
+	let [r, i] = (0, B.useState)(e);
+	(0, B.useEffect)(() => i(e), [e]);
 	let o = r.sessions.filter((e) => !e.current);
-	(0, z.useEffect)(() => {
-		ae("devices", {
+	(0, B.useEffect)(() => {
+		se("devices", {
 			rows: Math.min(r.sessions.length, 8),
 			manageable: r.manageable && o.length > 0
 		});
 	}, [r, o.length]);
-	let s = (e) => void j({
+	let s = (e) => void N({
 		title: "撤销这台设备的登录",
-		body: `${q(e)}（${Ce(e)}）下次打开 Peach 需要重新输入访问密码。`,
+		body: `${G(e)}（${ke(e)}）下次打开 Peach 需要重新输入访问密码。`,
 		confirmLabel: "撤销登录",
 		onConfirm: async () => {
-			a(await k(`${K}/revoke`, {
+			i(await j(`${W}/revoke`, {
 				revision: r.revision,
 				id: e.id
-			})), n("已撤销登录");
+			})), t("已撤销登录");
 		}
 	});
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+	return /* @__PURE__ */ (0, V.jsxs)(x, {
 		guide: "devices",
 		title: "已登录的设备",
 		children: [
-			r.sessions.length ? /* @__PURE__ */ (0, B.jsx)(v, { children: r.sessions.map((e) => /* @__PURE__ */ (0, B.jsx)(be, {
+			r.sessions.length ? /* @__PURE__ */ (0, V.jsx)(y, { children: r.sessions.map((e) => /* @__PURE__ */ (0, V.jsx)(Ee, {
 				row: e,
-				children: e.current ? /* @__PURE__ */ (0, B.jsx)(i, {
+				children: e.current ? /* @__PURE__ */ (0, V.jsx)(a, {
 					color: "blue",
 					variant: "caption",
 					children: "本机"
-				}) : r.manageable ? /* @__PURE__ */ (0, B.jsx)(t, {
+				}) : r.manageable ? /* @__PURE__ */ (0, V.jsx)(n, {
 					size: "small",
 					variant: "secondary",
-					"aria-label": `撤销 ${q(e)} 的登录`,
+					"aria-label": `撤销 ${G(e)} 的登录`,
 					onClick: () => s(e),
 					children: "撤销"
 				}) : null
-			}, e.id)) }) : /* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(p, { children: "还没有浏览器用访问密码登录过。" }) }),
-			!r.manageable && o.length ? /* @__PURE__ */ (0, B.jsx)(w, {
+			}, e.id)) }) : /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, { children: "还没有浏览器用访问密码登录过。" }) }),
+			!r.manageable && o.length ? /* @__PURE__ */ (0, V.jsx)(D, {
 				divided: !0,
-				children: /* @__PURE__ */ (0, B.jsx)(p, { children: "在运行 Peach 的电脑上打开这一页才能撤销。" })
+				children: /* @__PURE__ */ (0, V.jsx)(m, { children: "在运行 Peach 的电脑上打开这一页才能撤销。" })
 			}) : null,
-			r.manageable && o.length ? /* @__PURE__ */ (0, B.jsx)(f, {
+			r.manageable && o.length ? /* @__PURE__ */ (0, V.jsx)(p, {
 				status: "修改访问密码会让全部设备退出。",
-				children: /* @__PURE__ */ (0, B.jsx)(t, {
+				children: /* @__PURE__ */ (0, V.jsx)(n, {
 					variant: "secondary",
-					onClick: () => void j({
+					onClick: () => void N({
 						title: "撤销其他设备的登录",
 						body: `除本机以外的 ${o.length} 台设备下次打开 Peach 需要重新输入访问密码。`,
 						confirmLabel: "撤销登录",
 						onConfirm: async () => {
-							let e = await k(`${K}/revoke`, {
+							let e = await j(`${W}/revoke`, {
 								revision: r.revision,
 								scope: "others"
 							});
-							a(e), n(`已撤销 ${e.removed} 台设备的登录`);
+							i(e), t(`已撤销 ${e.removed} 台设备的登录`);
 						}
 					}),
 					children: "撤销其他设备"
@@ -1207,402 +1207,675 @@ function Te({ initial: e, receipt: n }) {
 	});
 }
 // src/react/settings/drive-settings.tsx
-var Ee = {
+var Me = {
 	redirect: {
-		label: P("settings:drive.mode.redirect"),
-		help: P("settings:drive.mode.redirectHelp")
+		label: F("settings:drive.mode.redirect"),
+		help: F("settings:drive.mode.redirectHelp")
 	},
 	proxy: {
-		label: P("settings:drive.mode.proxy"),
-		help: P("settings:drive.mode.proxyHelp")
+		label: F("settings:drive.mode.proxy"),
+		help: F("settings:drive.mode.proxyHelp")
 	}
-}, Q = (e) => Ee[e]?.label ?? e, De = (e) => e.email || e.display_name || e.key;
-function Oe({ receipt: e }) {
-	let n = L(), r = I({
-		queryKey: a,
+}, Y = (e) => Me[e]?.label ?? e, Ne = (e) => e.email || e.display_name || e.key;
+function Pe({ receipt: e }) {
+	let t = R(), r = L({
+		queryKey: o,
 		refetchOnMount: "always",
-		queryFn: ({ signal: e }) => ne(e)
+		queryFn: ({ signal: e }) => ie(e)
 	});
-	if (r.error) return /* @__PURE__ */ (0, B.jsxs)(b, {
+	if (r.error) return /* @__PURE__ */ (0, V.jsxs)(x, {
 		guide: "drives",
 		title: "网盘",
-		children: [/* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(c, { children: N(r.error) }) }), /* @__PURE__ */ (0, B.jsx)(f, { children: /* @__PURE__ */ (0, B.jsx)(t, {
+		children: [/* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(l, { children: P(r.error) }) }), /* @__PURE__ */ (0, V.jsx)(p, { children: /* @__PURE__ */ (0, V.jsx)(n, {
 			variant: "secondary",
 			onClick: () => {
 				r.refetch();
 			},
-			...A(r.isFetching),
+			...M(r.isFetching),
 			children: "重新读取"
 		}) })]
 	});
 	let i = r.data;
-	if (!i) return /* @__PURE__ */ (0, B.jsx)(b, {
+	if (!i) return /* @__PURE__ */ (0, V.jsx)(x, {
 		guide: "drives",
 		title: "网盘",
-		children: /* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(p, {
+		children: /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, {
 			role: "status",
 			children: "正在读取网盘状态…"
 		}) })
 	});
-	let o = () => {
-		n.invalidateQueries({ queryKey: a });
+	let a = () => {
+		t.invalidateQueries({ queryKey: o });
 	};
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [/* @__PURE__ */ (0, B.jsx)(ke, {
+	return /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [/* @__PURE__ */ (0, V.jsx)(Fe, {
 		publicUrl: i.public_url,
 		receipt: e,
-		reloaded: o
-	}), i.locations.map((t) => /* @__PURE__ */ (0, B.jsx)(Ae, {
+		reloaded: a
+	}), i.locations.map((t) => /* @__PURE__ */ (0, V.jsx)(Ie, {
 		connection: t,
 		publicUrl: i.public_url,
 		receipt: e,
-		reloaded: o
+		reloaded: a
 	}, t.location))] });
 }
-function ke({ publicUrl: e, receipt: n, reloaded: r }) {
-	let i = F(), [a, s] = (0, z.useState)(e);
-	return (0, z.useEffect)(() => s(e), [e]), /* @__PURE__ */ (0, B.jsxs)(b, {
-		title: P("settings:drive.callback.title"),
-		children: [/* @__PURE__ */ (0, B.jsxs)(w, { children: [/* @__PURE__ */ (0, B.jsx)(p, { children: P("settings:drive.callback.help") }), /* @__PURE__ */ (0, B.jsx)(m, {
+function Fe({ publicUrl: e, receipt: t, reloaded: r }) {
+	let i = I(), [a, o] = (0, B.useState)(e);
+	return (0, B.useEffect)(() => o(e), [e]), /* @__PURE__ */ (0, V.jsxs)(x, {
+		title: F("settings:drive.callback.title"),
+		children: [/* @__PURE__ */ (0, V.jsxs)(D, { children: [/* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:drive.callback.help") }), /* @__PURE__ */ (0, V.jsx)(h, {
 			id: "drive-public-url",
-			label: P("settings:drive.callback.label"),
+			label: F("settings:drive.callback.label"),
 			value: a,
-			placeholder: P("settings:drive.callback.placeholder"),
-			onChange: (e) => s(e)
-		})] }), /* @__PURE__ */ (0, B.jsx)(f, { children: /* @__PURE__ */ (0, B.jsx)(t, {
+			placeholder: F("settings:drive.callback.placeholder"),
+			onChange: (e) => o(e)
+		})] }), /* @__PURE__ */ (0, V.jsx)(p, { children: /* @__PURE__ */ (0, V.jsx)(n, {
 			onClick: () => {
-				i.run("callback", (e) => k(`${o}/public-url`, { public_url: a }, "POST", e), ({ public_url: e }) => {
-					s(e), n(e ? P("settings:drive.callback.saved", { url: e }) : P("settings:drive.callback.cleared")), r();
+				i.run("callback", (e) => j(`${s}/public-url`, { public_url: a }, "POST", e), ({ public_url: e }) => {
+					o(e), t(e ? F("settings:drive.callback.saved", { url: e }) : F("settings:drive.callback.cleared")), r();
 				});
 			},
-			...A(i.busy === "callback"),
-			children: P("settings:drive.callback.save")
+			...M(i.busy === "callback"),
+			children: F("settings:drive.callback.save")
 		}) })]
 	});
 }
-function Ae({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
-	let [a, s] = (0, z.useState)(e);
-	(0, z.useEffect)(() => s(e), [e]);
-	let l = F(), [u, d] = (0, z.useState)(!1), [h, _] = (0, z.useState)({
+function Ie({ connection: e, publicUrl: t, receipt: r, reloaded: i }) {
+	let [a, o] = (0, B.useState)(e);
+	(0, B.useEffect)(() => o(e), [e]);
+	let c = I(), [u, d] = (0, B.useState)(!1), [f, g] = (0, B.useState)({
 		key: "",
 		client_id: "",
 		client_secret: "",
 		refresh_token: "",
 		root: ""
-	}), y = (e) => ({
+	}), v = (e) => ({
 		id: `drive-${a.location}-${e}`,
 		name: e,
-		value: h[e],
+		value: f[e],
 		autoComplete: "off",
-		onChange: (t) => _((n) => ({
+		onChange: (t) => g((n) => ({
 			...n,
 			[e]: t
 		}))
-	}), x = () => _({
+	}), b = () => g({
 		key: "",
 		client_id: "",
 		client_secret: "",
 		refresh_token: "",
 		root: ""
-	}), C = () => {
-		let e = h.key.trim() || a.location;
-		l.run("credentials", (t) => k(`${o}/${encodeURIComponent(e)}/credentials`, {
-			client_id: h.client_id,
-			client_secret: h.client_secret,
-			refresh_token: h.refresh_token,
-			root: h.root,
+	}), S = () => {
+		let e = f.key.trim() || a.location;
+		c.run("credentials", (t) => j(`${s}/${encodeURIComponent(e)}/credentials`, {
+			client_id: f.client_id,
+			client_secret: f.client_secret,
+			refresh_token: f.refresh_token,
+			root: f.root,
 			location: a.location
 		}, "POST", t), (t) => {
-			s(t), d(!1), x(), r(P("settings:drive.account.added", { name: e })), i();
+			o(t), d(!1), b(), r(F("settings:drive.account.added", { name: e })), i();
 		});
-	}, T = (e) => void l.run("mode", (t) => k(`${o}/${a.location}/mode`, { mode: e }, "POST", t), ({ mode: e }) => {
-		s({
+	}, C = (e) => void c.run("mode", (t) => j(`${s}/${a.location}/mode`, { mode: e }, "POST", t), ({ mode: e }) => {
+		o({
 			...a,
 			mode: e
-		}), r(P("settings:drive.mode.switched", {
+		}), r(F("settings:drive.mode.switched", {
 			label: a.label,
-			mode: Q(e)
+			mode: Y(e)
 		}));
 	});
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+	return /* @__PURE__ */ (0, V.jsxs)(x, {
 		guide: "account",
 		title: a.label,
 		children: [
-			/* @__PURE__ */ (0, B.jsxs)(w, { children: [
-				a.configured ? null : /* @__PURE__ */ (0, B.jsx)(g, {
+			/* @__PURE__ */ (0, V.jsxs)(D, { children: [
+				a.configured ? null : /* @__PURE__ */ (0, V.jsx)(_, {
 					tone: "warning",
 					title: `${a.label} 还没有接入`,
 					children: "在下面「添加账号」里填 client_id、client_secret 与 refresh token 就能接上，名字会写进设置文件的 [drive.accounts.<账号名>]；要走浏览器授权，还得在 [drive] 段填上这台 Peach 的 https 地址 public_url。"
 				}),
-				a.accounts.length ? null : /* @__PURE__ */ (0, B.jsx)(p, { children: P("settings:drive.account.empty") }),
-				a.last_error ? /* @__PURE__ */ (0, B.jsx)(g, {
+				a.accounts.length ? null : /* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:drive.account.empty") }),
+				a.last_error ? /* @__PURE__ */ (0, V.jsx)(_, {
 					tone: "warning",
 					title: "上次同步失败",
 					children: a.last_error
 				}) : null,
-				l.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: l.error }) : null
+				c.error ? /* @__PURE__ */ (0, V.jsx)(l, { children: c.error }) : null
 			] }),
-			a.modes.length > 1 ? /* @__PURE__ */ (0, B.jsx)(v, { children: a.modes.map((e) => /* @__PURE__ */ (0, B.jsx)(S, {
-				label: Q(e),
-				description: Ee[e]?.help ?? e,
-				children: /* @__PURE__ */ (0, B.jsx)(t, {
+			a.modes.length > 1 ? /* @__PURE__ */ (0, V.jsx)(y, { children: a.modes.map((e) => /* @__PURE__ */ (0, V.jsx)(T, {
+				label: Y(e),
+				description: Me[e]?.help ?? e,
+				children: /* @__PURE__ */ (0, V.jsx)(n, {
 					size: "small",
 					variant: e === a.mode ? "primary" : "secondary",
 					"aria-pressed": e === a.mode,
 					disabled: e === a.mode,
-					"aria-label": `${P("settings:drive.mode.switchTo")} ${Q(e)}`,
-					onClick: () => T(e),
-					...A(l.busy === "mode"),
-					children: e === a.mode ? P("settings:drive.mode.inUse") : P("settings:drive.mode.switchTo")
+					"aria-label": `${F("settings:drive.mode.switchTo")} ${Y(e)}`,
+					onClick: () => C(e),
+					...M(c.busy === "mode"),
+					children: e === a.mode ? F("settings:drive.mode.inUse") : F("settings:drive.mode.switchTo")
 				})
 			}, e)) }) : null,
-			a.accounts.map((e) => /* @__PURE__ */ (0, B.jsx)(je, {
+			a.accounts.map((e) => /* @__PURE__ */ (0, V.jsx)(Le, {
 				account: e,
-				publicUrl: n,
-				apply: (e) => s(e),
+				publicUrl: t,
+				apply: (e) => o(e),
 				receipt: r,
 				reloaded: i
 			}, e.key)),
-			u ? /* @__PURE__ */ (0, B.jsxs)(w, { children: [
-				/* @__PURE__ */ (0, B.jsx)(p, { children: P("settings:drive.manual.help") }),
-				/* @__PURE__ */ (0, B.jsx)(m, {
-					label: P("settings:drive.account.name"),
-					hint: P("settings:drive.account.nameHelp"),
-					...y("key")
+			u ? /* @__PURE__ */ (0, V.jsxs)(D, { children: [
+				/* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:drive.manual.help") }),
+				/* @__PURE__ */ (0, V.jsx)(h, {
+					label: F("settings:drive.account.name"),
+					hint: F("settings:drive.account.nameHelp"),
+					...v("key")
 				}),
-				/* @__PURE__ */ (0, B.jsx)(m, {
-					label: P("settings:drive.manual.clientId"),
-					...y("client_id")
+				/* @__PURE__ */ (0, V.jsx)(h, {
+					label: F("settings:drive.manual.clientId"),
+					...v("client_id")
 				}),
-				/* @__PURE__ */ (0, B.jsx)(m, {
+				/* @__PURE__ */ (0, V.jsx)(h, {
 					type: "password",
-					label: P("settings:drive.manual.clientSecret"),
-					...y("client_secret")
+					label: F("settings:drive.manual.clientSecret"),
+					...v("client_secret")
 				}),
-				/* @__PURE__ */ (0, B.jsx)(m, {
+				/* @__PURE__ */ (0, V.jsx)(h, {
 					type: "password",
-					label: P("settings:drive.manual.refreshToken"),
-					...y("refresh_token")
+					label: F("settings:drive.manual.refreshToken"),
+					...v("refresh_token")
 				}),
-				/* @__PURE__ */ (0, B.jsx)(m, {
-					label: P("settings:drive.manual.root"),
-					hint: P("settings:drive.manual.rootHelp"),
-					...y("root")
+				/* @__PURE__ */ (0, V.jsx)(h, {
+					label: F("settings:drive.manual.root"),
+					hint: F("settings:drive.manual.rootHelp"),
+					...v("root")
 				}),
-				/* @__PURE__ */ (0, B.jsx)(t, {
-					onClick: C,
-					...A(l.busy === "credentials"),
-					children: P("settings:drive.manual.submit")
+				/* @__PURE__ */ (0, V.jsx)(n, {
+					onClick: S,
+					...M(c.busy === "credentials"),
+					children: F("settings:drive.manual.submit")
 				})
 			] }) : null,
-			/* @__PURE__ */ (0, B.jsx)(f, { children: /* @__PURE__ */ (0, B.jsx)(t, {
+			/* @__PURE__ */ (0, V.jsx)(p, { children: /* @__PURE__ */ (0, V.jsx)(n, {
 				variant: "secondary",
 				onClick: () => d(!u),
-				children: P(u ? "settings:drive.manual.hide" : "settings:drive.account.add")
+				children: F(u ? "settings:drive.manual.hide" : "settings:drive.account.add")
 			}) })
 		]
 	});
 }
-function je({ account: e, publicUrl: n, apply: r, receipt: i, reloaded: a }) {
-	let s = F(), [l, p] = (0, z.useState)(!1), m = `${o}/${encodeURIComponent(e.key)}`, h = n ? `${n.replace(/\/+$/, "")}/oauth/${e.key}/callback` : "", _ = De(e), y = () => void s.run("refresh", (e) => k(`${m}/refresh`, {}, "POST", e), (e) => {
-		r(e), i(P("settings:drive.account.refreshed", { name: _ }));
-	}), x = (e) => void s.run("roots", (t) => k(`${m}/roots`, { roots: e }, "POST", t), () => {
-		p(!1), i(P("settings:drive.account.rootsSaved")), a();
-	}), C = () => void s.run("authorize", (e) => k(`${m}/authorize`, {}, "POST", e), ({ url: e }) => {
+function Le({ account: e, publicUrl: t, apply: r, receipt: i, reloaded: a }) {
+	let o = I(), c = `${s}/${encodeURIComponent(e.key)}`, u = t ? `${t.replace(/\/+$/, "")}/oauth/${e.key}/callback` : "", m = Ne(e), h = () => void o.run("refresh", (e) => j(`${c}/refresh`, {}, "POST", e), (e) => {
+		r(e), i(F("settings:drive.account.refreshed", { name: m }));
+	}), g = () => void o.run("authorize", (e) => j(`${c}/authorize`, {}, "POST", e), ({ url: e }) => {
 		window.location.assign(e);
-	}), T = () => void j({
-		title: P("settings:drive.account.forgetTitle", { name: _ }),
-		body: P("settings:drive.account.forgetBody", { name: _ }),
-		confirmLabel: P("settings:drive.account.disconnect"),
+	}), v = () => void N({
+		title: F("settings:drive.account.forgetTitle", { name: m }),
+		body: F("settings:drive.account.forgetBody", { name: m }),
+		confirmLabel: F("settings:drive.account.disconnect"),
 		danger: !0,
 		onConfirm: async () => {
-			await k(m, {}, "DELETE"), i(P("settings:drive.account.forgotten", { name: _ })), a();
+			await j(c, {}, "DELETE"), i(F("settings:drive.account.forgotten", { name: m })), a();
 		}
 	});
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
-		title: _,
-		children: [
-			/* @__PURE__ */ (0, B.jsxs)(w, { children: [
-				/* @__PURE__ */ (0, B.jsxs)(d, { children: [
-					/* @__PURE__ */ (0, B.jsx)(u, {
-						term: P("settings:drive.account.name"),
-						children: e.key
-					}),
-					/* @__PURE__ */ (0, B.jsx)(u, {
-						term: "账号",
-						children: e.connected ? e.email || e.display_name || "已授权" : "未授权"
-					}),
-					/* @__PURE__ */ (0, B.jsx)(u, {
-						term: "扫描起点",
-						children: e.roots.length ? `${e.roots.length} 个目录` : "账号根目录"
-					}),
-					/* @__PURE__ */ (0, B.jsx)(u, {
-						term: "上次同步",
-						children: e.synced_at || "还没有同步过"
-					})
-				] }),
-				e.last_error ? /* @__PURE__ */ (0, B.jsx)(g, {
-					tone: "warning",
-					title: "上次同步失败",
-					children: e.last_error
-				}) : null,
-				e.configured && !e.connected && !h ? /* @__PURE__ */ (0, B.jsx)(g, {
-					tone: "warning",
-					title: "没有配置回调基址",
-					children: `浏览器授权要回到这台 Peach：先在 [drive] 段填好 public_url（https 地址），网盘后台登记的回调地址是 public_url 加上 /oauth/${e.key}/callback。不想开公网回调就直接填认证信息，那条路不用 public_url。`
-				}) : null,
-				s.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: s.error }) : null
-			] }),
-			e.roots.length ? /* @__PURE__ */ (0, B.jsx)(v, { children: e.roots.map((n) => /* @__PURE__ */ (0, B.jsx)(S, {
-				label: n.name,
-				description: n.remote_id,
-				children: /* @__PURE__ */ (0, B.jsx)(t, {
-					size: "small",
-					variant: "secondary",
-					"aria-label": `移除扫描起点 ${n.name}`,
-					onClick: () => x(e.roots.filter((e) => e.remote_id !== n.remote_id)),
-					...A(s.busy === "roots"),
-					children: "移除"
+	return /* @__PURE__ */ (0, V.jsxs)(x, {
+		title: m,
+		children: [/* @__PURE__ */ (0, V.jsxs)(D, { children: [
+			/* @__PURE__ */ (0, V.jsxs)(f, { children: [
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: F("settings:drive.account.name"),
+					children: e.key
+				}),
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: "账号",
+					children: e.connected ? e.email || e.display_name || "已授权" : "未授权"
+				}),
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: "媒体库",
+					children: e.roots.length ? `${e.roots.length} 个目录` : "还没建媒体库"
+				}),
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: "上次同步",
+					children: e.synced_at || "还没有同步过"
 				})
-			}, n.remote_id)) }) : null,
-			l && e.connected ? /* @__PURE__ */ (0, B.jsx)(Me, {
-				driveKey: e.key,
-				roots: e.roots,
-				receipt: i,
-				onClose: () => p(!1),
-				onSaved: () => {
-					p(!1), a();
-				}
+			] }),
+			e.last_error ? /* @__PURE__ */ (0, V.jsx)(_, {
+				tone: "warning",
+				title: "上次同步失败",
+				children: e.last_error
 			}) : null,
-			/* @__PURE__ */ (0, B.jsxs)(f, {
-				status: e.connected ? null : P("settings:drive.account.callback", { url: h || "未配置" }),
+			e.configured && !e.connected && !u ? /* @__PURE__ */ (0, V.jsx)(_, {
+				tone: "warning",
+				title: "没有配置回调基址",
+				children: `浏览器授权要回到这台 Peach：先在 [drive] 段填好 public_url（https 地址），网盘后台登记的回调地址是 public_url 加上 /oauth/${e.key}/callback。不想开公网回调就直接填认证信息，那条路不用 public_url。`
+			}) : null,
+			o.error ? /* @__PURE__ */ (0, V.jsx)(l, { children: o.error }) : null
+		] }), /* @__PURE__ */ (0, V.jsxs)(p, {
+			status: e.connected ? null : F("settings:drive.account.callback", { url: u || "未配置" }),
+			children: [
+				e.connected ? /* @__PURE__ */ (0, V.jsx)(n, {
+					variant: "secondary",
+					onClick: h,
+					...M(o.busy === "refresh"),
+					children: F("settings:drive.account.refresh")
+				}) : null,
+				e.connected ? /* @__PURE__ */ (0, V.jsx)(n, {
+					variant: "secondary",
+					onClick: v,
+					children: F("settings:drive.account.disconnect")
+				}) : null,
+				e.configured ? /* @__PURE__ */ (0, V.jsx)(n, {
+					onClick: g,
+					disabled: !u,
+					...M(o.busy === "authorize"),
+					children: e.connected ? F("settings:drive.account.reauthorize") : F("settings:drive.account.authorize")
+				}) : null
+			]
+		})]
+	});
+}
+// src/react/settings/folder-picker.tsx
+function Re({ account: e, onPick: t, onClose: r }) {
+	let [i, a] = (0, B.useState)([]), o = i.length ? i[i.length - 1] : null, c = L({
+		queryKey: [
+			"drive-folders",
+			e,
+			o?.remote_id ?? ""
+		],
+		queryFn: ({ signal: t }) => A(`${s}/${encodeURIComponent(e)}/folders` + (o ? `?parent_id=${encodeURIComponent(o.remote_id)}` : ""), t)
+	}), u = [F("settings:library.folder.root"), ...i.map((e) => e.name)].join(" / ");
+	return /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [
+		/* @__PURE__ */ (0, V.jsxs)(D, {
+			divided: !0,
+			children: [
+				/* @__PURE__ */ (0, V.jsxs)("div", {
+					className: "flex flex-wrap items-center justify-between gap-2",
+					children: [/* @__PURE__ */ (0, V.jsx)(m, {
+						role: "status",
+						children: u
+					}), /* @__PURE__ */ (0, V.jsxs)("div", {
+						className: "flex flex-wrap gap-2",
+						children: [/* @__PURE__ */ (0, V.jsx)(n, {
+							size: "small",
+							variant: "secondary",
+							disabled: !i.length,
+							onClick: () => a(i.slice(0, -1)),
+							children: F("settings:library.folder.up")
+						}), /* @__PURE__ */ (0, V.jsx)(n, {
+							size: "small",
+							variant: "secondary",
+							onClick: r,
+							children: F("settings:library.folder.close")
+						})]
+					})]
+				}),
+				c.error ? /* @__PURE__ */ (0, V.jsx)(l, { children: P(c.error) }) : null,
+				c.data && !c.data.folders.length ? /* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:library.folder.empty") }) : null
+			]
+		}),
+		c.data?.folders.length ? /* @__PURE__ */ (0, V.jsx)(y, { children: c.data.folders.map((e) => /* @__PURE__ */ (0, V.jsx)(T, {
+			label: e.name,
+			children: /* @__PURE__ */ (0, V.jsx)(n, {
+				size: "small",
+				variant: "secondary",
+				"aria-label": F("settings:library.folder.openLabel", { name: e.name }),
+				onClick: () => a([...i, e]),
+				children: F("settings:library.folder.open")
+			})
+		}, e.remote_id)) }) : null,
+		/* @__PURE__ */ (0, V.jsx)(D, {
+			divided: !0,
+			children: o ? /* @__PURE__ */ (0, V.jsxs)("div", {
+				className: "flex flex-wrap items-center justify-between gap-2",
+				children: [/* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:library.folder.hint") }), /* @__PURE__ */ (0, V.jsx)(n, {
+					onClick: () => t(o),
+					children: F("settings:library.folder.use", { name: o.name })
+				})]
+			}) : /* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:library.folder.start") })
+		})
+	] });
+}
+// src/react/settings/library-settings.tsx
+var X = "/api/libraries", Z = ["libraries"], ze = {
+	auto: F("settings:library.policyAuto"),
+	custom: F("settings:library.policyCustom")
+}, Be = {
+	probe: F("settings:library.stageProbe"),
+	metadata: F("settings:library.stageMetadata"),
+	cover: F("settings:library.stageCover"),
+	people: F("settings:library.stagePeople"),
+	preview: F("settings:library.stagePreview")
+}, Q = "none", Ve = (e) => e.split(",").map((e) => e.trim()).filter(Boolean), He = (t) => {
+	let n = e.find((e) => e[0] === t);
+	return n ? String(n[1]) : t;
+};
+function Ue({ receipt: e }) {
+	let t = R(), r = L({
+		queryKey: Z,
+		refetchOnMount: "always",
+		queryFn: ({ signal: e }) => A(X, e)
+	}), [i, a] = (0, B.useState)(!1), o = () => {
+		t.invalidateQueries({ queryKey: Z });
+	};
+	if (r.error) return /* @__PURE__ */ (0, V.jsx)(x, {
+		guide: "libraries",
+		title: F("settings:library.title"),
+		children: /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(l, { children: P(r.error) }) })
+	});
+	let s = r.data;
+	return s ? /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [
+		/* @__PURE__ */ (0, V.jsxs)(x, {
+			guide: "libraries",
+			title: F("settings:library.title"),
+			children: [/* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:library.intro") }) }), s.libraries.length ? null : /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, {
+				role: "status",
+				children: F("settings:library.empty")
+			}) })]
+		}),
+		s.libraries.map((n) => /* @__PURE__ */ (0, V.jsx)(We, {
+			library: n,
+			options: s.options,
+			onSaved: (n) => {
+				t.setQueryData(Z, (e) => e && {
+					...e,
+					libraries: e.libraries.map((e) => e.id === n.id ? n : e)
+				}), e(F("settings:library.saved", { name: n.name }));
+			},
+			onDeleted: () => {
+				o(), e(F("settings:library.removed", { name: n.name }));
+			},
+			onMoved: (t) => {
+				o(), e(F("settings:library.moved", { name: t.name }));
+			}
+		}, n.id)),
+		/* @__PURE__ */ (0, V.jsxs)(x, {
+			title: F("settings:library.add.title"),
+			children: [i ? /* @__PURE__ */ (0, V.jsx)(Ge, {
+				onClose: () => a(!1),
+				onAdded: (t) => {
+					a(!1), o(), e(F("settings:library.added", { name: t }));
+				}
+			}) : null, /* @__PURE__ */ (0, V.jsx)(p, { children: /* @__PURE__ */ (0, V.jsx)(n, {
+				variant: "secondary",
+				onClick: () => a(!i),
+				children: F(i ? "settings:library.add.collapse" : "settings:library.add.open")
+			}) })]
+		})
+	] }) : /* @__PURE__ */ (0, V.jsx)(x, {
+		guide: "libraries",
+		title: F("settings:library.title"),
+		children: /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, {
+			role: "status",
+			children: F("settings:library.loading")
+		}) })
+	});
+}
+function We({ library: t, options: r, onSaved: a, onDeleted: o, onMoved: s }) {
+	let c = I(), [u, m] = (0, B.useState)(!1), [g, _] = (0, B.useState)(() => ({
+		name: t.name,
+		icon: t.icon || Q,
+		color: t.color,
+		policy: t.policy,
+		stages: Ve(t.stages)
+	})), v = g.policy === "custom", b = () => void c.run("save", (e) => j(`${X}/${encodeURIComponent(t.id)}`, {
+		name: g.name,
+		icon: g.icon === Q ? "" : g.icon,
+		color: g.color,
+		policy: g.policy,
+		stages: v ? g.stages.join(",") : ""
+	}, "POST", e), (e) => {
+		_((t) => ({
+			...t,
+			name: e.name,
+			icon: e.icon || Q,
+			color: e.color,
+			policy: e.policy,
+			stages: Ve(e.stages)
+		})), a(e);
+	}), S = () => void N({
+		title: F("settings:library.removeTitle", { name: t.name }),
+		body: F("settings:library.removeBody"),
+		confirmLabel: F("settings:library.removeConfirm"),
+		danger: !0,
+		onConfirm: async () => {
+			await j(`${X}/${encodeURIComponent(t.id)}`, {}, "DELETE"), o();
+		}
+	}), E = (e, t) => _((n) => ({
+		...n,
+		stages: t ? [...n.stages, e] : n.stages.filter((t) => t !== e)
+	}));
+	return /* @__PURE__ */ (0, V.jsxs)(x, {
+		title: t.name,
+		children: [
+			/* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsxs)(f, { children: [
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: F("settings:library.videos"),
+					children: `${t.videos}`
+				}),
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: F("settings:library.missing"),
+					children: `${t.missing}`
+				}),
+				/* @__PURE__ */ (0, V.jsx)(d, {
+					term: F("settings:library.synced"),
+					children: t.synced_at || F("settings:library.never")
+				}),
+				/* @__PURE__ */ (0, V.jsxs)(d, {
+					term: F("settings:library.root"),
+					children: [/* @__PURE__ */ (0, V.jsx)("span", {
+						title: t.root_id,
+						children: `${t.account} · ${t.root_name}`
+					}), t.metered ? F("settings:library.metered") : ""]
+				})
+			] }) }),
+			/* @__PURE__ */ (0, V.jsxs)(y, { children: [
+				/* @__PURE__ */ (0, V.jsx)(T, {
+					label: F("settings:library.name"),
+					description: F("settings:library.nameHelp"),
+					children: /* @__PURE__ */ (0, V.jsx)(h, {
+						"aria-label": F("settings:library.nameLabel"),
+						value: g.name,
+						onChange: (e) => _({
+							...g,
+							name: e
+						})
+					})
+				}),
+				/* @__PURE__ */ (0, V.jsx)(T, {
+					label: F("settings:library.icon"),
+					description: F("settings:library.iconHelp"),
+					children: /* @__PURE__ */ (0, V.jsxs)(C, {
+						"aria-label": F("settings:library.icon"),
+						selectedKey: g.icon,
+						onSelectionChange: (e) => {
+							e !== null && _({
+								...g,
+								icon: String(e)
+							});
+						},
+						children: [/* @__PURE__ */ (0, V.jsx)(w, {
+							id: Q,
+							children: F("settings:library.iconNone")
+						}), r.icons.map((e) => /* @__PURE__ */ (0, V.jsx)(w, {
+							id: e,
+							children: e
+						}, e))]
+					})
+				}),
+				/* @__PURE__ */ (0, V.jsx)(T, {
+					label: F("settings:library.color"),
+					description: F("settings:library.colorHelp"),
+					children: /* @__PURE__ */ (0, V.jsxs)(C, {
+						"aria-label": F("settings:library.color"),
+						selectedKey: g.color || Q,
+						onSelectionChange: (e) => {
+							e !== null && _({
+								...g,
+								color: String(e) === Q ? "" : String(e)
+							});
+						},
+						children: [/* @__PURE__ */ (0, V.jsx)(w, {
+							id: Q,
+							children: F("settings:library.colorNone")
+						}), e.map((e) => /* @__PURE__ */ (0, V.jsx)(w, {
+							id: String(e[0]),
+							children: He(String(e[0]))
+						}, String(e[0])))]
+					})
+				}),
+				/* @__PURE__ */ (0, V.jsx)(T, {
+					label: F("settings:library.policy"),
+					description: F("settings:library.policyHelp"),
+					children: /* @__PURE__ */ (0, V.jsx)(C, {
+						"aria-label": F("settings:library.policy"),
+						selectedKey: g.policy,
+						onSelectionChange: (e) => {
+							e !== null && _({
+								...g,
+								policy: String(e)
+							});
+						},
+						children: r.policies.map((e) => /* @__PURE__ */ (0, V.jsx)(w, {
+							id: e,
+							children: ze[e] ?? e
+						}, e))
+					})
+				}),
+				v ? /* @__PURE__ */ (0, V.jsx)(T, {
+					label: F("settings:library.stages"),
+					description: F("settings:library.stagesHelp"),
+					children: /* @__PURE__ */ (0, V.jsx)("div", {
+						className: "flex flex-wrap gap-3",
+						children: r.stages.map((e) => /* @__PURE__ */ (0, V.jsx)(i, {
+							size: "sm",
+							isSelected: g.stages.includes(e),
+							onChange: (t) => E(e, t),
+							children: Be[e] ?? e
+						}, e))
+					})
+				}) : null
+			] }),
+			c.error ? /* @__PURE__ */ (0, V.jsx)(D, {
+				divided: !0,
+				children: /* @__PURE__ */ (0, V.jsx)(l, { children: c.error })
+			}) : null,
+			u ? /* @__PURE__ */ (0, V.jsx)(Re, {
+				account: t.account,
+				onClose: () => m(!1),
+				onPick: (e) => void c.run("move", (n) => j(`${X}/${encodeURIComponent(t.id)}/move`, { remote_id: e.remote_id }, "POST", n), (e) => {
+					m(!1), s(e);
+				})
+			}) : null,
+			/* @__PURE__ */ (0, V.jsxs)(p, {
+				status: t.folders > 1 ? F("settings:library.foldersMore", { count: t.folders - 1 }) : null,
 				children: [
-					e.connected ? /* @__PURE__ */ (0, B.jsx)(t, {
+					/* @__PURE__ */ (0, V.jsx)(n, {
+						onClick: b,
+						...M(c.busy === "save"),
+						children: F("settings:library.save")
+					}),
+					/* @__PURE__ */ (0, V.jsx)(n, {
 						variant: "secondary",
-						onClick: () => p(!l),
-						children: P(l ? "settings:drive.account.picking" : "settings:drive.account.pick")
-					}) : null,
-					e.connected ? /* @__PURE__ */ (0, B.jsx)(t, {
+						onClick: () => m(!u),
+						...M(c.busy === "move"),
+						children: F(u ? "settings:library.movePicking" : "settings:library.move")
+					}),
+					/* @__PURE__ */ (0, V.jsx)(n, {
 						variant: "secondary",
-						onClick: y,
-						...A(s.busy === "refresh"),
-						children: P("settings:drive.account.refresh")
-					}) : null,
-					e.connected ? /* @__PURE__ */ (0, B.jsx)(t, {
-						variant: "secondary",
-						onClick: T,
-						children: P("settings:drive.account.disconnect")
-					}) : null,
-					e.configured ? /* @__PURE__ */ (0, B.jsx)(t, {
-						onClick: C,
-						disabled: !h,
-						...A(s.busy === "authorize"),
-						children: e.connected ? P("settings:drive.account.reauthorize") : P("settings:drive.account.authorize")
-					}) : null
+						onClick: S,
+						children: F("settings:library.remove")
+					})
 				]
 			})
 		]
 	});
 }
-function Me({ driveKey: e, roots: n, receipt: r, onSaved: i, onClose: a }) {
-	let [s, l] = (0, z.useState)([]), u = s[s.length - 1], d = I({
-		queryKey: [
-			"drive-folders",
-			e,
-			u?.remote_id ?? ""
-		],
+function Ge({ onAdded: e, onClose: t }) {
+	let r = Ke(L({
+		queryKey: o,
 		refetchOnMount: "always",
-		queryFn: ({ signal: t }) => O(`${o}/${encodeURIComponent(e)}/folders?parent_id=${encodeURIComponent(u?.remote_id ?? "")}`, t)
-	}), f = F(), m = !!(u && n.some((e) => e.remote_id === u.remote_id)), h = d.data?.parent_id, g = [h ? n.find((e) => e.remote_id === h)?.name ?? h : "账号根目录", ...s.map((e) => e.name)].join(" / ");
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [
-		/* @__PURE__ */ (0, B.jsxs)(w, {
-			divided: !0,
-			children: [
-				/* @__PURE__ */ (0, B.jsxs)("div", {
-					className: "flex flex-wrap items-center justify-between gap-2",
-					children: [/* @__PURE__ */ (0, B.jsx)(p, {
-						role: "status",
-						children: g
-					}), /* @__PURE__ */ (0, B.jsxs)("div", {
-						className: "flex flex-wrap gap-2",
-						children: [/* @__PURE__ */ (0, B.jsx)(t, {
-							size: "small",
-							variant: "secondary",
-							disabled: !s.length,
-							onClick: () => l(s.slice(0, -1)),
-							children: "上一级"
-						}), /* @__PURE__ */ (0, B.jsx)(t, {
-							size: "small",
-							variant: "secondary",
-							onClick: a,
-							children: "收起"
-						})]
-					})]
-				}),
-				d.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: N(d.error) }) : null,
-				d.data && !d.data.folders.length ? /* @__PURE__ */ (0, B.jsx)(p, { children: "这个目录里没有子目录。" }) : null
-			]
-		}),
-		d.data?.folders.length ? /* @__PURE__ */ (0, B.jsx)(v, { children: d.data.folders.map((e) => /* @__PURE__ */ (0, B.jsx)(S, {
-			label: e.name,
-			children: /* @__PURE__ */ (0, B.jsx)(t, {
-				size: "small",
-				variant: "secondary",
-				"aria-label": `打开目录 ${e.name}`,
-				onClick: () => l([...s, e]),
-				children: "打开"
+		queryFn: ({ signal: e }) => ie(e)
+	}).data), [i, a] = (0, B.useState)(""), [s, c] = (0, B.useState)(!1), u = I(), d = i || r[0]?.key || "";
+	return r.length ? /* @__PURE__ */ (0, V.jsxs)(V.Fragment, { children: [
+		/* @__PURE__ */ (0, V.jsx)(y, { children: /* @__PURE__ */ (0, V.jsx)(T, {
+			label: F("settings:library.add.account"),
+			description: F("settings:library.add.accountHelp"),
+			children: /* @__PURE__ */ (0, V.jsx)(C, {
+				"aria-label": F("settings:library.add.accountLabel"),
+				selectedKey: d,
+				onSelectionChange: (e) => {
+					e !== null && (a(String(e)), c(!1));
+				},
+				children: r.map((e) => /* @__PURE__ */ (0, V.jsx)(w, {
+					id: e.key,
+					children: e.label
+				}, e.key))
 			})
-		}, e.remote_id)) }) : null,
-		/* @__PURE__ */ (0, B.jsxs)(w, {
+		}) }),
+		s ? /* @__PURE__ */ (0, V.jsx)(Re, {
+			account: d,
+			onClose: () => c(!1),
+			onPick: (t) => void u.run("add", (e) => j(X, {
+				account: d,
+				remote_id: t.remote_id
+			}, "POST", e), (n) => e(n.name || t.name))
+		}) : null,
+		u.error ? /* @__PURE__ */ (0, V.jsx)(D, {
 			divided: !0,
-			children: [u ? /* @__PURE__ */ (0, B.jsxs)("div", {
-				className: "flex flex-wrap items-center justify-between gap-2",
-				children: [/* @__PURE__ */ (0, B.jsx)(p, { children: "设为扫描起点后，这一层的子目录都会同步。" }), /* @__PURE__ */ (0, B.jsx)(t, {
-					disabled: m,
-					onClick: () => {
-						if (!u) return;
-						let t = [...n, u].map(({ remote_id: e, name: t }) => ({
-							remote_id: e,
-							name: t
-						}));
-						f.run("save", (n) => k(`${o}/${encodeURIComponent(e)}/roots`, { roots: t }, "POST", n), () => {
-							r(`已把「${u.name}」设为扫描起点`), i();
-						});
-					},
-					...A(f.busy === "save"),
-					children: m ? "这一层已经是扫描起点" : `设为扫描起点：${u.name}`
-				})]
-			}) : /* @__PURE__ */ (0, B.jsx)(p, { children: "打开要用的目录，再把它设为扫描起点。一个都不设时，同步从账号根目录开始。" }), f.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: f.error }) : null]
-		})
-	] });
+			children: /* @__PURE__ */ (0, V.jsx)(l, { children: u.error })
+		}) : null,
+		/* @__PURE__ */ (0, V.jsxs)(p, { children: [/* @__PURE__ */ (0, V.jsx)(n, {
+			onClick: () => c(!s),
+			disabled: !d,
+			...M(u.busy === "add"),
+			children: F(s ? "settings:library.add.picking" : "settings:library.add.pick")
+		}), /* @__PURE__ */ (0, V.jsx)(n, {
+			variant: "secondary",
+			onClick: t,
+			children: F("settings:library.add.cancel")
+		})] }),
+		/* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, { children: F("settings:library.add.idempotent") }) })
+	] }) : /* @__PURE__ */ (0, V.jsx)(D, { children: /* @__PURE__ */ (0, V.jsx)(m, {
+		role: "status",
+		children: F("settings:library.add.noAccount")
+	}) });
+}
+function Ke(e) {
+	return (e?.locations ?? []).flatMap((e) => e.accounts.filter((e) => e.connected).map((t) => ({
+		key: t.key,
+		label: `${e.label} · ${t.email || t.display_name || t.key}`
+	})));
 }
 // src/react/settings/service-preferences.tsx
-function Ne({ receipt: e }) {
-	let t = I({
-		queryKey: y,
-		queryFn: ({ signal: e }) => re(e)
-	}), n = ce(), r = n.error || t.error;
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+function qe({ receipt: e }) {
+	let t = L({
+		queryKey: b,
+		queryFn: ({ signal: e }) => ae(e)
+	}), n = ue(), r = n.error || t.error;
+	return /* @__PURE__ */ (0, V.jsxs)(x, {
 		guide: "speed",
 		title: "后台任务",
-		children: [/* @__PURE__ */ (0, B.jsx)(v, { children: /* @__PURE__ */ (0, B.jsx)(S, {
+		children: [/* @__PURE__ */ (0, V.jsx)(y, { children: /* @__PURE__ */ (0, V.jsx)(T, {
 			label: "默认处理速度",
 			description: "新任务使用此档位。运行中的任务可在活动页单独调整。",
-			children: /* @__PURE__ */ (0, B.jsx)(_, {
+			children: /* @__PURE__ */ (0, V.jsx)(v, {
 				value: t.data?.taskSpeedMode || "standard",
 				busy: !t.data || n.isPending,
 				onChange: (t) => n.mutate({ taskSpeedMode: t }, { onSuccess: () => e("已保存默认处理速度") })
 			})
-		}) }), r ? /* @__PURE__ */ (0, B.jsx)(w, {
+		}) }), r ? /* @__PURE__ */ (0, V.jsx)(D, {
 			divided: !0,
-			children: /* @__PURE__ */ (0, B.jsx)(c, { children: N(r) })
+			children: /* @__PURE__ */ (0, V.jsx)(l, { children: P(r) })
 		}) : null]
 	});
 }
 // src/react/settings/configuration-page.tsx
-var Pe = [
+var Je = [
 	{
 		id: "drives",
 		title: "网盘"
+	},
+	{
+		id: "libraries",
+		title: "媒体库"
 	},
 	{
 		id: "access",
@@ -1624,56 +1897,56 @@ var Pe = [
 		id: "diagnostics",
 		title: "系统诊断"
 	}
-], $ = new Map(Pe.map(({ id: e, title: t }) => [`#${e}`, t]));
-function Fe({ receipt: e, section: t = "", diagnostics: r }) {
-	let i = I({
-		queryKey: n,
-		queryFn: ({ signal: e }) => te(e)
+], $ = new Map(Je.map(({ id: e, title: t }) => [`#${e}`, t]));
+function Ye({ receipt: e, section: t = "", diagnostics: n }) {
+	let i = L({
+		queryKey: r,
+		queryFn: ({ signal: e }) => re(e)
 	}), a = i.data;
-	return a ? /* @__PURE__ */ (0, B.jsx)(Re, {
+	return a ? /* @__PURE__ */ (0, V.jsx)(Qe, {
 		data: a,
 		receipt: e,
 		section: t,
-		diagnostics: r,
+		diagnostics: n,
 		refreshing: i.isFetching,
 		reload: () => {
 			i.refetch({ cancelRefetch: !1 });
 		}
-	}) : /* @__PURE__ */ (0, B.jsx)("div", {
+	}) : /* @__PURE__ */ (0, V.jsx)("div", {
 		className: "ui-configpage",
-		children: /* @__PURE__ */ (0, B.jsx)(g, {
+		children: /* @__PURE__ */ (0, V.jsx)(_, {
 			tone: "error",
-			title: "配置读取失败",
-			children: i.error ? N(i.error) : "未取得配置，请刷新页面重试。"
+			title: F("settings:configuration.loadFailedTitle"),
+			children: i.error ? P(i.error) : F("settings:configuration.loadFailedBody")
 		})
 	});
 }
-function Ie({ data: e, sections: n, reload: r, refreshing: i }) {
-	return /* @__PURE__ */ (0, B.jsx)(B.Fragment, { children: n.map((n) => {
-		let a = e.section_errors?.[n];
-		return a ? /* @__PURE__ */ (0, B.jsx)(g, {
+function Xe({ data: e, sections: t, reload: r, refreshing: i }) {
+	return /* @__PURE__ */ (0, V.jsx)(V.Fragment, { children: t.map((t) => {
+		let a = e.section_errors?.[t];
+		return a ? /* @__PURE__ */ (0, V.jsx)(_, {
 			tone: "error",
 			title: a.title,
-			action: /* @__PURE__ */ (0, B.jsx)(t, {
+			action: /* @__PURE__ */ (0, V.jsx)(n, {
 				variant: "secondary",
 				size: "small",
 				onClick: r,
-				...A(i),
+				...M(i),
 				children: "重新读取"
 			}),
 			children: a.message
-		}, n) : null;
+		}, t) : null;
 	}) });
 }
-var Le = 0;
-function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refreshing: a }) {
-	let [o] = (0, z.useState)(() => `board-tabs-${++Le}`), [s, c] = (0, z.useState)(() => $.get(window.location.hash) ?? n), l = (0, z.useRef)(null), u = (0, z.useRef)(s);
-	(0, z.useEffect)(() => {
+var Ze = 0;
+function Qe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refreshing: a }) {
+	let [o] = (0, B.useState)(() => `board-tabs-${++Ze}`), [s, c] = (0, B.useState)(() => $.get(window.location.hash) ?? n), l = (0, B.useRef)(null), u = (0, B.useRef)(s);
+	(0, B.useEffect)(() => {
 		c(n);
-	}, [n]), (0, z.useEffect)(() => {
+	}, [n]), (0, B.useEffect)(() => {
 		let e = () => c($.get(window.location.hash) ?? "");
 		return window.addEventListener("hashchange", e), () => window.removeEventListener("hashchange", e);
-	}, []), (0, z.useLayoutEffect)(() => {
+	}, []), (0, B.useLayoutEffect)(() => {
 		if (u.current === s) return;
 		u.current = s;
 		let e = l.current?.querySelector(".ui-board-local-nav"), t = l.current?.querySelector(".ui-board-group-active");
@@ -1685,14 +1958,14 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 	}, [s]);
 	let d = (e) => {
 		c(e);
-		let t = Pe.find((t) => t.title === e)?.id;
+		let t = Je.find((t) => t.title === e)?.id;
 		t && window.location.hash !== `#${t}` && window.history.replaceState(window.history.state, "", `#${t}`);
-	}, [f, p] = (0, z.useState)(() => matchMedia("(max-width:900px)").matches);
-	(0, z.useEffect)(() => {
+	}, [f, p] = (0, B.useState)(() => matchMedia("(max-width:900px)").matches);
+	(0, B.useEffect)(() => {
 		let e = matchMedia("(max-width:900px)"), t = () => p(e.matches);
 		return e.addEventListener("change", t), () => e.removeEventListener("change", t);
 	}, []);
-	let m = (t) => /* @__PURE__ */ (0, B.jsx)(Ie, {
+	let m = (t) => /* @__PURE__ */ (0, V.jsx)(Xe, {
 		data: e,
 		sections: t,
 		reload: i,
@@ -1703,20 +1976,29 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		{
 			id: "drives",
 			title: "网盘",
-			body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-				...H(e),
+			body: (e) => /* @__PURE__ */ (0, V.jsx)("div", {
+				...U(e),
 				"data-guide-target": "drives",
-				children: /* @__PURE__ */ (0, B.jsx)(Oe, { receipt: t })
+				children: /* @__PURE__ */ (0, V.jsx)(Pe, { receipt: t })
+			})
+		},
+		{
+			id: "libraries",
+			title: "媒体库",
+			body: (e) => /* @__PURE__ */ (0, V.jsx)("div", {
+				...U(e),
+				"data-guide-target": "libraries",
+				children: /* @__PURE__ */ (0, V.jsx)(Ue, { receipt: t })
 			})
 		},
 		...g ? [
 			{
 				id: "access",
 				title: "访问与安全",
-				body: (e) => /* @__PURE__ */ (0, B.jsxs)("div", {
-					...H(e),
+				body: (e) => /* @__PURE__ */ (0, V.jsxs)("div", {
+					...U(e),
 					"data-guide-target": "access",
-					children: [m(["access"]), /* @__PURE__ */ (0, B.jsx)(de, {
+					children: [m(["access"]), /* @__PURE__ */ (0, V.jsx)(pe, {
 						initial: g,
 						receipt: h
 					})]
@@ -1725,10 +2007,10 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 			..._ ? [{
 				id: "token",
 				title: "API 令牌",
-				body: (e) => /* @__PURE__ */ (0, B.jsxs)("div", {
-					...H(e),
+				body: (e) => /* @__PURE__ */ (0, V.jsxs)("div", {
+					...U(e),
 					"data-guide-target": "token",
-					children: [m(["api_token"]), /* @__PURE__ */ (0, B.jsx)(me, {
+					children: [m(["api_token"]), /* @__PURE__ */ (0, V.jsx)(ge, {
 						initial: _,
 						mode: g.mode,
 						receipt: t
@@ -1738,10 +2020,10 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 			{
 				id: "devices",
 				title: "设备会话",
-				body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-					...H(e),
+				body: (e) => /* @__PURE__ */ (0, V.jsx)("div", {
+					...U(e),
 					"data-guide-target": "devices",
-					children: /* @__PURE__ */ (0, B.jsx)(we, {
+					children: /* @__PURE__ */ (0, V.jsx)(Ae, {
 						revision: g.revision,
 						receipt: t
 					})
@@ -1751,29 +2033,29 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		{
 			id: "speed",
 			title: "任务速度",
-			body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-				...H(e),
+			body: (e) => /* @__PURE__ */ (0, V.jsx)("div", {
+				...U(e),
 				"data-guide-target": "speed",
-				children: /* @__PURE__ */ (0, B.jsx)(Ne, { receipt: t })
+				children: /* @__PURE__ */ (0, V.jsx)(qe, { receipt: t })
 			})
 		},
 		{
 			id: "diagnostics",
 			title: "系统诊断",
-			body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-				...H(e),
+			body: (e) => /* @__PURE__ */ (0, V.jsx)("div", {
+				...U(e),
 				"data-guide-target": "diagnostics",
 				children: e.active ? r : null
 			})
 		}
 	], y = Math.max(0, v.findIndex((e) => e.title === s));
-	return /* @__PURE__ */ (0, B.jsxs)("div", {
+	return /* @__PURE__ */ (0, V.jsxs)("div", {
 		ref: l,
 		className: "ui-configpage",
-		children: [/* @__PURE__ */ (0, B.jsx)("div", {
+		children: [/* @__PURE__ */ (0, V.jsx)("div", {
 			className: "ui-board-local-nav",
 			"data-section-nav": "",
-			children: /* @__PURE__ */ (0, B.jsx)(C, {
+			children: /* @__PURE__ */ (0, V.jsx)(E, {
 				group: "configuration",
 				label: "配置分区",
 				value: v[y].id,
@@ -1787,7 +2069,7 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 				className: "",
 				onChange: (e) => d(v.find((t) => t.id === e).title)
 			})
-		}), v.map(({ id: e, title: t, body: n }, r) => /* @__PURE__ */ (0, B.jsxs)(z.Fragment, { children: [/* @__PURE__ */ (0, B.jsx)("h2", {
+		}), v.map(({ id: e, title: t, body: n }, r) => /* @__PURE__ */ (0, V.jsxs)(B.Fragment, { children: [/* @__PURE__ */ (0, V.jsx)("h2", {
 			className: "ui-configgroup",
 			children: t
 		}), n({
@@ -1798,6 +2080,6 @@ function Re({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		})] }, t))]
 	});
 }
-export { Fe as ConfigurationPage };
+export { Ye as ConfigurationPage };
 
-//# debugId=f3363abc-9987-4df9-b4a9-077a6c7610a3
+//# debugId=14fa1db0-0838-454d-b454-051550576378
