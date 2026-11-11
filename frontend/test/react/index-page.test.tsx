@@ -55,7 +55,7 @@ function props(route: Partial<IndexRoute> = {}, patch: Partial<IndexProps> = {})
     authorAvatar: vi.fn(() => '<span class="ini">B</span>'),
     tagLabel,
     openEntity: vi.fn(), showTags: vi.fn(), openFollowAuthor: vi.fn(), openFollowTag: vi.fn(),
-    configurable: true, ...patch,
+    ...patch,
   };
 }
 

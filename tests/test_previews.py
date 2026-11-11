@@ -566,6 +566,39 @@ class SnapshotSourceGenerationTests(unittest.TestCase):
         self.assertEqual(self.service.entity_image('performer', 1)[0], source)
 
 
+class SnapshotPathResolutionTests(unittest.TestCase):
+    """账本里存的是绝对路径，根在构造时 `resolve()` 过：两边得按真身比。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name).resolve()
+        self.real = base / 'real'
+        (self.real / 'snapshots').mkdir(parents=True)
+        self.source = self.real / 'snapshots' / '1.jpg'
+        self.source.write_bytes(b'jpeg-bytes')
+        self.link = base / 'link'
+        try:
+            self.link.symlink_to(self.real, target_is_directory=True)
+        except OSError:
+            self.skipTest('这个文件系统不允许建目录符号链接')
+
+    def test_a_snapshot_reached_through_a_symlink_is_still_inside_the_root(self):
+        stored = str(self.link / 'snapshots' / '1.jpg')
+        repository = SimpleNamespace(media_asset=lambda asset_id: MediaAsset(
+            id=asset_id, path=None, snapshot_path=stored))
+        service = PreviewService(
+            repository, SimpleNamespace(ffmpeg=lambda: SimpleNamespace(path=Path('ffmpeg'))),
+            self.real / 'snapshots', self.real / 'posters', self.real / 'avatars', self.real / 'logos')
+
+        def fake_run(command):
+            Path(command[-1]).write_bytes(Path(command[command.index('-i') + 1]).read_bytes())
+
+        with mock.patch.object(PreviewService, '_run', staticmethod(fake_run)), \
+                mock.patch.object(previews.subprocess, 'run', return_value=SimpleNamespace(stdout=bytes([200]))):
+            self.assertEqual(service.poster(1).read_bytes(), b'jpeg-bytes')
+
+
 class ImageSourceGenerationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

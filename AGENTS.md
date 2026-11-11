@@ -38,7 +38,6 @@
 | JAV 封面获取、重探、来源比较与取景产物 | `.claude/skills/peach-jav-cover-workflow/SKILL.md` |
 | 模仿或对齐外部产品的界面与行为 | `.claude/skills/peach-reference-evidence/SKILL.md` |
 | 界面、文案、控件或预览；同时完整读取 `~/.codex/skills/peach-ui-consistency/SKILL.md` | `.claude/skills/peach-web-ui/SKILL.md` |
-| macOS、路径、挂载、双机交接或 Git 状态异常 | `.claude/skills/peach-cross-platform/SKILL.md` |
 | 同步上游到 fork master、发布镜像、更新服务器容器与清理 | `.claude/skills/peach-fork-sync/SKILL.md` |
 | shell 命令、多行内容、路径与临时目录 | `.claude/skills/peach-shell-commands/SKILL.md` |
 | 智能体规则、技能、入口与预算维护 | `.claude/skills/peach-context-rules/SKILL.md` |

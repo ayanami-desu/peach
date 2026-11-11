@@ -41,7 +41,7 @@
 | `npm --prefix frontend run lint` | `oxlint` 检查 `src`、`test`、`e2e` |
 | `npm --prefix frontend run check:copy` | 按 `scripts/copy-rules.json` 检查文案 |
 | `npm --prefix frontend run test` | `vitest run` |
-| `npm --prefix frontend run e2e` | 串行跑 `frontend/e2e/**/*.test.ts` |
+| `npm --prefix frontend run e2e` | 按 `PEACH_E2E_FILES` 选文件后串行跑 `frontend/e2e/**/*.test.ts`，服务与 `PEACH_E2E_ORIGIN` 由 `tests/test_web_e2e.py` 提供 |
 | `npm --prefix frontend run build:agentation` | 界面标注工具，产物在 `build/agentation/` |
 
 三份 Vite 配置分工：
@@ -127,7 +127,7 @@
 | 地址 | `frontend/src/history/index.ts`（`@peach/history`） | 全站唯一历史实例，包 React Router 的 `UNSAFE_createBrowserHistory`（v5Compat 档）。每次变化领一个递增 `seq`；壳写的 `shellNavigate` 当场认领，后退前进与 React 子树写的另领 `openEpoch`，页面按它重开 |
 | 服务端数据 | `frontend/src/react/application.tsx` 里的 `queryClient` | 同一个 `queryKey` 只有一份快照与一条轮询，页面与常驻组件共用 |
 | 界面语言 | `frontend/src/i18n/index.ts` | 模块求值时算出，整页只有一份实例；换语言靠整页重载，不做运行中切换 |
-| 媒体来源表 | `frontend/src/query/media-sources.ts`、`frontend/src/react/media-sources.ts` | 与服务端 `resources/media-sources.json` 对应，启动时随配置下发 |
+| 媒体来源表 | `frontend/src/core/media-sources.ts` | 直接把 `resources/media-sources.json` 当清单导出（`SOURCE_LABELS`、`MEDIA_SOURCE_REGISTRY`、`SCANNABLE_LOCATIONS`），与服务端同一份文件，不另存一份 |
 
 新增一份状态前先在这张表里找：能并进现有实例的，不再开第二个。
 
@@ -209,7 +209,7 @@ npm --prefix frontend run typecheck
 npm --prefix frontend run lint
 npm --prefix frontend run check:copy
 npm --prefix frontend run test
-npm --prefix frontend run e2e
+PEACH_E2E=1 python -m unittest tests.test_web_e2e
 ```
 
 Python 侧有两条衔接：

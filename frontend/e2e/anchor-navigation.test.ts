@@ -80,11 +80,6 @@ describe('页面滚动定位', () => {
             await waiting;
             await route.fulfill({ json: { status: 'idle' } });
           });
-          await page.route('**/api/sources', route => route.fulfill({ json: { sources: [{
-            location: 'local', online: true, roots: ['D:\\Media'], label: '本地',
-          }] } }));
-          await page.route('**/api/resource-sync/scan', route => route.fulfill({ json: { status: 'idle' } }));
-          await page.route('**/api/resource-sync/apply', route => route.fulfill({ json: { status: 'idle' } }));
           await page.reload({ waitUntil: 'load' });
           await page.locator('#grid [data-media-card]').first().waitFor();
           await page.evaluate(() => {
@@ -139,20 +134,6 @@ describe('页面滚动定位', () => {
             return state.anchorScrolls.some(call => call.id === 'cleanup-maintenance' && call.behavior === expected)
               && state.cleanupNode === document.getElementById('libraryProcessing');
           }, reduced ? 'instant' : 'smooth');
-          await page.evaluate(() => {
-            const link = document.createElement('a');
-            link.href = '/data-cleanup?scope=local#resource-sync'; link.textContent = '打开旧资源同步地址';
-            document.getElementById('libraryProcessing')!.prepend(link);
-          });
-          await page.getByRole('link', { name: '打开旧资源同步地址', exact: true }).click();
-          await page.waitForURL('**/data-cleanup/resource-sync?scope=local');
-          await page.locator('#resource-sync').waitFor();
-          assert.equal(await page.evaluate(() => Array.isArray((window as unknown as { anchorScrolls: unknown }).anchorScrolls)), true);
-          assert.deepEqual(navigations, []);
-          await page.goto(new URL('/data-cleanup?scope=local#resource-sync', page.url()).href, { waitUntil: 'load' });
-          await page.waitForURL('**/data-cleanup/resource-sync?scope=local');
-          await page.locator('#resource-sync').waitFor();
-          assert.equal(navigations.length, 1, '旧锚点冷启动只加载一次文档');
           assert.deepEqual(opened.problems, []);
         } finally { release(); await opened.close() }
       });

@@ -698,10 +698,6 @@ describe('设计决定：作品卡、管理页与复核', () => {
         for (let step = 0; step < 4; step += 1) await playbackGuide.getByRole('button', { name: '下一步', exact: true }).click();
         await page.locator('#stage .vjs-control-bar.driver-active-element').waitFor();
         assert.deepEqual(await page.locator('#stage video.vjs-tech').evaluate(video => ({ paused: (video as HTMLVideoElement).paused, src: (video as HTMLVideoElement).currentSrc })), { paused: true, src: '' });
-        await playbackGuide.getByRole('button', { name: '下一步', exact: true }).click();
-        await page.locator('#stage [data-player-subtitles].driver-active-element').waitFor();
-        await playbackGuide.locator('#driver-popover-description').click();
-        assert.equal(await page.locator('#stage .vjs-peach-settings-toggle').getAttribute('aria-expanded'), 'true', '点击说明关闭了正在讲解的菜单');
         await page.waitForFunction(() => {
           const panel = document.querySelector('.peach-guide-popover')?.getBoundingClientRect();
           return document.querySelector('.driver-overlay')?.parentElement?.id === 'stage'
@@ -771,12 +767,6 @@ describe('设计决定：作品卡、管理页与复核', () => {
         await page.locator('#grid').waitFor();
         assert.equal(await opener.isVisible(), false, '完成快速导览后刷新又显示了教程按钮');
         assert.deepEqual(writes, [], '只读教程触发了业务写入');
-        await page.goto(new URL('/settings/maintenance', page.url()).href);
-        await page.getByRole('region', { name: '新手教程', exact: true }).getByRole('button', { name: '重新打开', exact: true }).click();
-        await dialog.waitFor();
-        assert.equal(await opener.evaluate(node => (node as HTMLElement).hidden), false, '设置重新打开后没有恢复右上角入口');
-        assert.ok(writes.every(write => write === 'POST /api/configuration/storage/measure'),
-          `正常进入维护页只允许自动统计占用：${JSON.stringify(writes)}`);
         assert.deepEqual(opened.problems, []);
       } finally { await opened.close() }
     });

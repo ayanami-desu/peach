@@ -302,13 +302,28 @@ describe('混排作品的画面框',()=>{
   const context=await browser.newContext({viewport:{width:320,height:720}});
   try{
    const page=await context.newPage();
+   const errors:string[]=[];
+   page.on('pageerror',error=>errors.push(String(error)));
    await openHome(page,'small',i=>i===0?{
     name:'FC2-PPV-4728193 夏の終わり',code:'FC2-PPV-4728193',display_title:'夏の終わり',edition_badges:['中字','无码','无码破解'],
     part_group:{key:'p',seed_id:91000,count:128},
    }:{});
    const first=page.locator('#grid [data-media-grid] > [data-media-card]').first();
-   await first.click({modifiers:['Control']});
-   await first.locator('[data-media-check]').waitFor();
+   await first.scrollIntoViewIfNeeded();
+   /* 卡面上铺着一颗 `[data-media-open]` 按钮，真实鼠标点在它上面会先走打开详情的路子；
+     这里直接对卡片派发带 ctrlKey 的点击，验的是多选分支本身。 */
+   await first.dispatchEvent('click',{ctrlKey:true,bubbles:true});
+   await first.locator('[data-media-check]').waitFor({ timeout: 10_000 }).catch(async () => {
+    const state=await page.evaluate(()=>({
+     body:document.body.className,
+     selectMode:document.querySelector('#selectMode')?.getAttribute('aria-pressed'),
+     grids:[...document.querySelectorAll('[data-media-grid]')].map(node=>node.getAttributeNames().join(' ')),
+     selected:document.querySelectorAll('[data-media-card][data-selected]').length,
+     checks:document.querySelectorAll('[data-media-check]').length,
+     display:getComputedStyle(document.querySelector('[data-media-check]')!).display,
+    }));
+    assert.fail(`多选没进：${JSON.stringify({...state,errors})}`);
+   });
    const box=await first.evaluate(card=>{
     const rect=(selector:string)=>card.querySelector(selector)!.getBoundingClientRect();
     const title=rect('[data-media-title]');
@@ -377,11 +392,11 @@ describe('混排作品的画面框',()=>{
    const page=await context.newPage();
    await openHome(page,'big');
    const titles=page.locator('#grid [data-media-grid] > [data-media-card] [data-media-title]');
-   await titles.nth(0).click({modifiers:['Control']});
+   await titles.nth(0).dispatchEvent('click',{ctrlKey:true,bubbles:true});
    assert.equal(await titles.nth(0).evaluate(node=>getComputedStyle(node.closest('[data-media-card]')!).userSelect),'none');
    /* 多选态的 `user-select: none` 之外，Shift 按下那一下本身也不起选区：撤掉前者再点，两道各验一次。 */
    await page.addStyleTag({content:'.peach-react [data-media-card]{user-select:text !important}'});
-   await titles.nth(3).click({modifiers:['Shift']});
+   await titles.nth(3).dispatchEvent('click',{shiftKey:true,bubbles:true});
    await page.locator('#grid [data-media-card][data-selected]').nth(3).waitFor();
    assert.equal(await page.evaluate(()=>String(getSelection())),'');
   }finally{await context.close()}

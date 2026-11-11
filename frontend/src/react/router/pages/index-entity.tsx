@@ -104,9 +104,9 @@ async function openIndex(actions: ShellActions, kind: IndexPageKind, search: str
     void pageNavigationReady(live, host, { pending: true });
   }
   /* 页内换档、存版式、退出选择、头像与去处都在 `ShellActions` 里，跟着打开走的只有地址上那四项与此刻的版式、
-     选择键和配置权限。 */
+     选择键。 */
   const painted = await openManagedRoute(path,
-    { ...params, layout, selectMode, configurable: !!actions.configurable?.() }, {
+    { ...params, layout, selectMode }, {
       container: host, isCurrent: live, reuse,
     });
   if (painted && live()) {

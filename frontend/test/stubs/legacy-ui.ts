@@ -18,7 +18,7 @@ export {attachOverlayScrollbar, growCollapse, iconSwapHtml, indexSkeletonHtml, p
 // 设置面板沿用的互斥视图、拉条、锚定菜单与横向滚动层用正式实现。
 export {closeAnchoredMenu, dialSliderHtml, iconSwitchHtml, wireAnchoredMenu, wireDialSlider, wireHorizontalScroller, wireIconSwitch} from '../../src/ui-kit';
 // 骨架露面的等待门槛用正式那一个数；管理区的加载态用正式模板，骨架交给整页的淡出用正式实现。
-export {configurationSkeletonHtml, revealSkeleton, SKELETON_REVEAL_DELAY, skeletonHtml} from '../../src/ui-kit';
+export {revealSkeleton, SKELETON_REVEAL_DELAY, skeletonHtml} from '../../src/ui-kit';
 // 微光的视口照看与底板动画的撤销用正式实现。
 export {cancelGlide, gateSweep, releaseSweep} from '../../src/ui-kit';
 // 封面格「抓取中」的不定进度圆环用正式模板。

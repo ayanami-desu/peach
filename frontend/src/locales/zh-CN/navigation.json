@@ -13,7 +13,6 @@
   },
   "manage": {
     "stats": "统计",
-    "taste": "口味",
     "review": "人工复核",
     "cleanup": "数据管理",
     "trash": "回收站",

@@ -2,9 +2,9 @@
 import { t } from '../i18n';
 
 export type SidebarKey = '' | 'performers' | 'studios' | 'tags' | 'jav' | 'flagged' | 'playlists'
-  | 'follow' | 'immerse' | 'manage' | 'stats' | 'taste' | 'review' | 'data-cleanup' | 'trash'
+  | 'follow' | 'immerse' | 'manage' | 'stats' | 'review' | 'data-cleanup' | 'trash'
   | 'follow-manage' | 'quality' | 'activity';
-export type ManagementKey = 'stats' | 'taste' | 'review' | 'cleanup' | 'trash' | 'follow'
+export type ManagementKey = 'stats' | 'review' | 'cleanup' | 'trash' | 'follow'
   | 'quality' | 'activity' | 'configuration';
 export type NavigationItem<Key extends string = string> = readonly [key: Key, label: string, glyph: string];
 
@@ -23,7 +23,6 @@ export const SIDEBAR_ITEMS = [
 
 export const MANAGE_SECTIONS = [
   ['stats', t('navigation:manage.stats'), 'chart'],
-  ['taste', t('navigation:manage.taste'), 'heart'],
   ['review', t('navigation:manage.review'), 'square-check-big'],
   ['cleanup', t('navigation:manage.cleanup'), 'hard-drive'],
   ['trash', t('navigation:manage.trash'), 'trash'],
@@ -33,14 +32,13 @@ export const MANAGE_SECTIONS = [
   ['configuration', t('navigation:manage.configuration'), 'folder-cog'],
 ] as const satisfies readonly NavigationItem<ManagementKey>[];
 
-export const MANAGE_MENU_SECTIONS: readonly ManagementKey[] = ['stats', 'taste', 'cleanup', 'follow', 'activity', 'configuration'];
+export const MANAGE_MENU_SECTIONS: readonly ManagementKey[] = ['stats', 'cleanup', 'follow', 'activity', 'configuration'];
 export function normalizeManageOrder(raw: unknown): ManagementKey[] {
   const entries = Array.isArray(raw) ? raw : [];
   return [...new Set([...entries.filter((key): key is ManagementKey => MANAGE_MENU_SECTIONS.includes(key)), ...MANAGE_MENU_SECTIONS])];
 }
-export const getManageMenuSections = (configurable: boolean, order?: unknown): readonly NavigationItem<ManagementKey>[] =>
-  normalizeManageOrder(order).flatMap(key => key === 'configuration' && !configurable ? []
-    : MANAGE_SECTIONS.filter(([entry]) => entry === key));
+export const getManageMenuSections = (order?: unknown): readonly NavigationItem<ManagementKey>[] =>
+  normalizeManageOrder(order).flatMap(key => MANAGE_SECTIONS.filter(([entry]) => entry === key));
 
 export const OPTIONAL_SIDEBAR_ITEMS: readonly NavigationItem<SidebarKey>[] = MANAGE_SECTIONS
   .flatMap(([key, label, glyph]): NavigationItem<SidebarKey>[] => key === 'configuration' ? []

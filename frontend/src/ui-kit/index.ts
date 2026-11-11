@@ -12,7 +12,7 @@ export {
 } from './markup';
 export { dissolveValue, iconSwapHtml, popBadges, popCount, revealTexts, rollPlaceholder, setIconSwap, swapText } from './motion';
 export {
-  configurationSkeletonHtml, fillSkeletonTier, fitSkeleton, indexSkeletonHtml, revealSkeleton, SKELETON_REVEAL_DELAY,
+  fillSkeletonTier, fitSkeleton, indexSkeletonHtml, revealSkeleton, SKELETON_REVEAL_DELAY,
   skeletonHtml,
 } from './skeleton';
 export { gateSweep, releaseSweep } from './sweep-gate';

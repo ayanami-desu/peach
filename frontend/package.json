@@ -19,7 +19,7 @@
     "check:copy": "node scripts/copy-check.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "node --test --test-concurrency=1 --test-reporter=tap \"e2e/**/*.test.ts\"",
+    "e2e": "node e2e/run.mjs",
     "i18n:literals": "node scripts/i18n-literals.mjs",
     "i18n:terms": "node scripts/i18n-terms.mjs"
   },

@@ -48,6 +48,8 @@ DRIVE_PUBLIC_URL: str = _SETTINGS.drive_public_url
 DRIVE_CLIENTS: dict[str, tuple[str, str]] = dict(_SETTINGS.drive_clients)
 #: 网盘来源 -> 扫描起点的远端目录 id。空元组表示扫该账号的根目录。
 DRIVE_ROOTS: dict[str, tuple[str, ...]] = dict(_SETTINGS.drive_roots)
+#: 网盘来源 -> 取字节方式（`redirect` 或 `proxy`）。没写的来源用驱动自己的默认值。
+DRIVE_MODES: dict[str, str] = dict(_SETTINGS.drive_modes)
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,8 @@ class PeachSettings:
         default_factory=lambda: dict(DRIVE_CLIENTS))
     drive_roots: dict[str, tuple[str, ...]] = field(
         default_factory=lambda: dict(DRIVE_ROOTS))
+    drive_modes: dict[str, str] = field(
+        default_factory=lambda: dict(DRIVE_MODES))
     snapshot_root: Path = GENERATED_DIR / "snapshots"
     poster_root: Path = GENERATED_DIR / "posters"
     # 时间轴预览的接触印相，由采集任务铺，悬停时整张取回来按格子换位置。

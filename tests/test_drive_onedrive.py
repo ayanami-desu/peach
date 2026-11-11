@@ -43,7 +43,7 @@ class OneDriveTests(unittest.TestCase):
         self.store.save(stored())
         self.seen: list[httpx.Request] = []
 
-    def drive(self, handler) -> drive_onedrive.OneDrive:
+    def drive(self, handler, *, mode: str = "redirect") -> drive_onedrive.OneDrive:
         def record(request: httpx.Request) -> httpx.Response:
             self.seen.append(request)
             return handler(request)
@@ -52,7 +52,8 @@ class OneDriveTests(unittest.TestCase):
         self.addCleanup(client.close)
         accounts = Accounts(self.store, lambda account: self.fail("令牌未过期，不该刷新"))
         return drive_onedrive.build(accounts, lambda: client, client_id="cid",
-                                    client_secret="secret", redirect_uri="https://peach.test/cb")
+                                    client_secret="secret", redirect_uri="https://peach.test/cb",
+                                    mode=mode)
 
     def test_list_folder_uses_the_next_link_as_cursor(self):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -95,6 +96,14 @@ class OneDriveTests(unittest.TestCase):
             200, json={"id": "f1", "@microsoft.graph.downloadUrl": "https://download.test/f1"}))
         target = drive.download_target("f1")
         self.assertEqual(("redirect", "https://download.test/f1"), (target.kind, target.url))
+        self.assertEqual({}, target.headers)
+
+    def test_download_target_in_proxy_mode_asks_peach_to_relay_the_same_url(self):
+        drive = self.drive(lambda request: httpx.Response(
+            200, json={"id": "f1", "@microsoft.graph.downloadUrl": "https://download.test/f1"}),
+            mode="proxy")
+        target = drive.download_target("f1")
+        self.assertEqual(("proxy", "https://download.test/f1"), (target.kind, target.url))
         self.assertEqual({}, target.headers)
 
     def test_download_target_without_the_field_is_unavailable(self):

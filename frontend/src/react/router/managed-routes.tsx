@@ -127,7 +127,7 @@ const configurationRoute = (path: ConfigurationPath): ManagedRoute<ManagedOpenPr
   page: (open, actions) => {
     const { ConfigurationPage, DiagnosticsPage } = configurationPage.get();
     return <ConfigurationPage receipt={message => actions.receipt(message)}
-      reopenTutorial={actions.reopenTutorial} section={open.section ?? configurationSection(path)}
+      section={open.section ?? configurationSection(path)}
       diagnostics={<DiagnosticsPage openItem={actions.openItem} receipt={message => actions.receipt(message)} />} />;
   },
 });

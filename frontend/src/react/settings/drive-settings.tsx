@@ -5,6 +5,8 @@
  * 扫描起点决定同步从哪些目录开始，用 `GET /api/drive/{location}/folders` 逐层列目录挑，挑完整条换掉
  * （`POST /api/drive/{location}/roots`）；一个都不选就是从账号根目录开始。
  * 「立即刷新」让下一轮同步先做这个来源（`POST /api/drive/{location}/refresh`）。
+ * 取字节方式两种都要（`POST /api/drive/{location}/mode`）：`redirect` 让浏览器直接跟网盘的预授权地址走，
+ * 不占服务器流量；`proxy` 由 Peach 带 Range 转发，浏览器只跟 Peach 说话。能带鉴权取的来源只能选后者。
  * 「断开」只忘掉账号与扫描起点（`DELETE /api/drive/{location}`），已经登记进馆藏的条目不动。 */
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,38 +15,33 @@ import { confirmModal } from '@peach/legacy/ui';
 import { SettingsRow } from '@/components/application/settings/settings-rows';
 import { Button } from '@/components/base/buttons/button';
 
+import { DRIVE_KEY, DRIVE_URL, fetchDrives, type DriveConnection, type DriveRoot } from '@peach/query';
+
 import { apiGet, apiSend, errorMessage } from '../../api';
+import { t } from '../../i18n';
 import { Note } from '../components/note';
 import { ErrorText, Fact, FactList, Footer, Help, Rows, Section, Stack } from './section';
 import { busyProps, useAction } from './use-action';
 
-interface DriveRoot { remote_id: string; name: string }
+/** 取字节方式的两句话说法。服务端只认 `redirect` 与 `proxy` 两个值。 */
+const MODE_LABELS: Record<string, { label: string; help: string }> = {
+  redirect: {
+    label: t('settings:drive.mode.redirect'),
+    help: t('settings:drive.mode.redirectHelp'),
+  },
+  proxy: {
+    label: t('settings:drive.mode.proxy'),
+    help: t('settings:drive.mode.proxyHelp'),
+  },
+};
 
-interface DriveConnection {
-  location: string;
-  label: string;
-  /** 这台机器有这个网盘的 OAuth 客户端凭据。 */
-  configured: boolean;
-  /** 有授权过的账号。 */
-  connected: boolean;
-  email: string;
-  display_name: string;
-  roots: DriveRoot[];
-  /** 上次同步完成的时刻（服务端本地时间 `YYYY-MM-DD HH:MM:SS`），没同步过是 null。 */
-  synced_at: string | null;
-  last_error: string;
-}
-
-interface DriveSnapshot { public_url: string; locations: DriveConnection[] }
-
-const DRIVE_KEY = ['drive'] as const;
-const DRIVE_URL = '/api/drive';
+const modeLabel = (mode: string) => MODE_LABELS[mode]?.label ?? mode;
 
 export function DriveSettings({ receipt }: { receipt(message: string): void }) {
   const queries = useQueryClient();
   const snapshot = useQuery({
     queryKey: DRIVE_KEY, refetchOnMount: 'always',
-    queryFn: ({ signal }) => apiGet<DriveSnapshot>(DRIVE_URL, signal),
+    queryFn: ({ signal }) => fetchDrives(signal),
   });
   if (snapshot.error) {
     return <Section guide="drives" title="网盘">
@@ -84,6 +81,12 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
   const saveRoots = (roots: DriveRoot[]) => void action.run('roots',
     (signal) => apiSend<{ location: string; roots: string[] }>(`${base}/roots`, { roots }, 'POST', signal),
     () => { setPicking(false); receipt('已保存扫描起点'); reloaded(); });
+  const saveMode = (mode: string) => void action.run('mode',
+    (signal) => apiSend<{ location: string; mode: string }>(`${base}/mode`, { mode }, 'POST', signal),
+    ({ mode: saved }) => {
+      setState({ ...state, mode: saved });
+      receipt(t('settings:drive.mode.switched', { label: state.label, mode: modeLabel(saved) }));
+    });
   const forget = () => void confirmModal({
     title: `断开 ${state.label}`,
     body: `Peach 会忘掉 ${state.email || state.display_name || '这个网盘'} 的账号与扫描起点，之后不再同步它。`
@@ -118,6 +121,7 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
           </Fact>
           <Fact term="扫描起点">{state.roots.length ? `${state.roots.length} 个目录` : '账号根目录'}</Fact>
           <Fact term="上次同步">{state.synced_at || '还没有同步过'}</Fact>
+          <Fact term={t('settings:drive.mode.term')}>{modeLabel(state.mode)}</Fact>
         </FactList>
         {state.last_error ? <Note tone="warning" title="上次同步失败">{state.last_error}</Note> : null}
         {action.error ? <ErrorText>{action.error}</ErrorText> : null}
@@ -129,6 +133,22 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
               <Button size="small" variant="secondary" aria-label={`移除扫描起点 ${root.name}`}
                 onClick={() => saveRoots(state.roots.filter(item => item.remote_id !== root.remote_id))}
                 {...busyProps(action.busy === 'roots')}>移除</Button>
+            </SettingsRow>
+          ))}
+        </Rows>
+      ) : null}
+      {state.modes.length > 1 ? (
+        <Rows>
+          {state.modes.map(mode => (
+            <SettingsRow key={mode} label={modeLabel(mode)} description={MODE_LABELS[mode]?.help ?? mode}>
+              <Button size="small" variant={mode === state.mode ? 'primary' : 'secondary'}
+                aria-pressed={mode === state.mode}
+                disabled={mode === state.mode}
+                aria-label={`${t('settings:drive.mode.switchTo')} ${modeLabel(mode)}`}
+                onClick={() => saveMode(mode)}
+                {...busyProps(action.busy === 'mode')}>
+                {mode === state.mode ? t('settings:drive.mode.inUse') : t('settings:drive.mode.switchTo')}
+              </Button>
             </SettingsRow>
           ))}
         </Rows>

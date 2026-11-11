@@ -4,8 +4,6 @@ import { peachHistory, shellNavigate } from '../history/index';
 import { openGuide } from '../onboarding/guide-state';
 import { applicationEffects } from './effects';
 
-export async function reopenPostSetupTutorial() { openGuide({ reopen: true }) }
-
 export function installTutorial8() {
   const clean = new URL(location.href);
   const fromSetup = clean.searchParams.get('onboarding') === '1';

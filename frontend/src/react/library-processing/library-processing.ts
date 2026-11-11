@@ -126,7 +126,7 @@ export interface LibraryProcessingCommand {
   library_id?: string;
   incremental?: boolean;
   scope?: 'new';
-  stage?: 'scan' | 'collect' | 'previews' | 'metadata';
+  stage?: 'all' | 'collect' | 'metadata';
   asset_ids?: number[];
   job_id?: string;
   retry?: number[];
@@ -324,10 +324,6 @@ export function announceCompletion(
     if (state.job_id && localStorage.getItem(ANNOUNCED_KEY) === state.job_id) return;
     if (state.job_id) localStorage.setItem(ANNOUNCED_KEY, state.job_id);
   } catch { /* 存储不可用时照常提示，最多重复一次 */ }
-  if (state.requested_stage === 'previews') {
-    toast(`视频预览已生成：${state.previews || 0} 部`);
-    return;
-  }
   toast(`扫描与资料采集已完成：识别 ${state.identified || 0} 个番号，`
     + `取得 ${state.candidates || 0} 组作品资料，自动保存 ${state.auto_applied || 0} 条`
     + (state.previews ? `，生成 ${state.previews} 部视频预览` : ''));

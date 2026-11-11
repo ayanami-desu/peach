@@ -13,6 +13,7 @@ from .drive_provider import (
     Change,
     DownloadTarget,
     DriveAccount,
+    DriveAuthRequired,
     DriveForbidden,
     DriveNotFound,
     DriveUnavailable,
@@ -49,6 +50,30 @@ def _entry(raw: dict, parent: str = "") -> DriveEntry:
 
 def _quote(remote_id: str) -> str:
     return "'" + remote_id.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def token_call(client: httpx.Client, payload: dict) -> dict:
+    """令牌端点：408/429/5xx 算可重试，其余 4xx 是授权本身不成立了。"""
+    response = client.post(TOKEN_ENDPOINT, data=payload, timeout=30)
+    if response.status_code >= 400:
+        if response.status_code in (408, 429) or response.status_code >= 500:
+            raise DriveUnavailable(f"令牌端点返回 {response.status_code}")
+        raise DriveAuthRequired(f"令牌端点返回 {response.status_code} {response.text[:200]}")
+    return response.json()
+
+
+def refresh_access(client: httpx.Client, *, client_id: str, client_secret: str,
+                   refresh_token: str) -> tuple[str, int, str]:
+    """用 refresh token 换一份访问票。
+
+    驱动实例还没造出来时也得能换——票过期的账号建不出实例，实例又只有它能换票，
+    把这段挂在类上就是这个先有鸡还是先有蛋的死结。"""
+    payload = token_call(client, {
+        "grant_type": "refresh_token", "refresh_token": refresh_token,
+        "client_id": client_id, "client_secret": client_secret,
+    })
+    expires_at = int(time.time()) + int(payload.get("expires_in", 0))
+    return str(payload.get("access_token") or ""), expires_at, str(payload.get("refresh_token") or "")
 
 
 class GoogleDrive:
@@ -96,24 +121,20 @@ class GoogleDrive:
         return stored
 
     def refresh_call(self, payload: dict) -> dict:
-        response = self._client().post(TOKEN_ENDPOINT, data=payload, timeout=30)
-        if response.status_code >= 400:
-            raise DriveUnavailable(f"令牌端点返回 {response.status_code}")
-        return response.json()
+        return token_call(self._client(), payload)
 
     def refresh(self, account: StoredAccount) -> tuple[str, int, str]:
-        payload = self.refresh_call({
-            "grant_type": "refresh_token", "refresh_token": account.refresh_token,
-            "client_id": self.client_id, "client_secret": self.client_secret,
-        })
-        expires_at = int(time.time()) + int(payload.get("expires_in", 0))
-        return payload.get("access_token", ""), expires_at, payload.get("refresh_token", "")
+        return refresh_access(self._client(), client_id=self.client_id,
+                              client_secret=self.client_secret,
+                              refresh_token=account.refresh_token)
 
     def _identity(self, token: str) -> tuple[str, str, str, str]:
-        body = self._get("/about", {"fields": "user(displayName,emailAddress,permissionId),root"})
+        # `/about` 没有 `root` 这个字段，选了它整条请求 400；根目录 id 要另问一次。
+        body = self._get("/about", {"fields": "user(displayName,emailAddress,permissionId)"})
         user = body.get("user") or {}
+        root = self._get("/files/root", {"fields": "id"})
         return (str(user.get("permissionId", "")), str(user.get("emailAddress", "")),
-                str(user.get("displayName", "")), str(body.get("root", "")))
+                str(user.get("displayName", "")), str(root.get("id", "")))
 
     def _profile(self) -> DriveAccount:
         stored = self.accounts.store.load(GOOGLE)

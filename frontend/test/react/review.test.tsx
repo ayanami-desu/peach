@@ -14,7 +14,6 @@ import {
   reviewWindow, type ReviewCandidate, type ReviewData, type ReviewRow,
   type DecisionResult,
 } from '../../src/react/review/review';
-import { AUTO_LANDINGS_URL, type AutoLandingWrite } from '../../src/react/review/auto-landings';
 import { ReviewPage } from '../../src/react/review/review-page';
 
 import { actionOrder, choose, click, mountRoot, settle } from './render';
@@ -59,8 +58,6 @@ interface Plan {
   data?: ReviewData;
   /** 判定的回答：给一串就按顺序一条一条回（最后一条之后一直回它）。 */
   decisions?: DecisionResult[];
-  /** 「自动写入的资料」列出的条目；缺省没有，那一块不出现。 */
-  autoLandings?: AutoLandingWrite[];
 }
 
 function serve(plan: Plan = {}) {
@@ -70,7 +67,6 @@ function serve(plan: Plan = {}) {
     if (url === REVIEW_DECISION_URL) {
       return ok(decisions.length > 1 ? decisions.shift()! : decisions[0]!);
     }
-    if (url.startsWith(AUTO_LANDINGS_URL)) return ok({ items: plan.autoLandings ?? [] });
     if (url.startsWith(REVIEW_URL)) return ok(plan.data ?? review());
     throw new Error(`没有安排这个端点：${url}`);
   });
@@ -354,8 +350,8 @@ it('只读数据库上判定与批量都不给点', async () => {
   const { host, fetcher } = await open(
     { data: review({ mirror: { state: 'live' } }) },
     { readOnly: true, writerUrl: 'https://writer.example/review' });
-  // 只读：队列与自动写入批次各读一次，一个写请求都不发。
-  expect(fetcher.mock.calls.map(([url]) => String(url)).sort()).toEqual([REVIEW_URL, AUTO_LANDINGS_URL]);
+  // 只读：只读队列，一个写请求都不发。
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([REVIEW_URL]);
   expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true);
   expect(noteText(host).join()).toContain('正在显示写入端的实时复核队列');
   expect(host.querySelector('a[href="https://writer.example/review"]')).toBeTruthy();
@@ -369,8 +365,8 @@ it('只读数据库上判定与批量都不给点', async () => {
 
 it('打开复核页只读队列，不再触发自动落库写操作', async () => {
   const { fetcher } = await open();
-  // 读两样：复核队列与「自动写入的资料」的批次列表；都是 GET。
-  expect(fetcher.mock.calls.map(([url]) => String(url)).sort()).toEqual([REVIEW_URL, AUTO_LANDINGS_URL]);
+  // 读一样：复核队列；是 GET。
+  expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([REVIEW_URL]);
   expect(fetcher.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true);
 });
 
@@ -483,28 +479,4 @@ it('没有可采纳候选的卡仍可忽略或稍后处理，通过键不可用'
   const footer = cards(host)[0]!.querySelector('footer')!;
   expect([...footer.querySelectorAll('button')].map((button) => button.textContent?.trim()))
     .toEqual(['忽略', '稍后处理', '不可通过']);
-});
-
-const WRITES: AutoLandingWrite[] = [
-  { item_key: 'DASS-468:release_date', rule: 'adr-0139-official-replaces-verified', label: '官方来源一致，覆盖原值',
-    batch: 'adr-0139-official-replaces-verified@20261104T141053', at: 1793772653, field: '发行日期',
-    value: '2024-09-10', previous: ['2024-09-06'], tags: [], assets: 1,
-    asset_id: 7, code: 'DASS-468', name: '某部作品的标题', preview_url: '' },
-  { item_key: 'ROYD-083:tags', rule: 'adr-0139-verified-tags-union', label: '补上来源多给的标签',
-    batch: 'auto:metadata-tags@20261104T141053', at: 1793772653, field: '标签',
-    value: '痴女、姐弟', previous: [], tags: ['痴女', '姐弟'], assets: 1,
-    asset_id: 8, code: 'ROYD-083', name: '另一部作品', preview_url: '' },
-];
-
-it('元数据字段下逐条列出自动写入：作品、写了什么、原来是什么，只读端也能浏览', async () => {
-  const { host } = await open({ autoLandings: WRITES }, { readOnly: true });
-  const section = host.querySelector('[aria-labelledby="auto-landings-title"]')!;
-  const text = section.textContent ?? '';
-  for (const expected of ['自动写入的资料', 'DASS-468', '某部作品的标题', '发行日期：2024-09-10', '原为 「2024-09-06」',
-    'ROYD-083', '标签：痴女、姐弟', '原有标签保留']) expect(text).toContain(expected);
-});
-
-it('没有自动写入时不出现那一块', async () => {
-  const { host } = await open();
-  expect(host.querySelector('[aria-labelledby="auto-landings-title"]')).toBeNull();
 });

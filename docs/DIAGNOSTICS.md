@@ -12,7 +12,6 @@ Peach 的诊断证据只落在本机：错误事件写进 `logs/errors-<pid>.log
 | `service` / `version` | `peach-api` 与程序版本 |
 | `checks` | `configured`、`database`、`schema`、`drives`、`security`、`ffmpeg` 六项，每项只有 `status` 与 `reason` |
 | `configured` | 配置里是否已有网盘与扫描根 |
-| `configurable` | 设置入口是否显示：`PEACH_DEV=1`，或打包发行、容器部署且已完成配置 |
 | `db` | `missing`、`empty`、`available` 或 `unavailable` |
 | `ffmpeg` | 解析到的 FFmpeg 来源，没有时为 `unavailable` |
 | `drive` | 每个已接驱动位置的 `connected` 布尔值 |

@@ -260,10 +260,13 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         cover_root=settings.poster_root / "follow", gate=follow_media_resolver)
     # 网盘连接、取流与媒体装配：资产不再落到本地，播放要么 302 要么由这里转发 Range。
     drive = DriveConnections(settings, lambda: http_transport.client)
-    streamer = build_streamer(drive.providers, lambda: http_transport.client)
+    # 整理那一片按来源问「接没接上」，走的是契约而不是请求对象。
+    contract.drive = drive
+    # 取流按需问一句当前驱动：换过取字节方式之后 `DriveConnections` 会重建实例，抓一份旧表就换了没用。
+    streamer = build_streamer(drive.provider, lambda: http_transport.client)
     media_engine = MediaEngine(repository, streamer, cache_root=settings.photo_root.parent / "media-cache")
-    # 扫描与同步：扫描起点来自设置里的网盘根，增量按游标、每日一次全量核对。
-    scan_service = ScanService(drive.providers, repository, drive.roots_map())
+    # 扫描按需问一句当前驱动与扫描起点：换过账号或扫描起点之后驱动实例会重建，抓表会抓旧。
+    scan_service = ScanService(drive, repository)
 
     def after_scan(location: str, result) -> None:
         """新登记的行要探时长、与「想要」对账、把消失作品的个人记录接回来。
@@ -468,18 +471,15 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         # 不探测网盘、迁移数据库或读媒体字节；健康检查必须无副作用。
         ffmpeg = resolver.ffmpeg()
         from .diagnostics import health_components
-        components = health_components(settings, {})
+        drive_status = drive.status()
+        components = health_components(settings, drive_status)
         return {"ok": True, "service": "peach-api", "version": __version__,
                 "checks": components,
                 # 这台机器跑过 `peach init` 没有。未配置时服务照常起，只是没有数据。
                 "configured": settings.configured,
-                # 这次请求的发起方能不能改这台机器的配置。它随调用方变化，只决定管理菜单里
-                # 「设置」显不显示；拒绝写入的判定在端点自己那里。
-                "configurable": routes_configuration.configurable(request),
                 "db": database_status(settings.db_path),
                 "ffmpeg": ffmpeg.source if ffmpeg else "unavailable",
-                "drive": {location: drive.connection(location)["connected"]
-                          for location in drive.providers},
+                "drive": {row["location"]: row["connected"] for row in drive_status["locations"]},
         }
 
     # 顺序即契约：catch-all 最后。`routes_media` 里有 `/api/stream-plan` 这条具名 API，

@@ -7,7 +7,6 @@
 import type { Page, Route } from 'playwright-core';
 
 import { settle, visit, type Viewport, type Visit } from './harness.ts';
-import { mockSubtitleMemory } from './subtitle-fixture.ts';
 
 export const AUTHORS = ['Kou', 'Mira', 'Opal', 'Remi', 'Nanase', 'Lazy'];
 const PROVIDERS = [['kemono', 'Kemono'], ['rule34xxx', 'Rule34.xxx'], ['fanbox', 'pixivFANBOX']] as const;
@@ -152,7 +151,6 @@ export interface FollowStub {
 }
 
 async function stub(page: Page, bindAuthors = false): Promise<FollowStub> {
-  await mockSubtitleMemory(page);
   const held: { route: Route; url: URL }[] = [];
   const statuses = new Map<number, string>();
   const hidden = new Map([[DETAIL.hidden, new Set([3, 4])]]);

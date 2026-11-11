@@ -6,7 +6,7 @@ import { layout, settle, visit } from './harness.ts';
 import {
   DESKTOP, MOBILE, tokenColor, openDuplicates, openIndexPage, openPlaylistsPage, openFollowManage, holdApi,
   openPerformer, PROFILED, openProfiledPerformer, popmenuShadow, heroGeometry, disabledTokens,
-  waitingActionFaces, assertDisabledFace, followTab, followSource, installDesignBrowser,
+  waitingActionFaces, assertDisabledFace, followTab, followSource, installDesignBrowser, holdPageCode,
 } from './design-fixture.ts';
 
 describe('设计决定：数据管理、索引页与资料页头', () => {
@@ -66,17 +66,20 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
   });
 
   const cleanupCards = [
-    { path: '/data-cleanup', label: '扫描与采集', skeleton: 'cleanup', names: ['同步新增文件', '更多同步方式'] },
-    { path: '/data-cleanup/media-repair', label: '媒体修复', skeleton: 'cleanup/media-repair', names: ['开始修复'] },
+    { path: '/data-cleanup', label: '扫描与采集', skeleton: 'cleanup', chunk: 'data-cleanup-page',
+      names: ['同步新增文件', '更多同步方式'] },
   ];
   for (const viewport of [DESKTOP, MOBILE]) for (const item of cleanupCards) {
     it(`${item.label}骨架与内容卡共用外框、内边距和操作区布局（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await visit(browser, item.path, viewport);
+      let release!: () => void;
+      /* 这一页的摘要各自独立读取，不再等数据才画：要让壳铺的那一屏骨架停在屏幕上，
+         只能挂住它的页面代码（首次画之前 `withPage` 要等代码块到位）。 */
+      const opened = await visit(browser, item.path, viewport, async (page) => {
+        await page.route('**/api/library-processing', route => route.fulfill({ json: { status: 'idle' } }));
+        release = await holdPageCode(page, item.chunk);
+      });
       try {
         const page = opened.page;
-        await page.route('**/api/library-processing', route => route.fulfill({ json: { status: 'idle' } }));
-        const release = await holdApi(page);
-        await page.reload({ waitUntil: 'load' });
         const card = `section[aria-label="${item.label}"]`;
         await page.locator(`[data-skeleton="${item.skeleton}"] ${card} footer`).waitFor({ timeout: 15_000 });
         const geometry = () => page.locator(card).evaluateAll(cards => cards.map(card => {
@@ -122,7 +125,7 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
   }
 
   const cleanupTools = [
-    ['/data-cleanup/organize', 'organize'], ['/data-cleanup/resource-sync', 'resource-sync'],
+    ['/data-cleanup/organize', 'organize'],
     ['/data-cleanup/orphan-records', 'orphan-records'], ['/data-cleanup/links', 'links'],
     ['/data-cleanup/batch-delete', 'batch-delete'],
   ] as const;
@@ -164,28 +167,20 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
     const opened = await visit(browser, '/data-cleanup/links', DESKTOP);
     try {
       const page = opened.page;
-      for (const [path, id, name] of [
-        ['/data-cleanup/links', 'link-manager', '链接管理'],
-        ['/data-cleanup/resource-sync', 'resource-sync', '资源同步'],
-      ]) {
-        await page.goto(new URL(path!, page.url()).href);
-        await page.locator(`#${id}-title`).waitFor({ timeout: 15_000 });
-        await settle(page);
-        const heading = await page.locator(`#${id}-title`).evaluate(node => {
-          const css = getComputedStyle(node);
-          return [css.fontSize, css.fontWeight, css.lineHeight, css.marginBottom];
-        });
-        assert.deepEqual(heading, ['20px', '500', '26px', '8px'], `${name}标题样式`);
-        assert.equal(await page.locator(`#${id} > h2, #${id} > h3`).count(), 0, '出现了框外标题');
-        if (id === 'link-manager') {
-          const styles = await page.locator('#link-manager .link-stat-grid').evaluate(node => {
-            const label = getComputedStyle(node.querySelector('span')!);
-            const figure = getComputedStyle(node.querySelector('b')!);
-            return [label.fontSize, label.lineHeight, figure.fontSize, figure.fontWeight, figure.lineHeight];
-          });
-          assert.deepEqual(styles, ['12px', '20px', '20px', '700', '20px']);
-        }
-      }
+      await page.locator('#link-manager-title').waitFor({ timeout: 15_000 });
+      await settle(page);
+      const heading = await page.locator('#link-manager-title').evaluate(node => {
+        const css = getComputedStyle(node);
+        return [css.fontSize, css.fontWeight, css.lineHeight, css.marginBottom];
+      });
+      assert.deepEqual(heading, ['20px', '500', '26px', '8px'], '链接管理标题样式');
+      assert.equal(await page.locator('#link-manager > h2, #link-manager > h3').count(), 0, '出现了框外标题');
+      const styles = await page.locator('#link-manager .link-stat-grid').evaluate(node => {
+        const label = getComputedStyle(node.querySelector('span')!);
+        const figure = getComputedStyle(node.querySelector('b')!);
+        return [label.fontSize, label.lineHeight, figure.fontSize, figure.fontWeight, figure.lineHeight];
+      });
+      assert.deepEqual(styles, ['12px', '20px', '20px', '700', '20px']);
       assert.deepEqual(opened.problems, []);
     } finally { await opened.close() }
   });
@@ -644,7 +639,6 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
       { path: '/stats', title: '还没有视频', height: 320 },
       { path: '/quality-goals', title: '没有标记中的高清版目标', height: 320 },
       { path: '/settings/diagnostics', title: '清单为空', height: 240 },
-      { path: '/settings/subscriptions', title: '没有可配置的来源', height: 240 },
     ];
     for (const viewport of [DESKTOP, MOBILE]) {
       for (const example of cases) {
@@ -760,9 +754,9 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
           ok: true, entities: [{ id: 90_001, kind: 'performer', names: [name], parts: ['costars'] }] } })) },
       { path: '/data-cleanup', ready: '[data-skeleton="cleanup"] [data-skeleton-action]',
         targets: ['[data-skeleton] .inline-grid > div', '[data-skeleton] a[href="/sources"]',
-          '[data-skeleton] [data-skeleton-action]'] },
-      { path: '/data-cleanup/media-repair', ready: '[data-skeleton="cleanup/media-repair"] [data-skeleton-action]',
-        targets: ['[data-skeleton] [data-skeleton-action]'] },
+          '[data-skeleton] [data-skeleton-action]'],
+        /* 这一页的摘要各自独立读取，`holdApi` 挂不住它的骨架：改用挂住这一页的代码块。 */
+        prepare: async (page) => { await holdPageCode(page, 'data-cleanup-page'); } },
       { path: '/review', ready: '[data-skeleton="review"] .reviewtabs button',
         targets: ['[data-skeleton] .reviewtabs button', '[data-skeleton] .skeletoncard'] },
       { path: '/follow', ready: '.followauthors .avskeleton',
@@ -1008,19 +1002,16 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
     });
   }
 
-  it('凭据的四种处境四副底色：待办和完成一眼分得开', { timeout: 60_000 }, async () => {
+  it('关注管理的「来源与订阅设置」经规范路径落到采集来源页，那一页自己把来源画出来', { timeout: 60_000 }, async () => {
     const opened = await openFollowManage(browser);
     try {
-      await opened.page.getByRole('link', { name: /^来源与订阅设置/ }).click();
-      await opened.page.getByRole('tab', { name: '来源与订阅', exact: true, selected: true }).waitFor();
-      await opened.page.getByRole('region', { name: '可配置凭据', exact: true }).waitFor();
-      await settle(opened.page);
-      const faces: Record<string, string> = {};
-      for (const state of ['需要', '已配置', '暂时无法连接', '不需要']) {
-        faces[state] = await opened.page.getByText(state, { exact: true }).first()
-          .evaluate((chip) => getComputedStyle(chip).backgroundColor);
-      }
-      assert.equal(new Set(Object.values(faces)).size, 4, `有两种处境同色：${JSON.stringify(faces)}`);
+      const page = opened.page;
+      await page.getByRole('link', { name: /^来源与订阅设置/ }).click();
+      /* 设置页不再有「来源与订阅」页签：这枚入口经规范路径落到采集来源。 */
+      await page.waitForURL((url) => url.pathname === '/sources', { timeout: 15_000 });
+      await page.getByRole('region', { name: '自定义元数据来源', exact: true }).waitFor({ timeout: 15_000 });
+      await settle(page);
+      assert.equal(new URL(page.url()).pathname, '/sources', '来源与订阅设置没有落到采集来源页');
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();

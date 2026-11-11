@@ -1,6 +1,6 @@
 /* 作品详情岛（`item-detail`）在真浏览器里的行为：从目录卡进出、深链、后退回到详情与刷新后关掉回哪一页、
  * 播放列表换条后关掉回列表页、舞台在媒体框里挂 Video.js、
- * 脱盘说明、共演收起、标题折叠、评分与标签的撤销、反馈键态、四种队列、播放列表排序与移出、保存 Mix、接着看、
+ * 共演收起、标题折叠、评分与标签的撤销、反馈键态、四种队列、播放列表排序与移出、保存 Mix、接着看、
  * 实体页入口与手机布局。
  *
  * 桩数据见 `item-fixture.ts`；读写接口全部由桩接住，演示库数据库一次都不写。 */
@@ -428,47 +428,6 @@ describe('作品详情岛', () => {
       await opened.close();
     }
   });
-
-  it('来源不可读取：说明块代替播放器，刷新状态后显示读取结果', { timeout: 60_000 }, async () => {
-    const opened = await openItemPage(browser, `/assets/${ITEM.offline}`, DESKTOP);
-    try {
-      const page = opened.page;
-      const gate = page.locator('#stage [data-item-gate="offline"]');
-      assert.match(await gate.innerText(), /媒体目录无法访问/);
-      assert.equal(await page.locator('#stage .vjs-tech').count(), 0, '脱盘的条目挂了播放器');
-      await page.locator('#offlineRetry').click();
-      await page.locator('#offlineRetry', { hasText: '仍无法读取 · 刷新' }).waitFor();
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  for (const viewport of [DESKTOP, MOBILE]) {
-    it(`${viewport.mobile ? '手机' : '桌面'}来源状态：权限原因可见，未取得状态不判脱盘`, { timeout: 60_000 }, async () => {
-      const opened = await openItemPage(browser, `/assets/${ITEM.offline}`, viewport);
-      try {
-        const page = opened.page;
-        let online: boolean | null = false;
-        await page.route((url) => url.pathname === '/api/sources', (route) => route.fulfill({ json: {
-          sources: [{ location: 'local', online: true }, { location: '115', online,
-            state: online === false ? 'permission_denied' : 'timeout',
-            message: online === false ? 'CloudDrive · 115：没有权限读取' : 'CloudDrive · 115：探测未返回' }],
-        } }));
-        await page.reload({ waitUntil: 'load' });
-        await page.locator(DETAIL_READY).waitFor();
-        assert.match(await page.locator('#stage [data-item-gate="offline"]').innerText(), /没有权限读取/);
-        online = null;
-        await page.reload({ waitUntil: 'load' });
-        await page.locator(DETAIL_READY).waitFor();
-        assert.equal(await page.locator('#stage [data-item-gate="offline"]').count(), 0);
-        assert.equal(await page.locator('body.offline-source').count(), 0);
-        assert.deepEqual(withoutPlayer(opened.problems), []);
-      } finally {
-        await opened.close();
-      }
-    });
-  }
 
   for (const viewport of [DESKTOP, MOBILE]) {
   it(`${viewport.name}：出演超过 8 位先收起，点「还有 N 位」全部展开`, { timeout: 60_000 }, async () => {

@@ -25,9 +25,10 @@ import sqlite3
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from .catalog_rules import is_local_extra, release_code_from_filename
-from .drive_provider import DriveEntry, DriveError, DriveProvider
+from .drive_provider import DriveEntry, DriveError, DriveProvider, DriveUnavailable
 from .media import VIDEO_SUFFIXES
 from .personal_records import mark_vanished
 from .repository import LedgerRepository
@@ -54,10 +55,11 @@ _UPDATE = """UPDATE asset SET path=?, name=?, size=?, mtime=?,
                disposal=CASE WHEN disposal='vanished' THEN NULL ELSE disposal END
              WHERE location=? AND remote_id=?"""
 
-_SAVE_SYNC = """INSERT INTO drive_sync(location, account_id, cursor, full_synced_at, last_error)
-                VALUES(?,?,?,?,?)
+_SAVE_SYNC = """INSERT INTO drive_sync(location, account_id, cursor, synced_at, full_synced_at, last_error)
+                VALUES(?,?,?,?,?,?)
                 ON CONFLICT(location) DO UPDATE SET
                   account_id=excluded.account_id, cursor=excluded.cursor,
+                  synced_at=COALESCE(excluded.synced_at, drive_sync.synced_at),
                   full_synced_at=COALESCE(excluded.full_synced_at, drive_sync.full_synced_at),
                   last_error=excluded.last_error"""
 
@@ -107,33 +109,56 @@ def _stamp(moment: float) -> str:
     return time.strftime(STAMP_FORMAT, time.localtime(moment))
 
 
+class DriveLookup(Protocol):
+    """扫描要用到的三件东西：已授权来源、按来源取驱动、按来源取扫描起点。
+
+    全部按当前设置现问：`DriveConnections` 换过账号或扫描起点会重建驱动实例，抓住一份旧表
+    就等于换了没用。真实实现就是 `DriveConnections` 本身。
+    """
+
+    @property
+    def providers(self) -> Mapping[str, DriveProvider]: ...
+
+    def locations(self) -> tuple[str, ...]:
+        """当前配了扫描起点的来源：同步节拍按它排队。"""
+        return tuple(sorted(self.drive.roots_map()))
+
+    def provider(self, location: str) -> DriveProvider: ...
+
+    def roots_map(self) -> Mapping[str, Sequence[str]]: ...
+
+
 class ScanService:
     """一个账本上的网盘扫描入口。
 
-    `providers` 按 `location` 取驱动，`roots` 是每个来源的扫描起点（远端目录 id）。
-    驱动之外的来源不扫：旧账本里的 115／PikPak／本地磁盘行只读展示。
+    驱动与扫描起点都按当前设置现问现用（`drive_reader`）：换过账号、扫描起点或取字节方式
+    之后 `DriveConnections` 会重建驱动实例，抓住构造时那一份表就等于换了没用。驱动之外的
+    来源不扫：旧账本里的 115／PikPak／本地磁盘行只读展示。
     """
 
-    def __init__(self, providers: Mapping[str, DriveProvider], repository: LedgerRepository,
-                 roots: Mapping[str, Sequence[str]], *, clock: Callable[[], float] = time.time):
-        self._providers = dict(providers)
+    def __init__(self, drive_reader: DriveLookup, repository: LedgerRepository,
+                 *, clock: Callable[[], float] = time.time):
+        self.drive = drive_reader
         self.repository = repository
-        self.roots = {location: tuple(values) for location, values in roots.items()}
         self._clock = clock
 
     @property
     def database(self):
         return self.repository.database
 
+    def locations(self) -> tuple[str, ...]:
+        """当前配了扫描起点的来源：同步节拍按它排队。"""
+        return tuple(sorted(self.drive.roots_map()))
+
     def provider(self, location: str) -> DriveProvider:
-        provider = self._providers.get(location)
-        if provider is None:
-            known = "、".join(sorted(self._providers)) or "（一个都没配）"
-            raise ScanTargetError(f"✗ 未授权的来源 {location!r}；已授权的：{known}")
-        return provider
+        try:
+            return self.drive.provider(location)
+        except DriveUnavailable as missing:
+            known = "、".join(sorted(self.drive.providers)) or "（一个都没配）"
+            raise ScanTargetError(f"✗ 未授权的来源 {location!r}；已授权的：{known}") from missing
 
     def _roots(self, location: str, provider: DriveProvider) -> tuple[str, ...]:
-        roots = self.roots.get(location)
+        roots = tuple(self.drive.roots_map().get(location) or ())
         if not roots:
             raise ScanTargetError(f"✗ 媒体来源 {location!r} 没有配置扫描目录")
         return roots
@@ -180,7 +205,8 @@ class ScanService:
         new_ids.update(dict.fromkeys(fresh))
         conflicts += conflicts_here
         vanished = 0 if failures else self._vanish_missing(location, stamp, started)
-        self._save_sync(location, provider.account.account_id, cursor=None, full_synced_at=stamp)
+        self._save_sync(location, provider.account.account_id, cursor=None, synced_at=stamp,
+                        full_synced_at=stamp)
         return ScanResult(
             location, folders=folders, files=files, total_bytes=total,
             seconds=self._clock() - started, new_ids=tuple(new_ids), vanished=vanished,
@@ -201,7 +227,7 @@ class ScanService:
             raise
         if cursor is None:
             # 第一次只取起点：游标之前发生过的变更无从知道，等全量核对。
-            self._save_sync(location, provider.account.account_id, cursor=next_cursor)
+            self._save_sync(location, provider.account.account_id, cursor=next_cursor, synced_at=stamp)
             return ScanResult(location, seconds=self._clock() - started, cursor=next_cursor)
         names = self._root_names(location, provider)
         known: dict[str, tuple[tuple[str, ...], str] | None] = {}
@@ -220,7 +246,7 @@ class ScanService:
             rows.append(self._row(location, entry, segments, stamp, root_id))
         fresh, conflicts = self._write(rows)
         vanished = self._vanish_ids(location, removed, started)
-        self._save_sync(location, provider.account.account_id, cursor=next_cursor)
+        self._save_sync(location, provider.account.account_id, cursor=next_cursor, synced_at=stamp)
         return ScanResult(
             location, files=len(rows) - conflicts,
             total_bytes=sum(int(row[6] or 0) for row in rows),
@@ -350,19 +376,24 @@ class ScanService:
     def sync_state(self, location: str) -> dict:
         """这个来源的同步状态：页面上的「上次同步」「最近一次错误」都读它。
 
+        `synced_at` 是最近一次成功同步，`full_synced_at` 是最近一次整棵核对；两者分开，
+        「立即刷新」按完才看得见时间在动，而整棵重扫的节拍照旧由后者决定。
+
         账本还没建好（首次启动、Docker 未初始化）时照样要给页面一个空态，不能抛。
         """
-        empty = {"cursor": None, "synced_at": None, "last_error": ""}
+        empty = {"cursor": None, "synced_at": None, "full_synced_at": None, "last_error": ""}
         try:
             with self.database.read_connection() as connection:
                 row = connection.execute(
-                    "SELECT cursor, full_synced_at, last_error FROM drive_sync WHERE location=?",
+                    "SELECT cursor, COALESCE(synced_at, full_synced_at), full_synced_at, last_error "
+                    "FROM drive_sync WHERE location=?",
                     (location,)).fetchone()
         except sqlite3.Error:
             return empty
         if row is None:
-            return {"cursor": None, "synced_at": None, "last_error": ""}
-        return {"cursor": row[0], "synced_at": row[1], "last_error": row[2] or ""}
+            return empty
+        return {"cursor": row[0], "synced_at": row[1], "full_synced_at": row[2],
+                "last_error": row[3] or ""}
 
     def _cursor(self, location: str) -> str | None:
         with self.database.read_connection() as connection:
@@ -373,8 +404,23 @@ class ScanService:
                 return None
         return row[0] if row else None
 
-    def _save_sync(self, location: str, account_id: str, *, cursor: str | None,
-                   full_synced_at: str | None = None, last_error: str = "") -> None:
-        """记下游标与最近一次全量核对，失败原因也留在这里给页面看。"""
+    def restart(self, location: str) -> None:
+        """换扫描起点或重新授权之后游标不再可信：清掉它，下一轮整棵重扫。
+
+        增量游标只认「哪些文件变了」，它不会因为换了根目录就把新根下的存量文件重报一遍；
+        留着旧游标会让新选的目录直到下一次全量核对（最长一天）才出现在账本里。
+        """
         with self.database.write_transaction() as connection:
-            connection.execute(_SAVE_SYNC, (location, account_id, cursor, full_synced_at, last_error))
+            connection.execute("DELETE FROM drive_sync WHERE location=?", (location,))
+
+    def _save_sync(self, location: str, account_id: str, *, cursor: str | None,
+                   synced_at: str | None = None, full_synced_at: str | None = None,
+                   last_error: str = "") -> None:
+        """记下游标、这次同步的时刻与最近一次全量核对；失败原因也留在这里给页面看。
+
+        `synced_at` 每次成功都写，页面的「上次同步」读它；`full_synced_at` 只在整棵核对时写，
+        决定下一次什么时候该整棵重扫。
+        """
+        with self.database.write_transaction() as connection:
+            connection.execute(_SAVE_SYNC,
+                               (location, account_id, cursor, synced_at, full_synced_at, last_error))

@@ -268,7 +268,7 @@ export function TutorialCenter({ actions }: { actions: ShellActions }) {
               ? '本章已结束，未显示的步骤尚未完成，可以稍后继续。'
               : chapter.id === 'basics'
               ? progressRef.current.completed
-                ? '快速导览已完成，所有设备的教程入口都会收起。以后可到设置 → Peach 配置 → 应用与维护 → 新手教程重新打开，其余内容按需查看。'
+                ? '快速导览已完成，所有设备的教程入口都会收起。以后可点顶栏的指南针重新打开，其余内容按需查看。'
                 : '导览已结束，但完成状态未保存。请重新读取教程状态后再试。'
               : '这段导览已完成。需要时再了解其他功能。');
           } else { position.current = next; show() }

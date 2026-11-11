@@ -85,7 +85,7 @@ function shellActions(): ShellActions {
   return {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
     openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
-    failure: vi.fn(), revealSource: vi.fn(async () => ''), reopenTutorial: vi.fn(async () => {}),
+    failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
     routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
@@ -134,7 +134,6 @@ function panelHost() {
     censored: () => false, setCensored: () => {}, highContrast: () => false, setHighContrast,
     sfwShortcut: () => parseShortcut(DEFAULT_SFW_SHORTCUT)!, setSfwShortcut,
     receipt: () => {}, failure: () => {}, syncRemote: () => {}, openConfiguration: () => {}, attached,
-    configurable: async () => false,
   };
   return { host, value, save, changed, setHighContrast, setSfwShortcut, attached };
 }
@@ -254,14 +253,6 @@ describe('设置面板与壳的接缝', () => {
     /* 转码方式是运行 Peach 那台电脑的服务配置，在 Peach 配置里，弹窗里没有这一行（ADR-0103）。 */
     expect(panel.querySelector('#playbackAccelerationSetting')).toBeNull();
     const entry = panel.querySelector<HTMLButtonElement>('[data-settings-service] button')!;
-    expect(entry.disabled).toBe(true);
-    await click(entry);
-    expect(openConfiguration).not.toHaveBeenCalled();
-    await close(current);
-    current.host.configurable = async () => true;
-    await open(current);
-    await settle();
-    expect(panel.querySelector('#playbackAccelerationSetting')).toBeNull();
     expect(entry.disabled).toBe(false);
     await click(entry);
     await settle();

@@ -1,10 +1,10 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "494a783f-1a1d-45ba-835d-05d13054094c", e._sentryDebugIdIdentifier = "sentry-dbid-494a783f-1a1d-45ba-835d-05d13054094c");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "dd165734-042e-4548-9a8b-ae0a7a351afc", e._sentryDebugIdIdentifier = "sentry-dbid-dd165734-042e-4548-9a8b-ae0a7a351afc");
 	} catch {}
 })();
-import { Button as e, CollectionSummary as t, DUPLICATES_KEY as n, EmptyState as r, FilterGlass as i, GlassPill as a, LOC as o, MEDIA_SOURCES_KEY as s, MEDIA_SOURCE_ICONS as c, Note as l, SourceLabel as u, SourceMark as d, TRASH_KEY as f, __toESM as p, batchOperate as m, bulkCloudPreferences as h, busyProps as g, cardClass as _, cloudLocations as v, confirmModal as y, distinctName as b, duplicateVictims as x, errorMessage as S, fetchDuplicates as C, fetchMediaSources as w, fmtDur as T, fmtSize as E, keepGroup as D, keepRuleLabel as O, mixedCloudPreferences as k, queryClient as A, require_jsx_runtime as j, require_react as M, sharedNamePrefix as N, spriteGlyph as P, t as F, useMutation as I, useQuery as L, victimBytes as R } from "./peach-app.js";
+import { Button as e, CollectionSummary as t, DRIVE_KEY as n, DUPLICATES_KEY as r, EmptyState as i, FilterGlass as a, GlassPill as o, LOC as s, MEDIA_SOURCE_ICONS as c, Note as l, SourceLabel as u, SourceMark as d, TRASH_KEY as f, __toESM as p, batchOperate as m, bulkCloudPreferences as h, busyProps as g, cardClass as _, configuredLocations as v, confirmModal as y, distinctName as b, duplicateVictims as x, errorMessage as S, fetchDrives as C, fetchDuplicates as w, fmtDur as T, fmtSize as E, keepGroup as D, keepRuleLabel as O, mixedCloudPreferences as k, queryClient as A, require_jsx_runtime as j, require_react as M, sharedNamePrefix as N, spriteGlyph as P, t as F, useMutation as I, useQuery as L, victimBytes as R } from "./peach-app.js";
 // src/react/duplicates/duplicates-page.tsx
 var z = /* @__PURE__ */ p(M(), 1), B = j(), V = P("play"), H = P("file-stack"), U = _({
 	padding: "none",
@@ -12,7 +12,7 @@ var z = /* @__PURE__ */ p(M(), 1), B = j(), V = P("play"), H = P("file-stack"), 
 	className: "mb-6 overflow-hidden dark:bg-background-primary-default"
 }), W = "rounded-sm px-1.5 py-px text-caption-1-regular leading-5", G = "rounded-sm px-2 py-0.5 text-caption-1-regular leading-5", K = "font-mono text-caption-1-regular leading-5 text-text-secondary", q = () => {
 	A.invalidateQueries({
-		queryKey: n,
+		queryKey: r,
 		exact: !0
 	}), A.invalidateQueries({
 		queryKey: f,
@@ -29,7 +29,7 @@ function J(e) {
 	});
 }
 function Y({ file: e, prefix: t, openItem: n }) {
-	let r = () => n(e.id), i = o[e.location] || e.location || e.drive;
+	let r = () => n(e.id), i = s[e.location] || e.location || e.drive;
 	return /* @__PURE__ */ (0, B.jsxs)("div", {
 		className: "duplicate-row items-center gap-3 border-t border-separator-border px-5 py-4 max-compact:p-4",
 		children: [
@@ -95,11 +95,11 @@ function Y({ file: e, prefix: t, openItem: n }) {
 }
 function X({ openItem: c, toast: d, failure: f }) {
 	let p = L({
+		queryKey: r,
+		queryFn: ({ signal: e }) => w(e)
+	}), _ = L({
 		queryKey: n,
 		queryFn: ({ signal: e }) => C(e)
-	}), _ = L({
-		queryKey: s,
-		queryFn: ({ signal: e }) => w(e)
 	}), [b, T] = (0, z.useState)(""), A = I({
 		mutationFn: (e) => m(e, "dispose"),
 		onSuccess: (e, t) => {
@@ -165,10 +165,10 @@ function X({ openItem: c, toast: d, failure: f }) {
 					size: E(M.reclaimable)
 				})
 			}),
-			P.length ? /* @__PURE__ */ (0, B.jsxs)(i, {
+			P.length ? /* @__PURE__ */ (0, B.jsxs)(a, {
 				title: F("cleanup:duplicates.bulkKeep"),
 				children: [
-					/* @__PURE__ */ (0, B.jsx)(a, {
+					/* @__PURE__ */ (0, B.jsx)(o, {
 						busy: b === "all:largest",
 						onPress: () => W({
 							groups: P,
@@ -177,7 +177,7 @@ function X({ openItem: c, toast: d, failure: f }) {
 						}),
 						children: F("cleanup:duplicates.allKeepLargest")
 					}),
-					/* @__PURE__ */ (0, B.jsx)(a, {
+					/* @__PURE__ */ (0, B.jsx)(o, {
 						busy: b === "all:longest",
 						onPress: () => W({
 							groups: P,
@@ -186,7 +186,7 @@ function X({ openItem: c, toast: d, failure: f }) {
 						}),
 						children: F("cleanup:duplicates.allKeepLongest")
 					}),
-					h(P, V).map((e) => /* @__PURE__ */ (0, B.jsx)(a, {
+					h(P, V).map((e) => /* @__PURE__ */ (0, B.jsx)(o, {
 						busy: b === `all:${e}`,
 						onPress: () => W({
 							groups: P,
@@ -195,7 +195,7 @@ function X({ openItem: c, toast: d, failure: f }) {
 						}),
 						children: /* @__PURE__ */ (0, B.jsx)(u, {
 							source: e,
-							label: F("cleanup:duplicates.allPreferStorage", { storage: o[e] || e })
+							label: F("cleanup:duplicates.allPreferStorage", { storage: s[e] || e })
 						})
 					}, e))
 				]
@@ -268,7 +268,7 @@ function X({ openItem: c, toast: d, failure: f }) {
 										}),
 										children: /* @__PURE__ */ (0, B.jsx)(u, {
 											source: t,
-											label: F("cleanup:duplicates.keepStorage", { storage: o[t] || t })
+											label: F("cleanup:duplicates.keepStorage", { storage: s[t] || t })
 										})
 									}, t)),
 									/* @__PURE__ */ (0, B.jsx)(e, {
@@ -298,7 +298,7 @@ function X({ openItem: c, toast: d, failure: f }) {
 						openItem: c
 					}, e.id)) })]
 				}, `${t.code}-${n}`);
-			}) : /* @__PURE__ */ (0, B.jsx)(r, {
+			}) : /* @__PURE__ */ (0, B.jsx)(i, {
 				icon: H,
 				title: F("cleanup:duplicates.emptyTitle"),
 				children: F("cleanup:duplicates.emptyBody")
@@ -319,4 +319,4 @@ function X({ openItem: c, toast: d, failure: f }) {
 }
 export { X as DuplicatesPage };
 
-//# debugId=494a783f-1a1d-45ba-835d-05d13054094c
+//# debugId=dd165734-042e-4548-9a8b-ae0a7a351afc

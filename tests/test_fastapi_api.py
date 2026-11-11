@@ -656,7 +656,8 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(body["configured"])
         self.assertEqual(body["db"], "available")
         self.assertEqual(set(body["checks"]), {"database", "schema", "configured", "drives", "security", "ffmpeg"})
-        self.assertEqual(body["drive"], {})
+        # 两个内置来源都在，没授权就是 False；这条只读账号文件，不问网盘。
+        self.assertEqual(body["drive"], {"gdrive": False, "onedrive": False})
 
     async def test_ready_counts_the_background_services_only_when_it_knows(self) -> None:
         # 测试用的是 ASGITransport，lifespan 没跑，没人报过后台状态，就绪只看库和页面。

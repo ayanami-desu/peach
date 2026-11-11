@@ -9,7 +9,6 @@
  * 表扫一遍分完组，省下的只是回程字节，换来的却是两处读数可能对不上。 */
 import { LOC } from '@peach/legacy/core';
 import { apiGet, apiSend } from '../../api';
-import { prefetchMediaSources } from '../media-sources';
 import { queryClient } from '../query';
 import { t } from '../../i18n';
 
@@ -85,10 +84,9 @@ export function sharedNamePrefix(names: readonly string[]): string {
 export const distinctName = (name: string, prefix: string) =>
   prefix && name.startsWith(prefix) && name.length > prefix.length ? `…${name.slice(prefix.length)}` : name;
 
-/** 首屏分组就绪后显示；来源独立读取，供「留 115」等可选规则使用。不给 `staleTime`，
- *  `/duplicates` 是 `refresh:'reopen'`，进来就重取。 */
+/** 首屏分组就绪后显示。不给 `staleTime`：`/duplicates` 是 `refresh:'reopen'`，进来就重取。
+ *  「每组优先保留哪个盘」的候选由页面自己读 `GET /api/drive`，这里不管。 */
 export async function prefetchDuplicates(signal: AbortSignal): Promise<void> {
-  void prefetchMediaSources(signal).catch(() => {});
   await queryClient.fetchQuery({ queryKey: DUPLICATES_KEY, queryFn: () => fetchDuplicates(signal) });
 }
 

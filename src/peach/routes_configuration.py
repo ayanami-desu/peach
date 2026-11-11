@@ -3,7 +3,6 @@
 页面整个是 `frontend/src/react/settings/` 下的 React 子树（入口 `configuration-page.tsx`），
 挂在主站的 `/settings` 路由里；这里只回数据。所有写接口都要求有效登录凭据与同源请求，
 不看来源 IP 或代理头：Peach 是个服务端程序，谁能登录谁就能改。
-`/healthz` 的 `configurable` 只控制入口显隐；这里负责实际访问检查。
 """
 from __future__ import annotations
 
@@ -54,15 +53,6 @@ FILE_MANAGED_NOTICE = "这个部署由配置文件管理服务；请在部署机
 _LIBRARY_COLOR = re.compile(r"[a-z]{2,16}")
 
 
-def dev_environment() -> bool:
-    """调试用的裸 serve：`--no-auth` 启动时由 CLI 置上 `PEACH_DEV=1`。
-
-    未过初始配置时，配置页不该再要求「先完成设置」那一层。这个标记只免掉配置完成那一条，
-    登录凭据照样要：环境变量会被子进程继承，光凭它放行等于把配置写接口交给能连上端口的人。
-    """
-    return os.environ.get("PEACH_DEV") == "1"
-
-
 def revision(config) -> str:
     return hashlib.sha256(config.path.read_bytes()).hexdigest()
 
@@ -76,21 +66,22 @@ def managed_configuration() -> bool:
     return distribution.standalone() or distribution.docker()
 
 
-def configurable(request: Request) -> bool:
-    """入口显隐只反映部署的配置管理能力；API 独立校验登录凭据。"""
-    return dev_environment() or (managed_configuration() and bool(request.app.state.settings.configured))
-
-
 # --------------------------------------------------------------------------- 诊断
 
 
 @router.get("/api/diagnostics")
 def system_diagnostics(request: Request, args: dict[str, str] = Depends(require_auth)):
-    """本机诊断与 doctor JSON 共用报告；网盘与磁盘只看启动时那次的判断，不在请求里探。
+    """本机诊断与 doctor JSON 共用报告；网盘只看接入状态与上次同步，不在请求里问网盘要目录名。
     """
     from . import diagnostics
     same_origin(request)
-    return diagnostics.report(request.app.state.settings, {})
+    return diagnostics.report(request.app.state.settings, _drive_status(request))
+
+
+def _drive_status(request: Request) -> dict:
+    """诊断用的网盘快照：只读账号文件与同步表，不联网。"""
+    drive = getattr(request.app.state, "drive", None)
+    return drive.status() if drive is not None else {}
 
 
 @router.get("/api/diagnostics/bundle")
@@ -98,7 +89,7 @@ def diagnostic_bundle(request: Request, args: dict[str, str] = Depends(require_a
     from . import diagnostic_context, diagnostics, support_bundle
     same_origin(request)
     try:
-        report = diagnostics.report(request.app.state.settings, {})
+        report = diagnostics.report(request.app.state.settings, _drive_status(request))
     except Exception as error:
         from .error_reporting import event
         event("diagnostics-report", error)
@@ -132,7 +123,7 @@ def diagnostic_export_start(request: Request, body: dict = Body(default_factory=
     try:
         return diagnostic_exports.manager(request).start(
             kind, codes, browser=browser,
-            report=lambda: diagnostics.report(request.app.state.settings, {}))
+            report=lambda: diagnostics.report(request.app.state.settings, _drive_status(request)))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
 
@@ -550,6 +541,11 @@ def _drive(request: Request):
     return request.app.state.drive
 
 
+def _scan(request: Request):
+    """扫描服务，由 `api.py` 在启动时挂在 `app.state.scan` 上。"""
+    return request.app.state.scan
+
+
 def _drive_location(location: str) -> str:
     if location not in LOCATIONS:
         raise HTTPException(404, "没有这个网盘")
@@ -594,6 +590,8 @@ def drive_callback(request: Request, location: str, code: str = "", state: str =
         return JSONResponse({"error": f"授权未完成：{error}"}, status_code=400)
     try:
         _drive(request).accept(location, code, state)
+        # 换了账号，旧游标指的是别人的盘：不清掉就永远只追增量。
+        _scan(request).restart(location)
     except DriveError as failure:
         return JSONResponse({"error": str(failure)}, status_code=400)
     response = RedirectResponse("/settings#drives", status_code=302)
@@ -613,7 +611,24 @@ def save_drive_roots(request: Request, location: str, body: dict[str, Any] = Bod
         ids = _drive(request).set_roots(_drive_location(location), rows)
     except DriveError as error:
         raise _drive_failure(error) from error
+    # 换了扫描起点，旧游标不会把新根下的存量文件再报一遍：清掉它，下一轮整棵重扫。
+    _scan(request).restart(location)
     return {"location": location, "roots": list(ids)}
+
+
+@router.post("/api/drive/{location}/mode")
+def save_drive_mode(request: Request, location: str, body: dict[str, Any] = Body(default_factory=dict),
+                    _args=Depends(require_auth)):
+    """换这个网盘的取字节方式：直连让浏览器跟预授权地址走，转发由 Peach 带 Range 去取。"""
+    same_origin(request)
+    mode = body.get("mode")
+    if not isinstance(mode, str):
+        raise HTTPException(400, "mode 要是字符串")
+    try:
+        saved = _drive(request).set_mode(_drive_location(location), mode.strip())
+    except DriveError as error:
+        raise _drive_failure(error) from error
+    return {"location": location, "mode": saved}
 
 
 @router.get("/api/drive/{location}/folders")

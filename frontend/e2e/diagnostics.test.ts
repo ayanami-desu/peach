@@ -13,8 +13,8 @@ describe('配置中的系统诊断', () => {
       const opened = await visit(browser, '/settings/diagnostics', viewport, async page => {
         await page.route('**/api/diagnostics', async route => {
           const report = await (await route.fetch()).json();
-          report.checks.media_mounts = { label: '媒体挂载', status: 'warning', reason: '媒体目录不存在',
-            action: '检查媒体目录', target: '/settings/library', details: {} };
+          report.checks.drives = { label: '网盘', status: 'warning', reason: '演示库的网盘未授权',
+            action: '重新授权或刷新', target: '/settings/drives', details: {} };
           report.library.groups.cover = { label: '缺封面', status: 'ok', count: 31, truncated: false,
             items: Array.from({ length: 31 }, (_, index) => ({ id: index + 1, code: null,
               title: `演示条目 ${index + 1}`, name: `演示文件 ${index + 1}.mp4`,
@@ -27,7 +27,7 @@ describe('配置中的系统诊断', () => {
         const icon = page.locator('[data-diagnostic-source="minnano-av"] img');
         await icon.waitFor();
         assert.equal(await icon.evaluate(node => getComputedStyle(node).borderRadius), '0px');
-        const badge = page.locator('[data-diagnostic-check="media_mounts"] [data-diagnostic-status="warning"]');
+        const badge = page.locator('[data-diagnostic-check="drives"] [data-diagnostic-status="warning"]');
         await badge.waitFor();
         assert.notEqual(await badge.evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
         await page.locator('summary').filter({ hasText: '缺封面 · 31 项' }).click();
@@ -61,7 +61,7 @@ describe('配置中的系统诊断', () => {
           search: document.querySelector('.top')!.getBoundingClientRect().bottom }));
         assert.ok(pinned.nav >= pinned.search + 7, JSON.stringify(pinned));
         assert.ok(pinned.nav <= pinned.search + 9, JSON.stringify(pinned));
-        await nav.getByRole('tab', { name: '网络与访问', exact: true }).click();
+        await nav.getByRole('tab', { name: '访问与安全', exact: true }).click();
         await settle(page);
         const visible = await page.locator('.ui-board-group-active').evaluate(element => ({ panel: element.getBoundingClientRect().top,
           nav: document.querySelector('.ui-board-local-nav')!.getBoundingClientRect().bottom,
@@ -71,7 +71,7 @@ describe('配置中的系统诊断', () => {
       } finally { await opened.close(); }
     });
     it(`诊断深链等待时保留分区与正文布局（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await visit(browser, '/settings/library', viewport);
+      const opened = await visit(browser, '/settings/drives', viewport);
       let release!: () => void;
       const gate = new Promise<void>(resolve => { release = resolve; });
       try {
@@ -82,7 +82,7 @@ describe('配置中的系统诊断', () => {
         const skeleton = panel.locator('[data-skeleton="diagnostics"]');
         await skeleton.waitFor();
         await page.getByRole('tab', { name: '系统诊断', selected: true }).waitFor();
-        assert.equal(await panel.locator('section[aria-label="媒体库与目录"]').count(), 0);
+        assert.equal(await panel.locator('section[aria-label="库健康"]').count(), 0);
         assert.equal(await skeleton.getAttribute('aria-busy'), 'true');
         assert.equal(await panel.locator('article[data-diagnostic-source]').count(), 0);
         const pending = await panel.evaluate(element => {
@@ -102,13 +102,13 @@ describe('配置中的系统诊断', () => {
       } finally { release(); await opened.close(); }
     });
     it(`入口、错误层级与来源卡片（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await visit(browser, '/settings/library', viewport);
+      const opened = await visit(browser, '/settings/drives', viewport);
       try {
         const { page } = opened;
         await page.route('**/api/diagnostics', async route => {
           const report = await (await route.fetch()).json();
-          report.checks.media_mounts = { label: '媒体挂载', status: 'warning', reason: '本地磁盘：目录不存在',
-            action: '检查媒体目录与挂载状态', target: '/settings/library', details: {} };
+          report.checks.drives = { label: '网盘', status: 'warning', reason: '演示库的网盘未授权',
+            action: '重新授权或刷新', target: '/settings/drives', details: {} };
           await route.fulfill({ json: report });
         });
         await page.getByRole('tab', { name: '系统诊断', exact: true }).click();
@@ -125,7 +125,7 @@ describe('配置中的系统诊断', () => {
         });
         assert.ok(shape.gap >= 12);
         assert.notEqual(shape.background, 'rgba(0, 0, 0, 0)');
-        const row = page.locator('[data-diagnostic-check="media_mounts"]');
+        const row = page.locator('[data-diagnostic-check="drives"]');
         if (await row.count()) {
           const shown = await row.evaluate(element => {
             const title = element.querySelector('h3')!;

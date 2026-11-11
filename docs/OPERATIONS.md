@@ -59,13 +59,17 @@ client_secret = "…"
 # 远端目录 id，不是路径；留空（删掉这一行）表示扫该账号的根目录
 gdrive = ["1AbCdEfGhIjKlMnOpQrStUvWxYz"]
 
+[drive.modes]
+# 取字节方式，只有 OneDrive 可选 redirect；写默认值等于删掉这一行
+onedrive = "proxy"
+
 [server]
 # 只影响直接运行的 peach serve；容器里由入口参数决定
 host = "127.0.0.1"
 port = 8900
 ```
 
-接受哪些键是固定的：`[drive]` 只认 `public_url`、`accounts`、`roots`，`[drive.accounts.<网盘>]` 只认 `client_id` 与 `client_secret`，`[media]` 只认 `libraries`、`library_icons`、`library_catalog`。多写一个键会被拒绝并列出来，不会静默忽略。
+接受哪些键是固定的：`[drive]` 只认 `public_url`、`accounts`、`roots`、`modes`，`[drive.accounts.<网盘>]` 只认 `client_id` 与 `client_secret`，`[media]` 只认 `libraries`、`library_icons`、`library_catalog`。多写一个键会被拒绝并列出来，不会静默忽略。
 
 ## 申请网盘 OAuth 客户端
 
@@ -103,8 +107,9 @@ Peach 请求的范围是 `https://www.googleapis.com/auth/drive`，授权时带 
 `GET /api/drive` 给出两个来源的当前状态，每个来源有三个字段判断到哪一步：`configured`（凭据齐了没有）、`connected`（授权还有效吗）、`last_error`（最近一次同步为什么失败）。设置页的网盘状态读的就是这一份。
 
 - **授权**：`POST /api/drive/<网盘>/authorize` 返回一个网盘侧的授权地址，浏览器带过去同意后回跳 `/oauth/<网盘>/callback`。这个回调不查登录态，靠一次性的 `state` 认领，有效期 15 分钟；过期或对不上时报「授权回执已过期，回到设置页重新发起授权」，重新发起一次即可。
-- **扫描根**：`POST /api/drive/<网盘>/roots` 整条替换扫描根，外层的 `GET /api/drive/<网盘>/folders?parent_id=` 用来逐层列远端目录。存下来的是**远端目录 id**，不是路径；一个来源可以选多个目录，空数组表示从账号根目录开始。写入会同步改 `config.toml` 的 `[drive.roots]`。
+- **扫描根**：`POST /api/drive/<网盘>/roots` 整条替换扫描根，外层的 `GET /api/drive/<网盘>/folders?parent_id=` 用来逐层列远端目录。存下来的是**远端目录 id**，不是路径；一个来源可以选多个目录，空数组表示从账号根目录开始。写入会同步改 `config.toml` 的 `[drive.roots]`，并清掉这一来源的增量游标——游标只认「哪些文件变了」，留着它新选中的目录要等最长一天才进账本。所以换完扫描根，下一轮是整棵重扫。
 - **立即同步**：`POST /api/drive/<网盘>/refresh` 让这个来源在下一轮先做，返回它同步后的状态。
+- **取流方式**：`POST /api/drive/<网盘>/mode` 改这个来源怎么把字节交到浏览器，写入 `config.toml` 的 `[drive.modes]`。`redirect` 只给 OneDrive 用：播放时返回 302，浏览器自己去网盘的预授权地址取，不占服务器流量；`proxy` 让 Peach 按 Range 去网盘取再转发，占服务器流量，但网盘地址不出现在浏览器里。Google Drive 的字节必须带着 Bearer 取，令牌不能交给浏览器，所以它只有 `proxy` 一种。设置页「数据来源」里的「改用这个」调的就是这个接口，改完立刻重建驱动实例，不用重启。
 - **断开**：`DELETE /api/drive/<网盘>` 删掉令牌并清空该来源的扫描根。账本里已经扫到的条目不动，它们会因为没有可用的驱动而进不了播放。
 
 ```sh
@@ -156,7 +161,7 @@ curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:8900/healthz?ready=1'
 | `db` | `available`、`empty`、`missing`、`unavailable` 四选一 |
 | `ffmpeg` | 找到的可执行文件来源，找不到是 `unavailable` |
 | `drive` | `{"gdrive": true, "onedrive": false}` 这样的已连接布尔值 |
-| `configured` / `configurable` | 这台机器配过没有；这次请求的发起方能不能改配置 |
+| `configured` | 这台机器配过没有 |
 
 `ready=1` 版只回答「服务现在能不能用」，状态码 200 或 503：
 

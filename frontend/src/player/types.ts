@@ -48,7 +48,6 @@ export interface VjsPlayer {
   currentSource(): { type?: string } | undefined;
   qualityLevels?(): QualityLevelList;
   bandwidth?(): number;
-  addRemoteTextTrack(track: Record<string, unknown>, manualCleanup: boolean): void;
 }
 
 export type VideojsFactory = (video: HTMLVideoElement, options: Record<string, unknown>) => VjsPlayer;

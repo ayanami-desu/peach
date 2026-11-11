@@ -21,10 +21,14 @@ def key(location: str, root_id: str) -> str:
     return f"{location}:{root_id}"
 
 
-def libraries(config):
-    """按设置里的扫描根列出媒体库；属性缺省时按来源与默认值补齐。"""
+def libraries(config, live_names: dict[str, str] | None = None):
+    """按设置里的扫描根列出媒体库；属性缺省时按来源与默认值补齐。
+
+    `live_names` 是网盘那边刚问到的目录名（`来源:远端 id` → 名字）。设置文件里没存名字时，
+    显示目录名比显示一串远端 id 有用；问不到就退回远端 id。
+    """
     catalog = getattr(config, "library_catalog", {}) or {}
-    names = getattr(config, "library_names", {}) or {}
+    names = {**(live_names or {}), **(getattr(config, "library_names", {}) or {})}
     icons = getattr(config, "library_icons", {}) or {}
     rows = []
     for location, roots in (getattr(config, "drive_roots", {}) or {}).items():

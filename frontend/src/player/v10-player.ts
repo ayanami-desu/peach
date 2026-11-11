@@ -49,7 +49,6 @@ export const createV10Player: VideojsFactory = (video, options) => {
           <media-slider-track><media-slider-buffer class="vjs-load-progress"></media-slider-buffer><media-slider-fill class="vjs-play-progress"></media-slider-fill></media-slider-track>
           <media-slider-thumb class="vjs-progress-thumb"></media-slider-thumb>
         </media-time-slider></div>
-        <div class="vjs-subtitles-control vjs-control"><button type="button" class="vjs-button" aria-label="开启字幕" aria-pressed="false">CC</button></div>
         <media-pip-button class="vjs-picture-in-picture-control vjs-control vjs-button" label="画中画"></media-pip-button>
         <media-fullscreen-button class="vjs-fullscreen-control vjs-control vjs-button" label="全屏"></media-fullscreen-button>
       </div>`);
@@ -180,13 +179,6 @@ export const createV10Player: VideojsFactory = (video, options) => {
     currentSrc: () => source.src, currentSource: () => source,
     qualityLevels: () => levels,
     bandwidth: () => media.engine?.bandwidthEstimate || 0,
-    addRemoteTextTrack: (track: Record<string, unknown>) => {
-      const node = document.createElement('track');
-      node.id = String(track.id || '');
-      if (track.legacyId) node.dataset.subtitleAlias = String(track.legacyId);
-      node.kind = String(track.kind || 'subtitles'); node.src = String(track.src || '');
-      node.srclang = String(track.srclang || ''); node.label = String(track.label || ''); video.append(node);
-    },
   } satisfies VjsPlayer;
   return player;
 };

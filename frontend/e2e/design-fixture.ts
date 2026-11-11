@@ -26,13 +26,13 @@ export async function tokenColor(page: Page, scope: string, token: string): Prom
   }, [scope, token] as const);
 }
 
-/** 配置页「网络与访问」下的访问密码分区。演示库没有 access.json，分区处于系统口令状态。
+/** 配置页「访问与安全」下的访问密码分区。演示库没有 access.json，分区处于系统口令状态。
  * 与冒烟同一口径：先等配置页主体，再 settle、再切分区。 */
 export async function openAccess(browser: Browser): Promise<Visit & { form: Locator }> {
-  const opened = await visit(browser, '/settings/library', DESKTOP);
-  await expectBody(opened.page, '/settings/library', configurationBody(opened.page));
+  const opened = await visit(browser, '/settings/drives', DESKTOP);
+  await expectBody(opened.page, '/settings/drives', configurationBody(opened.page));
   await settle(opened.page);
-  await opened.page.getByRole('tab', { name: '网络与访问' }).click({ timeout: 5_000 });
+  await opened.page.getByRole('tab', { name: '访问与安全' }).click({ timeout: 5_000 });
   await settle(opened.page);
   const form = opened.page.locator('form[aria-label="访问密码"]');
   await form.waitFor({ timeout: 10_000 });
@@ -70,39 +70,8 @@ export const qualityGoal = (id: number, name: string) => ({
 /** 1×1 的透明 PNG，够让 `<img>` 走完一次加载。 */
 export const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-/** 口味页浏览器画像的五个维度：头一个是其余的十倍，和真实馆藏的分布一样。 */
-export const TASTE_CATEGORIES = [['剧情', 657], ['写真', 68], ['素人', 56], ['偶像', 4], ['企划', 1]]
-  .map(([name, score]) => ({ name, score }));
-
 /** 一张全身站姿照的人脸框：脸落在画面上半截的一小块里，小圆框要放大好几倍才看得清。 */
 export const TASTE_FACE = { cx: .439, cy: .224, faceW: 67, imgW: 640, imgH: 960 };
-
-/** 口味页按改写过的 `/api/taste` 打开：演示库没有浏览记录，也没有带人脸框的实体图。
- * 字段以 `src/peach/taste_history.py` 与 `src/peach/web_stats.py` 为准；实体图换成与人脸框同尺寸的纯色图。 */
-export async function openTaste(browser: Browser, viewport: typeof DESKTOP): Promise<Visit> {
-  const opened = await visit(browser, '/taste', viewport);
-  const face = (id: number, name: string) => ({
-    name, peach_items: 3, peach_score: 5, entity_id: id, has_image: true, avatar_focus: { box: TASTE_FACE },
-  });
-  await opened.page.route(/\/api\/taste\?/, async (route) => {
-    const json = await (await route.fetch()).json();
-    await route.fulfill({ json: { ...json, rankings: { ...json.rankings,
-      browser_categories: TASTE_CATEGORIES,
-      peach_performers: [face(901, '演示女优')],
-      peach_creators: [face(902, '演示创作者')],
-    } } });
-  });
-  await opened.page.route(/\/entity-image\?/, (route) => route.fulfill({
-    contentType: 'image/svg+xml',
-    body: `<svg xmlns="http://www.w3.org/2000/svg" width="${TASTE_FACE.imgW}" height="${TASTE_FACE.imgH}">`
-      + `<rect width="${TASTE_FACE.imgW}" height="${TASTE_FACE.imgH}" fill="#888"/></svg>`,
-  }));
-  await opened.page.reload({ waitUntil: 'load' });
-  await expectBody(opened.page, '/taste', [
-    opened.page.locator('#stats').getByRole('tab', { name: '浏览器记录', exact: true }),
-  ]);
-  return opened;
-}
 
 /** 高清版目标页按给定的一份 `/api/quality-goals` 打开：演示库里凑不齐很长的标题。 */
 export async function openQualityGoals(browser: Browser, items: unknown[]): Promise<Visit> {
@@ -506,6 +475,18 @@ export async function holdApi(page: Page): Promise<() => void> {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   await page.route((url) => url.pathname.startsWith('/api/') && url.pathname !== '/api/settings', async (route) => {
+    await gate;
+    await route.fallback().catch(() => {});
+  });
+  return release;
+}
+
+/** 把某一页的代码块挂住，直到调用返回的 `release()`：页面本身还没到，壳铺的那一屏骨架停在屏幕上。
+ *  取数不再挡骨架的页面（数据管理的摘要各自独立读取）就只能这样拿到骨架。
+ *  `chunk` 是 `/dist/peach-app.<chunk>-<hash>.js` 中间那一段，按页拆的块各有一个。 */
+export async function holdPageCode(page: Page, chunk: string): Promise<() => void> {
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  await page.route(`**/dist/peach-app.${chunk}-*.js`, async (route) => {
     await gate;
     await route.fallback().catch(() => {});
   });

@@ -1,4 +1,16 @@
 {
+  "drive": {
+    "mode": {
+      "inUse": "在用",
+      "proxy": "Peach 转发",
+      "proxyHelp": "播放时浏览器只跟 Peach 说话，由 Peach 按 Range 去网盘取字节再转发，占用服务器流量。",
+      "redirect": "浏览器直连",
+      "redirectHelp": "播放时浏览器自己去网盘取字节，Peach 只给一个预授权的临时地址，不占服务器流量。",
+      "switched": "{{label}} 改用{{mode}}",
+      "switchTo": "改用这个",
+      "term": "取流方式"
+    }
+  },
   "interfaceLanguage": {
     "auto": "自动",
     "help": "自动时先看浏览器语言，再看系统语言。",

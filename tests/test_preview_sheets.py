@@ -188,6 +188,17 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(preview_sheets.generate(self.engine, 'ffmpeg', 1, self.root), first)
         self.assertEqual(len(self.captures), 9)
 
+    def test_records_a_sheet_that_was_already_on_disk(self):
+        self._insert(1)
+        first = preview_sheets.generate(self.engine, 'ffmpeg', 1, self.root)
+        self.assertIsNotNone(first)
+        with closing(sqlite3.connect(self.db)) as connection, connection:
+            connection.execute('UPDATE asset SET snapshot_path=NULL WHERE id=1')
+        # 图在盘上、账本那一行空着：`pending()` 认 `snapshot_path`，所以复用时也要写回去。
+        self.assertEqual(preview_sheets.generate(self.engine, 'ffmpeg', 1, self.root), first)
+        self.assertEqual(len(self.captures), 9)
+        self.assertEqual(self.snapshot_path(1), str(first))
+
     def test_returns_none_when_the_drive_refuses(self):
         self._insert(1)
         self.streamer.input_url.side_effect = DriveNotFound('gone')

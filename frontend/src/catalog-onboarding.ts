@@ -33,7 +33,7 @@ export async function catalogSuggestions(state: Record<string, string>, request:
 }
 
 /** 空馆藏、筛选无结果与资料尚未建立分别给出可执行入口。 */
-export function catalogEmptyHtml({ kind = 'catalog', filtered = false, jav = false, configurable: _configurable = false, online = false } = {}): string {
+export function catalogEmptyHtml({ kind = 'catalog', filtered = false, jav = false, online = false } = {}): string {
   const add = `<a class="geist-button primary" href="${DRIVE_SETTINGS_PATH}">添加媒体</a>`;
   const follow = '<a class="geist-button' + (online ? ' primary' : '') + '" href="/subscriptions?tab=add">添加关注</a>';
   if (filtered || jav) return emptyStateHtml('search', jav ? '还没有符合条件的 JAV 作品' : '没有符合条件的内容',

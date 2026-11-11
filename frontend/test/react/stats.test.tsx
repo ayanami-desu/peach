@@ -54,10 +54,10 @@ const payload = (overrides: Partial<StatsData> = {}): StatsData => ({
     duration: 1200, max_reached: 0.9, o_count: 0, kind: 'library',
   }],
   storage_volumes: [{
-    kind: 'media', label: 'R:', root: 'R:\\media', online: true,
+    kind: 'media', label: 'R:', root: 'R:\\media',
     free: 1073741824, used: 3221225472, total: 4294967296,
   }],
-  storage_summary: { volumes: 1, online: 1, measured: 1, free: 1073741824, used: 3221225472, total: 4294967296 },
+  storage_summary: { volumes: 1, measured: 1, free: 1073741824, used: 3221225472, total: 4294967296 },
   ...overrides,
 });
 
@@ -329,8 +329,8 @@ it('覆盖率那一层的每条进度用同一对分子分母，不另算一遍'
 
 it('取不到容量的卷不画使用率，只说取不到', async () => {
   const { host } = await open(payload({
-    storage_volumes: [{ kind: 'media', label: 'B:', root: null, online: true, free: null, used: null, total: null }],
-    storage_summary: { volumes: 1, online: 1, measured: 0, free: 0, used: 0, total: 0 },
+    storage_volumes: [{ kind: 'media', label: 'B:', root: null, free: null, used: null, total: null }],
+    storage_summary: { volumes: 1, measured: 0, free: 0, used: 0, total: 0 },
   }));
   await click(tabNamed(host, '使用空间'));
   const panel = host.querySelectorAll('[role=tabpanel]')[0]!;
@@ -343,8 +343,8 @@ it('按字节计的卷在百格画布上按真实比例画出已用那一段，�
   const total = 2_031_179_788_288;
   const used = 1_828_061_809_459;
   const { host } = await open(payload({
-    storage_volumes: [{ kind: 'system', label: '系统盘', root: 'C:\\', online: true, free: total - used, used, total }],
-    storage_summary: { volumes: 1, online: 1, measured: 1, free: total - used, used, total },
+    storage_volumes: [{ kind: 'system', label: '系统盘', root: 'C:\\', free: total - used, used, total }],
+    storage_summary: { volumes: 1, measured: 1, free: total - used, used, total },
   }));
   await click(tabNamed(host, '使用空间'));
   const bar = host.querySelectorAll('[role=tabpanel]')[0]!.querySelector('[role=meter]')!;

@@ -351,7 +351,9 @@ class PreviewService:
         asset = self.repository.media_asset(asset_id)
         if asset is None or not asset.snapshot_path:
             raise PreviewUnavailable("snapshot unavailable")
-        path = Path(asset.snapshot_path)
+        # 两边都取真身再比：`snapshot_root` 在构造时已 `resolve()`，而账本里存的是绝对路径。
+        # macOS 上 `/tmp` 是 `/private/tmp` 的链接，只比字面前缀会把刚生成的图判成不在根下。
+        path = Path(asset.snapshot_path).resolve()
         if not (path == self.snapshot_root or self.snapshot_root in path.parents) or not path.is_file():
             raise PreviewUnavailable("snapshot unavailable")
         return path

@@ -1,18 +1,17 @@
 /* 挂在 Video.js 控制条上的 Peach 控件：设置菜单（氛围模式、播放速度、清晰度）、影院模式键、
- * 控制条排版与形变图标、拖动预览、Media Session、转圈与外挂字幕，外加舞台的氛围光采样。
+ * 控制条排版与形变图标、拖动预览、Media Session、转圈，外加舞台的氛围光采样。
  *
  * 控件样式取自 YouTube delhi-modern（player 9470c977），每一块的出处写在它自己的函数上。 */
-import { api, esc, fmtClock, icon, realDuration } from '@peach/legacy/core';
+import { esc, fmtClock, icon, realDuration } from '@peach/legacy/core';
 
 import { playerHost } from './host';
 import { detailPlayer, resizeSoon } from './registry';
 import { PLAYER_PANEL_EVENT } from './stats';
 import type { PlayerItem, SourceQuality, VjsPlayer } from './types';
-import { SubtitleControls, subtitleIcon } from './subtitles';
 import { createSeekPreview } from './seek-preview';
 import { mountPlayerRotation } from './rotation';
 import { mountPlayerPipControl } from './pip';
-import { mountPlaybackRate, playerMemory } from './memory';
+import { mountPlaybackRate } from './playback-rate';
 
 type TooltipSync = (label?: string, aria?: string) => void;
 
@@ -142,8 +141,6 @@ export function mountPlayerQualityControl(
   const menu = root.querySelector<HTMLElement>('.vjs-peach-settings-menu')!;
   const rotation = mountPlayerRotation(player, video);
   const rememberRate = mountPlaybackRate(player, video);
-  const memory = playerMemory(player);
-  let subtitleControls: SubtitleControls | undefined;
   const levels = typeof player.qualityLevels === 'function' ? player.qualityLevels() : null;
   let sourceQualities = initialSourceQualities;
   let selectedQuality = 'auto';
@@ -183,7 +180,6 @@ export function mountPlayerQualityControl(
   const isOpen = () => menu.getAttribute('aria-hidden') !== 'true';
   const setOpen = (open: boolean) => {
     menu.setAttribute('aria-hidden', String(!open)); toggle.setAttribute('aria-expanded', String(open));
-    if (!open) subtitleControls?.hide();
     if (open) document.dispatchEvent(new CustomEvent(PLAYER_PANEL_EVENT, { detail: 'settings' }));
   };
   const close = () => setOpen(false);
@@ -226,30 +222,20 @@ export function mountPlayerQualityControl(
   };
   const button = (panel: HTMLElement, selector: string) => panel.querySelector<HTMLElement>(selector)!;
   /** 菜单此刻摆的是哪一面；轨道与尺寸变化只就地改这一面（`refreshPanel`）。 */
-  let view: 'main' | 'speed' | 'quality' | 'subtitles' | 'rotation' = 'main';
+  let view: 'main' | 'speed' | 'quality' | 'rotation' = 'main';
   const showMain = (direction = 0) => {
     view = 'main';
     const { active } = qualityRows(), speed = rememberRate.current();
     const panel = renderPanel(`<div class="vjs-peach-panel-menu"><button type="button" class="vjs-peach-menu-row" role="menuitemcheckbox" data-player-ambient aria-checked="${playerHost().settings().ambientMode}">
       ${icon('player-ambient')}<span>氛围模式</span><i class="vjs-peach-switch" aria-hidden="true"></i></button>
       <button type="button" class="vjs-peach-menu-row" role="menuitem" data-player-speed>${icon('player-speed')}<span>播放速度</span><b>${speed === 1 ? '正常' : `${speed}×`}</b>${icon('player-menu-next')}</button>
-      <button type="button" class="vjs-peach-menu-row" role="menuitem" data-player-subtitles><span class="vjs-peach-menu-cc" aria-hidden="true">${subtitleIcon()}</span><span>字幕</span><b>${esc(subtitleControls?.label() || '关闭')}</b>${icon('player-menu-next')}</button>
       <button type="button" class="vjs-peach-menu-row" role="menuitem" data-player-rotation>${icon('rotate-cw', 'vjs-peach-menu-line-icon')}<span>画面旋转</span><b>${rotation.angle()}°</b>${icon('player-menu-next')}</button>
       <button type="button" class="vjs-peach-menu-row" role="menuitem" data-player-quality-view>${icon('player-quality')}<span>清晰度</span><b>${esc(active.label)}</b>${icon('player-menu-next')}</button>
-      <div data-player-memory-error hidden><p class="vjs-peach-subtitle-status" role="status"></p><button type="button" class="vjs-peach-menu-row" data-player-memory-retry>重试保存播放记忆</button></div></div>`, direction);
+      </div>`, direction);
     button(panel, '[data-player-ambient]').onclick = () => { applyAmbientMode(!playerHost().settings().ambientMode); showMain() };
     button(panel, '[data-player-speed]').onclick = () => showSpeed();
-    button(panel, '[data-player-subtitles]').onclick = () => subtitleControls?.show();
     button(panel, '[data-player-quality-view]').onclick = () => showQuality();
     button(panel, '[data-player-rotation]').onclick = () => showRotation();
-    button(panel, '[data-player-memory-retry]').onclick = () => { void memory.retry() };
-    syncMemoryError();
-  };
-  const syncMemoryError = () => {
-    const message = menu.querySelector<HTMLElement>('[data-player-memory-error]');
-    if (!message) return;
-    message.hidden = !memory.error;
-    message.querySelector('p')!.textContent = memory.error;
   };
   const showRotation = () => {
     view = 'rotation';
@@ -366,9 +352,7 @@ export function mountPlayerQualityControl(
   video.addEventListener('resize', refreshPanel);
   video.addEventListener('ratechange', refreshPanel);
   levels?.on?.(['addqualitylevel', 'removequalitylevel', 'change'], refreshPanel);
-  const unsubscribeMemory = memory.subscribe(() => { syncMemoryError(); refreshPanel() });
   player.on('dispose', () => {
-    unsubscribeMemory();
     video.removeEventListener('loadedmetadata', refreshPanel);
     video.removeEventListener('resize', refreshPanel);
     video.removeEventListener('ratechange', refreshPanel);
@@ -376,10 +360,6 @@ export function mountPlayerQualityControl(
     document.removeEventListener('pointerdown', outside);
     document.removeEventListener(PLAYER_PANEL_EVENT, closeSettingsForOtherPanel);
     if (panelTimer) clearTimeout(panelTimer);
-  });
-  subtitleControls = new SubtitleControls(player, video, {
-    render: renderPanel, open: () => { view = 'subtitles'; setOpen(true) }, close,
-    back: () => { subtitleControls?.hide(); showMain(-1) },
   });
   qualityRows();
   mountPlayerTheaterControl(player, root);
@@ -502,7 +482,6 @@ function mountPlayerChromeLayout(player: VjsPlayer): void {
   player.on(['timeupdate', 'durationchange', 'loadedmetadata'], syncTime); syncTime();
   if (volume) volume.insertAdjacentElement('afterend', time); else controlBar.append(time);
   const pip = controlBar.querySelector<HTMLElement>(':scope>.vjs-picture-in-picture-control');
-  playerControlTooltip(controlBar.querySelector('.vjs-subtitles-control>button'), '字幕');
   explicitIcon(pip, 'player-pip');
   // i 键归迷你播放器（YouTube 的 aria-keyshortcuts="i"），画中画只留按钮。
   const syncPipTooltip = playerControlTooltip(pip, '画中画');
@@ -524,7 +503,6 @@ function mountPlayerChromeLayout(player: VjsPlayer): void {
   syncFullscreenState();
   const controls = [
     pip,
-    controlBar.querySelector<HTMLElement>(':scope>.vjs-subtitles-control'),
     controlBar.querySelector<HTMLElement>(':scope>.vjs-peach-settings'),
     controlBar.querySelector<HTMLElement>(':scope>.vjs-peach-theater'),
     fullscreen,
@@ -643,16 +621,3 @@ export function mountPlayerSpinner(player: VjsPlayer): void {
   spinner.innerHTML = '<span class="vjs-peach-spinner-container"><span class="vjs-peach-spinner-rotator"><span class="vjs-peach-spinner-left"><span class="vjs-peach-spinner-circle"></span></span><span class="vjs-peach-spinner-right"><span class="vjs-peach-spinner-circle"></span></span></span></span>';
 }
 
-/** 本机资产的外挂字幕。服务端已经把 srt/ass/ssa 换成 WebVTT，这里只把它挂成 text track。
- *  一律不设 default：自动打开某一条等于替用户选了语言，而同一部片常有简体、繁体、日语三条。
- *  Peach 字幕菜单只在有轨的时候出现；轨道挂在原生 video 上，随同一枚元素保留。 */
-export function mountPlayerSubtitles(player: VjsPlayer, assetId: number): void {
-  (api(`/api/assets/${assetId}/subtitles`) as Promise<{ subtitles?: { id: string; legacy_id?: string | null; playable?: boolean; src: string; language?: string; label: string }[] } | null>)
-    .then((payload) => {
-      if (!player || player.isDisposed()) return;
-      (payload?.subtitles || []).filter((track) => track.playable).forEach((track) => {
-        player.addRemoteTextTrack({ id: track.id, kind: 'subtitles', src: track.src, srclang: track.language || '', label: track.label, default: false,
-          ...(track.legacy_id ? { legacyId: track.legacy_id } : {}) }, true);
-      });
-    }).catch(() => {});
-}

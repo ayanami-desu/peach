@@ -3,13 +3,18 @@ import { after, before, describe, it } from 'node:test';
 import type { Browser } from 'playwright-core';
 import { launch, layout, settle, visit, VIEWPORTS } from './harness.ts';
 
-describe('来源链接与凭据布局', () => {
+describe('来源和凭证布局', () => {
   let browser: Browser;
   before(async () => { browser = await launch(); });
   after(async () => { await browser?.close(); });
   for (const viewport of VIEWPORTS) {
     it(`自定义来源可试查、保存且表单无横向溢出（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await visit(browser, '/sources', viewport);
+      /* `/site-mark?source=…` 由服务端现取站点 favicon：e2e 机器没有外网，取不到就 404。
+         这份用例只核表单，先把这枚图标桩掉，免得 404 混进运行期问题里。 */
+      const opened = await visit(browser, '/sources', viewport, async (page) => {
+        await page.route('**/site-mark?*', (route) => route.fulfill({ contentType: 'image/svg+xml',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#999"/></svg>' }));
+      });
       const page = opened.page;
       const items: unknown[] = [];
       await page.route('**/api/custom-metadata', async route => {
@@ -95,33 +100,6 @@ describe('来源链接与凭据布局', () => {
         assert.equal(positions.length, 3);
         assert.ok(positions.every(p => p.width > 0));
         assert.ok(Math.max(...positions.map(p => p.center)) - Math.min(...positions.map(p => p.center)) <= 1);
-        const dimensions = await layout(opened.page);
-        assert.ok(dimensions.scrollWidth <= dimensions.viewportWidth);
-      } finally { await opened.close(); }
-    });
-    it(`凭据的每个输入字段占满正文宽度（${viewport.name}）`, async () => {
-      const opened = await visit(browser, '/settings/library?section='+encodeURIComponent('来源与订阅'), viewport);
-      try {
-        await opened.page.route('**/api/follow/credentials', route => route.fulfill({ json: {
-          root: '', providers: [{ provider: 'simpcity', provider_label: 'SimpCity', followable: true,
-            requirement: 'required', needs: ['cookie', 'user_agent'], fields: [], missing: ['cookie', 'user_agent'], why: '来源登录说明' }],
-        } }));
-        await opened.page.reload();
-        const field = opened.page.getByLabel('cookie', { exact: true });
-        await field.waitFor(); await settle(opened.page);
-        const labels = await opened.page.evaluate(() => ['来源凭据', '作品资料站点'].map(name => {
-          const section = document.querySelector(`[aria-label="${name}"]`)!;
-          const label = section.querySelector('p')!;
-          return { x: label.getBoundingClientRect().x, size: getComputedStyle(label).fontSize, weight: getComputedStyle(label).fontWeight };
-        }));
-        assert.deepEqual(labels[0], labels[1], '配置分区标题对齐且使用相同排版');
-        for (const name of ['cookie', 'user_agent']) {
-          const geometry = await opened.page.getByLabel(name, { exact: true }).evaluate(node => {
-            const wrapper = node.closest('[data-input-size]')!;
-            return { width: wrapper.getBoundingClientRect().width, available: wrapper.parentElement!.getBoundingClientRect().width };
-          });
-          assert.ok(Math.abs(geometry.width - geometry.available) <= 1, JSON.stringify(geometry));
-        }
         const dimensions = await layout(opened.page);
         assert.ok(dimensions.scrollWidth <= dimensions.viewportWidth);
       } finally { await opened.close(); }

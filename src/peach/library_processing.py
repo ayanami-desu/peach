@@ -1877,6 +1877,7 @@ def _preview_engine(config, database):
         drive_public_url=config.drive_public_url,
         drive_clients=dict(config.drive_clients),
         drive_roots=dict(config.drive_roots),
+        drive_modes=dict(config.drive_modes),
         secrets_root=config.directory('secrets'),
     )
     drive = DriveConnections(settings, lambda: transport.client)

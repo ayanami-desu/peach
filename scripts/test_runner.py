@@ -71,7 +71,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
               "test_previews.py",
               # 网盘这一组是播放链路的两端：拉清单、换直链、按 Range 转发。
               "test_drive_google.py", "test_drive_onedrive.py", "test_drive_stream.py",
-              "test_drive_sync.py", "test_scan_drives.py",
+              "test_drive_sync.py", "test_drive_modes.py", "test_scan_drives.py",
               "test_media_sources.py"),
     "metadata": ("test_custom_metadata.py", "test_scraping_access.py", "test_metadata*.py", "test_genre_taxonomy.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py",
                  "test_fc2*.py",
@@ -132,6 +132,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
     # 所以本域也要登记它们：改了 `web/app.js` 却漏跑读它的测试，`test_test_planning.py`
     # 的域映射门槛会在本地就红。
     "web": ("test_frontend_build.py", "test_frontend_preflight.py", "test_web_ui.py", "test_web_js.py",
+            "test_web_e2e.py",
             "test_tag_management.py",
             "test_legacy_shell_routes.py",
             "test_web_perf.py", "test_copy_final_state.py",
@@ -207,7 +208,6 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     # 任务状态根目录由 `task_control`、`task_resources`、`job_recovery` 共用，
     # 用例散在 `test_task_control.py` 与 `test_jobs.py`。
     "src/peach/task_state.py": ("tooling", "media"),
-    "src/peach/local_poster.py": ("metadata", "web"),
     "src/peach/processing_control.py": ("media", "metadata", "web"),
     # 刮削后继：主体测试 `test_followups.py` 与 `test_studio_followup.py`，按名字推不出来。
     "src/peach/avatar_followup.py": ("catalog", "media", "tooling"),

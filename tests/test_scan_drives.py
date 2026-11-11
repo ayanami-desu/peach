@@ -10,7 +10,7 @@ import unittest
 from collections import defaultdict
 
 from peach import scan
-from peach.drive_provider import Change, DriveAccount, DriveEntry, DriveNotFound
+from peach.drive_provider import Change, DriveAccount, DriveEntry, DriveNotFound, DriveUnavailable
 from peach.repository import LedgerDatabase, LedgerRepository
 from support.ledger import fresh_ledger
 
@@ -70,6 +70,26 @@ class FakeDrive:
         raise NotImplementedError
 
 
+class Lookup:
+    """`DriveConnections` 的替身：扫描现问现用驱动与扫描起点，改这两样不用重建服务。"""
+
+    def __init__(self, providers: dict | None = None, roots: dict | None = None):
+        self.table = dict(providers or {})
+        self.roots = dict(roots or {})
+
+    @property
+    def providers(self) -> dict:
+        return dict(self.table)
+
+    def provider(self, location: str):
+        if location not in self.table:
+            raise DriveUnavailable(f"{location} 没有接入")
+        return self.table[location]
+
+    def roots_map(self) -> dict:
+        return dict(self.roots)
+
+
 class ScanServiceTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -78,8 +98,45 @@ class ScanServiceTest(unittest.TestCase):
         self.database = LedgerDatabase(self.db_path)
         self.drive = FakeDrive()
         self.roots = {"gdrive": ["movies", "shows"]}
-        self.service = scan.ScanService({ "gdrive": self.drive }, LedgerRepository(self.database),
-                                       self.roots, clock=lambda: 1_780_000_000.0)
+        self.lookup = Lookup({"gdrive": self.drive}, self.roots)
+        self.service = scan.ScanService(self.lookup, LedgerRepository(self.database),
+                                        clock=lambda: 1_780_000_000.0)
+
+    def test_incremental_sync_moves_the_last_sync_stamp_but_not_the_full_one(self):
+        self._tree()
+        self.service.full_sync("gdrive")
+        before = self.service.sync_state("gdrive")
+        self.assertEqual(before["synced_at"], before["full_synced_at"])
+        later = scan.ScanService(self.lookup, LedgerRepository(self.database),
+                                 clock=lambda: 1_780_000_000.0 + 3600.0)
+        later.sync_changes("gdrive")
+        after = later.sync_state("gdrive")
+        # 「上次同步」跟着每一次成功同步走；整棵核对的时刻不动，节拍照旧由它决定。
+        self.assertEqual(after["full_synced_at"], before["full_synced_at"])
+        self.assertNotEqual(after["synced_at"], before["synced_at"])
+
+    def test_restart_drops_the_cursor_so_the_next_sync_walks_the_tree_again(self):
+        # 增量游标只认「哪些文件变了」：换了扫描起点还留着它，新选中的目录要等最长一天才进账本。
+        self._tree()
+        self.service.full_sync("gdrive")
+        self.service.sync_changes("gdrive")
+        self.service.sync_changes("gdrive")
+        self.assertEqual("c1", self.service.sync_state("gdrive")["cursor"])
+        self.service.restart("gdrive")
+        state = self.service.sync_state("gdrive")
+        self.assertEqual((None, None, None), (state["cursor"], state["synced_at"], state["full_synced_at"]))
+        self.assertEqual(4, self.service.full_sync("gdrive").files)
+
+    def test_a_scan_asks_for_the_drivers_and_roots_that_are_current_now(self):
+        # 换过账号或扫描起点之后 `DriveConnections` 重建过驱动：构造时抓一份表就等于换了没用。
+        self._tree()
+        empty = Lookup()
+        service = scan.ScanService(empty, LedgerRepository(self.database), clock=lambda: 1_780_000_000.0)
+        with self.assertRaises(scan.ScanTargetError):
+            service.full_sync("gdrive")
+        empty.table["gdrive"] = self.drive
+        empty.roots["gdrive"] = ["root"]
+        self.assertEqual(4, service.full_sync("gdrive").files)
 
     def _tree(self):
         self.drive.items["root"] = DriveEntry("root", "我的云端硬盘", "", True)
@@ -195,7 +252,7 @@ class ScanServiceTest(unittest.TestCase):
         self.assertIn("pikpak", str(caught.exception))
 
     def test_missing_roots_is_an_error(self):
-        service = scan.ScanService({"gdrive": self.drive}, LedgerRepository(self.database), {})
+        service = scan.ScanService(Lookup({"gdrive": self.drive}), LedgerRepository(self.database))
         with self.assertRaises(scan.ScanTargetError):
             service.full_sync("gdrive")
 

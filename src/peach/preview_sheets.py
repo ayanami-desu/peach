@@ -115,6 +115,9 @@ def generate(engine, ffmpeg: str, asset, root: Path, *, active=None) -> Path | N
     record = engine.asset(int(asset)) if isinstance(asset, int) else asset
     destination = contact_path(root, record.location or '', record.path)
     if artifact_rules.current(destination) and _decodable(destination):
+        # 图在盘上、账本这一行还空着：`pending()` 认的就是 `snapshot_path`，不写回去这一部
+        # 每轮都会被重新排进来，卡片也永远没有封面。
+        _record(engine, record, destination)
         return destination
     duration = float(record.duration or 0)
     if duration <= 0:

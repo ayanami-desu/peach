@@ -135,7 +135,7 @@
 | `GET /oauth/{location}/callback` | 网盘跳回来那一步。这里没有会话保证，因此不查登录凭据，边界是授权开始时服务端记下的 `state`（900 秒内有效）；成功 302 回 `/settings#drives`，失败 400 |
 | `POST /api/drive/{location}/roots` | 整条替换扫描根；空数组表示从账号根目录开始，非对象数组回 400「roots 要是对象数组」 |
 | `GET /api/drive/{location}/folders` | 列远端文件夹，只出目录，`parent_id` 缺省取第一个扫描根 |
-| `POST /api/drive/{location}/refresh` | 立刻做一次增量同步，返回该来源的状态 |
+| `POST /api/drive/{location}/refresh` | 把这一来源排进下一轮同步（后台每 60 秒一轮），返回该来源当前状态 |
 | `DELETE /api/drive/{location}` | 忘掉这个网盘：删账号与扫描根，账本里已登记的资产不动 |
 
 失败按网盘侧的错误分档：需要重新授权 401、权限不足 403、文件或目录不存在 404、其余网盘错误 409；不认识的来源回 404「没有这个网盘」。写端点另要求同源检查。

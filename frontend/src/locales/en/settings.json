@@ -1,4 +1,16 @@
 {
+  "drive": {
+    "mode": {
+      "inUse": "In use",
+      "proxy": "Relayed by Peach",
+      "proxyHelp": "The browser only talks to Peach; Peach fetches the bytes from the drive by range and relays them, so it uses server bandwidth.",
+      "redirect": "Browser direct",
+      "redirectHelp": "The browser fetches the bytes from the drive itself; Peach only hands out a pre-authorized temporary address, so no server bandwidth is used.",
+      "switched": "{{label}} now uses {{mode}}",
+      "switchTo": "Use this",
+      "term": "Byte delivery"
+    }
+  },
   "interfaceLanguage": {
     "auto": "Auto",
     "help": "Auto follows your browser language, then the system language.",

@@ -6,13 +6,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, Sequence
+from typing import Mapping, Protocol, Sequence
 
 GOOGLE = "gdrive"
 ONEDRIVE = "onedrive"
 
 #: 内置驱动。`asset.location` 只允许出现这两个值；旧账本里的其他来源只读展示。
 LOCATIONS: tuple[str, ...] = (GOOGLE, ONEDRIVE)
+
+#: 取字节的两种方式：`redirect` 交给浏览器跟预授权地址走，`proxy` 由 Peach 带着 Range 转发。
+REDIRECT = "redirect"
+PROXY = "proxy"
+PLAYBACK_MODES: tuple[str, ...] = (REDIRECT, PROXY)
+#: 能直连的来源。Google 的 `alt=media` 必须带 Bearer，令牌不能交给浏览器。
+REDIRECTABLE: frozenset[str] = frozenset({ONEDRIVE})
+#: 每个来源的默认方式：能直连就直连，不占服务器流量。
+DEFAULT_MODES: Mapping[str, str] = {GOOGLE: PROXY, ONEDRIVE: REDIRECT}
+
+
+def modes_for(location: str) -> tuple[str, ...]:
+    """这个来源能选哪些方式：能直连的两个都给，只能带鉴权取的只剩转发。"""
+    return PLAYBACK_MODES if location in REDIRECTABLE else (PROXY,)
+
+
+def playback_mode(configured: Mapping[str, str] | None, location: str) -> str:
+    """这个来源当前该用哪种方式；文件里配了用不了的组合时退回默认值。"""
+    mode = (configured or {}).get(location, "")
+    if mode in PLAYBACK_MODES and mode in modes_for(location):
+        return mode
+    return DEFAULT_MODES.get(location, PROXY)
 
 
 @dataclass(frozen=True)

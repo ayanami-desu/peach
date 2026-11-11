@@ -89,6 +89,18 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertIn("OneDrive：刷新令牌已失效", broken["reason"])
         self.assertEqual(set(broken["details"]["locations"]), {"gdrive", "onedrive"})
 
+    def test_drives_ignore_a_source_that_was_never_set_up(self):
+        snapshot = {"locations": [
+            {"location": "gdrive", "label": "Google Drive", "configured": True, "connected": True,
+             "roots": [], "synced_at": "2026-11-11 09:00:00", "last_error": ""},
+            {"location": "onedrive", "label": "OneDrive", "configured": False, "connected": False,
+             "roots": [], "synced_at": None, "last_error": ""},
+        ]}
+        check = diagnostics.drives(snapshot)
+        self.assertEqual(check["status"], "ok")
+        self.assertEqual(check["reason"], "已接入：Google Drive")
+        self.assertEqual(set(check["details"]["locations"]), {"gdrive"})
+
     def test_access_security_separates_local_only_from_an_exposed_入口(self):
         local = diagnostics.security(self.settings_for(token=""))
         self.assertEqual((local["status"], local["reason"]), ("ok", "仅监听本机"))

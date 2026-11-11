@@ -51,6 +51,28 @@ class DriveSettingsTests(unittest.TestCase):
                                                    config.drive_roots, config.library_catalog))
         self.assertTrue(written.is_file())
 
+    def test_playback_modes_round_trip(self):
+        config = self.load(BASE + '\n[drive.modes]\nonedrive = "proxy"\n')
+        self.assertEqual({'onedrive': 'proxy'}, config.drive_modes)
+        settings_file.write(config, force=True)
+        again = settings_file.load_config(self.root, {'PEACH_DATA_ROOT': str(self.root)})
+        self.assertEqual({'onedrive': 'proxy'}, again.drive_modes)
+
+    def test_playback_mode_must_be_one_of_the_two(self):
+        with self.assertRaisesRegex(settings_file.SettingsFileError, 'redirect、proxy'):
+            self.load(BASE + '\n[drive.modes]\nonedrive = "stream"\n')
+
+    def test_google_cannot_be_told_to_redirect(self):
+        # Google 的字节必须带 Bearer，令牌不能交给浏览器，所以只有 proxy 一种。
+        with self.assertRaisesRegex(settings_file.SettingsFileError, '只能用 proxy'):
+            self.load(BASE + '\n[drive.modes]\ngdrive = "redirect"\n')
+
+    def test_playback_mode_needs_a_configured_account(self):
+        body = BASE.replace('[drive.accounts.onedrive]\nclient_id = "id-2"\nclient_secret = "secret-2"\n', '')
+        body = body.replace('onedrive = ["root-2", "root-3"]\n', '')
+        with self.assertRaisesRegex(settings_file.SettingsFileError, r'没在 `\[drive.accounts\]` 里配置'):
+            self.load(body + '\n[drive.modes]\nonedrive = "proxy"\n')
+
     def test_public_url_has_to_be_https(self):
         body = BASE.replace('https://peach.example.com', 'http://peach.example.com')
         with self.assertRaisesRegex(settings_file.SettingsFileError, 'https 地址'):

@@ -2,7 +2,7 @@
  * 加载读数、画中画的 Media Session 与外挂字幕。挂上真 Video.js 的那一面在 `e2e/stage.test.ts`。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountPlayerMediaSession, mountPlayerQualityControl, mountPlayerSubtitles } from '../src/player/controls';
+import { mountPlayerMediaSession, mountPlayerQualityControl } from '../src/player/controls';
 import { configurePlayer, type PlayerHost } from '../src/player/host';
 import { averageBitrate, bufferedAhead, fmtLoadRate, pushPlayerStat } from '../src/player/stats';
 import {
@@ -158,7 +158,6 @@ describe('沉浸模式的每一格', () => {
       const disposing: (() => void)[] = [];
       return {
         on: (_event: string, handler: () => void) => { disposing.push(handler) },
-        addRemoteTextTrack: () => {},
         src: (source: unknown) => { record.sources.push(source) },
         one: (_event: string, handler: () => void) => { record.error = handler },
         el: () => shell,
@@ -173,8 +172,8 @@ describe('沉浸模式的每一格', () => {
   }
 
   it('片源按 stream-plan 交给裸播放器，分片出错退回直读；拆这一格时按会话取消并拆播放器', async () => {
-    const calls = stubFetch((url) => url.startsWith('/api/player/memory') ? { selected: null, tracks: [] }
-      : url.startsWith('/api/stream-plan') ? { protocol: 'hls', src: '/stream/hls/8/index.m3u8' } : { cancelled: 1 });
+    const calls = stubFetch((url) => url.startsWith('/api/stream-plan')
+      ? { protocol: 'hls', src: '/stream/hls/8/index.m3u8' } : { cancelled: 1 });
     const { factory, made } = fakeVideojs();
     const video = document.createElement('video');
     const onLoaded = vi.fn();
@@ -244,7 +243,6 @@ function fakePlayer(state: { time: number; duration: number }) {
     play: () => Promise.resolve(),
     pause: () => {},
     isDisposed: () => false,
-    addRemoteTextTrack: vi.fn(),
   };
   const fire = (event: string) => handlers.get(event)?.forEach((fn) => fn());
   return { player: player as unknown as VjsPlayer, raw: player, fire };
@@ -279,7 +277,6 @@ describe('播放器清晰度', () => {
     configurePlayer(host());
     const root = document.createElement('div'), bar = document.createElement('div'), video = document.createElement('video');
     bar.className = 'vjs-control-bar';
-    bar.innerHTML = '<div class="vjs-subtitles-control vjs-control"><button type="button">CC</button></div>';
     const container = document.createElement('media-container'); container.append(video, bar);
     root.append(container); document.body.append(root);
     const { player, fire } = fakePlayer({ time: 0, duration: 100 });
@@ -427,19 +424,3 @@ describe('画中画的快进快退', () => {
   });
 });
 
-describe('外挂字幕', () => {
-  it('能播的轨全挂上，一条都不预先打开', async () => {
-    stubFetch(() => ({ subtitles: [
-      { id: 'sidecar:1', playable: true, src: '/sub/1.vtt', language: 'zh', label: '简体' },
-      { id: 'sidecar:2', playable: false, src: '/sub/2.ass', language: 'ja', label: '日语' },
-      { id: 'sidecar:3', playable: true, src: '/sub/3.vtt', label: '繁体' },
-    ] }));
-    const { player, raw } = fakePlayer({ time: 0, duration: 0 });
-    mountPlayerSubtitles(player, 21);
-    await flush(); await flush();
-    expect(raw.addRemoteTextTrack.mock.calls).toEqual([
-      [{ id: 'sidecar:1', kind: 'subtitles', src: '/sub/1.vtt', srclang: 'zh', label: '简体', default: false }, true],
-      [{ id: 'sidecar:3', kind: 'subtitles', src: '/sub/3.vtt', srclang: '', label: '繁体', default: false }, true],
-    ]);
-  });
-});

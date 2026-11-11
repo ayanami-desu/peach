@@ -31,11 +31,6 @@ export function revealSkeleton(container:any,write:()=>void):void{
   setTimeout(()=>{if(fade.isConnected){fade.removeEventListener('transitionend',done);drop()}},1000);
 }
 
-export function configurationSkeletonHtml():string{
-  const groups:[string,number][]=[['通用',2],['媒体',2],['下载',2],['网络与访问',3],['维护',3]];
-  return `<div class="ui-configpage" data-skeleton="configuration" role="status" aria-label="正在读取配置">${groups.map(([label,count])=>`<h2 class="ui-configgroup" aria-hidden="true">${label}</h2>${Array.from({length:count},()=>`<div class="configfieldset config-skeleton-card" aria-hidden="true"><div class="geist-fieldset-content"><span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span></div><footer class="geist-fieldset-footer"><span class="skeleton"></span></footer></div>`).join('')}`).join('')}</div>`;
-}
-
 /** Geist Skeleton: reserve a large content region while its structure is loading. */
 /* `count` 只对 cards 生效：块数是骨架说出口的结构预告，六块对上的是海报网格，
    而行政界面往往只有两三个大区。多画的块加载完就消失，那不是占位是误报。

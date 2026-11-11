@@ -53,7 +53,6 @@ function shellActions(): ShellActions {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
     openManage: vi.fn(), managePath: vi.fn((section: string) => sections[section] ?? ''), openFollow: vi.fn(),
     receipt: vi.fn(), toast: vi.fn(), failure: vi.fn(), revealSource: vi.fn(async () => ''),
-    reopenTutorial: vi.fn(async () => {}),
     routeReview: vi.fn(), routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '',
     routeIndex: vi.fn(), savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(),
     personAvatar: vi.fn(() => ({ html: '', face: '' })), authorAvatar: vi.fn(() => ''), showIndexTags: vi.fn(),
@@ -424,7 +423,7 @@ it('回执、打开作品与资料页都交回壳：都走过去时回执', asyn
   duplicates.failure('删除', 'boom');
   const configuration = element<ConfigurationProps>('/settings/drives', r, { section: '网盘' }, actions, vi.fn());
   configuration.receipt('已保存配置');
-  expect([configuration.reopenTutorial, configuration.section]).toEqual([actions.reopenTutorial, '网盘']);
+  expect(configuration.section).toBe('网盘');
   const review = element<ReviewProps>('/review', r,
     { category: '', readOnly: false, readOnlyMessage: '', writerUrl: '' }, actions, vi.fn());
   review.openEntity('performer', '某人');
@@ -461,7 +460,7 @@ function indexSurface() {
 
 const TAGS = { items: [{ k: '痴女', n: 1, cat: 'role' }], has_more: false };
 const tagsOpen = (selectMode = false) => ({
-  kind: 'tags', q: '', scope: 'local', view: 'alphabet', category: 'all', layout: 'big', selectMode, configurable: false,
+  kind: 'tags', q: '', scope: 'local', view: 'alphabet', category: 'all', layout: 'big', selectMode,
 });
 
 /** 索引页的取数：`/api/index` 按需手动兑现，其余当场回空表。 */
@@ -580,7 +579,7 @@ it('索引页：页内写地址、存版式、头像与去处都接到壳的那�
     props.openEntity, props.showTags, props.openFollowAuthor, props.openFollowTag]).toEqual([
     actions.routeIndex, actions.savePeopleLayout, actions.exitSelectMode, actions.personAvatar, actions.authorAvatar,
     actions.openEntity, actions.showIndexTags, actions.openFollowAuthor, actions.openFollowTag]);
-  expect([props.kind, props.layout, props.selectMode, props.configurable]).toEqual(['performers', 'big', false, false]);
+  expect([props.kind, props.layout, props.selectMode]).toEqual(['performers', 'big', false]);
   expect((props.tagLabel as (tag: string) => string)('JK制服')).toBe('JK制服');
 });
 

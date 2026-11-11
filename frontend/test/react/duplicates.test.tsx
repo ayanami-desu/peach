@@ -11,7 +11,7 @@ import {
   sharedNamePrefix,
   type DuplicateFile, type DuplicateGroup, type DuplicatesData,
 } from '../../src/react/duplicates/duplicates';
-import { cloudLocations, MEDIA_SOURCES_KEY, type MediaSourcesData } from '../../src/react/media-sources';
+import { configuredLocations, DRIVE_KEY, type DriveSnapshot } from '../../src/query/drives';
 import { queryClient } from '../../src/react/query';
 import { buttonNamed, click, fetchMock, mount, sentBody, settle } from './render';
 
@@ -37,9 +37,17 @@ const groups = [
     { cross_drive: true, drives: ['R:', 'G:'] }),
 ];
 const data: DuplicatesData = { total: 2, files: 4, reclaimable: 2 * GB, groups };
-const sources: MediaSourcesData = {
-  sources: [{ location: 'local', online: true, roots: [{ online: true }] }, { location: 'gdrive', online: false, roots: [{ online: false }] },
-    { location: 'onedrive', online: true, roots: [] }],
+const drives: DriveSnapshot = {
+  public_url: 'http://127.0.0.1:8080',
+  locations: [
+    { location: 'gdrive', label: 'Google Drive', configured: true, connected: true, email: '', display_name: '',
+      roots: [{ remote_id: 'root-1', name: 'Movies' }], synced_at: null, last_error: '',
+      mode: 'proxy', modes: ['proxy'] },
+    { location: 'onedrive', label: 'OneDrive', configured: true, connected: true, email: '', display_name: '',
+      roots: [], synced_at: null, last_error: '', mode: 'redirect', modes: ['redirect', 'proxy'] },
+    { location: 'pikpak', label: 'PikPak', configured: false, connected: false, email: '', display_name: '',
+      roots: [], synced_at: null, last_error: '', mode: 'proxy', modes: ['proxy'] },
+  ],
 };
 
 type Confirmation = Parameters<typeof legacyUi.confirmModal>[0];
@@ -57,7 +65,7 @@ function confirmEverything() {
 
 async function open(payload: DuplicatesData = data) {
   queryClient.setQueryData(DUPLICATES_KEY, payload);
-  queryClient.setQueryData(MEDIA_SOURCES_KEY, sources);
+  queryClient.setQueryData(DRIVE_KEY, drives);
   const props = { openItem: vi.fn(), toast: vi.fn(), failure: vi.fn() };
   const host = await mount(<QueryClientProvider client={queryClient}><DuplicatesPage {...props} /></QueryClientProvider>);
   return { host, ...props };
@@ -66,9 +74,9 @@ async function open(payload: DuplicatesData = data) {
 const card = (host: ParentNode, code: string) => host.querySelector(`section[aria-label="${code}"]`)!;
 
 describe('网盘保留选项', () => {
-  it('本地与在线来源不算网盘；已配置但离线的网盘仍然算，没配根目录的不算', () => {
-    expect(cloudLocations({ sources: [{ location: 'local', online: true }, { location: 'online', online: true }] })).toEqual([]);
-    expect(cloudLocations(sources)).toEqual(['gdrive']);
+  it('只算配了凭据又有扫描起点的网盘；没配扫描起点的不算', () => {
+    expect(configuredLocations(undefined)).toEqual([]);
+    expect(configuredLocations(drives)).toEqual(['gdrive']);
   });
 
   it('只给组内真的出现过、且已配置的网盘', () => {
@@ -92,9 +100,9 @@ describe('每组留谁', () => {
   });
 });
 
-it('首屏一次取回分组和来源可达性，页面挂上去不再补取', async () => {
+it('首屏先取回分组，网盘状态由页面挂上去时自己读一次', async () => {
   const fetcher = vi.fn(async (path: string) => ({
-    ok: true, status: 200, json: async () => (path === '/api/sources' ? sources : data),
+    ok: true, status: 200, json: async () => (path === '/api/drive' ? drives : data),
   }));
   vi.stubGlobal('fetch', fetcher);
   await prefetchDuplicates(new AbortController().signal);
@@ -102,7 +110,7 @@ it('首屏一次取回分组和来源可达性，页面挂上去不再补取', a
     <QueryClientProvider client={queryClient}>
       <DuplicatesPage openItem={vi.fn()} toast={vi.fn()} failure={vi.fn()} />
     </QueryClientProvider>);
-  expect(fetcher.mock.calls.map((call) => call[0]).sort()).toEqual(['/api/duplicates?limit=120', '/api/sources']);
+  expect(fetcher.mock.calls.map((call) => call[0]).sort()).toEqual(['/api/drive', '/api/duplicates?limit=120']);
   expect(host.textContent).toContain('2 组');
   expect(host.textContent).toContain('4 个文件 · 可回收 2.0 GB');
 });

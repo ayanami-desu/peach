@@ -1,4 +1,4 @@
-/* 设计决定：设置、口味、统计与筛选玻璃。读 `getComputedStyle` 断言用户定过的外观；共用的桩与浏览器生命周期在 `design-fixture.ts`。 */
+/* 设计决定：设置、统计与筛选玻璃。读 `getComputedStyle` 断言用户定过的外观；共用的桩与浏览器生命周期在 `design-fixture.ts`。 */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Browser, Page } from 'playwright-core';
@@ -6,11 +6,11 @@ import { openFollowFeed } from './follow-fixture.ts';
 import { requiredEnv, settle, visit, VIEWPORTS } from './harness.ts';
 import { openHome, openPanel, ORDER, PANEL, stubServer } from './settings-fixture.ts';
 import {
-  DESKTOP, MOBILE, tokenColor, settledRun, openActivity, TASTE_CATEGORIES, TASTE_FACE, openTaste, openIndexPage,
+  DESKTOP, MOBILE, tokenColor, settledRun, openActivity, openIndexPage,
   farthestShadow, holdApi, openLightbox, installDesignBrowser,
 } from './design-fixture.ts';
 
-describe('设计决定：设置、口味、统计与筛选玻璃', () => {
+describe('设计决定：设置、统计与筛选玻璃', () => {
   let browser: Browser;
   installDesignBrowser((next) => { browser = next; });
 
@@ -51,75 +51,6 @@ describe('设计决定：设置、口味、统计与筛选玻璃', () => {
       assert.deepEqual(shown.rows, ['1px', '1px', '0px'], '卷与卷之间没有覆盖率那样的分隔线');
       assert.ok(shown.overflow <= .5, `使用空间的详情越出卡片内边距 ${shown.overflow}px`);
       assert.ok(shown.text.includes('10.00 PB'), '网盘容量没按 PB 写');
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  for (const viewport of VIEWPORTS) {
-    it(`口味维度排名宽屏跟雷达那一栏等高、窄屏按条数给高度，图拉高时条不变粗（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await openTaste(browser, viewport);
-      try {
-        const page = opened.page;
-        const bars = page.locator('section[aria-label="口味维度排名"]');
-        await bars.locator('.recharts-bar-rectangle').first().waitFor({ state: 'visible', timeout: 15_000 });
-        await settle(page);
-        const shown = await page.locator('section[aria-label="浏览器画像"]').evaluate((section) => {
-          const radar = section.firstElementChild!.getBoundingClientRect();
-          const ranked = section.querySelector('section[aria-label="口味维度排名"]')!.getBoundingClientRect();
-          return {
-            radar: radar.height,
-            ranked: ranked.height,
-            thickness: [...section.querySelectorAll('.recharts-bar-rectangle')]
-              .map((bar) => bar.getBoundingClientRect().height),
-          };
-        });
-        assert.equal(shown.thickness.length, TASTE_CATEGORIES.length);
-        if (viewport.mobile) {
-          assert.ok(shown.ranked >= 32 * TASTE_CATEGORIES.length,
-            `窄屏排行条只有 ${shown.ranked}px，${TASTE_CATEGORIES.length} 条挤不下`);
-        } else {
-          assert.ok(Math.abs(shown.ranked - shown.radar) < 2,
-            `排行条 ${shown.ranked}px，雷达那一栏 ${shown.radar}px，两栏不等高`);
-        }
-        // 26 是一格 32 里默认留出的粗细；图被拉高时多出来的高度拉开条距，不进条本身。
-        assert.ok(shown.thickness.every((height) => height <= 26.5), `条粗 ${shown.thickness.join('、')}px`);
-        assert.deepEqual(opened.problems, []);
-      } finally {
-        await opened.close();
-      }
-    });
-  }
-
-  it('口味榜的女优与创作者头像按人脸框放大：图保持原比例、盖满圆框，不露出底下的首字母', { timeout: 60_000 }, async () => {
-    const opened = await openTaste(browser, DESKTOP);
-    try {
-      const page = opened.page;
-      await page.getByRole('tablist', { name: '口味分析的数据来源' }).getByRole('tab', { name: 'Peach 观看与评价' }).click();
-      for (const name of ['女优', '创作者']) {
-        await page.getByRole('tablist', { name: 'Peach 口味维度' }).getByRole('tab', { name }).click();
-        const img = page.getByRole('tabpanel', { name }).locator('img[data-facebox]').first();
-        await img.scrollIntoViewIfNeeded();
-        // 放大是图加载后 `avatarFrame` 写进内联 style 的；等到那一步落地再量。
-        await page.waitForFunction((element) => element instanceof HTMLImageElement
-          && element.complete && element.naturalWidth > 0 && element.style.width !== '',
-        await img.elementHandle(), { timeout: 15_000 });
-        const frame = await img.evaluate((element) => {
-          const ring = element.parentElement!.getBoundingClientRect();
-          const box = element.getBoundingClientRect();
-          return {
-            maxWidth: getComputedStyle(element).maxWidth, ring: ring.width,
-            width: box.width, aspect: box.width / box.height,
-            gaps: [box.left - ring.left, ring.right - box.right, box.top - ring.top, ring.bottom - box.bottom],
-          };
-        });
-        assert.equal(frame.maxWidth, 'none', `${name}头像的图被预检的 max-width 夹住`);
-        assert.ok(frame.width > frame.ring, `${name}头像没有按人脸框放大：图宽 ${frame.width}px，圆框 ${frame.ring}px`);
-        assert.ok(Math.abs(frame.aspect - TASTE_FACE.imgW / TASTE_FACE.imgH) < .02,
-          `${name}头像的图宽高比 ${frame.aspect}，被压扁了`);
-        assert.ok(frame.gaps.every((gap) => gap <= .5), `${name}头像的图没盖满圆框：${frame.gaps.join('、')}`);
-      }
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();
@@ -547,43 +478,6 @@ describe('设计决定：设置、口味、统计与筛选玻璃', () => {
       assert.ok((server.settings.sidebarOrder as string[]).length > ORDER.length, '加回的入口没有写进数据库');
       assert.equal(await trigger.evaluate((node) => getComputedStyle(node).cursor), 'not-allowed',
         '没有可添加的入口时触发器还是普通光标');
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  it('来源与订阅中禁用的自动检查开关降低轨道不透明度并使用禁止光标', { timeout: 60_000 }, async () => {
-    const opened = await visit(browser, '/', DESKTOP);
-    const { page } = opened;
-    try {
-      const server = await stubServer(page);
-      server.schedule.available = false;
-      await page.goto(new URL('/settings/library', page.url()).href, { waitUntil: 'load' });
-      await settle(page);
-      const source = () => page.getByRole('tablist', { name: '配置分区' }).getByRole('tab', { name: '来源与订阅', exact: true });
-      await source().click();
-      const toggle = page.getByRole('switch', { name: '自动检查更新', exact: true });
-      await toggle.and(page.locator(':disabled:checked')).waitFor({ state: 'attached', timeout: 10_000 });
-      const face = (node: Element) => {
-        const label = node.closest('label')!;
-        const track = getComputedStyle(label.querySelector(':scope > span[aria-hidden]')!);
-        return { opacity: Number(track.opacity), gradient: track.backgroundImage, cursor: getComputedStyle(label).cursor };
-      };
-      const blocked = await toggle.evaluate(face);
-      assert.equal(blocked.opacity, 0.5);
-      assert.equal(blocked.cursor, 'not-allowed');
-      server.schedule.available = true;
-      await page.reload({ waitUntil: 'load' });
-      await settle(page);
-      await source().click();
-      await toggle.and(page.locator(':enabled:checked')).waitFor({ state: 'attached', timeout: 10_000 });
-      const live = await toggle.evaluate(face);
-      assert.equal(live.opacity, 1);
-      assert.equal(live.cursor, 'pointer');
-      assert.notEqual(live.gradient, 'none');
-      assert.equal(blocked.gradient, live.gradient, '两种状态应比较同一个已开启的开关');
-      assert.ok(blocked.opacity < live.opacity, '禁用轨道的视觉强度没有降低');
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();

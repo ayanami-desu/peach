@@ -16,6 +16,7 @@ import { useLocation } from 'react-router';
 
 import { appSettingsStore } from '@peach/appearance';
 import { followManageParams } from '../../follow-manage/manage-route';
+import { javTab } from '../../jav/jav-navigation';
 import { isOverlayPath, managedEntry, openManagedRoute, peachHistory, isConfigurationPath } from '@peach/history';
 import { api, isAbort } from '@peach/legacy/core';
 import { pageOpens, subscribeShell } from '@peach/shell';
@@ -67,6 +68,12 @@ function writerProps(runtime: Runtime | null, path: string) {
 async function openProps(path: ManagedPath, run: Run): Promise<object | null> {
   if (path === '/stats') return {} satisfies ManagedOpenProps['/stats'];
   if (isConfigurationPath(path)) return {} satisfies ManagedOpenProps['/settings'];
+  if (path === '/jav') {
+    const runtime = await readRuntime(run);
+    if (!run.live) return null;
+    /* 四个分区地址（`?tab=wants|discover|releases|library`）各画各的：页签从地址读，缺省回作品库。 */
+    return { tab: javTab(search().get('tab')), readOnly: !!runtime?.ledger_read_only } satisfies ManagedOpenProps['/jav'];
+  }
   if (path === '/review') {
     const category = search().get('category') || '';
     const runtime = await readRuntime(run);

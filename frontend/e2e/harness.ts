@@ -57,13 +57,25 @@ export async function launch(): Promise<Browser> {
     args.push(`--log-net-log=${join(networkLogs, filename)}`, '--net-log-capture-mode=HeavilyRedacted');
     console.info(`浏览器网络事件日志：${filename}`);
   }
-  return chromium.launch({
+  const browser = await chromium.launch({
     headless: true,
     executablePath: requiredEnv('PEACH_E2E_CHROME'),
     args,
     // Windows 首次加载浏览器与系统组件使用独立的启动预算，页面等待由各用例限定。
     timeout: 60_000,
   });
+  // 服务端带访问口令时，管理接口要有效凭据；脚本调 API 的方式是 `X-Token` 请求头，
+  // 这里给每个上下文都加上，用例自己 newContext 的那些也一并生效。
+  const token = process.env.PEACH_E2E_TOKEN;
+  if (token) {
+    const open = browser.newContext.bind(browser);
+    browser.newContext = (async (options: Parameters<Browser['newContext']>[0] = {}) => {
+      const context = await open(options);
+      await context.setExtraHTTPHeaders({ 'X-Token': token });
+      return context;
+    }) as Browser['newContext'];
+  }
+  return browser;
 }
 
 /** 失败时保留焦点、输入和弹层现场；成功路径不额外查询页面。 */
@@ -145,11 +157,11 @@ export async function expectBody(page: Page, where: string, body: readonly Locat
   }
 }
 
-/** Peach 配置页的主体：标题与默认的媒体库分区。 */
+/** Peach 配置页的主体：标题与分区页签条。 */
 export function configurationBody(page: Page): Locator[] {
   return [
     page.locator('#main').getByRole('heading', { name: 'Peach 配置', exact: true }),
-    page.locator('#stats').getByRole('tab', { name: '媒体库与入库' }),
+    page.locator('#stats').getByRole('tab', { name: '网盘', exact: true }),
   ];
 }
 

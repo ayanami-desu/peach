@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest';
 import {requestErrorMessage} from '../src/core';
-import {noteHtml,projectBannerHtml,gaugeHtml,progressHtml,configurationSkeletonHtml} from '../src/ui-kit';
+import {noteHtml,projectBannerHtml,gaugeHtml,progressHtml} from '../src/ui-kit';
 
 describe('中文错误反馈',()=>{
   it.each(['Failed to fetch','NetworkError when attempting to fetch resource.','Load failed'])('网络异常 %s 给出连接检查方法',message=>{
@@ -24,17 +24,6 @@ describe('中文错误反馈',()=>{
   });
 });
 describe('持久提示控件',()=>{
-  it('配置骨架标题和卡片共用真实页面网格与正文底栏',()=>{
-    const host=document.createElement('div');host.innerHTML=configurationSkeletonHtml();
-    const page=host.querySelector('.ui-configpage')!;
-    expect(page.querySelectorAll(':scope > .ui-configgroup')).toHaveLength(5);
-    expect(page.querySelectorAll(':scope > .configfieldset')).toHaveLength(12);
-    for(const card of page.querySelectorAll('.configfieldset')){
-      expect(card.querySelector(':scope > .geist-fieldset-content')).not.toBeNull();
-      expect(card.querySelector(':scope > .geist-fieldset-footer')).not.toBeNull();
-    }
-    expect(host.children).toHaveLength(1);
-  });
   it.each([[79,'normal'],[80,'warning'],[94,'warning'],[95,'error']])('容量 %s 使用一致阈值', (value,level)=>{
     const host=document.createElement('div');host.innerHTML=gaugeHtml('空间使用率',value,100,{usage:true});
     expect(host.querySelector('.ui-geist-gauge')?.getAttribute('data-level')).toBe(level);

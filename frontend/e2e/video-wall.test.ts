@@ -540,7 +540,7 @@ describe('播放墙的浏览与详情', () => {
       assert.deepEqual(await camera(page), position);
     } finally { await opened.close() }
   });
-  it('真实演示短片在墙内播放，拖动不卸载播放器，详情认领同一实例', async () => {
+  it('真实演示短片在墙内点播放被计费闸门拦下，详情页从闸门开始播', async () => {
     const opened = await visit(browser, '/', VIEWPORTS[0]!);
     const { page } = opened;
     try {
@@ -548,33 +548,21 @@ describe('播放墙的浏览与详情', () => {
       await addWallCovers(page);
       await enter(page); await pick(page);
       await page.getByRole('button', { name: '播放', exact: true }).click();
-      await page.waitForFunction(() => {
-        const video = document.querySelector<HTMLVideoElement>('[data-wall-player] video');
-        return !!video && video.readyState >= 2 && !video.paused && video.currentTime > 0;
-      }, undefined, { timeout: 30_000 });
-      const playingStyle = await page.locator('[data-wall-focus]').evaluate(root => {
-        const box = root.getBoundingClientRect(), title = root.querySelector('[data-wall-focus-head]')!;
-        return { blur:getComputedStyle(root.querySelector('[data-wall-scene]')!).filter,
-          title:(title.getBoundingClientRect().top - box.top) / box.height,
-          font:parseFloat(getComputedStyle(title.querySelector('b')!).fontSize),
-          close:getComputedStyle(root.querySelector('[data-wall-focus-close]')!).backgroundColor,
-          overlays:[...root.querySelectorAll('[data-player-stats-button],[data-player-net],[data-player-stats]')].map(node => getComputedStyle(node).display) };
-      });
-      assert.match(playingStyle.blur, /blur\(36px\)/); assert.ok(playingStyle.title < .2);
-      assert.equal(playingStyle.font, 22); assert.equal(playingStyle.close, 'rgba(0, 0, 0, 0.66)');
-      assert.equal(playingStyle.overlays.length, 3); assert.ok(playingStyle.overlays.every(value => value === 'none'));
-      await page.getByRole('button', { name:'暂停', exact:true }).click();
-      await page.waitForFunction(() => document.querySelector<HTMLVideoElement>('[data-wall-player] video')?.paused);
-      await page.getByRole('button', { name:'播放', exact:true }).click();
-      await page.waitForFunction(() => !document.querySelector<HTMLVideoElement>('[data-wall-player] video')?.paused);
-      await page.evaluate(() => {
-        const video = document.querySelector('[data-wall-player] video')!;
-        video.setAttribute('data-wall-instance', 'same');
-      });
-      await page.locator('[data-wall-viewport]').focus(); await page.keyboard.press('ArrowLeft');
-      assert.equal(await page.locator('[data-wall-player] video[data-wall-instance="same"]').count(), 1);
+      /* 网盘来源一律按流量计费（`resources/media-sources.json` 里每个来源都是 metered），
+         墙内直接拉流会绕开计费确认：`frontend/src/react/stage/stage-player.ts:174` 就在这里拦住，
+         把认领交回详情页。 */
+      const note = page.locator('[data-wall-play-error]');
+      await note.waitFor();
+      assert.match(await note.innerText(), /请打开详情确认计费来源/);
+      assert.equal(await page.locator('[data-wall-player] video').count(), 0, '墙内不该起播放器');
       await page.getByRole('button', { name: '详情', exact: true }).click();
-      await page.locator('#stage video[data-wall-instance="same"]').waitFor();
+      const gate = page.locator('#stage[open] #gate');
+      await gate.waitFor();
+      await gate.click();
+      await page.waitForFunction(() => {
+        const video = document.querySelector<HTMLVideoElement>('#stage video.vjs-tech');
+        return !!video && video.readyState >= 2;
+      }, undefined, { timeout: 30_000 });
       await page.keyboard.press('Escape');
       await page.locator('#stage[open]').waitFor({ state: 'hidden' });
     } finally { await page.unrouteAll({ behavior:'wait' }); await opened.close() }

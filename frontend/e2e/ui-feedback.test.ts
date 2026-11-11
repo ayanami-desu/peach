@@ -3,12 +3,11 @@ import { after, before, describe, it } from 'node:test';
 import type { Browser } from 'playwright-core';
 import { launch, layout, settle, VIEWPORTS, visit } from './harness.ts';
 
-/* 每个分区取一块不随本机配置出没的卡：骨架按终态结构画，随配置变的卡（下载渠道的「云下载」
-   跟着媒体库里有没有网盘）照本机上次记下的结构画，新开的浏览器里没有记录，按最小结构画。 */
+/* 配置页六格的首屏骨架：整页骨架画页签名与正文那一格，要等数据的分区各画自己的占位。 */
 const sections = [
-  ['library', '媒体库与入库', '媒体库与目录'], ['subscriptions', '来源与订阅', '作品资料站点'],
-  ['downloads', '下载渠道', '浏览器添加 JAV'], ['network', '网络与访问', 'Peach 代理'],
-  ['maintenance', '应用与维护', '开机自启'], ['diagnostics', '系统诊断', '库健康'],
+  ['drives', '网盘', '正在读取配置'], ['access', '访问与安全', '正在读取配置'],
+  ['token', 'API 令牌', '正在读取配置'], ['devices', '设备会话', '已登录的设备'],
+  ['speed', '任务速度', '正在读取配置'], ['diagnostics', '系统诊断', '库健康'],
 ] as const;
 
 describe('等待反馈与文件夹模式', () => {
@@ -28,8 +27,6 @@ describe('等待反馈与文件夹模式', () => {
         await root.waitFor();
         assert.equal((await root.locator('.ui-board-local-nav [aria-selected="true"]').innerText()).trim(), name);
         assert.ok(await root.locator(`[aria-label="${title}"]`).count());
-        if (key !== 'library') assert.equal(await root.locator('[aria-label="媒体库与目录"]').count(), 0);
-        if (key === 'library') assert.equal(await root.locator('[data-folder-row]').count(), 1);
         const geometry = await layout(page);
         assert.ok(geometry.scrollWidth <= geometry.viewportWidth, JSON.stringify(geometry));
         assert.deepEqual(geometry.offenders, []);

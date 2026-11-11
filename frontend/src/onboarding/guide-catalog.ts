@@ -5,7 +5,7 @@ import { javPath } from '../react/jav/jav-navigation';
 /** 沿用应用的路由类型，页面移除或改名会在类型检查中指出教程的旧链接。 */
 type GuidePath = RegisteredRoutePath;
 export type GuideRoute = GuidePath | `${GuidePath}?${string}` | `${GuidePath}#${string}`;
-export interface GuideStep { id: string; title: string; body: string; route?: GuideRoute | undefined; target?: string | undefined; surface?: 'detail' | 'player' | 'subtitles'; scope?: string | undefined; details?: readonly [string, string][] | undefined }
+export interface GuideStep { id: string; title: string; body: string; route?: GuideRoute | undefined; target?: string | undefined; surface?: 'detail' | 'player'; scope?: string | undefined; details?: readonly [string, string][] | undefined }
 export interface GuideChapter { id: string; title: string; summary: string; kind: 'interface' | 'settings'; steps: GuideStep[] }
 const step = (id: string, title: string, body: string, route?: GuideRoute, target?: string, scope?: string): GuideStep => ({ id, title, body, route, target, scope });
 const page = (id: string, title: string, body: string, route: GuideRoute, target?: string) => step(id, title, body, route, target);
@@ -23,7 +23,6 @@ export const INTERFACE_CHAPTERS: GuideChapter[] = [
     page('filter', '筛选与清除', '多个筛选条件会共同缩小结果。找不到内容时先检查媒体库和筛选条件。', '/', '[data-catalog-frame]'),
     { ...step('detail', '作品详情', '这里显示当前作品的标题和源文件信息。评分、人物和标签在下方；有分卷或版本的作品可从馆藏卡片进入相应队列。', '/', '[data-item-title]'), surface: 'detail' },
     { ...step('player', '播放器控件', '底部控制条提供播放、进度、音量和全屏。右侧齿轮打开播放速度、字幕和画面旋转等选项。', '/', '#stage .vjs-control-bar'), surface: 'player' },
-    { ...step('subtitles', '字幕', '从播放器齿轮菜单进入字幕，可以选择已有字幕或加载本地字幕文件。', '/', '#stage [data-player-subtitles]'), surface: 'subtitles' },
     { ...step('external', '外部播放器', '在这里选择 M3U 播放列表或网络播放地址，再点打开。另一台设备需要能访问当前 Peach 地址。', '/', '#stage [data-local-playback-row]'), surface: 'detail' },
   ] },
   { id: 'save', kind: 'interface', title: '保存喜欢的内容', summary: '评分、标记、播放列表与当前播放队列。', steps: [

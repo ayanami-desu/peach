@@ -695,10 +695,23 @@ def management_route_redirect(request: Request, args: dict[str, str] = Depends(r
 #: 刷新与直接粘地址才进得来。两份清单各写一遍就会漂，所以这里直接取并集。
 SETTINGS_SECTIONS = frozenset(NAVIGATION_ORDERS['preferences']) | frozenset(NAVIGATION_ORDERS['configuration'])
 
+#: 已经下线的分区。客户端 `frontend/src/history/settings-route.ts` 的 `LEGACY_SETTINGS_TARGETS`
+#: 管站内跳转，站外旧书签与刷新直接落到这里——不转过去就是一张空白的 404。
+LEGACY_SETTINGS_SECTIONS = {
+    "library": "/settings/drives",
+    "downloads": "/settings/drives",
+    "network": "/settings/access",
+    "maintenance": "/settings/diagnostics",
+    "subscriptions": "/sources",
+    "playback": "/settings/browsing",
+}
+
 
 @router.api_route("/settings/{section}", methods=["GET", "HEAD"])
 def settings_section_route(request: Request, section: str,
                            args: dict[str, str] = Depends(require_page_auth)):
+    if section in LEGACY_SETTINGS_SECTIONS:
+        return _page_redirect(request, LEGACY_SETTINGS_SECTIONS[section])
     if section not in SETTINGS_SECTIONS:
         raise HTTPException(404, "not found")
     return index(request, args)

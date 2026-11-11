@@ -40,8 +40,8 @@ DIRECTORY_KEYS = (
     "database", "generated", "sources", "state", "secrets", "logs", "tools", "review",
 )
 
-#: `[drive]` 段里除两张子表之外的键。`public_url` 是 OAuth 回调的基址。
-_DRIVE_KEYS = frozenset({"public_url", "accounts", "roots"})
+#: `[drive]` 段里除三张子表之外的键。`public_url` 是 OAuth 回调的基址。
+_DRIVE_KEYS = frozenset({"public_url", "accounts", "roots", "modes"})
 
 
 class SettingsFileError(RuntimeError):
@@ -174,6 +174,8 @@ class PeachConfig:
     drive_clients: dict[str, tuple[str, str]] = field(default_factory=dict)
     #: 网盘来源 -> 扫描起点的远端目录 id；网站点自己的选法，与账号根目录无关。
     drive_roots: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: 网盘来源 -> 取字节方式（`redirect` 或 `proxy`）。没写的来源用驱动自己的默认值。
+    drive_modes: dict[str, str] = field(default_factory=dict)
 
     @property
     def configured(self) -> bool:
@@ -266,6 +268,31 @@ def _root_map(table: dict, path: Path, prefix: str) -> dict[str, tuple[str, ...]
     return result
 
 
+def _mode_map(table: dict, path: Path, clients: dict[str, tuple[str, str]]) -> dict[str, str]:
+    """`[drive.modes]`：每个来源用哪种取字节方式。
+
+    只接受内置来源，且必须已经在 `[drive.accounts]` 里配过——一个没接进来的网盘谈
+    「怎么取字节」没有意义。带鉴权才能取的来源（Google）只能写 `proxy`。
+    """
+    from .drive_provider import LOCATIONS, PLAYBACK_MODES, modes_for
+
+    result: dict[str, str] = {}
+    for key, value in table.items():
+        if key not in LOCATIONS:
+            raise _fail(path, f"`[drive.modes]` 里不认识的网盘：{key}")
+        if key not in clients:
+            raise _fail(path, f"`[drive.modes.{key}]` 对应的网盘没在 `[drive.accounts]` 里配置")
+        if not isinstance(value, str):
+            raise _fail(path, f"`[drive.modes.{key}]` 必须是字符串")
+        mode = value.strip()
+        if mode not in PLAYBACK_MODES:
+            raise _fail(path, f"`[drive.modes.{key}]` 只能是 " + "、".join(PLAYBACK_MODES))
+        if mode not in modes_for(key):
+            raise _fail(path, f"`[drive.modes.{key}]` 只能用 " + "、".join(modes_for(key)))
+        result[key] = mode
+    return result
+
+
 def _drive_clients(table: dict, path: Path) -> dict[str, tuple[str, str]]:
     """`[drive.accounts.<来源>]`：每个网盘一套 OAuth 客户端凭据。"""
     from .drive_provider import LOCATIONS
@@ -316,6 +343,7 @@ def _merge(
     if unknown_roots:
         raise _fail(path, "`[drive.roots]` 里有没在 `[drive.accounts]` 配置过的网盘："
                           + "、".join(unknown_roots))
+    drive_modes = _mode_map(_table(drive, "modes", path), path, drive_clients)
 
     media = _table(document, "media", path)
     stray = sorted(set(media) - {"libraries", "library_icons", "library_catalog"})
@@ -336,6 +364,7 @@ def _merge(
         library_catalog=library_catalog,
         server=server,
         drive_public_url=public_url, drive_clients=drive_clients, drive_roots=drive_roots,
+        drive_modes=drive_modes,
     )
 
 
@@ -470,6 +499,15 @@ def render(config: PeachConfig) -> str:
         "# 一个来源扫多个目录时写成数组。",
     ]
     lines += _render_roots(dict(config.drive_roots))
+    if config.drive_modes:
+        lines += [
+            "",
+            "[drive.modes]",
+            "# 网盘来源 -> 取字节方式：redirect 让浏览器直接跟网盘的预授权地址走（不占服务器流量），",
+            "# proxy 由 Peach 带 Range 转发（浏览器只跟 Peach 说话）。只带鉴权才能取的来源只能写 proxy。",
+        ]
+        lines += [f"{_render_key(key)} = {_render_value(mode)}"
+                  for key, mode in config.drive_modes.items()]
     lines += [
         "",
         "[media.libraries]",

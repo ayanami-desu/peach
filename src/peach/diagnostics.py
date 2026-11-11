@@ -96,8 +96,11 @@ def drives(snapshot):
     """网盘接入状态：连上没有、上次同步什么时候、最近一次错误。
 
     健康检查传进来的快照可能只有 `locations`：这里只读它，不去问网盘——诊断本身不该联网。
+    从没填过凭据的来源（`configured` 与 `connected` 都假）不算问题：只接一家网盘的人不该
+    天天看见另一家的「未授权」。
     """
-    rows = list(snapshot.get("locations") or ())
+    rows = [row for row in snapshot.get("locations") or ()
+            if row.get("configured") or row.get("connected")]
     if not rows:
         return item("网盘", "unknown", "还没有接入网盘", action="在设置里接入 Google Drive 或 OneDrive",
                     target="/settings#drives")

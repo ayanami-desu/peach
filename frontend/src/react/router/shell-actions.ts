@@ -46,8 +46,6 @@ export interface ShellActions {
   failure(action: string, error: unknown): void;
   /** 在资源管理器里显示这个文件，失败回一句原因。 */
   revealSource(id: number): Promise<string>;
-  /** 让安装教程重新出现。 */
-  reopenTutorial(): Promise<void>;
   /** 复核页把分类写回地址栏，不重开。 */
   routeReview(params: { category: string; queue?: string }): void;
   /** 关注管理页把页签、页码与排序写回地址栏，不重开。 */
@@ -93,8 +91,6 @@ export interface ShellActions {
   readonly grid: { helpers: MediaCardHelpers; actions: MediaCardActions };
 
   // ── 索引页与资料页的元素用（`pages/index-entity.tsx`）：取的都是只有壳才有的状态 ──
-  /** 本机能不能改配置：壳启动时探过一次的那个值，索引页交给页面。 */
-  configurable?(): boolean;
   /** 元素打开的那一页首屏画上之后报一次：索引页让壳同步侧栏与顶栏、排吸顶；资料页让壳按这一页的语境重画顶部
    *  三层。 */
   surfaceShown?(kind: 'index' | 'entity', path: string): void;
@@ -207,12 +203,11 @@ export interface CatalogOpenProps {
 
 export type CatalogPagePath = keyof CatalogOpenProps;
 
-/** 索引页每次打开交进来的值：地址栏上的那几项（壳从地址读出）、这台浏览器的版式偏好、顶栏选择键的
- *  现值，和本机能不能改配置。选择键之后的开关经 `updateManagedRoute` 推进来。 */
+/** 索引页每次打开交进来的值：地址栏上的那几项（壳从地址读出）、这台浏览器的版式偏好与顶栏选择键的
+ *  现值。选择键之后的开关经 `updateManagedRoute` 推进来。 */
 export interface IndexOpenProps extends IndexRoute {
   layout: PeopleLayout;
   selectMode: boolean;
-  configurable: boolean;
 }
 
 /** 索引五页画进 `#index`，一种名册一条路径。 */

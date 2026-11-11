@@ -66,10 +66,10 @@ type CompilationKey = typeof FEED_COMPILATIONS[number][1];
 
 const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),textarea:not([disabled]),a[href]';
 
-interface View { open: boolean; closing: boolean; epoch: number; tab: number; configurable: boolean | null }
+interface View { open: boolean; closing: boolean; epoch: number; tab: number }
 
 let host: SettingsPanelHost | null = null;
-let view: View = { open: false, closing: false, epoch: 0, tab: 0, configurable: null };
+let view: View = { open: false, closing: false, epoch: 0, tab: 0 };
 let transition = 0;
 let returnFocus: Element | null = null;
 const listeners = new Set<() => void>();
@@ -88,14 +88,6 @@ function notify(): void {
 function update(patch: Partial<View>): void {
   view = { ...view, ...patch };
   flushSync(notify);
-}
-
-/* Peach 配置入口按当前设备的配置权限放行。 */
-async function checkMachine(current: SettingsPanelHost): Promise<void> {
-  const epoch = view.epoch;
-  const configurable = await current.configurable();
-  if (!view.open || view.epoch !== epoch) return;
-  update({ configurable });
 }
 
 function open(section = ''): void {
@@ -117,9 +109,8 @@ function open(section = ''): void {
   /* 先发取数再画：第一次打开时查询还不存在，这一趟由 `fetchQuery` 建起来，组件画出来读到
      的就是在途的这一份，不会再发第二趟。 */
   const remote = refreshPanelData();
-  update({ open: true, closing: false, configurable: null, epoch: view.epoch + 1, tab: requested >= 0 ? requested : view.tab });
+  update({ open: true, closing: false, epoch: view.epoch + 1, tab: requested >= 0 ? requested : view.tab });
   void remote.then((settings) => { if (settings) current.syncRemote(settings) });
-  void checkMachine(current);
   queueMicrotask(() => document.getElementById('settingsClose')?.focus());
 }
 
@@ -178,8 +169,8 @@ const groupId = (index: number) => `settings-group-${index}`;
 /* 左栏当前项由一块滑过去的玻璃标出来，和左侧抽屉是同一件事的两种形态。坐标取 `offsetTop`
    不取屏幕坐标：面板开合自带一段缩放动画，量屏幕坐标会把正在走的那一下吃进来。玻璃跟着指针走，
    指针离开这一列就滑回当前那格；触点没有悬停，碰一下就滑过去等于替用户点了一次，所以挡在外面。 */
-function SettingsNav({ tab, epoch, configurable, openConfiguration, onSelect }: {
-  tab: number; epoch: number; configurable: boolean | null; openConfiguration(): void; onSelect(index: number): void;
+function SettingsNav({ tab, epoch, openConfiguration, onSelect }: {
+  tab: number; epoch: number; openConfiguration(): void; onSelect(index: number): void;
 }) {
   const nav = useRef<HTMLDivElement | null>(null);
   const order = useNavigationOrder('preferences');
@@ -272,8 +263,7 @@ function SettingsNav({ tab, epoch, configurable, openConfiguration, onSelect }: 
       <VisuallyHidden role="status" aria-live="polite">{reorder.announcement}</VisuallyHidden>
       <NavigationOrderMenu order={order} />
       <div data-settings-service="" role="presentation">
-        <button type="button" disabled={configurable !== true} onClick={openConfiguration}
-          title={configurable === false ? '请在运行 Peach 的设备上打开 Peach 配置' : undefined}>
+        <button type="button" onClick={openConfiguration}>
           <Icon name="folder-cog" />Peach 配置<Icon name="chevron-right" />
         </button>
       </div>
@@ -372,7 +362,7 @@ function SettingsPanel({ host: current, view: shown }: { host: SettingsPanelHost
           <h2 id="settingsTitle">{SECTIONS[shown.tab].title}</h2>
             <SettingsDialogClose id="settingsClose" label="关闭设置" onPress={() => close()} />
         </div>
-        <SettingsNav tab={shown.tab} epoch={epoch} configurable={shown.configurable} onSelect={select}
+        <SettingsNav tab={shown.tab} epoch={epoch} onSelect={select}
           openConfiguration={() => { close(false); current.openConfiguration() }} />
         <div data-settings-scroll="" ref={scroll}>
           <Group index={0} tab={shown.tab} cards>

@@ -222,7 +222,7 @@ html[data-theme-snapshot] :is(.board-filter-frame,.entitycollectionhead,.search,
 html.board-high-contrast .board-filter-frame.board-filter-frame.board-filter-frame,html.board-high-contrast .entitycollectionhead.entitycollectionhead.entitycollectionhead,html.board-high-contrast .top .search.search,html.board-high-contrast .top.top>.ib{background:var(--ground);backdrop-filter:none;-webkit-backdrop-filter:none;animation:none}
 :root{--board-card-foot:color-mix(in srgb,var(--ground) 92%,var(--ink))}
 
-.configfieldset.configfieldset:not([data-fieldset-type])>.geist-fieldset-footer,.cleanupfieldset.cleanupfieldset>.geist-fieldset-footer{background:var(--board-card-foot)}
+.cleanupfieldset.cleanupfieldset>.geist-fieldset-footer{background:var(--board-card-foot)}
 
 .gridstack .card .pic{--pic-radius:var(--surface-radius)}
 .top{isolation:isolate}
@@ -246,7 +246,7 @@ body{background:var(--page)}
    的话，静止那条会被后面那条压掉、悬停那条却比它重一个类，一颗按钮的静止和悬停就由
    两处规则分别给出。 */
 .geist-input,.search{box-shadow:0 1px 2px #00000004}
-.configfieldset,[data-geist-fieldset]{border-radius:var(--surface-radius);overflow:hidden}
+[data-geist-fieldset]{border-radius:var(--surface-radius);overflow:hidden}
 @media(prefers-color-scheme:dark){:root:not([data-theme]){--page:#111;--ground:#1c1c1c;--surface:#232323;--sunk:#171717;--ink:#fafafa;--ink-2:#d4d4d4;--muted:#a3a3a3;--line:#383838;--line-soft:#303030;--inset:#303030;--picked:#303030;--hover:rgba(255,255,255,.07)}}
 
 /* One sidebar, two states. Navigation and filters share the expanded panel. */
@@ -280,13 +280,6 @@ body{background:var(--page)}
 /* 读数下面那两张是要做的事，各占一行，与扫描卡同一个左说明右按钮的形状。 */
 .resourcesyncbox[data-cleanup-task]{border:1px solid var(--color-separator-border);border-radius:16px;background:var(--color-background-secondary-default);box-shadow:var(--elevation-card)}
 .resourcesyncbox[data-cleanup-task]{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
-/* 首页那条整理提示是正文列里的一条 Note，上下两条线是它自己的收口。少了这个空当，
-   两条线一边挨着身份行、一边挨着筛选浮层，看着像三块东西粘在一起。下面照浮层那个数
-   留一样宽（上面由 `.tiers` 收尾与 `main` 上沿凑够）。 */
-.configfieldset{border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px #00000003}
-.configfieldset>.geist-fieldset-content{padding:24px;gap:20px}
-.configfieldset>.geist-fieldset-footer{background:var(--ground);border-top:1px solid var(--line-soft);padding:14px 24px}
-.configfieldset h2,.configfieldset h3{font-size:16px;font-weight:500;line-height:24px}
 /* BoardUI gray PillTab：透明容器与独立选中底色，取证见 board-review-layout.md。 */
 body #stats [data-section-nav]{background:none;border-radius:0;padding:0;box-shadow:none}
 body #stats [data-section-nav] h2{margin:0 0 12px;padding:0;font:var(--board-body-medium);color:var(--color-text-primary)}
@@ -395,12 +388,12 @@ body>.board-filter-frame{margin-inline:16px}
   .top{z-index:98;background:var(--page)}
   .cleanupfieldset>.geist-fieldset-content{min-height:0;padding:18px}
   .cleanupfieldset strong{font-size:22px}.cleanupfieldset>.geist-fieldset-footer{padding:12px 18px}
-  .configfieldset>.geist-fieldset-content{padding:20px}}
+}
 
 /* 媒体详情、实体与管理共享卡片层级，播放器仍使用原有播放交互。 */
 .srctools button{border-radius:8px;background:var(--surface)}
-.configfieldset,.cleanupfieldset,.resourcesyncbox{border-color:var(--line);border-radius:var(--surface-radius);background:var(--ground);overflow:clip}
-.geist-fieldset-footer,.configfieldset>.geist-fieldset-footer{background:var(--surface);border-top:1px solid var(--line-soft)}
+.cleanupfieldset,.resourcesyncbox{border-color:var(--line);border-radius:var(--surface-radius);background:var(--ground);overflow:clip}
+.geist-fieldset-footer{background:var(--surface);border-top:1px solid var(--line-soft)}
 .geist-input,.gselectfield{background:var(--surface);border-color:var(--line);border-radius:10px}
 .iconswitch{padding:3px;background:var(--surface);border:1px solid var(--line-soft);border-radius:10px}
 .iconswitch label{border-radius:8px}
@@ -526,7 +519,6 @@ button,input,select,textarea{font-family:inherit}
 .insightcopy{border:0}@media(max-width:1000px){.metricstrip{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
 
 /* 数据按阅读目的分组，标题与内容共享边缘。 */
-.configfieldset{border:0}.configfieldset>.geist-fieldset-footer{border:0}
 
 /* 强调色的十一级色阶。机制照搬 BoardUI：主按钮、焦点环、链接、开关、选中态全都引用
    `--color-accent-*`，换强调色就是把这十一个变量整组指到另一个色相，组件规则一个字不改。
@@ -582,7 +574,7 @@ button,input,select,textarea{font-family:inherit}
    面板、筛选条、交集条和标签骨架都从它取值，一处改完五处一起走。 */
 :root{--tag-radius:8px}
 body,.disp{font-family:var(--board-font);letter-spacing:0}body{font:var(--board-body)}button,input,textarea,select{font-family:var(--board-font)}
-.listtitle,.index .ihead h2,.indexheading{font:var(--board-title);letter-spacing:0}.configfieldset h2,.configfieldset h3,.cleanupfieldset h3{font:var(--board-heading);letter-spacing:0}.board-library-rows button{font:var(--board-body)}
+.listtitle,.index .ihead h2,.indexheading{font:var(--board-title);letter-spacing:0}.cleanupfieldset h3{font:var(--board-heading);letter-spacing:0}.board-library-rows button{font:var(--board-body)}
 .geist-button{background-color:var(--color-background-primary-default);border-color:var(--color-border-button-default);color:var(--color-text-primary);transition:background-color .15s ease,border-color .15s ease,color .15s ease}
 /* 悬停只抬填充，那圈线一步不动：按钮静止态已经带一圈 1px，悬停再把它加深，
    鼠标扫过一排次级键就是一排边框忽明忽暗，而键本身并没有变化。 */
@@ -674,7 +666,7 @@ body button.danger.danger:not(:disabled):hover::before{opacity:1}
 body button.danger.danger:not(:disabled):active{background:var(--board-red-active)}
 body button.danger.danger:not(:disabled):active::before{opacity:0}
 :root{--board-card-foot:color-mix(in srgb,var(--ground) 98%,var(--ink))}
-.configfieldset>.geist-fieldset-footer,.cleanupfieldset>.geist-fieldset-footer{border-top-left-radius:0;border-top-right-radius:0;background:var(--board-card-foot)}
+.cleanupfieldset>.geist-fieldset-footer{border-top-left-radius:0;border-top-right-radius:0;background:var(--board-card-foot)}
 
 .board-library-menu.board-library-menu,.board-glow-menu.board-glow-menu{background:var(--glass-drift-a),var(--glass-drift-b),linear-gradient(125deg,var(--glass-sheen),transparent 42%,var(--glass-low)),var(--glass-fill);background-size:200% 200%,200% 200%,auto;border:1px solid var(--glass-low);border-radius:22px;color:var(--glass-text);backdrop-filter:blur(22px) saturate(160%) var(--glass-lume);-webkit-backdrop-filter:blur(22px) saturate(160%) var(--glass-lume);box-shadow:inset 0 1px 0 var(--glass-rim),var(--glass-shadow)}
 /* 这一列的填充由那块滑过去的玻璃提供，行自己只管文字色：两边都铺的话，静止态是一块

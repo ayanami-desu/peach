@@ -1,5 +1,4 @@
 /* preferences 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
-import { loadMediaSources } from './../query/media-sources';
 import { buildBars, catalogState, dropOfflineFromDefaultLoc, homePath, loadCatalog, paintCatalogFilter, repaintCatalogGrid } from './catalog.js';
 import { appSettingsStore } from './../appearance/settings';
 import { interfaceLanguage, storedInterfaceLanguage } from '../i18n';
@@ -31,16 +30,13 @@ import { dropBars } from './../catalog-bars';
 import { applicationEffects } from './effects';
 export const preferencesState = { sourceOnline: undefined, sourceProblems: undefined, sourceOffline: undefined, OFFLINE_HINT: undefined, OFFLINE_REASON: undefined, offlineReason: undefined, settingsStore: undefined, appSettings: undefined, saveSettings: undefined, catalogLoadWaiters: undefined, nextCatalogLoad: undefined, handOff: undefined, settingsEffects: undefined, syncGlassOptics: undefined, placeSidebarHead: undefined, SRCICON: undefined, srcBadge: undefined, emptyState: undefined, CENSOR_KEY: undefined };
 
+/* `/api/sources` 随挂载形态一起退出（ADR-0157）：媒体只剩 Google Drive 与 OneDrive，
+ * 脱盘写在网盘快照（`/api/drive`）的 `last_error` 里，没有「来源可达性」这个服务端口了。
+ * 函数形状保留：player／stage 的 host 接口仍用它的返回值判脱盘，只是快照永远是空的。 */
 export async function loadSourceStatus(){
-  const effects=applicationEffects;
-  try{
-    const d=await loadMediaSources(effects.signal);
-    if(!effects.isActive)return preferencesState.sourceOnline;
-    const roots=(d.sources||[]).flatMap(s=>s.roots||[]).filter(r=>r.root_id);
-    preferencesState.sourceOnline=Object.fromEntries([...(d.sources||[]).map(s=>[s.location,s.online]),...roots.map(r=>[r.root_id,r.online])]);
-    preferencesState.sourceProblems=Object.fromEntries([...(d.sources||[]).map(s=>[s.location,s.message||'']),...roots.map(r=>[r.root_id,r.message||''])]);
-  }catch{if(!effects.isActive)return preferencesState.sourceOnline;preferencesState.sourceOnline={};preferencesState.sourceProblems={}}
-  document.body.classList.toggle('offline-source',Object.values(preferencesState.sourceOnline).includes(false));
+  if(!applicationEffects.isActive)return preferencesState.sourceOnline;
+  preferencesState.sourceOnline={};
+  preferencesState.sourceProblems={};
   dropOfflineFromDefaultLoc();
   return preferencesState.sourceOnline;
 }

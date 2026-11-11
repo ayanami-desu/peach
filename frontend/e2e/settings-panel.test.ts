@@ -7,6 +7,7 @@ import type { Browser, BrowserContext, Page } from 'playwright-core';
 
 import { launch, layout, requiredEnv, settle, visit, VIEWPORTS } from './harness.ts';
 import { openHome, openPanel, ORDER, PANEL, stubServer, type Server } from './settings-fixture.ts';
+import { formatShortcut, isApplePlatform } from '../src/keyboard-shortcut.ts';
 
 const DESKTOP = VIEWPORTS.find((viewport) => !viewport.mobile)!;
 const MOBILE = VIEWPORTS.find((viewport) => viewport.mobile)!;
@@ -94,7 +95,7 @@ describe('设置面板', () => {
       assert.equal(await page.locator(`${PANEL} #videoThumbnailSetting, ${PANEL} #followScheduleSetting`).count(), 0);
       const configuration = page.locator(PANEL).getByRole('button', { name: 'Peach 配置', exact: true });
       await configuration.click();
-      await page.waitForURL((url) => url.pathname === '/settings/library');
+      await page.waitForURL((url) => url.pathname === '/settings/drives');
       await page.locator(PANEL).waitFor({ state: 'hidden' });
       assert.deepEqual(opened.problems, []);
     } finally { await opened.close() }
@@ -171,7 +172,10 @@ describe('设置面板', () => {
       assert.equal(await censored(), true);
       await openPanel(page);
       await page.locator(PANEL).getByRole('tab', { name: '内容显示', exact: true }).click();
-      assert.equal(await page.locator(`${PANEL} [data-shortcut-keys]`).innerText(), 'Alt+H');
+      // 键帽按平台字形走：Mac 上修饰键是 ⌥，其余平台写 Alt。
+      const apple = isApplePlatform({ platform: await page.evaluate(() => navigator.platform) });
+      assert.equal(await page.locator(`${PANEL} [data-shortcut-keys]`).innerText(),
+        formatShortcut({ code: 'KeyH', ctrl: false, alt: true, shift: false, meta: false }, apple));
       assert.deepEqual(opened.problems, []);
     } finally { await opened.close() }
   });

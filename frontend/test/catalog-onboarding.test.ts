@@ -29,13 +29,13 @@ describe('当前馆藏推荐', () => {
 
 describe('馆藏与资料空状态', () => {
   it('空首页提供添加内容与来源的真实入口', () => {
-    const html = catalogEmptyHtml({ configurable: true });
+    const html = catalogEmptyHtml({});
     expect(html).toContain('data-geist-empty-state');
     expect(html).toContain('href="/settings/drives"');
     expect(html).toContain('href="/subscriptions?tab=add"');
     expect(catalogEmptyHtml()).toContain('href="/settings/drives"');
     expect(catalogEmptyHtml({ online: true })).toContain('class="geist-button primary" href="/subscriptions?tab=add"');
-    expect(catalogEmptyHtml({ configurable: true }).match(/class="geist-button primary"/g)).toHaveLength(1);
+    expect(catalogEmptyHtml({}).match(/class="geist-button primary"/g)).toHaveLength(1);
   });
   it('JAV 与筛选无结果可查看未筛选内容', () => {
     expect(catalogEmptyHtml({ jav: true })).toContain('尚未补充发行资料');

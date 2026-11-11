@@ -41,12 +41,13 @@ def media_library_list(request: Request, args: dict[str, str] = Depends(require_
     from . import media_libraries, settings_file
     from .media_sources import cost_for
     config = settings_file.active()
+    live = getattr(request.app.state.drive, "root_names", lambda: {})()
     return {"libraries": [{"id": row["id"], "name": row["name"], "icon": row["icon"], "folders": len(row["roots"]),
                            "color": row["color"], "policy": row["policy"], "stages": row["stages"],
                            "roots": [{"root_id": root["root_id"], "location": root["location"]} for root in row["roots"]],
                            "metered": any(cost_for(root['location'], root['root'], config) == 'metered'
                                           for root in row['roots'])}
-                          for row in media_libraries.libraries(config)]}
+                          for row in media_libraries.libraries(config, live)]}
 
 
 @router.get("/api/providers/opencode-go/models")

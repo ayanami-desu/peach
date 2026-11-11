@@ -125,10 +125,6 @@ export function createGuideSession(options: {
         }
       }
       if (route) navigate(route);
-      if (step.surface === 'subtitles' && mediaId) {
-        const toggle = await findGuideTarget('#stage .vjs-peach-settings-toggle', current.signal);
-        if (!current.signal.aborted && toggle?.getAttribute('aria-expanded') !== 'true') (toggle as HTMLButtonElement | undefined)?.click();
-      }
       let element = await findGuideTarget(step.target, current.signal);
       if (disposed || current.signal.aborted) return;
       let missing = !element;

@@ -38,6 +38,15 @@ class LibraryListTests(unittest.TestCase):
         rows = media_libraries.libraries(config(library_catalog={'gdrive:root-1': {'icon': '<script>'}}))
         self.assertEqual(rows[0]['icon'], 'database')
 
+    def test_a_folder_name_from_the_drive_fills_in_unnamed_roots(self):
+        rows = media_libraries.libraries(config(), {'gdrive:root-1': '白上咲花', 'onedrive:root-3': '存档'})
+        self.assertEqual([row['name'] for row in rows], ['白上咲花', 'root-2', '存档'])
+
+    def test_a_name_saved_in_the_settings_wins_over_the_folder_name(self):
+        rows = media_libraries.libraries(
+            config(library_names={'gdrive:root-1': '改过的名字'}), {'gdrive:root-1': '白上咲花'})
+        self.assertEqual(rows[0]['name'], '改过的名字')
+
 
 class PredicateTests(unittest.TestCase):
     def test_missing_library_selects_nothing(self):

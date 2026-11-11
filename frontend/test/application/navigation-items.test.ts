@@ -18,10 +18,8 @@ describe('应用导航词表', () => {
     expect(NAV_CATALOG.find(([key]) => key === 'follow-manage')?.[1]).toBe('关注管理');
   });
 
-  it('配置入口只在本机可改时出现在管理菜单，其余入口顺序不动', () => {
-    const enabled = getManageMenuSections(true), locked = getManageMenuSections(false);
-    expect(enabled.some(([key]) => key === 'configuration')).toBe(true);
-    expect(locked.some(([key]) => key === 'configuration')).toBe(false);
-    expect(enabled.filter(([key]) => key !== 'configuration')).toEqual(locked);
+  it('配置入口始终在管理菜单里，顺序按偏好排', () => {
+    const sections = getManageMenuSections(['stats', 'configuration']);
+    expect(sections.map(([key]) => key)).toEqual(['stats', 'configuration', 'cleanup', 'follow', 'activity']);
   });
 });

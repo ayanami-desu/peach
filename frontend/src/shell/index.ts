@@ -73,8 +73,6 @@ export let followDetailReturnPath = '/follow';
 
 /** 配置页下一次打开要选中的那一组页签名，选中之后清空。 */
 export let configurationRequestedSection = '';
-/** 本机能不能改配置（`/healthz` 的 `configurable`）：null 是还没问过，问到之前按不能算。 */
-export let runtimeConfigurable: boolean | null = null;
 /** 这一次是不是从设置完成页（或教程卡）进来的：口味页打开时取走，取一次就清。 */
 export let cameFromSetup = false;
 
@@ -120,7 +118,6 @@ export interface ShellFields {
   followRevision: number;
   followScrollY: number;
   playlistsRevision: number;
-  runtimeConfigurable: boolean | null;
   cameFromSetup: boolean;
 }
 
@@ -154,7 +151,6 @@ export function writeShell(patch: Partial<ShellFields>): void {
   if (has('followRevision')) followRevision = patch.followRevision!;
   if (has('followScrollY')) followScrollY = patch.followScrollY!;
   if (has('playlistsRevision')) playlistsRevision = patch.playlistsRevision!;
-  if (has('runtimeConfigurable')) runtimeConfigurable = patch.runtimeConfigurable!;
   if (has('cameFromSetup')) cameFromSetup = patch.cameFromSetup!;
   notifyShell();
 }

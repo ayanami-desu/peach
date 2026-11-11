@@ -49,7 +49,7 @@ function shellActions(refreshed = { ok: true }) {
   const actions: ShellActions = {
     openItem: vi.fn(), openEntity: vi.fn(), openTag: vi.fn(), openTasteSignal: vi.fn(), navigate: vi.fn(),
     openManage: vi.fn(), managePath: vi.fn(() => ''), openFollow: vi.fn(), receipt: vi.fn(), toast: vi.fn(),
-    failure: vi.fn(), revealSource: vi.fn(async () => ''), reopenTutorial: vi.fn(async () => {}),
+    failure: vi.fn(), revealSource: vi.fn(async () => ''),
     routeReview: vi.fn(),
     routeFollowManage: vi.fn(), saveFollowPreference: vi.fn(), srcBadge: () => '', routeIndex: vi.fn(),
     savePeopleLayout: vi.fn(), exitSelectMode: vi.fn(), personAvatar: vi.fn(() => ({ html: '', face: '' })),
@@ -58,7 +58,6 @@ function shellActions(refreshed = { ok: true }) {
     surfaceChanged: vi.fn((kind: string, path: string) => { log.push(`surface ${kind} ${path}`) }),
     clearSearch: vi.fn(), openImmerse: vi.fn(), openOverlay: vi.fn(), closeStage: vi.fn(),
     grid: { helpers: {}, actions: {} } as ShellActions['grid'],
-    configurable: () => true,
     surfaceShown: vi.fn((kind: string) => { log.push(`shown ${kind}`) }),
     entity: {
       missing: vi.fn(),
@@ -264,7 +263,7 @@ it('标签页：打开时带上选择键、版式与配置权限，画上后报�
   r.connectManagedRoutes(Promise.resolve(r.prefetchManagedRoute));
   await boot(r, actions);
   for (let step = 0; step < 50 && !r.managedEntry(index); step += 1) await settle();
-  expect(r.managedEntry(index)?.props).toMatchObject({ kind: 'tags', selectMode: false, layout: 'big', configurable: true });
+  expect(r.managedEntry(index)?.props).toMatchObject({ kind: 'tags', selectMode: false, layout: 'big' });
   expect(log.at(-1)).toBe('shown index');
   await act(async () => { r.shell.writeShell({ selectMode: true }) });
   await settle();

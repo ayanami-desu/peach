@@ -14,7 +14,7 @@ import { isFeedNewPath } from './feed.js';
 import { tagLabel } from '../core/tags';
 import { followFeedLive, followState, followView, followViewPath, routeFollowFeed } from './follow.js';
 import { applicationEffects } from './effects';
-import { entityJavLayout, notifyShell, pageOpens, runtimeConfigurable, selectMode, selectSurface, state, writeShell } from './../shell/index';
+import { entityJavLayout, notifyShell, pageOpens, selectMode, selectSurface, state, writeShell } from './../shell/index';
 import { censorOn, preferencesState, setCensored, setHighContrast, setSfwShortcut, sfwShortcut } from './preferences.js';
 import { playUiSound } from '../ui-kit/sounds';
 import { THEME_OPTIONS } from './../appearance/theme';
@@ -97,15 +97,6 @@ export function openDrawer(v){const drawer=$('#drawer'),restore=!v&&drawer.conta
 
 export function closeDrawerAfterNav(){if(narrowShell())openDrawer(false)}
 
-export function probeConfigurable(){
-  if(runtimeConfigurable!==null)return;
-  writeShell({runtimeConfigurable:false});
-  api('/healthz').then(runtime=>{
-    writeShell({runtimeConfigurable:!!runtime.configurable});
-    if(runtimeConfigurable&&manageSection())buildManageBar();
-  }).catch(()=>{});
-}
-
 export function openSettings(section='',fromRoute=false){
   if(!fromRoute&&!isPreferencePath(location.pathname)){
     const navigation=peachHistory.navigation;
@@ -172,7 +163,6 @@ export function manageSection(){
 
 export function buildManageBar(){
   const current=manageSection();
-  probeConfigurable();
   // 管理区是行政界面，不该顶着首页的人物/厂牌横条和标签筛选。
   // 隐藏 tagbar 的同时同步 count 栏的吸顶偏移：它默认按「顶栏+筛选条」留位，
   // 筛选条不在时那个偏移会留出一条 58px 的缝，滚动内容从缝里穿出来。
@@ -452,7 +442,7 @@ applicationEffects.handler($('#filterBtn'), 'onclick', ()=>openDrawer(!$('#drawe
 layoutState.SIDEBAR_ITEMS = SIDEBAR_ITEMS;
 layoutState.MANAGE_SECTIONS = MANAGE_SECTIONS;
 layoutState.MANAGE_MENU_SECTIONS = MANAGE_MENU_SECTIONS;
-layoutState.manageMenuSections = ()=>getManageMenuSections(runtimeConfigurable===true,preferencesState.appSettings.manageOrder);
+layoutState.manageMenuSections = ()=>getManageMenuSections(preferencesState.appSettings.manageOrder);
 layoutState.OPTIONAL_SIDEBAR_ITEMS = OPTIONAL_SIDEBAR_ITEMS;
 layoutState.NAV_CATALOG = NAV_CATALOG;
 layoutState.DIRECT_MANAGE_NAV = DIRECT_MANAGE_NAV;
@@ -472,10 +462,6 @@ layoutState.settingsHost = ()=>({
   syncRemote:remote=>applySyncedSettings(remote,effect=>preferencesState.settingsEffects[effect]?.()),
   openConfiguration:()=>navigationState.navigatePath('/settings/drives'),
   attached:()=>preferencesState.syncGlassOptics(),
-  /* 「这台电脑」那一格的判据：服务由托盘管、已完成配置、请求来自本机三条同时成立。 */
-  configurable:()=>api('/healthz')
-    .then(runtime=>{writeShell({runtimeConfigurable:!!runtime.configurable});return runtimeConfigurable})
-    .catch(()=>null),
 });
 applicationEffects.handler($('#settingsBtn'), 'onclick', ()=>void openSettings());
 layoutState.lastManagePageLabel = '';

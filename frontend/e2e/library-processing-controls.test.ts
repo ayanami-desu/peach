@@ -207,7 +207,7 @@ describe('扫描与采集控制', () => {
         assert.equal(await dialog.getByRole('button', { name: '同步新增文件', exact: true }).isEnabled(), true);
         await dialog.getByText('已发现视频 10 个', { exact: true }).waitFor();
         const libraryLink = dialog.getByRole('link', { name: '管理媒体库', exact: true });
-        assert.equal(await libraryLink.getAttribute('href'), '/settings/library');
+        assert.equal(await libraryLink.getAttribute('href'), '/settings/drives');
         const footerOrder = await dialog.locator('.geist-modal-footer').evaluate(el => {
           const link = el.querySelector('a')!.getBoundingClientRect();
           const confirm = el.querySelector('[data-modal-confirm]')!.getBoundingClientRect();
@@ -215,7 +215,7 @@ describe('扫描与采集控制', () => {
         });
         assert.equal(footerOrder, true, '管理媒体库与主按钮在右下同排居中');
         await libraryLink.click();
-        await page.waitForURL('**/settings/library');
+        await page.waitForURL('**/settings/drives');
         assert.equal(await page.getByRole('dialog', { name: '同步新增文件', exact: true }).count(), 0);
         const inventoryAtClose = inventoryReads;
         await page.waitForTimeout(600);

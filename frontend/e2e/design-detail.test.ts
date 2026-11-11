@@ -392,7 +392,7 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
     }
   });
 
-  it('作品详情队列与说明块：版次徽章和标题同一行、不斜体；脱盘说明块铺满播放器格', { timeout: 60_000 }, async () => {
+  it('作品详情队列：版次徽章和标题同一行、不斜体', { timeout: 60_000 }, async () => {
     const editions = await openItemPage(browser, `/assets/${ITEM.edition}?editions=${ITEM.edition}`, DESKTOP,
       { ready: '#stage [data-queue-edition]' });
     try {
@@ -419,24 +419,6 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
       assert.deepEqual(withoutPlayer(editions.problems), []);
     } finally {
       await editions.close();
-    }
-    const offline = await openItemPage(browser, `/assets/${ITEM.offline}`, DESKTOP, { ready: '#stage #offlineGate' });
-    try {
-      const fit = await offline.page.evaluate(() => {
-        const gate = document.querySelector('#stage #offlineGate')!;
-        const cell = gate.parentElement!;
-        const a = gate.getBoundingClientRect(), b = cell.getBoundingClientRect();
-        return {
-          filled: [a.left - b.left, a.top - b.top, a.width - b.width, a.height - b.height].every((delta) => Math.abs(delta) < 0.5),
-          radius: [getComputedStyle(gate).borderTopLeftRadius, getComputedStyle(cell).borderTopLeftRadius],
-        };
-      });
-      assert.equal(fit.filled, true, '说明块铺满播放器格，不上下留黑');
-      assert.equal(fit.radius[0], fit.radius[1], '圆角跟着格走');
-      assert.notEqual(fit.radius[0], '0px');
-      assert.deepEqual(offline.problems, []);
-    } finally {
-      await offline.close();
     }
   });
 

@@ -173,8 +173,10 @@ def q_stats(contract: WebContract):
     热力图按本机时区分桶，两样作为输入进版本。磁盘容量读的是本机余量，与账本无关，按时间过期。
     """
     config = settings_file.active()
+    drive = getattr(contract, "drive", None)
+    live = drive.root_names() if drive is not None else {}
     libraries = [(library, media_libraries.predicate(config, library["id"]))
-                 for library in media_libraries.libraries(config)]
+                 for library in media_libraries.libraries(config, live)]
     out = dict(contract.cached_until_changed(
         "stats-ledger", lambda: _ledger_stats(contract, libraries),
         repr(libraries), _utc_offset(datetime.now().astimezone()), tables=STATS_TABLES))

@@ -5,7 +5,7 @@ import { nextRating, ratingStars } from '../react/components/rating-values';
 import { censorOn, preferencesState, refreshAll, replaceCatalogAddress, sidebarFacets, wireDrag } from './preferences.js';
 import { nextSortState } from './../sort-preferences';
 import { $, STATE_ROUTES, api, esc, firstGrapheme, isCatalogPath, leadingGraphemes } from '../core';
-import { barsContext, detailReturnBarsContext, notifyShell, pageOpens, runtimeConfigurable, selectMode, selected, state, writeShell } from './../shell/index';
+import { barsContext, detailReturnBarsContext, notifyShell, pageOpens, selectMode, selected, state, writeShell } from './../shell/index';
 import { receiptsState } from './receipts.js';
 import { fetchBars, fetchTopsPage } from './../catalog-bars';
 import { confirmModal, dissolveValue, fitSkeleton, wireHorizontalScroller } from '../ui-kit';
@@ -489,7 +489,7 @@ export function catalogGridProps(){
     countRow:$('#count'),onCount:paintCatalogCount,onCountFailed:()=>paintCatalogFilter({count:false}),
     emptyHtml:({trash:inTrash,libraryEmpty})=>inTrash
       ?preferencesState.emptyState('trash','回收站是空的','删掉的内容会先到这里；确认不再需要后再清空。')
-      :catalogEmptyHtml({jav:javActive()&&!libraryEmpty,configurable:runtimeConfigurable,filtered:!libraryEmpty}),
+      :catalogEmptyHtml({jav:javActive()&&!libraryEmpty,filtered:!libraryEmpty}),
     canLoadMore:()=>$('#stats').hidden&&$('#index').hidden,
   };
 }

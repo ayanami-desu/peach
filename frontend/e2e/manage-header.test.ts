@@ -24,7 +24,6 @@ const unrelated = (problems: string[]) => problems.filter((line) => !line.includ
 /** `[路径, 标题, 面包屑当前项, 窄屏收档]`。数据管理之下的子页标题让给子页自己的名字。 */
 const HEADS = [
   ['/stats', '统计', '', false],
-  ['/taste', '口味', '', false],
   ['/review', '人工复核', '人工复核', false],
   ['/data-cleanup', '数据管理', '', true],
   ['/junk-files', '垃圾文件', '垃圾文件', false],
@@ -34,7 +33,7 @@ const HEADS = [
   ['/trash', '回收站', '回收站', false],
   ['/subscriptions', '关注管理', '', false],
   ['/tasks', '任务中心', '', false],
-  ['/settings/library', 'Peach 配置', '', true],
+  ['/settings/drives', 'Peach 配置', '', true],
 ] as const;
 
 const BLOCKS = '[data-manage-header] > :is([data-manage-bar], [data-manage-crumb], [data-manage-title])';

@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { confirmModal, MEDIA_SOURCE_ICONS } from '@peach/legacy/ui';
 import { fmtDur, fmtSize, LOC } from '@peach/legacy/core';
+import { configuredLocations, DRIVE_KEY, fetchDrives } from '@peach/query';
 
 import { Button } from '@/components/base/buttons/button';
 
@@ -20,7 +21,6 @@ import { Note } from '../components/note';
 import { SourceLabel } from '../components/source-label';
 import { spriteGlyph } from '../components/sprite-glyph';
 import { TRASH_KEY } from '../data-cleanup/data-cleanup';
-import { cloudLocations, fetchMediaSources, MEDIA_SOURCES_KEY } from '../media-sources';
 import { queryClient } from '../query';
 import { SourceMark } from '../settings/section';
 import { busyProps } from '../settings/use-action';
@@ -98,7 +98,7 @@ function FileRow({ file, prefix, openItem }: { file: DuplicateFile; prefix: stri
 
 export function DuplicatesPage({ openItem, toast, failure }: DuplicatesProps) {
   const duplicates = useQuery({ queryKey: DUPLICATES_KEY, queryFn: ({ signal }) => fetchDuplicates(signal) });
-  const sources = useQuery({ queryKey: MEDIA_SOURCES_KEY, queryFn: ({ signal }) => fetchMediaSources(signal) });
+  const drives = useQuery({ queryKey: DRIVE_KEY, queryFn: ({ signal }) => fetchDrives(signal) });
   const [pending, setPending] = useState('');
   const dispose = useMutation({
     mutationFn: (ids: readonly number[]) => batchOperate(ids, 'dispose'),
@@ -148,7 +148,7 @@ export function DuplicatesPage({ openItem, toast, failure }: DuplicatesProps) {
     );
   }
   const groups = data.groups ?? [];
-  const configured = cloudLocations(sources.data);
+  const configured = configuredLocations(drives.data);
 
   const run = ({ groups: chosen, keep, key }: Disposal) => {
     if (dispose.isPending) return;

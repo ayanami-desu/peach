@@ -754,15 +754,6 @@ class ConfigurationSurfaceTests(_Case):
         with TestClient(app, client=(address, 12345), base_url=base_url) as client:
             yield client
 
-    def test_a_dev_serve_is_configurable(self):
-        """开发模式下这条工作面不跟着部署形态走：不是独立包也照样能改设置。"""
-        with mock.patch.dict(os.environ, {"PEACH_DEV": "1"}), \
-                mock.patch.object(distribution, "standalone", return_value=False):
-            with self.client() as client:
-                self.assertTrue(client.get("/healthz").json()["configurable"])
-                response = client.get("/api/configuration", headers={"X-Token": "test-token"})
-                self.assertEqual(response.status_code, 200, response.text)
-
     def test_a_browser_session_can_read_configuration(self):
         """配好访问密码之后，浏览器登录换来的会话和 `X-Token` 一样能读这条工作面。"""
         from peach import access
@@ -794,7 +785,6 @@ class ConfigurationSurfaceTests(_Case):
         with self.client(address="192.0.2.1") as client:
             self.assertEqual(client.get("/api/configuration").status_code, 401)
             self.assertEqual(client.post("/api/configuration", json={"revision": "stale"}).status_code, 401)
-            self.assertTrue(client.get("/healthz").json()["configurable"])
         self.assertEqual(before, self.config.path.read_bytes())
 
     def test_browser_navigations_get_an_error_page_instead_of_raw_json(self):

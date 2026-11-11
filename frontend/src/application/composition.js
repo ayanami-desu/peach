@@ -9,8 +9,7 @@ import { openTasteSignal, routeReview } from './playlists.js';
 import { navigationState, requestOverlay, syncNavigation, syncRouteChrome } from './navigation.js';
 import { enterFollow, followState, openFollowDetail } from './follow.js';
 import { receiptsState } from './receipts.js';
-import { reopenPostSetupTutorial } from './tutorial.js';
-import { runtimeConfigurable, selectMode, state, writeShell } from './../shell/index';
+import { selectMode, state, writeShell } from './../shell/index';
 import { indexPath, indexState, onlineAuthorRingHtml, openFollowAuthorFromIndex, openFollowTagFromIndex, routeFollowManage, showIndexContainer, showIndexTags } from './index.js';
 import { censorOn, loadSourceStatus, preferencesState, wireAllDrag } from './preferences.js';
 import { mountBatchDock, setSelectMode } from './selection.js';
@@ -74,7 +73,6 @@ compositionState.shellActions = {
   toast:(message,options)=>receiptsState.toast(message,options),
   failure:receiptsState.actionFailure,
   revealSource:revealForIsland,
-  reopenTutorial:reopenPostSetupTutorial,
   routeReview,
   routeFollowManage,
   saveFollowPreference:patch=>{
@@ -134,7 +132,6 @@ compositionState.shellActions = {
   grid:{helpers:catalogState.gridHelpers,actions:catalogState.gridActions},
 
   // 索引页与资料页的元素用。
-  configurable:()=>!!runtimeConfigurable,
   /* 整页画上之后：索引页重读侧栏按下态、重排吸顶；资料页重拉侧栏与顶部横条，按取到的名字重写标题（按 ID 直达时导航那一刻还不知道名字）。 */
   surfaceShown:kind=>{if(kind==='index'){syncNavigation();scheduleStickySurfaces()}else{buildBars();loadingState.syncPageTitle(location.href)}},
   entity:{

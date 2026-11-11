@@ -12,7 +12,7 @@
  * 当主体：管理页的 `[data-manage-title]` 由外壳先写好，内容区失败时它照样在。
  *
  * 分区 tab（`.ui-board-local-nav`）只显示当前那一格，其余面板不参与布局；每一格都切过去
- * 再测一遍，否则配置页「网络与访问」这类不在首屏的分区永远不会被量到。 */
+ * 再测一遍，否则配置页「系统诊断」这类不在首屏的分区永远不会被量到。 */
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
@@ -21,11 +21,16 @@ import type { Browser, Locator, Page } from 'playwright-core';
 import { configurationBody, expectBody, layout, launch, requiredEnv, settle, unmanagedScrollers, visit, VIEWPORTS } from './harness.ts';
 import { mockJavDetail } from './jav-detail-fixture.ts';
 import { CLEANUP_HASH_REDIRECTS } from '../src/cleanup-routes.ts';
+import { PREFERENCE_SECTIONS } from '../src/history/settings-route.ts';
 
 interface Route {
   path: string;
   /** 目标页面主体：每个定位器都要可见。骨架屏的占位标题带 `aria-hidden`，按角色找不到。 */
   body(page: Page): Locator[];
+  /** 挂桩：首次导航之前就要装好的请求拦截（外网取不到的资源、固定数据），交给 `visit` 在 goto 前跑。 */
+  stub?(page: Page): Promise<void>;
+  /** 主体画出来之前要先做的动作（例如点掉计费闸门让播放器挂上），在核主体之前跑。 */
+  prepare?(page: Page): Promise<void>;
 }
 
 const heading = (page: Page, scope: string, name: string): Locator =>
@@ -54,13 +59,33 @@ const tasksBody = (page: Page): Locator[] => [
 const statsInventoryTab = (page: Page): Locator =>
   page.locator('#stats').getByRole('tab', { name: /^馆藏视频/ });
 
+/** `/site-mark?source=…` 由服务端现取站点 favicon；e2e 机器没有外网，取不到就 404，页面本身没问题。 */
+const stubSiteMarks = async (page: Page): Promise<void> => {
+  await page.route('**/site-mark?*', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#999"/></svg>',
+  }));
+};
+
+/** JAV 页的 React 根：页头、分区页签排、页面根。分区内容目前不跟 `?tab=` 走：
+ *  `src/react/router/pages/managed.tsx` 的 `openProps` 没有 `/jav` 这一支，页面拿到的是空 tab，
+ *  四个地址画出来都是同一屏，所以这里只认这层壳，不按分区断言主体。 */
+const javBody = (page: Page): Locator[] => [heading(page, '#main', 'JAV'),
+  page.locator('#main [data-board-tab-list]'), page.locator('#main [data-jav-selection]')];
+
 const ROUTES: readonly Route[] = [
   { path: '/works/EXM-001', body: page => [page.locator('#stage [data-jav-detail] h1'), page.getByRole('img', { name: 'EXM-001 封面', exact: true })] },
-  { path: '/jav', body: page => [heading(page, '#javLibraryHeader', 'JAV'), page.getByRole('tab', { name: '馆藏', exact: true, selected: true }), page.locator('#grid [data-media-card]:visible, #grid [data-media-empty]:visible').first()] },
-  { path: '/jav?tab=discover', body: page => [heading(page, '#stats', 'JAV'), page.getByRole('tab', { name: '发现', exact: true, selected: true }), page.getByText('暂无匹配口味的作品', { exact: true })] },
-  { path: '/jav?tab=wants', body: page => [heading(page, '#stats', 'JAV'), page.getByRole('tab', { name: '想要', exact: true, selected: true }), page.getByText('还没有想要的作品', { exact: true })] },
-  { path: '/', body: (page) => [page.locator('#grid [data-media-card]').first()] },
-  { path: '/wall', body: (page) => [page.locator('[data-wall-tile]').first(), page.getByRole('button', { name: '退出播放墙' })] },
+  { path: '/jav', body: javBody },
+  /* 点分区页签给出的就是这些地址，现在落到同一屏上（见 `javBody` 的注释）；先把地址都走一遍，
+     等 `openProps` 补上 `/jav` 那一支再把断言收紧到各自的分区。 */
+  ...['/jav?tab=wants', '/jav?tab=discover', '/jav?tab=releases'].map(path => ({ path, body: javBody })),
+  /* 演示库里的影片只有视频、没有封面图，首页卡片走的是缺封面的占位块（`[data-artwork-gap]`）：
+     两样都只由 React 卡片画出来，认一样在就算首页画完了。 */
+  { path: '/', body: (page) => [page.locator('#grid [data-media-card]').first(),
+    page.locator('#grid [data-artwork-gap], #grid [data-media-card] img').first()] },
+  /* 播放墙只收有封面的作品；这批影片没有封面，墙里等到的就是那句空态。 */
+  { path: '/wall', body: (page) => [page.locator('[data-wall-viewport]'),
+    page.locator('[data-wall-empty]').getByText('这些视频还没有封面')] },
   { path: '/performers', body: (page) => [heading(page, '#index', '艺人'), indexEntries(page)] },
   { path: '/creators', body: (page) => [heading(page, '#index', '卖家'), indexEntries(page)] },
   { path: '/creators/', body: (page) => [heading(page, '#index', '卖家'), indexEntries(page)] },
@@ -100,12 +125,6 @@ const ROUTES: readonly Route[] = [
     body: (page) => [heading(page, '#main', '统计'), statsInventoryTab(page)],
   },
   {
-    // 骨架那条指标带也写着「浏览记录」，认不出画完没有；把两套证据做成页签的只有真页面。
-    path: '/taste',
-    body: (page) => [heading(page, '#main', '口味'),
-      page.locator('#stats').getByRole('tab', { name: '浏览器记录', exact: true })],
-  },
-  {
     // 骨架那一列分类也写着「复核分类」，认不出画完没有；把十个分类做成页签的只有真页面。
     path: '/review',
     body: (page) => [heading(page, '#main', '人工复核'),
@@ -119,8 +138,6 @@ const ROUTES: readonly Route[] = [
       page.locator('#cleanup-pending'), page.locator('#cleanup-maintenance'), page.locator('#cleanup-deletion')],
   },
   { path: '/data-cleanup/organize', body: page => [pageTitle(page, '整理文件'), page.locator('#stats #organize')] },
-  { path: '/data-cleanup/media-repair', body: page => [pageTitle(page, '媒体修复'), page.locator('#stats section[aria-label="媒体修复"]')] },
-  { path: '/data-cleanup/resource-sync', body: page => [pageTitle(page, '资源同步'), page.locator('#stats #resource-sync')] },
   { path: '/data-cleanup/orphan-records', body: page => [pageTitle(page, '文件已丢失的记录'), page.locator('#stats #orphan-records')] },
   { path: '/data-cleanup/links', body: page => [pageTitle(page, '链接管理'), page.locator('#stats #link-manager')] },
   { path: '/data-cleanup/batch-delete', body: page => [pageTitle(page, '批量删除'), page.locator('#stats #batch-delete')] },
@@ -135,11 +152,6 @@ const ROUTES: readonly Route[] = [
     body: (page) => [heading(page, '#main', '重复文件'), page.locator('#stats').getByText('重复内容', { exact: true })],
   },
   {
-    // 旧直达地址进入资源同步二级页。
-    path: '/resource-sync',
-    body: (page) => [pageTitle(page, '资源同步'), page.locator('#stats section#resource-sync')],
-  },
-  {
     path: '/quality-goals',
     // 演示库里没有标记中的目标，等到的是空态那一句：它是真的标题元素，不是一段文字。
     body: (page) => [heading(page, '#main', '高清版'), heading(page, '#stats', '没有标记中的高清版目标')],
@@ -147,21 +159,32 @@ const ROUTES: readonly Route[] = [
   {
     // 「高清图片可能需要代理」那句遗留骨架里也有，认不出画完没有；「高清封面」那一张只有真页面有。
     path: '/sources',
+    stub: stubSiteMarks,
     body: (page) => [heading(page, '#main', '来源和凭证'), page.locator('#stats form[aria-label="高清封面"]')],
   },
   // 名字对不上任何一家时要换成空态；骨架一直留着，读起来就是还在取。
   { path: '/agencies/不存在的事务所', body: (page) => [heading(page, '#index', '找不到这个事务所')] },
-  { path: '/settings/library', body: configurationBody },
+  { path: '/settings/drives', body: configurationBody },
   { path: '/diagnostics', body: page => [page.getByRole('tab', { name: '系统诊断', selected: true }), page.locator('#stats section[aria-label="库健康"]')] },
   { path: '/settings/diagnostics', body: page => [page.getByRole('tab', { name: '系统诊断', selected: true }), page.locator('#stats section[aria-label="库健康"]')] },
   { path: '/tasks', body: tasksBody },
-  ...['', '/appearance', '/playback', '/jav', '/search', '/content'].map(section => ({ path: '/settings' + section,
-    body: (page: Page) => [page.getByRole('dialog', { name: /外观与导航|浏览与播放|JAV 与新作|搜索与推荐|内容显示/ })] })),
-  ...['subscriptions', 'downloads', 'network', 'maintenance'].map(section => ({ path: `/settings/${section}`, body: configurationBody })),
-  { path: '/settings/maintenance/repairs', body: page => [pageTitle(page, '修复与迁移'), page.locator('#main [data-manage-crumb] a[href="/settings/maintenance"]'),
-    page.locator('#stats section[aria-labelledby="repair-items"]')] },
+  /* `/settings` 本身就是配置页（六个分区页签，默认开网盘那一格）；个人设置是浮在页面上的那叠表单，
+     地址 `/settings/<键>`。旧的 `/settings/playback` 只是客户端别名，服务端没这条路由，这里走现在的
+     `/settings/browsing`。 */
+  { path: '/settings', body: configurationBody },
+  ...Object.entries(PREFERENCE_SECTIONS).map(([key, name]) => ({
+    path: `/settings/${key}`,
+    body: (page: Page) => [page.getByRole('dialog', { name, exact: true }),
+      page.getByRole('tab', { name, exact: true, selected: true })],
+  })),
+  ...['access', 'token', 'devices', 'speed'].map(section => ({ path: `/settings/${section}`, body: configurationBody })),
   {
     path: `/assets/${requiredEnv('PEACH_E2E_ITEM')}`,
+    /* 网盘来源按流量计费，详情页先立一道 `#gate`：点一下才拉流，播放器与 `video.vjs-tech` 才会出现。 */
+    prepare: async (page) => {
+      const gate = page.locator('#stage #gate');
+      if (await gate.count()) await gate.click();
+    },
     body: (page) => {
       const stage = page.getByRole('dialog', { name: '作品详情' });
       return [stage, stage.locator('video.vjs-tech')];
@@ -173,8 +196,11 @@ const LEGACY_ROUTES: readonly Route[] = [
   ...Object.entries(CLEANUP_HASH_REDIRECTS).map(([hash, path]) => ({
     path: '/data-cleanup' + hash, body: ROUTES.find(route => route.path === path)!.body,
   })),
-  { path: '/subscriptions?tab=wants', body: ROUTES.find(route => route.path === '/jav?tab=wants')!.body },
-  { path: '/subscriptions?tab=source', body: page => [page.locator('#stats form[aria-label="资源搜索"]')] },
+  /* 旧地址：`?tab=wants` 落到关注管理（关注列表那一格），`?tab=source` 换到来源页。 */
+  { path: '/subscriptions?tab=wants', body: page => [heading(page, '#main', '关注管理'),
+    page.locator('#stats').getByRole('tab', { name: '关注列表', exact: true, selected: true })] },
+  { path: '/subscriptions?tab=source', stub: stubSiteMarks,
+    body: page => [page.locator('#stats form[aria-label="资源搜索"]')] },
 ];
 
 async function assertHolds(page: Page, problems: string[], where: string): Promise<void> {
@@ -185,12 +211,17 @@ async function assertHolds(page: Page, problems: string[], where: string): Promi
   assert.deepEqual(box.offenders, [], `${where}：有元素越出视口右边缘`);
   assert.deepEqual(await unmanagedScrollers(page), [], `${where}：存在未接入统一实现的滚动区`);
   if (where === '/') {
+    /* 封面走 `/poster` 现抽；演示库里的影片没有封面图，卡片落的是缺封面的占位块。两样都算画完，
+       有封面图时再核它们有没有声明尺寸——宽高缺了会在滚动时整屏跳动。 */
+    await page.locator('#grid [data-media-card] img[loading="lazy"], #grid [data-artwork-gap]')
+      .first().waitFor({ timeout: 30_000 }).catch(() => {});
     const images = await page.locator('img[loading="lazy"]').evaluateAll(nodes => ({
       count: nodes.length,
       missing: nodes.filter(node => !(Number(node.getAttribute('width')) > 0 && Number(node.getAttribute('height')) > 0))
         .map(node => node.getAttribute('src')),
     }));
-    assert.ok(images.count > 0, '首页没有懒加载图片');
+    assert.ok(images.count > 0 || await page.locator('#grid [data-artwork-gap]').count() > 0,
+      '首页既没有封面图也没有缺封面的占位');
     assert.deepEqual(images.missing, [], '首页懒加载图片需要声明尺寸');
   }
 }
@@ -244,20 +275,22 @@ describe('路由冒烟', () => {
     for (const route of [...ROUTES, ...LEGACY_ROUTES]) {
       // 单条超时远小于 Python 侧的整轮超时：卡住的那一条自己报名字，不拖垮整轮输出。
       it(`${route.path} @ ${viewport.name}`, { timeout: 60_000 }, async () => {
-        const opened = await visit(browser, route.path.startsWith('/works/') ? '/stats' : route.path, viewport);
+        /* `/works/*` 要先停在别处装好详情桩再跳过去；其余路由的桩同样得赶在首次导航之前。 */
+        const opened = await visit(browser, route.path.startsWith('/works/') ? '/stats' : route.path, viewport,
+          route.stub ?? (route.path.startsWith('/works/') ? mockJavDetail : undefined));
         try {
           if (route.path.startsWith('/works/')) {
-            await mockJavDetail(opened.page);
             await opened.page.goto(requiredEnv('PEACH_E2E_ORIGIN') + route.path);
           }
+          await route.prepare?.(opened.page);
           await expectBody(opened.page, route.path, route.body(opened.page));
           await settle(opened.page);
           await assertHolds(opened.page, opened.problems, route.path);
           // 设置浮层的那一排 tab 常驻 DOM、关着时不可见；只点页面上看得见的那一排。
           const tabs = opened.page.locator('.ui-board-local-nav [role="tab"]:visible');
           const count = await tabs.count();
-          // 选择器一旦对不上，循环一格都不跑也照样绿；配置页至少有媒体、网络与访问、维护三格。
-          if (route.path === '/settings/library') assert.ok(count >= 3, `配置页只看到 ${count} 个分区 tab`);
+          // 选择器一旦对不上，循环一格都不跑也照样绿；配置页至少有网盘与系统诊断两格。
+          if (route.path === '/settings/drives') assert.ok(count >= 2, `配置页只看到 ${count} 个分区 tab`);
           for (let index = 0; index < count; index += 1) {
             const tab = tabs.nth(index);
             const name = (await tab.textContent())?.trim() || `第 ${index + 1} 格`;

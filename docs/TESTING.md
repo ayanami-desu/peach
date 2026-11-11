@@ -80,7 +80,7 @@ powershell -File scripts\test.ps1 -Scope web -Focus frontend/test/keyboard-short
 ```
 
 - 选择器给 `tests/` 下的文件、`模块.类` 或 `模块.类.方法`，`tests/` 前缀与 `.py` 后缀可省；也可以给 `frontend/test/` 下的一条 vitest 用例路径。
-- `frontend/e2e/` 的浏览器用例不走这个入口，直接在 `frontend/` 里跑 `npm run e2e`；把 e2e 路径塞进 `--focus` 会被拒绝并提示这一点。
+- `frontend/e2e/` 的浏览器用例由 `tests/test_web_e2e.py` 驱动：Python 这一侧造演示库、起服务并逐文件跑，默认不跑（`auto` 里会跳过），要显式开启 `PEACH_E2E=1 python -m unittest tests.test_web_e2e`，只跑几个文件时再加 `PEACH_E2E_ONLY`；`frontend/` 里的 `npm run e2e` 只按 `PEACH_E2E_FILES` 选文件，地址仍要由外部给的 `PEACH_E2E_ORIGIN` 提供。把 e2e 路径塞进 `--focus` 会被拒绝并提示这一点。
 - 可重复给 `--focus`，也可以逗号分隔。
 - 定向调试不签发记录，也不取机器级锁，因此不能当作验收凭据：验收要跑 `auto`、`checks`、`full` 之一并留下记录。
 - 环境变量 `PEACH_TEST_FOCUS`、`PEACH_E2E_FILES`、`PEACH_VITEST_FILES` 只服务于内部转交；带着它们跑正式运行会被拒绝。
@@ -125,10 +125,9 @@ python scripts/record_source_fixtures.py --with-credentials javdb:SSIS-001
 | `scripts/check_context_budget.py` | AGENTS.md、CLAUDE.md、SKILL.md 的行数与字节预算，「最后复核」日期 |
 | `scripts/check_reference_updates.py` | 锁定快照与上游 Markdown 之间的漂移；来源按 `weekly`/`monthly`/`quarterly` 分档，钉版本依赖按 40 位 sha 记 |
 | `scripts/check_commit_message.py` | `agent/*` 分支提交的 trailer 形态 |
-| `scripts/check_mdns.py` | 从终端确认 `peach.local` 在本机网络上有没有人应答 |
 | `scripts/check_ui_preview.py` | 用户验收预览的数据清单、记录来源与独立缓存 |
 
-`scripts/check_readme_impact.py` 不是独立入口：它提供 README 安装契约与提交检查共用的 Git 读取。`scripts/check_mdns.py` 只能从终端跑——macOS 的本地网络授权按进程判，服务进程探自己必然收不到回应。
+`scripts/check_readme_impact.py` 不是独立入口：它提供 README 安装契约与提交检查共用的 Git 读取。
 
 `check_context_budget.py` 的退出码里 1 表示结构或预算不合规，3 表示只有「最后复核」过期、其余都合规。
 

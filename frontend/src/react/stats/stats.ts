@@ -54,14 +54,14 @@ export interface RecentPlay {
   duration: number | null; max_reached: number | null; o_count: number; kind: string;
 }
 
-/** 一个存储卷。离线或取不到容量时 `total` 是 null，此时不画使用率。 */
+/** 一个存储卷。取不到容量时 `total` 是 null，此时不画使用率。 */
 export interface StorageVolume {
-  kind: string; label: string; root: string | null; online: boolean;
+  kind: string; label: string; root: string | null;
   free: number | null; used: number | null; total: number | null;
 }
 
 export interface StorageSummary {
-  volumes: number; online: number; measured: number; free: number; used: number; total: number;
+  volumes: number; measured: number; free: number; used: number; total: number;
 }
 
 /** `/api/stats` 的响应。字段与 `web_stats.q_stats` 对齐。 */

@@ -23,6 +23,7 @@ interface DriveRoot { remote_id: string; name: string }
 interface DriveConnection {
   location: string; label: string; configured: boolean; connected: boolean;
   email: string; display_name: string; roots: DriveRoot[]; synced_at: string | null; last_error: string;
+  mode: string; modes: string[];
 }
 
 interface DriveSnapshot { public_url: string; locations: DriveConnection[] }
@@ -37,7 +38,7 @@ const data = (over: Partial<ConfigurationData> = {}): ConfigurationData => ({
 const connected = (over: Partial<DriveConnection> = {}): DriveConnection => ({
   location: 'onedrive', label: 'OneDrive', configured: true, connected: true,
   email: 'me@outlook.com', display_name: 'Me', roots: [{ remote_id: 'root1', name: 'Movies' }],
-  synced_at: '2026-11-10 08:00:00', last_error: '', ...over,
+  synced_at: '2026-11-10 08:00:00', last_error: '', mode: 'redirect', modes: ['redirect', 'proxy'], ...over,
 });
 
 const snapshot = (over: Partial<DriveSnapshot> = {}): DriveSnapshot => ({
@@ -76,7 +77,7 @@ async function open(config = data(), drive: DriveSnapshot | Reply = snapshot(),
   const fetcher = serve(config, drive, others);
   await prefetchConfiguration(new AbortController().signal);
   const host = await mount(<QueryClientProvider client={queryClient}>
-    <ConfigurationPage receipt={receipt} reopenTutorial={async () => {}} section={selected} />
+    <ConfigurationPage receipt={receipt} section={selected} />
   </QueryClientProvider>);
   await settle();
   return { host, fetcher };
@@ -252,7 +253,7 @@ it('局部配置错误出现在对应那一格，不替换别处未保存的输�
 it('配置读取失败显示服务端原因', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => answer({ message: '数据库正在迁移' }, 503)));
   const host = await mount(<QueryClientProvider client={queryClient}>
-    <ConfigurationPage receipt={vi.fn()} reopenTutorial={async () => {}} />
+    <ConfigurationPage receipt={vi.fn()} />
   </QueryClientProvider>);
   await settle();
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('数据库正在迁移');

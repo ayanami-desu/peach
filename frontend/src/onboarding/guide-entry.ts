@@ -12,7 +12,6 @@ const preferences = (title: string): GuideEntry => ({ path: ['侧栏底部的设
 export function guideEntry(step: GuideStep): GuideEntry | undefined {
   if (step.surface) {
     if (step.id === 'external') return { path: ['作品卡片', '作品详情', '外部播放器'] };
-    if (step.surface === 'subtitles') return { path: ['作品卡片', '播放器齿轮', '字幕'] };
     if (step.surface === 'player') return { path: ['作品卡片', '播放器底部控制条'] };
     return { path: ['首页', '点击作品卡片', '作品详情'] };
   }

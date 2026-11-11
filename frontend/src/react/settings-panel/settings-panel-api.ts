@@ -87,8 +87,6 @@ export interface SettingsPanelHost {
   openConfiguration(): void;
   /** 面板第一次进 DOM：左栏那块玻璃要挂上折射贴图。 */
   attached(panel: HTMLElement): void;
-  /** 这台设备能不能改配置（`/healthz` 的 `configurable`）；取不到时是 null。 */
-  configurable(): Promise<boolean | null>;
 }
 
 export interface SettingsPanelApi {

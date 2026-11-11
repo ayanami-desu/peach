@@ -2,8 +2,22 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ExternalPlayback } from '../../src/react/item-detail/external-playback';
 import { choose, click, mount, settle } from './render';
 
+const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36';
+
+function useUserAgent(userAgent: string) {
+  Object.defineProperty(navigator, 'userAgent', { configurable: true, value: userAgent });
+}
+
+function useBrowserLocation(origin = 'http://peach.test') {
+  const place = { origin, href: `${origin}/assets/1`, assign() {}, replace() {} };
+  Object.defineProperty(window, 'location', { configurable: true, value: place });
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: place });
+  return place;
+}
+
 beforeEach(() => {
   for (const key of ['peach.local-player.v1', 'peach.playback-target.v1']) localStorage.removeItem(key);
+  useUserAgent(WINDOWS);
   const proto = HTMLElement.prototype;
   const matches = Element.prototype.matches;
   vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
@@ -17,93 +31,75 @@ afterEach(() => {
   const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
   delete proto.showPopover;
   delete proto.hidePopover;
+  vi.restoreAllMocks();
 });
 
-it('外部播放器只在用户请求后签发链接，并保留网络地址供 VR 播放器使用', async () => {
-  const fetcher = vi.fn(async (url: string) => ({ ok: true, json: async () => url === '/api/local-players' ? { players: [] } : ({
+it('只在你点打开时才签发链接，本机播放器拿到的是一条 scheme 地址', async () => {
+  const place = useBrowserLocation();
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({
     url: '/external-stream/1?ticket=short', playlist: '/external-playlist/1.m3u?ticket=short',
-  }) }));
+  })));
   vi.stubGlobal('fetch', fetcher);
   const host = await mount(<ExternalPlayback id={1} />);
   await settle();
-  expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/local-players']);
-  await choose(host.querySelector('[aria-label="外部播放器"]'), '网络播放地址 / VR');
+  expect(fetcher).not.toHaveBeenCalled();
   await click(host.querySelector('[aria-label="使用外部播放器打开"]'));
   await settle();
-  expect(fetcher.mock.calls).toHaveLength(2);
-  expect(host.querySelectorAll('[data-local-playback-row]')).toHaveLength(1);
-  expect(host.querySelector('details')).toBeNull();
+  expect(fetcher).toHaveBeenCalledWith('/api/external-playback?id=1', expect.objectContaining({ method: 'POST' }));
+  expect(place.href).toBe('vlc://http://peach.test/external-stream/1?ticket=short');
   expect(host.querySelector('input')?.value).toContain('/external-stream/1?ticket=short');
 });
 
-it('播放器菜单只列检测到的程序和通用网络播放方式', async () => {
-  localStorage.setItem('peach.playback-target.v1', 'iina');
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ players: [
-    { id: 'default', label: '系统默认播放器' }, { id: 'potplayer', label: 'PotPlayer' },
-  ] }))));
+it('菜单按这台设备给得出本机播放器，默认第一款并记住选择', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
   const host = await mount(<ExternalPlayback id={3} />);
-  await settle();
-  expect(host.querySelector('[data-select-trigger]')?.textContent?.trim()).toBe('系统默认播放器');
+  expect(host.querySelector('[data-select-trigger]')?.textContent?.trim()).toBe('VLC');
   await click(host.querySelector('[aria-label="外部播放器"]'));
   expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent?.trim())).toEqual([
-    '系统默认播放器', 'PotPlayer', 'M3U 播放列表', '网络播放地址 / VR',
+    'VLC', 'PotPlayer', 'mpv', 'M3U 播放列表', '网络播放地址 / VR',
+  ]);
+  await choose(host.querySelector('[aria-label="外部播放器"]'), 'PotPlayer');
+  expect(localStorage.getItem('peach.playback-target.v1')).toBe('app:potplayer');
+});
+
+it('手机上给的是 intent 与 iOS 那几款，不出现桌面播放器', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
+  useUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1');
+  const host = await mount(<ExternalPlayback id={4} />);
+  await click(host.querySelector('[aria-label="外部播放器"]'));
+  expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent?.trim())).toEqual([
+    'VLC', 'VLC（iOS）', 'Infuse', 'nPlayer', 'M3U 播放列表', '网络播放地址 / VR',
   ]);
 });
 
-it('本机可选择已安装播放器并在打开成功后回执，失败保留原因', async () => {
-  const opened = vi.fn();
-  const fetcher = vi.fn(async (url: string) => new Response(JSON.stringify(url === '/api/local-players'
-    ? { players: [{ id: 'default', label: '系统默认播放器' }, { id: 'vlc', label: 'VLC' }] } : { opened: true })));
-  vi.stubGlobal('fetch', fetcher);
-  const host = await mount(<ExternalPlayback id={7} onOpened={opened} />);
-  await settle();
-  expect(host.textContent).toContain('系统默认播放器');
-  await click(host.querySelector('[aria-label="使用外部播放器打开"]'));
-  expect(fetcher).toHaveBeenLastCalledWith('/api/local-playback?id=7&player=default', expect.objectContaining({ method: 'POST' }));
-  expect(opened).toHaveBeenCalledOnce();
-  fetcher.mockImplementation(async () => new Response(JSON.stringify({ detail: '无法打开播放器' }), { status: 503 }));
-  await click(host.querySelector('[aria-label="使用外部播放器打开"]'));
-  expect(host.textContent).toContain('无法打开播放器');
-  expect(opened).toHaveBeenCalledOnce();
-});
-
-it('M3U 与本机播放器共用打开入口，切换方式时清除网络地址', async () => {
-  const fetcher = vi.fn(async (url: string) => new Response(JSON.stringify(url === '/api/local-players'
-    ? { players: [{ id: 'default', label: '系统默认播放器' }] }
-    : { url: '/external-stream/9?ticket=short', playlist: '/external-playlist/9.m3u?ticket=short' })));
-  vi.stubGlobal('fetch', fetcher);
+it('选 M3U 时下载播放列表，换回别的目标时清掉已显示的地址', async () => {
+  useBrowserLocation();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    url: '/external-stream/9?ticket=short', playlist: '/external-playlist/9.m3u?ticket=short',
+  }))));
   let downloadUrl = '';
   const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
     downloadUrl = this.href;
   });
-  const host = await mount(<ExternalPlayback id={9} />);
-  await settle();
+  const opened = vi.fn();
+  const host = await mount(<ExternalPlayback id={9} onOpened={opened} />);
   await choose(host.querySelector('[aria-label="外部播放器"]'), 'M3U 播放列表');
-  expect(localStorage.getItem('peach.playback-target.v1')).toBe('m3u');
   await click(host.querySelector('[aria-label="使用外部播放器打开"]'));
-  expect(fetcher).toHaveBeenLastCalledWith('/api/external-playback?id=9', expect.objectContaining({ method: 'POST' }));
+  await settle();
   expect(download).toHaveBeenCalledOnce();
   expect(downloadUrl).toContain('/external-playlist/9.m3u?ticket=short');
+  expect(opened).toHaveBeenCalledOnce();
   expect(host.querySelector('input')?.value).toContain('/external-stream/9?ticket=short');
-  await choose(host.querySelector('[aria-label="外部播放器"]'), '系统默认播放器');
+  await choose(host.querySelector('[aria-label="外部播放器"]'), '网络播放地址 / VR');
   expect(host.querySelector('input')).toBeNull();
 });
 
-it('本机检测失败时保留网络方式，重新检测后可以选择本机播放器', async () => {
-  let attempts = 0;
-  vi.stubGlobal('fetch', vi.fn(async () => {
-    attempts++;
-    return attempts === 1
-      ? new Response(JSON.stringify({ detail: '检测暂不可用' }), { status: 503 })
-      : new Response(JSON.stringify({ players: [{ id: 'potplayer', label: 'PotPlayer' }] }));
-  }));
+it('签发失败时保留原因，不画地址', async () => {
+  useBrowserLocation();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: '容器不支持外链' }), { status: 404 })));
   const host = await mount(<ExternalPlayback id={5} />);
+  await click(host.querySelector('[aria-label="使用外部播放器打开"]'));
   await settle();
-  expect(host.querySelector('[aria-label="使用外部播放器打开"]')?.hasAttribute('disabled')).toBe(false);
-  expect(host.textContent).toContain('检测暂不可用');
-  await click([...host.querySelectorAll('button')].find(node => node.textContent === '重新检测播放器'));
-  await settle();
-  await choose(host.querySelector('[aria-label="外部播放器"]'), 'PotPlayer');
-  expect(localStorage.getItem('peach.playback-target.v1')).toBe('local:potplayer');
-  expect(host.textContent).not.toContain('检测暂不可用');
+  expect(host.textContent).toContain('容器不支持外链');
+  expect(host.querySelector('input')).toBeNull();
 });

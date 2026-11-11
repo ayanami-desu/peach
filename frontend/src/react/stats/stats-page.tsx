@@ -29,7 +29,6 @@ import { cardClass } from '../components/card';
 import { EmptyState } from '../components/empty-state';
 import { ExpandableRanking } from '../components/expandable-ranking';
 import { Note } from '../components/note';
-import { ConnectionStatus } from '../components/connection-status';
 import { StatusLabel } from '../components/status-label';
 import { Page } from '../components/page';
 import { Progress } from '../components/progress';
@@ -194,7 +193,7 @@ function VolumeRow({ volume }: { volume: StorageVolume }) {
             {fmtSize(used)}
             <span className="ml-1.5 text-caption-1-regular text-text-secondary">{percentText(used, total)}</span>
           </b>
-        ) : volume.online ? <StatusLabel>容量未取得</StatusLabel> : <ConnectionStatus online={false} />}
+        ) : <StatusLabel>容量未取得</StatusLabel>}
       </header>
       {total != null
         ? <Progress meter label={`${volume.label}空间使用率`} value={within(used, Math.max(total, 1))} max={Math.max(total, 1)} />
@@ -350,7 +349,7 @@ export function StatsPage(props: StatsProps) {
           <MetricTab id="coverage" label="内容标签" icon={RiPriceTag3Line} accent={2}
             figure={coverage} detail={covered} />
           <MetricTab id="storage" label="使用空间" icon={RiHardDrive2Line} accent={3}
-            figure={`${storage.online.toLocaleString()} 个卷`}
+            figure={`${storage.volumes.toLocaleString()} 个卷`}
             detail={storage.measured ? `已用 ${fmtSize(storage.used)}` : '容量未取得'} />
         </TabList>
         <TabPanel id="inventory"><InventoryDetail data={data} {...props} /></TabPanel>

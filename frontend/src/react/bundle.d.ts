@@ -242,8 +242,6 @@ export interface ConfigurationData {
 export interface ConfigurationProps {
   /** 保存成功后的过去时回执（遗留层的 Toast）。 */
   receipt(message: string): void;
-  /** 让安装教程重新出现：跳过与折叠归位、撤回数据库标记。 */
-  reopenTutorial(): Promise<void>;
   /** 首帧选中的那一组页签名（别处点「管理媒体库」「添加媒体目录」等进来）；认不出或没给就选第一组。 */
   section?: string;
 }

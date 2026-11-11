@@ -138,8 +138,6 @@ export interface IndexProps extends IndexRoute {
   /** 去关注页，只看这一位创作者或这一枚在线标签的更新。 */
   openFollowAuthor(key: string): void;
   openFollowTag(tag: string): void;
-  /** 本机能改配置：空态里给「添加内容」。 */
-  configurable: boolean;
 }
 
 /** 地址栏上的类型可能是手敲或拼错的：认不出的回到「全部」，不拿它去问后端。

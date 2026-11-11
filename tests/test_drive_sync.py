@@ -6,18 +6,24 @@ from peach import drive_sync
 from peach.scan import ScanResult, ScanTargetError
 
 
+_STATE = {"cursor": None, "synced_at": None, "full_synced_at": None, "last_error": ""}
+
+
 class StubService:
     """只答同步状态、只记被叫了哪一次。"""
 
     def __init__(self, states: dict[str, dict] | None = None, failing: str = ""):
-        self.roots = {location: ("root",) for location in (states or {"gdrive": {}})}
+        self.sources = tuple(sorted((states or {"gdrive": {}})))
         self.states = states or {}
         self.failing = failing
         self.full: list[str] = []
         self.incremental: list[str] = []
 
+    def locations(self) -> tuple[str, ...]:
+        return self.sources
+
     def sync_state(self, location: str) -> dict:
-        return self.states.get(location, {"synced_at": None, "last_error": "", "cursor": None})
+        return self.states.get(location, _STATE)
 
     def full_sync(self, location: str) -> ScanResult:
         if location == self.failing:
@@ -35,7 +41,7 @@ class DriveSyncTests(unittest.TestCase):
         return drive_sync.DriveSync(service, clock=lambda: now)
 
     def test_first_run_does_full_when_never_synced(self):
-        service = StubService({"gdrive": {"synced_at": None, "last_error": "", "cursor": None}})
+        service = StubService({"gdrive": _STATE})
         report = self.sync(service, 1_000.0).refresh("gdrive")
         self.assertTrue(report.full)
         self.assertEqual(service.full, ["gdrive"])
@@ -44,22 +50,33 @@ class DriveSyncTests(unittest.TestCase):
     def test_recent_full_sync_switches_to_incremental(self):
         now = 1_780_000_000.0
         stamp = time.strftime(drive_sync._STAMP, time.localtime(now - 60.0))
-        service = StubService({"gdrive": {"synced_at": stamp, "last_error": "", "cursor": "c1"}})
+        service = StubService({"gdrive": {"synced_at": stamp, "full_synced_at": stamp, "last_error": "", "cursor": "c1"}})
         report = self.sync(service, now).refresh("gdrive")
         self.assertFalse(report.full)
         self.assertEqual(service.incremental, ["gdrive"])
 
     def test_stale_full_sync_falls_back_to_full(self):
-        service = StubService({"gdrive": {"synced_at": "2026-05-01 00:00:00", "last_error": "", "cursor": "c1"}})
+        service = StubService({"gdrive": {"synced_at": "2026-05-01 00:00:00", "full_synced_at": "2026-05-01 00:00:00",
+                               "last_error": "", "cursor": "c1"}})
         clock = drive_sync.DriveSync(service, clock=lambda: 1_780_000_000.0)
         clock.full_every = 60.0
         report = clock.refresh("gdrive")
         self.assertTrue(report.full)
         self.assertEqual(service.full, ["gdrive"])
 
+    def test_incremental_sync_does_not_postpone_the_full_check(self):
+        now = 1_780_000_000.0
+        fresh = time.strftime(drive_sync._STAMP, time.localtime(now - 60.0))
+        service = StubService({"gdrive": {"synced_at": fresh, "full_synced_at": "2026-05-01 00:00:00",
+                                          "last_error": "", "cursor": "c1"}})
+        clock = drive_sync.DriveSync(service, clock=lambda: now)
+        clock.full_every = 60.0
+        self.assertTrue(clock.refresh("gdrive").full)
+        self.assertEqual(service.full, ["gdrive"])
+
     def test_tick_respects_interval_and_manual_request(self):
-        service = StubService({"gdrive": {"synced_at": None, "last_error": "", "cursor": None},
-                               "onedrive": {"synced_at": None, "last_error": "", "cursor": None}})
+        service = StubService({"gdrive": _STATE,
+                               "onedrive": _STATE})
         clock = drive_sync.DriveSync(service, clock=lambda: 500.0, interval=900.0)
         first = clock.tick()
         self.assertEqual([report.location for report in first], ["gdrive", "onedrive"])
@@ -69,14 +86,14 @@ class DriveSyncTests(unittest.TestCase):
         self.assertEqual([report.location for report in forced], ["onedrive"])
 
     def test_scan_target_error_becomes_report_instead_of_raising(self):
-        service = StubService({"gdrive": {"synced_at": None, "last_error": "", "cursor": None}},
+        service = StubService({"gdrive": _STATE},
                               failing="gdrive")
         report = self.sync(service, 10.0).refresh("gdrive")
         self.assertEqual("没配扫描目录", report.error)
         self.assertIsNone(report.result)
 
     def test_failed_attempt_is_not_retried_on_every_tick(self):
-        service = StubService({"gdrive": {"synced_at": None, "last_error": "", "cursor": None}},
+        service = StubService({"gdrive": _STATE},
                               failing="gdrive")
         clock = drive_sync.DriveSync(service, clock=lambda: 500.0, interval=900.0)
         self.assertTrue(clock.tick()[0].error)

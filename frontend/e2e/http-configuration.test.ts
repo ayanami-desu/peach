@@ -119,7 +119,7 @@ describe('普通 HTTP 的配置与播放', () => {
   });
 
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name}：非安全来源打开配置、编辑索引器并挂载播放器`, { timeout: 60_000 }, async t => {
+    it(`${viewport.name}：非安全来源打开配置页并挂载播放器`, { timeout: 60_000 }, async t => {
       let phase = '准备演示服务';
       const forwarding = forwardingState();
       t.after(() => {
@@ -137,23 +137,14 @@ describe('普通 HTTP 的配置与播放', () => {
       try {
         const response = await page.request.get(`${service}/api/configuration`);
         assert.equal(response.status(), 200);
-        const configuration = await response.json();
         // 路由拦截只处理重定向的首个请求；别名契约在服务端读取，页面走正式入口。
         const alias = await page.request.get(`${service}/configuration`, { maxRedirects: 0 });
         assert.equal(alias.status(), 307);
-        assert.equal(alias.headers().location, '/settings/library');
-        await page.route(`${origin}/api/configuration`, route => route.fulfill({ json: { ...configuration, editable: true } }));
-        const writes: { indexers: { key: string; name: string; url: string }[] }[] = [];
-        await page.route(`${origin}/api/configuration/indexers`, route => {
-          if (route.request().method() === 'GET') return route.fulfill({ json: { indexers: [], max_indexers: 4 } });
-          const sent = route.request().postDataJSON();
-          writes.push(sent);
-          return route.fulfill({ json: { ...sent, max_indexers: 4 } });
-        });
+        assert.equal(alias.headers().location, '/settings/drives');
         page.on('response', response => {
           if (response.url().startsWith(origin) && response.status() >= 400) problems.push(`${response.status()} ${response.url()}`);
         });
-        for (const path of ['/settings/library', '/settings/subscriptions']) {
+        for (const path of ['/settings/drives', '/settings/access']) {
           phase = `打开 ${path}`;
           await page.goto(origin + path, { waitUntil: 'load' });
           assert.deepEqual(await page.evaluate(() => ({
@@ -161,22 +152,7 @@ describe('普通 HTTP 的配置与播放', () => {
           })), { secure: false, uuid: 'undefined', random: 'function' });
           phase = `等待 ${path} 配置主体`;
           await expectBody(page, path, configurationBody(page));
-          await page.getByRole('tab', { name: '来源与订阅', exact: true }).click();
-          const section = page.getByRole('form', { name: '资源搜索', exact: true });
-          phase = `编辑 ${path} 索引器`;
-          await section.getByRole('button', { name: '添加索引器', exact: true }).click();
-          await section.getByRole('button', { name: '添加索引器', exact: true }).click();
-          await section.getByRole('textbox', { name: /名称/ }).nth(1).fill('HTTP 测试');
-          await section.getByRole('textbox', { name: /Torznab 地址/ }).nth(1).fill('https://indexer.example/api');
-          await section.getByRole('button', { name: '移除索引器 1', exact: true }).click();
-          phase = `保存 ${path} 索引器`;
-          const saved = page.waitForResponse(response => response.url() === `${origin}/api/configuration/indexers`
-            && response.request().method() === 'POST');
-          await section.getByRole('button', { name: '保存配置', exact: true }).click();
-          assert.equal((await saved).status(), 200);
-          assert.equal(writes.at(-1)!.indexers.length, 1);
-          assert.equal(writes.at(-1)!.indexers[0]!.name, 'HTTP 测试');
-          phase = `等待 ${path} 保存后布局`;
+          phase = `等待 ${path} 布局`;
           await settle(page, '.ui-configpage');
           const bounds = await layout(page);
           assert.ok(bounds.scrollWidth <= bounds.viewportWidth);

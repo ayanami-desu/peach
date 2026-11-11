@@ -37,15 +37,12 @@ describe('JAV 入库作品卡', () => {
             attributes: [], source: 'JavDB', source_url: 'https://example.test/resources', origins: [],
           }))],
         } }); });
-        await page.route('**/api/downloads?*', route => route.fulfill({ json: { available: true,
-          providers: [{ key: '115', label: '115', configured: true, target: '/下载' }], tasks: [] } }));
         await page.getByRole('tab', { name: '想要', exact: true }).click();
         await page.locator('[data-want-magnets]').scrollIntoViewIfNeeded();
         await page.getByRole('heading', { name: '资源链接 · 8' }).waitFor();
         await settle(page);
         const card = page.locator('[data-want-id="9001"]');
         assert.equal(await page.locator('#stats').getByRole('button', { name: '查找资源', exact: true }).count(), 2, '通用入口与作品入口分别保留一处');
-        assert.equal(await page.getByRole('combobox', { name: '下载到', exact: true }).count(), 0, '下载目标在资源下载面板中选择');
         const source = card.getByRole('link', { name: '来源页', exact: true });
         assert.deepEqual(await source.evaluate(node => [...node.parentElement!.querySelectorAll('button, a')].map(action => action.textContent)), ['来源页', '移除', '查找资源']);
         const style = await card.evaluate(el => ({ radius: getComputedStyle(el).borderRadius,
@@ -64,18 +61,9 @@ describe('JAV 入库作品卡', () => {
         const magnetStyle = await card.locator('[data-resource-protocol="magnet"]').first().locator('span').first().evaluate(el => getComputedStyle(el).backgroundColor);
         const ed2kStyle = await card.locator('[data-resource-protocol="ed2k"] span').first().evaluate(el => getComputedStyle(el).backgroundColor);
         assert.notEqual(magnetStyle, ed2kStyle);
-        const add = card.getByRole('button', { name: '添加下载', exact: true }).first();
-        const copy = card.getByRole('button', { name: '复制链接', exact: true }).first();
-        assert.notEqual(await add.evaluate(el => getComputedStyle(el).backgroundColor), await copy.evaluate(el => getComputedStyle(el).backgroundColor));
-        assert.equal(await add.locator('img').count(), 1, '下载渠道使用对应的网盘图标');
-        if (viewport.name === 'desktop') {
-          const centers = await add.evaluate(el => {
-            const row = el.closest('[data-resource-protocol]')!.getBoundingClientRect();
-            const button = el.getBoundingClientRect();
-            return { row: row.top + row.height / 2, button: button.top + button.height / 2 };
-          });
-          assert.ok(Math.abs(centers.row - centers.button) <= 1, JSON.stringify(centers));
-        }
+        const actions = card.locator('[data-resource-actions]').first();
+        assert.deepEqual(await actions.locator('a, button').allInnerTexts(), ['链接来源', '复制链接']);
+        assert.equal(await actions.locator('img').count(), 0, '资源行的动作只用图标字体');
         const geometry = await layout(page);
         assert.ok(geometry.scrollWidth <= geometry.viewportWidth + 1, JSON.stringify(geometry));
         assert.deepEqual(geometry.offenders, []);

@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "7328247a-1562-49a4-ba66-0f304b7bfca3", e._sentryDebugIdIdentifier = "sentry-dbid-7328247a-1562-49a4-ba66-0f304b7bfca3");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "c71f7c98-cbbf-49ba-adc6-d3c4dbf9d13d", e._sentryDebugIdIdentifier = "sentry-dbid-c71f7c98-cbbf-49ba-adc6-d3c4dbf9d13d");
 	} catch {}
 })();
 import { beginPlayerGuidePreview as e, closeDrawerAfterNav as t, disposeStage as n, peachHistory$1 as r } from "./peach-app.js";
@@ -887,10 +887,7 @@ function we(i) {
 				if (c || m.signal.aborted) return;
 				d && (f ||= e(), g = `/assets/${d}`);
 			}
-			if (g && h(g), n.surface === "subtitles" && d) {
-				let e = await $("#stage .vjs-peach-settings-toggle", m.signal);
-				!m.signal.aborted && e?.getAttribute("aria-expanded") !== "true" && e?.click();
-			}
+			g && h(g);
 			let _ = await $(n.target, m.signal);
 			if (c || m.signal.aborted) return;
 			let y = !_;
@@ -955,4 +952,4 @@ function we(i) {
 }
 export { we as createGuideSession };
 
-//# debugId=7328247a-1562-49a4-ba66-0f304b7bfca3
+//# debugId=c71f7c98-cbbf-49ba-adc6-d3c4dbf9d13d

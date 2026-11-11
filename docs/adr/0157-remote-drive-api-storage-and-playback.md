@@ -2,7 +2,7 @@
 
 - 状态：已采纳
 - 日期：2026-11-11
-- 关系：取代 [ADR-0016](0016-remote-mp4-default-range-hls-opt-in.md)、[ADR-0089](0089-cloud-offline-download.md)、[ADR-0065](0065-cloudflare-sources-load-in-the-local-browser.md)；修正 [ADR-0021](0021-close-stash-adapter.md)、[ADR-0041](0041-new-files-are-pushed-in-scanning-is-the-backstop.md)、[ADR-0080](0080-resource-sync-owns-empty-folders-and-purges-vanished-rows.md)、[ADR-0149](0149-docker-first-access-setup.md)；[ADR-0011](0011-windows-tray-autostart.md)、[ADR-0012](0012-version-and-update-boundary.md)、[ADR-0017](0017-dual-host-local-runtime-and-sync-boundaries.md)、[ADR-0091](0091-restart-prepares-runtime.md) 随之失效
+- 关系：取代 [ADR-0016](0016-remote-mp4-default-range-hls-opt-in.md)、[ADR-0089](0089-cloud-offline-download.md)、[ADR-0065](0065-cloudflare-sources-load-in-the-local-browser.md)；修正 [ADR-0021](0021-close-stash-adapter.md)、[ADR-0041](0041-new-files-are-pushed-in-scanning-is-the-backstop.md)、[ADR-0050](0050-settings-modal-holds-values-pages-hold-work.md)、[ADR-0080](0080-resource-sync-owns-empty-folders-and-purges-vanished-rows.md)、[ADR-0149](0149-docker-first-access-setup.md)；[ADR-0011](0011-windows-tray-autostart.md)、[ADR-0012](0012-version-and-update-boundary.md)、[ADR-0017](0017-dual-host-local-runtime-and-sync-boundaries.md)、[ADR-0091](0091-restart-prepares-runtime.md) 随之失效
 
 ## 背景
 
@@ -21,9 +21,9 @@
 
 **一、存储只走 provider API，不挂载。** Peach 自己持有账号凭据，列目录、取元数据、取直链、改名移动全部走 API。第一阶段只做 Google Drive 与 OneDrive，115、PikPak、光鸭与其他已挂载网盘退出。
 
-**二、取流优先 302。** OneDrive 用 Graph 返回的预授权 `@microsoft.graph.downloadUrl`（约一小时有效）直接 302；Google Drive 的 `Files: get?alt=media` 必须带 Bearer，由 Peach 转发 Range。两条路径各自排错、各自测试。
+**二、取流优先 302，两种方式由用户选。** OneDrive 用 Graph 返回的预授权 `@microsoft.graph.downloadUrl`（约一小时有效）直接 302；Google Drive 的 `Files: get?alt=media` 必须带 Bearer，由 Peach 转发 Range。OneDrive 另外保留「Peach 带 Range 转发」这一档（`[drive.modes] onedrive = "proxy"`），因为直连把网盘临时地址交给播放器、速度也不受 Peach 控制，网络差或不想暴露直链时可以换。两条路径各自排错、各自测试。
 
-**三、只在浏览器能直接解码时才播放。** 转码与 HLS 全部删除，`BROWSER_NATIVE_SUFFIXES`（`src/peach/transcodes.py:21`）成为唯一判据。白名单外照常入库、可浏览、可复制直链、可交外部播放器。
+**三、只在浏览器能直接解码时才播放。** 转码与 HLS 全部删除，`BROWSER_MIME`（`src/peach/media.py`）成为唯一判据。白名单外照常入库、可浏览、可复制直链、可交外部播放器。
 
 **四、元数据靠 provider 字段与远端探测。** 优先用 Drive 的 `videoMediaMetadata`、OneDrive 的 `video` facet；缺字段时用 HTTP Range 取头部给 `ffprobe`，不落本地文件。九宫格（卡片 3×3 接触印相）保留，改成从网盘流抽九帧生成（`preview_sheets`）；时间轴预览不变，仍按需生成。
 

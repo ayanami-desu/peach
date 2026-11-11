@@ -11,7 +11,7 @@ import { api, esc, fmtClock, fmtSize, icon, realDuration } from '@peach/legacy/c
 
 import {
   mountPlayerAmbient, mountPlayerMediaSession, mountPlayerQualityControl, mountPlayerSeekPreview,
-  mountPlayerSpinner, mountPlayerSubtitles,
+  mountPlayerSpinner,
 } from './controls';
 import { disposePlayer } from './dispose';
 import { playerHost } from './host';
@@ -238,7 +238,6 @@ export async function mountDetailPlayer(
     mountPlayerSeekPreview(player, item, { thumbnail: !options.source });
     if (!options.guidePreview) mountPlayerMediaSession(player, item);
     mountPlayerSpinner(player);
-    if (!options.source) mountPlayerSubtitles(player, item.id);
     session.ready = true;
     if (session.chrome?.statsButton) session.chrome.statsButton.hidden = false;
   });

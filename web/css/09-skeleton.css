@@ -163,10 +163,7 @@ img[data-facebox]:not([data-face-framed]){opacity:0}
 :is([data-skeleton],.avskeleton,.brandskeleton),:is([data-skeleton],.avskeleton,.brandskeleton) *,.tagskeleton,.countskeleton,.skeletoncard,.skeleton{pointer-events:none}
 [data-skeleton-action]:disabled{pointer-events:auto}
 
-.config-skeleton-card .skeleton{display:block;height:20px;width:60%}
-.config-skeleton-card .geist-fieldset-content>.skeleton:first-child{height:24px;width:35%}
-.config-skeleton-card .geist-fieldset-content>.skeleton:last-child{height:var(--control-h);width:100%}
-.config-skeleton-card .geist-fieldset-footer>.skeleton{width:100px;height:var(--control-h);margin:0}
+
 /* 换页进度条（`frontend/src/navigation-progress.ts`）：顶边一条 2px 的不定进度，顶替单页换页时
    不再出现的浏览器加载条。一截 40% 宽的蓝条从左扫到右，结束时铺满再淡出；底下垫一条淡蓝轨道，
    扫动的那一截转回左边、一时不在屏上时，顶边也还亮着。减少动效时不扫，整条静止地亮着，

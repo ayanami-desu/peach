@@ -1,10 +1,8 @@
 import type { VjsPlayer } from './types';
-import { playerMemory } from './memory';
 
 /** 旋转原生画面；控制条保持正向，尺寸跟随播放器及媒体元数据。 */
 export function mountPlayerRotation(player: VjsPlayer, video: HTMLVideoElement) {
-  let angle = 0, touched = false;
-  const memory = playerMemory(player);
+  let angle = 0;
   const root = player.el();
   const container = root.querySelector('media-container') || root;
   const properties = ['width', 'height', 'inset', 'left', 'top', 'transform', 'object-fit'] as const;
@@ -26,9 +24,6 @@ export function mountPlayerRotation(player: VjsPlayer, video: HTMLVideoElement) 
     }
   };
   const observer = new ResizeObserver(sync);
-  memory.restore(saved => {
-    if (!touched && !player.isDisposed() && saved.rotation !== undefined) { angle = saved.rotation; sync() }
-  });
   observer.observe(container);
   video.addEventListener('loadedmetadata', sync);
   video.addEventListener('resize', sync);
@@ -38,7 +33,5 @@ export function mountPlayerRotation(player: VjsPlayer, video: HTMLVideoElement) 
     video.removeEventListener('resize', sync);
     restore();
   });
-  return { angle: () => angle, set: (next: number) => {
-    touched = true; angle = next; sync(); void memory.save({ rotation: angle }).catch(() => {});
-  } };
+  return { angle: () => angle, set: (next: number) => { angle = next; sync() } };
 }

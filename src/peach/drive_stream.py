@@ -133,5 +133,8 @@ class DriveStreamer:
         return target.url, dict(target.headers)
 
 
-def build(providers: Mapping[str, DriveProvider], client: Callable[[], httpx.Client]) -> DriveStreamer:
-    return DriveStreamer(lambda location: providers[location], client)
+def build(providers: Mapping[str, DriveProvider] | Callable[[str], DriveProvider],
+          client: Callable[[], httpx.Client]) -> DriveStreamer:
+    """`providers` 可以是一张表，也可以是一句「按来源取当前驱动」——后者才对得上会重建的驱动实例。"""
+    resolve = providers if callable(providers) else (lambda location: providers[location])
+    return DriveStreamer(resolve, client)

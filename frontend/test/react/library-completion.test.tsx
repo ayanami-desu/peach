@@ -59,14 +59,18 @@ it('两批合成一条：主按钮「同步这些影片」在最右，流量保�
   await vi.waitFor(() => expect(document.querySelector('dialog')?.open).toBe(true));
   expect(document.querySelector('dialog')?.textContent).toContain('这 2 部影片');
   await click(document.querySelector('dialog [data-modal-confirm]'));
-  await vi.waitFor(() => expect(posts).toEqual([{ stage: 'previews', asset_ids: [8, 9], allow_metered: true }]));
+  await vi.waitFor(() => expect(posts).toEqual([{ stage: 'collect', asset_ids: [8, 9], allow_metered: true }]));
 });
 
-it('关闭视频预览生成时保留资料同步，并禁用单独抽帧', async () => {
+it('关闭视频预览生成时仍能补资料，流量保护那批不给点', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ status: 'idle', metadata_only: true }) })));
-  const host = await mount(prompt());
+  const host = await mount(<QueryClientProvider client={queryClient}>
+    <LibraryCompletionPrompt assetIds={[7, 8]} meteredIds={[8, 9]} /></QueryClientProvider>);
+  const metered = buttonNamed('补全流量保护的 2 部', host) as HTMLButtonElement | null;
+  expect(metered?.disabled).toBe(true);
+  expect(metered?.title).toBe('请先在媒体库设置中开启视频预览生成');
+  expect((buttonNamed('同步这些影片', host) as HTMLButtonElement | null)?.disabled).toBe(false);
   await click(host.querySelector('[aria-haspopup="dialog"]'));
-  expect(menuItem('仅补全预览图')?.disabled).toBe(true);
   expect(menuItem('仅补全影片资料')?.disabled).toBe(false);
 });
 
@@ -87,15 +91,12 @@ it('默认补全与下拉分项都只提交当前缺图影片，菜单仅包含�
   const host = await mount(prompt());
   expect(host.textContent).toContain('2 部暂无预览');
   await click(buttonNamed('同步这些影片', host));
-  for (const label of ['仅补全预览图', '仅补全影片资料']) {
-    await click(host.querySelector('[aria-haspopup="dialog"]'));
-    const menu = document.querySelector('[role="dialog"]')!;
-    expect(buttonNamed('同步这些影片', menu)).toBeNull();
-    await click(menuItem(label));
-  }
+  await click(host.querySelector('[aria-haspopup="dialog"]'));
+  const menu = document.querySelector('[role="dialog"]')!;
+  expect(buttonNamed('同步这些影片', menu)).toBeNull();
+  await click(menuItem('仅补全影片资料'));
   expect(posts).toEqual([
     { stage: 'collect', asset_ids: [7, 8] },
-    { stage: 'previews', asset_ids: [7, 8] },
     { stage: 'metadata', asset_ids: [7, 8] },
   ]);
 });

@@ -65,7 +65,7 @@ class DriveSync:
         self._requested: set[str] = set()
 
     def locations(self) -> tuple[str, ...]:
-        return tuple(self.service.roots)
+        return self.service.locations()
 
     def state(self, location: str) -> dict:
         return self.service.sync_state(location)
@@ -77,7 +77,7 @@ class DriveSync:
     def refresh(self, location: str) -> SyncReport:
         """同步一个来源：有游标走增量，没有或者太久没全量就整棵核对。"""
         self._requested.discard(location)
-        stamp = self.state(location).get("synced_at")
+        stamp = self.state(location).get("full_synced_at")
         seen = _moment(stamp)
         full = seen is None or self._clock() - seen >= self.full_every
         self._synced[location] = self._clock()

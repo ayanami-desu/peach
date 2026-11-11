@@ -39,12 +39,15 @@ describe('规范路由与设置历史', () => {
           === document.querySelector('[aria-label="关注概览"]')), true, '页签切换保留页面宿主');
         await page.getByRole('tab', { name: '关注列表', exact: true }).click();
         await add.waitFor();
-        await page.getByRole('button', { name: '统计', exact: true }).click();
-        await page.getByRole('link', { name: '添加关注', exact: true }).click();
+        if (viewport.mobile) await page.locator('#filterBtn').click();
+        await page.locator('[data-sidebar-nav] [data-nav="follow"]').click();
+        const followLink = page.getByRole('link', { name: '添加关注', exact: true });
+        await followLink.waitFor();
+        await followLink.click();
         await page.getByRole('textbox', { name: '来源链接、名字或 id', exact: true }).waitFor();
         await page.goBack();
         await page.getByRole('link', { name: '添加关注', exact: true }).waitFor();
-        assert.equal(new URL(page.url()).pathname, '/stats');
+        assert.equal(new URL(page.url()).pathname, '/follow');
         await page.goForward();
         await page.getByRole('textbox', { name: '来源链接、名字或 id', exact: true }).waitFor();
         assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin);
@@ -132,13 +135,13 @@ describe('规范路由与设置历史', () => {
         await page.waitForURL('**/settings/appearance');
         const panel = page.locator('#settingsPanel');
         await panel.getByRole('tab', { name: '浏览与播放', exact: true }).click();
-        await page.waitForURL('**/settings/playback');
+        await page.waitForURL('**/settings/browsing');
         await panel.getByRole('button', { name: '关闭设置' }).click();
         await page.waitForURL(url => url.pathname === '/');
         await panel.waitFor({ state: 'hidden' });
         assert.ok(await page.evaluate(() => (window as unknown as { routeGrid: Element }).routeGrid === document.querySelector('#grid .peach-react')));
         await page.goForward();
-        await page.waitForURL('**/settings/playback');
+        await page.waitForURL('**/settings/browsing');
         await panel.getByRole('heading', { name: '浏览与播放', exact: true }).waitFor();
         assert.deepEqual(opened.problems, []);
       } finally { await opened.close() }

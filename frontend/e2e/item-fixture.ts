@@ -7,7 +7,6 @@
 import type { Browser, Page, Request } from 'playwright-core';
 
 import { settle, visit, type Viewport, type Visit } from './harness.ts';
-import { mockSubtitleMemory } from './subtitle-fixture.ts';
 
 export const NAMES = ['七海ひな', '桜井まい', '白石りん', '水瀬ゆい', '藤原あや', '早川なな', '森下えみ', '高橋さき',
   '小野みお', '石原かな', '青木ゆず', '中村はる'];
@@ -100,7 +99,6 @@ export interface ItemStub {
 const body = (request: Request) => JSON.parse(request.postData() || '{}') as Record<string, unknown>;
 
 async function stub(page: Page, catalogIds: readonly number[] = CATALOG): Promise<ItemStub> {
-  await mockSubtitleMemory(page);
   const state: ItemStub = { writes: [], reads: new Map(), mediaErrors: [] };
   const read = (path: string) => state.reads.set(path, (state.reads.get(path) || 0) + 1);
   const playlists = new Map<number, { id: number; name: string; ids: number[]; current: number | null }>([

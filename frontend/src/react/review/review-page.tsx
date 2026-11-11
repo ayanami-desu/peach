@@ -22,7 +22,6 @@ import { Note } from '../components/note';
 import { Page } from '../components/page';
 import { SortableBoardTabs, useNavigationOrder } from '../components/navigation-order';
 import { ExternalLink } from '../settings/section';
-import { AutoLandingsCard } from './auto-landings-card';
 import { BulkToolbar } from './bulk-toolbar';
 import { GenreTagList } from './candidate-form';
 import { ReviewCard } from './review-card';
@@ -353,9 +352,6 @@ export function ReviewPage(props: ReviewProps) {
           {filteredRows.length ? <DataTableFooter label="复核" total={filteredRows.length}
             pagination={{ pageIndex: win.page - 1, pageSize }}
             onChange={(next) => { setPage(next.pageIndex + 1); setPageSize(next.pageSize) }} /> : null}
-          {metadata && queueView === 'pending'
-            ? <AutoLandingsCard locked={locked} openItem={openItem} toast={toast} />
-            : null}
         </div>
       </div>
       </div>

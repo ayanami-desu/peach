@@ -626,7 +626,7 @@ describe('作品卡', () => {
     await vi.waitFor(() => expect(document.querySelector('dialog')?.open).toBe(true));
     await click(document.querySelector('dialog [data-modal-confirm]'));
     await vi.waitFor(() => expect(posts()).toHaveLength(1));
-    expect(JSON.parse(String(posts()[0]![1]!.body))).toEqual({ stage: 'previews', asset_ids: [33], allow_metered: true });
+    expect(JSON.parse(String(posts()[0]![1]!.body))).toEqual({ stage: 'collect', asset_ids: [33], allow_metered: true });
     queryClient.removeQueries({ queryKey: ['library-processing'] });
   });
 

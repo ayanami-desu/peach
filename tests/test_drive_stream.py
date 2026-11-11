@@ -120,5 +120,15 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(streamer.input_url("onedrive", "V1"), ("https://cdn.example/v.mp4", {}))
 
 
+    def test_build_follows_a_live_lookup_so_a_rebuilt_driver_takes_effect(self):
+        # 换过取字节方式之后 `DriveConnections` 会重建驱动实例；抓一份旧表就等于换了没用。
+        client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200)))
+        now = Provider(DownloadTarget("redirect", "https://cdn.example/a.mp4", {}))
+        streamer = drive_stream.build(lambda location: now, lambda: client)
+        self.assertEqual("redirect", streamer.target("onedrive", "V1").kind)
+        now = Provider(DownloadTarget("proxy", "https://api.example/V1", {"Authorization": "Bearer t"}))
+        self.assertEqual("proxy", streamer.target("onedrive", "V1").kind)
+
+
 if __name__ == "__main__":
     unittest.main()
