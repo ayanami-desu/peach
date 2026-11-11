@@ -70,7 +70,6 @@ Issues = "https://github.com/peach-mitao/peach/issues"
 
 [project.scripts]
 peach = "peach.error_reporting:cli_main"
-peach-tray = "peach.error_reporting:tray_main"
 
 [project.optional-dependencies]
 dev = [

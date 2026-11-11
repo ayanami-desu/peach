@@ -12,16 +12,11 @@ COPY migrations ./migrations
 COPY web ./web
 COPY resources ./resources
 COPY tools/amane-bridge ./tools/amane-bridge
-COPY scripts/write_reporting_config.py ./scripts/
 COPY scripts/build_amane_runtime.py scripts/amane_bridge.spec ./scripts/
 # vision 带上 OpenCV：镜像里随附的人脸模型要靠它才能检出与比对。
 RUN uv sync --locked --no-dev --no-editable --extra vision
 RUN .venv/bin/python -X utf8 scripts/build_amane_runtime.py --kind python \
     --destination /app/amane-runtime --work /app/build/amane-runtime
-# 公开 DSN 写进 wheel 的资源目录；发行流水线传 PEACH_REQUIRE_REPORTING=1，缺失时构建失败。
-ARG PEACH_SENTRY_DSN="" PEACH_LIBRARY_SENTRY_DSN="" PEACH_REQUIRE_REPORTING=""
-RUN target="$(.venv/bin/python -c 'import pathlib, peach; print(pathlib.Path(peach.__file__).parent / "_resources" / "sentry.json")')" \
-    && .venv/bin/python scripts/write_reporting_config.py --output "$target" ${PEACH_REQUIRE_REPORTING:+--require}
 
 FROM python:3.15.1-slim-trixie
 LABEL org.opencontainers.image.title="Peach" \
@@ -50,11 +45,9 @@ COPY --from=build /app/.venv /app/.venv
 COPY --from=build /app/amane-runtime /app/amane-runtime
 COPY --from=build /app/tools/amane-bridge /app/tools/amane-bridge
 RUN /app/amane-runtime/.venv/bin/python -X utf8 /app/tools/amane-bridge/bridge.py --self-check
-# 一键更新的令牌目录：compose 在这里挂 peach-update 卷，空卷首次挂载时照搬这个目录的属主（ADR-0140）。
-RUN mkdir /update && chown peach:peach /update
 ENV PATH="/app/.venv/bin:$PATH" PEACH_DATA_ROOT=/data PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 PYTHONUTF8=1 PEACH_FACE_MODELS=/app/tools/face-models PEACH_DISTRIBUTION=docker \
-    PEACH_AMANE_RUNTIME=/app/amane-runtime PEACH_UPDATE_DIR=/update
+    PEACH_AMANE_RUNTIME=/app/amane-runtime
 WORKDIR /data
 USER peach
 EXPOSE 8900
