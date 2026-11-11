@@ -11,7 +11,7 @@ import type { ConfigurationData } from '../../src/react/bundle';
 import { queryClient } from '../../src/react/query';
 import { CONFIGURATION_KEY, prefetchConfiguration } from '../../src/react/settings/configuration';
 import { ConfigurationPage } from '../../src/react/settings/configuration-page';
-import { buttonNamed, click, mount, section, settle } from './render';
+import { buttonNamed, click, mount, section, settle, type } from './render';
 
 afterEach(() => queryClient.clear());
 notifyManager.setScheduler(notify => notify());
@@ -206,6 +206,27 @@ it('选择扫描起点逐层列远端目录，设成起点后交回这一格重�
     { remote_id: 'root1', name: 'Movies' }, { remote_id: 'm2', name: '2024' },
   ] });
   expect(receipt).toHaveBeenCalledWith('已把「2024」设为扫描起点');
+});
+
+it('没有回调基址也能填客户端凭据接上网盘，填的目录一起交给后端解析', async () => {
+  const saved = connected({ roots: [{ remote_id: 'rir', name: '示例合集' }], synced_at: null });
+  const { host, fetcher } = await open(data(), snapshot({ public_url: '' }), {
+    [`POST ${DRIVE_URL}/onedrive/credentials`]: saved,
+  });
+  await click(buttonNamed('手动填认证信息', section(host, 'OneDrive')));
+  await type(host.querySelector('#drive-onedrive-client_id'), 'id-2');
+  await type(host.querySelector('#drive-onedrive-client_secret'), 'secret-2');
+  await type(host.querySelector('#drive-onedrive-refresh_token'), 'rotated');
+  await type(host.querySelector('#drive-onedrive-root'), 'AV/示例合集');
+  await click(buttonNamed('接上这个网盘', section(host, 'OneDrive')));
+  await settle();
+  const posted = fetcher.mock.calls.find(([url]) => url === `${DRIVE_URL}/onedrive/credentials`);
+  expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
+    client_id: 'id-2', client_secret: 'secret-2', refresh_token: 'rotated', root: 'AV/示例合集',
+  });
+  expect(receipt).toHaveBeenCalledWith('已接上 OneDrive');
+  expect(section(host, 'OneDrive')?.textContent).toContain('示例合集');
+  expect(buttonNamed('接上这个网盘', section(host, 'OneDrive'))).toBeNull();
 });
 
 it('断开只忘掉账号与扫描起点', async () => {

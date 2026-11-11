@@ -117,7 +117,7 @@ class OneDrive:
             expires_at=int(time.time()) + int(payload.get("expires_in", 0)),
             scope=payload.get("scope", ""),
         )
-        stored.account_id, stored.email, stored.display_name, stored.root_id = self._identity(
+        stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(
             stored.access_token)
         self.accounts.store.save(stored)
         self._reload()
@@ -132,7 +132,7 @@ class OneDrive:
                               client_secret=self.client_secret,
                               refresh_token=account.refresh_token)
 
-    def _identity(self, token: str) -> tuple[str, str, str, str]:
+    def identify(self, token: str) -> tuple[str, str, str, str]:
         """只查 Drive 端点：`/me` 要 `User.Read`，只有文件权限的授权拿不到。"""
         drive = self._get("/me/drive", token=token, params={"$select": "id,owner"})
         owner = ((drive.get("owner") or {}).get("user") or {})
@@ -146,7 +146,7 @@ class OneDrive:
         if stored is None:
             return DriveAccount(ONEDRIVE, "", "", "", "")
         if not stored.account_id:
-            stored.account_id, stored.email, stored.display_name, stored.root_id = self._identity(
+            stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(
                 self.accounts.token(ONEDRIVE)[0])
             self.accounts.store.save(stored)
         return DriveAccount(ONEDRIVE, stored.account_id, stored.email, stored.display_name,

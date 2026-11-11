@@ -7,13 +7,16 @@
  * 「立即刷新」让下一轮同步先做这个来源（`POST /api/drive/{location}/refresh`）。
  * 取字节方式两种都要（`POST /api/drive/{location}/mode`）：`redirect` 让浏览器直接跟网盘的预授权地址走，
  * 不占服务器流量；`proxy` 由 Peach 带 Range 转发，浏览器只跟 Peach 说话。能带鉴权取的来源只能选后者。
- * 「断开」只忘掉账号与扫描起点（`DELETE /api/drive/{location}`），已经登记进馆藏的条目不动。 */
+ * 「断开」只忘掉账号与扫描起点（`DELETE /api/drive/{location}`），已经登记进馆藏的条目不动。
+ * 不想开公网回调时可以在这一页直接填客户端 ID、密钥与 refresh token（`POST /api/drive/{location}/credentials`），
+ * Peach 用它们自己换票；顺手填的目录会解析成扫描起点。 */
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { confirmModal } from '@peach/legacy/ui';
 
 import { SettingsRow } from '@/components/application/settings/settings-rows';
 import { Button } from '@/components/base/buttons/button';
+import { Input } from '@/components/base/input/input';
 
 import { DRIVE_KEY, DRIVE_URL, fetchDrives, type DriveConnection, type DriveRoot } from '@peach/query';
 
@@ -69,8 +72,27 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
   useEffect(() => setState(connection), [connection]);
   const action = useAction();
   const [picking, setPicking] = useState(false);
+  const [manual, setManual] = useState(false);
+  const [form, setForm] = useState({ client_id: '', client_secret: '', refresh_token: '', root: '' });
   const base = `${DRIVE_URL}/${state.location}`;
   const callback = publicUrl ? `${publicUrl.replace(/\/+$/, '')}/oauth/${state.location}/callback` : '';
+
+  const field = (name: keyof typeof form) => ({
+    id: `drive-${state.location}-${name}`,
+    name,
+    value: form[name],
+    autoComplete: 'off',
+    onChange: (value: string) => setForm(current => ({ ...current, [name]: value })),
+  });
+  const saveCredentials = () => void action.run('credentials',
+    (signal) => apiSend<DriveConnection>(`${base}/credentials`, form, 'POST', signal),
+    (next) => {
+      setState(next);
+      setManual(false);
+      setForm({ client_id: '', client_secret: '', refresh_token: '', root: '' });
+      receipt(t('settings:drive.manual.saved', { label: next.label }));
+      reloaded();
+    });
 
   const authorize = () => void action.run('authorize',
     (signal) => apiSend<{ url: string }>(`${base}/authorize`, {}, 'POST', signal),
@@ -153,11 +175,27 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
           ))}
         </Rows>
       ) : null}
+      {manual ? (
+        <Stack>
+          <Help>{t('settings:drive.manual.help')}</Help>
+          <Input label={t('settings:drive.manual.clientId')} {...field('client_id')} />
+          <Input type="password" label={t('settings:drive.manual.clientSecret')} {...field('client_secret')} />
+          <Input type="password" label={t('settings:drive.manual.refreshToken')} {...field('refresh_token')} />
+          <Input label={t('settings:drive.manual.root')} hint={t('settings:drive.manual.rootHelp')}
+            {...field('root')} />
+          <Button onClick={saveCredentials} {...busyProps(action.busy === 'credentials')}>
+            {t('settings:drive.manual.submit')}
+          </Button>
+        </Stack>
+      ) : null}
       {picking && state.connected
         ? <RootPicker connection={state} receipt={receipt} onClose={() => setPicking(false)}
             onSaved={() => { setPicking(false); reloaded(); }} />
         : null}
       <Footer status={state.connected ? null : `回调地址 ${callback || '未配置'}`}>
+        <Button variant="secondary" onClick={() => setManual(!manual)}>
+          {manual ? t('settings:drive.manual.hide') : t('settings:drive.manual.show')}
+        </Button>
         {state.connected
           ? <Button variant="secondary" onClick={() => setPicking(!picking)}>{picking ? '收起目录' : '选择扫描起点'}</Button>
           : null}

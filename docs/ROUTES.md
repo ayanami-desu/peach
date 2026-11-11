@@ -136,11 +136,13 @@
 | `POST /api/drive/{location}/roots` | 整条替换扫描根；空数组表示从账号根目录开始，非对象数组回 400「roots 要是对象数组」 |
 | `GET /api/drive/{location}/folders` | 列远端文件夹，只出目录，`parent_id` 缺省取第一个扫描根 |
 | `POST /api/drive/{location}/refresh` | 把这一来源排进下一轮同步（后台每 60 秒一轮），返回该来源当前状态 |
+| `POST /api/drive/{location}/mode` | 改这一来源怎么把字节交给浏览器，写进 `config.toml` 的 `[drive.modes]`；只认 `redirect` 与 `proxy`，能直连的来源才给 `redirect` |
+| `POST /api/drive/{location}/credentials` | 不走回调授权：收 `client_id`、`client_secret`、`refresh_token` 与可选的 `root`，先换一次票确认配得上，再落设置与账号文件，返回该来源当前状态 |
 | `DELETE /api/drive/{location}` | 忘掉这个网盘：删账号与扫描根，账本里已登记的资产不动 |
 
 失败按网盘侧的错误分档：需要重新授权 401、权限不足 403、文件或目录不存在 404、其余网盘错误 409；不认识的来源回 404「没有这个网盘」。写端点另要求同源检查。
 
-来源只认 Google Drive 与 OneDrive 两种，凭据落在数据目录的 `drive-accounts.json`（权限 0600），令牌提前 60 秒更换。没有填客户端凭据或没有对外地址时，`configured` 为假，授权按钮不可用。
+来源只认 Google Drive 与 OneDrive 两种，凭据落在数据目录的 `drive-accounts.json`（权限 0600），令牌提前 60 秒更换。没有填客户端凭据或没有对外地址时，`configured` 为假，授权按钮不可用；这条路上还可以直接填认证信息（`client_id`、`client_secret`、`refresh_token`），不需要对外地址。
 
 ## 本机配置与维护
 

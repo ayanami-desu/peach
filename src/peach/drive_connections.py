@@ -22,6 +22,7 @@ from .drive_provider import (
     LOCATIONS,
     ONEDRIVE,
     DriveAuthRequired,
+    DriveError,
     DriveProvider,
     DriveUnavailable,
     modes_for,
@@ -232,6 +233,75 @@ class DriveConnections:
         account.location = location
         self.store.save(account)
         return account
+
+    def set_credentials(self, location: str, *, client_id: str, client_secret: str,
+                        refresh_token: str, root: str = "") -> StoredAccount:
+        """直接填认证信息接上一个来源，不必走浏览器授权。
+
+        先拿这三样换一次票确认它们配套，再落设置与账号文件；`root` 给了就当扫描起点
+        （目录路径或远端 id），解析不出来只报错，已有起点不动。
+        """
+        if location not in LOCATIONS:
+            raise DriveUnavailable(f"没有这个网盘：{location}")
+        client_id, client_secret, refresh_token = (client_id.strip(), client_secret.strip(),
+                                                   refresh_token.strip())
+        if not all((client_id, client_secret, refresh_token)):
+            raise DriveUnavailable("客户端 ID、客户端密钥和 refresh token 都要填")
+        refresher = REFRESHERS[location]
+        access_token, expires_at, renewed = refresher(
+            self._client(), client_id=client_id, client_secret=client_secret,
+            refresh_token=refresh_token)
+        stored = StoredAccount(location=location, account_id="", email="", display_name="",
+                               root_id="", refresh_token=renewed or refresh_token,
+                               access_token=access_token, expires_at=expires_at)
+        self.accounts.store.save(stored)
+        clients = dict(self.settings.drive_clients)
+        clients[location] = (client_id, client_secret)
+        self.settings = dataclasses.replace(self.settings, drive_clients=clients)
+        self._persist_clients(clients)
+        self._providers.pop(location, None)
+        self._build()
+        provider = self.provider(location)
+        try:
+            stored.account_id, stored.email, stored.display_name, stored.root_id = (
+                provider.identify(access_token))
+        except DriveError:
+            # 换票已经成功，凭据是好的；账号视图只是给人看的，问不到就先留空。
+            LOGGER.warning("%s 的账号信息没问到", LABELS.get(location, location), exc_info=True)
+        else:
+            self.accounts.store.save(stored)
+        if root.strip():
+            self.set_roots(location, [{"remote_id": self._root_id(provider, stored.root_id, root)}])
+        self._root_names = {}
+        return stored
+
+    def _root_id(self, provider: DriveProvider, start: str, text: str) -> str:
+        """把 `AV/示例合集` 这样的路径解析成远端目录 id；也接受直接给 id。"""
+        parts = [part.strip() for part in text.replace("\\", "/").split("/") if part.strip()]
+        if not parts:
+            return start
+        if len(parts) == 1:
+            try:
+                entry = provider.entry(parts[0])
+            except DriveError:
+                entry = None
+            if entry is not None and entry.folder:
+                return entry.remote_id
+        current = start
+        for part in parts:
+            entries, _cursor = provider.list_folder(current)
+            candidates = [entry for entry in entries if entry.folder]
+            found = (next((entry for entry in candidates if entry.name == part), None)
+                     or next((entry for entry in candidates
+                              if entry.name.casefold() == part.casefold()), None))
+            if found is None:
+                raise DriveUnavailable(f"没找到目录：{part}")
+            current = found.remote_id
+        return current
+
+    def _persist_clients(self, clients: Mapping[str, tuple[str, str]]) -> None:
+        config = settings_file.active()
+        settings_file.write(dataclasses.replace(config, drive_clients=dict(clients)), force=True)
 
     # -- 扫描根 -------------------------------------------------------------
 

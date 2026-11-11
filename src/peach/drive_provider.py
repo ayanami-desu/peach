@@ -120,6 +120,12 @@ class DriveProvider(Protocol):
     ) -> tuple[Sequence[DriveEntry], str | None]:
         """列出直接子项，返回本页条目与下一页游标（None 表示列完）。"""
 
+    def identify(self, token: str) -> tuple[str, str, str, str]:
+        """拿一个访问令牌问出账号身份：账号 id、邮箱、显示名、根目录 id。
+
+        手工填凭据接入时用它补全账号视图，不经过授权回调。"""
+        ...
+
     def entry(self, remote_id: str) -> DriveEntry:
         """按 id 取单个目录项。文件已删除时抛 `DriveNotFound`。"""
 

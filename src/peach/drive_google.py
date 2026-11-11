@@ -115,7 +115,7 @@ class GoogleDrive:
             expires_at=int(time.time()) + int(payload.get("expires_in", 0)),
             scope=payload.get("scope", ""),
         )
-        stored.account_id, stored.email, stored.display_name, stored.root_id = self._identity(stored.access_token)
+        stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(stored.access_token)
         self.accounts.store.save(stored)
         self._reload()
         return stored
@@ -128,7 +128,7 @@ class GoogleDrive:
                               client_secret=self.client_secret,
                               refresh_token=account.refresh_token)
 
-    def _identity(self, token: str) -> tuple[str, str, str, str]:
+    def identify(self, token: str) -> tuple[str, str, str, str]:
         # `/about` 没有 `root` 这个字段，选了它整条请求 400；根目录 id 要另问一次。
         body = self._get("/about", {"fields": "user(displayName,emailAddress,permissionId)"})
         user = body.get("user") or {}
@@ -141,7 +141,7 @@ class GoogleDrive:
         if stored is None:
             return DriveAccount(GOOGLE, "", "", "", "")
         if not stored.account_id:
-            stored.account_id, stored.email, stored.display_name, stored.root_id = self._identity(
+            stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(
                 self.accounts.token(GOOGLE)[0])
             self.accounts.store.save(stored)
         return DriveAccount(GOOGLE, stored.account_id, stored.email, stored.display_name, stored.root_id)

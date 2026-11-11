@@ -9,6 +9,18 @@
       "switched": "{{label}} now uses {{mode}}",
       "switchTo": "Use this",
       "term": "Byte delivery"
+    },
+    "manual": {
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "help": "Connect without the browser flow: paste the drive app's client ID, client secret and refresh token and Peach renews the token itself. All three must come from the same app.",
+      "hide": "Hide the form",
+      "refreshToken": "Refresh token",
+      "root": "Scan root",
+      "rootHelp": "A directory path such as AV/示例合集 or a remote directory id; leave it empty to start at the account root.",
+      "saved": "{{label}} is connected",
+      "show": "Enter credentials",
+      "submit": "Connect this drive"
     }
   },
   "interfaceLanguage": {

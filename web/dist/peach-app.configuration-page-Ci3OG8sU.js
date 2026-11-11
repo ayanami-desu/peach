@@ -1,14 +1,14 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "e83a7378-1073-4340-a59c-1f5cb4934292", e._sentryDebugIdIdentifier = "sentry-dbid-e83a7378-1073-4340-a59c-1f5cb4934292");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "4cbf3148-79ae-49fa-a8cd-e70698a83631", e._sentryDebugIdIdentifier = "sentry-dbid-4cbf3148-79ae-49fa-a8cd-e70698a83631");
 	} catch {}
 })();
-import { ApiError as e, Button as t, CONFIGURATION_KEY as n, Checkbox as r, Chip as i, DRIVE_KEY as a, DRIVE_URL as o, E3 as s, ErrorText as c, Eu as l, Fact as u, FactList as d, Footer as f, Help as p, Input as m, L1 as h, Note as g, ProcessingMode as _, Rows as v, SETTINGS_KEY as y, Section as b, SectionSkeleton as x, SettingsRow as S, SortableBoardTabs as C, Stack as w, Uz as T, __toESM as E, _p as D, apiGet as O, apiSend as k, busyProps as A, confirmModal as j, d6 as M, devicesSkeleton as ee, errorMessage as N, fetchConfiguration as te, fetchDrives as ne, fetchSettings as re, l1 as ie, rememberShape as ae, require_jsx_runtime as oe, require_react as se, t as P, useAction as F, useQuery as I, useQueryClient as L, useSaveSettings as ce, z3 as R } from "./peach-app.js";
+import { ApiError as e, Button as t, CONFIGURATION_KEY as n, Checkbox as r, Chip as i, DRIVE_KEY as a, DRIVE_URL as o, E3 as s, ErrorText as c, Eu as l, Fact as u, FactList as d, Footer as f, Help as p, Input as m, L1 as h, Note as g, ProcessingMode as _, Rows as v, SETTINGS_KEY as y, Section as b, SectionSkeleton as x, SettingsRow as S, SortableBoardTabs as C, Stack as w, Uz as T, __toESM as E, _p as D, apiGet as O, apiSend as k, busyProps as A, confirmModal as j, d6 as M, devicesSkeleton as N, errorMessage as P, fetchConfiguration as F, fetchDrives as I, fetchSettings as L, l1 as ee, rememberShape as te, require_jsx_runtime as ne, require_react as re, t as R, useAction as z, useQuery as B, useQueryClient as V, useSaveSettings as ie, z3 as H } from "./peach-app.js";
 // src/react/settings/password-pair.tsx
-var z = /* @__PURE__ */ E(se(), 1), B = oe();
-function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmation: i, disabled: a = !1, passwordError: o, passwordHint: s, confirmationError: c, confirmationInvalid: l = !1 }) {
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [/* @__PURE__ */ (0, B.jsx)(m, {
+var U = /* @__PURE__ */ E(re(), 1), W = ne();
+function ae({ label: e, password: t, confirmation: n, onPassword: r, onConfirmation: i, disabled: a = !1, passwordError: o, passwordHint: s, confirmationError: c, confirmationInvalid: l = !1 }) {
+	return /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [/* @__PURE__ */ (0, W.jsx)(m, {
 		id: "access-password",
 		type: "password",
 		label: e,
@@ -21,7 +21,7 @@ function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmat
 		validationBehavior: "aria",
 		isInvalid: !a && !!o,
 		hint: a ? s : o || s
-	}), /* @__PURE__ */ (0, B.jsx)(m, {
+	}), /* @__PURE__ */ (0, W.jsx)(m, {
 		id: "access-confirm",
 		type: "password",
 		label: "确认访问密码",
@@ -37,13 +37,13 @@ function le({ label: e, password: t, confirmation: n, onPassword: r, onConfirmat
 	})] });
 }
 // src/react/settings/access-settings.tsx
-var ue = {
+var oe = {
 	legacy: "当前使用系统生成的访问口令。改设自己的密码，或关闭登录要求。",
 	locked: "访问设置无法读取，请在本机检查配置文件。",
 	password: "已设置密码。新设备需要登录，登录时勾选「保持登录」可保持 30 天。"
 };
-function de({ initial: n, receipt: i, devices: a, after: o }) {
-	let [s, l] = (0, z.useState)(n), [u, d] = (0, z.useState)(""), [h, _] = (0, z.useState)(""), [v, y] = (0, z.useState)(""), [x, S] = (0, z.useState)(!1), [C, T] = (0, z.useState)({}), E = (0, z.useRef)(null), D = F(), O = (t) => {
+function se({ initial: n, receipt: i, devices: a, after: o }) {
+	let [s, l] = (0, U.useState)(n), [u, d] = (0, U.useState)(""), [h, _] = (0, U.useState)(""), [v, y] = (0, U.useState)(""), [x, S] = (0, U.useState)(!1), [C, T] = (0, U.useState)({}), E = (0, U.useRef)(null), D = z(), O = (t) => {
 		t.preventDefault();
 		let n = {};
 		s.mode === "password" && !u && (n.current_password = "请输入当前访问密码"), x || ((h.length < 8 || h.length > 256) && (n.password = "访问密码需为 8–256 个字符"), h !== v && (n.confirmation = "两次输入的密码不一致")), T(n), Object.keys(n).length ? requestAnimationFrame(() => E.current?.querySelector("input[aria-invalid=\"true\"]")?.focus()) : D.run("save", (e) => k("/api/configuration/access", {
@@ -57,29 +57,29 @@ function de({ initial: n, receipt: i, devices: a, after: o }) {
 			l(e), d(""), _(""), y(""), S(!1), T({}), i(e.mode === "open" ? "已关闭访问密码" : "已保存配置");
 		}, (t) => {
 			let n = t instanceof e ? t.body : null, r = n?.errors || n?.detail?.errors;
-			r ? T(r) : D.setError(N(t));
+			r ? T(r) : D.setError(P(t));
 		});
-	}, j = ue[s.mode], M = s.mode !== "locked";
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [
-		/* @__PURE__ */ (0, B.jsxs)(b, {
+	}, j = oe[s.mode], M = s.mode !== "locked";
+	return /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [
+		/* @__PURE__ */ (0, W.jsxs)(b, {
 			guide: "access",
 			title: "访问密码",
 			onSubmit: O,
-			children: [/* @__PURE__ */ (0, B.jsx)("div", {
+			children: [/* @__PURE__ */ (0, W.jsx)("div", {
 				ref: E,
-				children: /* @__PURE__ */ (0, B.jsxs)(w, { children: [
-					j ? /* @__PURE__ */ (0, B.jsx)(p, { children: j }) : null,
-					s.mode === "open" ? /* @__PURE__ */ (0, B.jsx)(g, {
+				children: /* @__PURE__ */ (0, W.jsxs)(w, { children: [
+					j ? /* @__PURE__ */ (0, W.jsx)(p, { children: j }) : null,
+					s.mode === "open" ? /* @__PURE__ */ (0, W.jsx)(g, {
 						tone: "warning",
 						title: "未设置访问密码",
 						children: "能连接到 Peach 的设备打开地址就能看馆藏，不需要登录。"
 					}) : null,
-					s.mode === "password" || s.mode === "legacy" ? /* @__PURE__ */ (0, B.jsx)(r, {
+					s.mode === "password" || s.mode === "legacy" ? /* @__PURE__ */ (0, W.jsx)(r, {
 						isSelected: x,
 						onChange: S,
 						children: "关闭访问密码"
 					}) : null,
-					s.mode === "password" ? /* @__PURE__ */ (0, B.jsx)(m, {
+					s.mode === "password" ? /* @__PURE__ */ (0, W.jsx)(m, {
 						id: "access-current",
 						type: "password",
 						label: "当前访问密码",
@@ -92,7 +92,7 @@ function de({ initial: n, receipt: i, devices: a, after: o }) {
 						isInvalid: !!C.current_password,
 						hint: C.current_password
 					}) : null,
-					M && !x ? /* @__PURE__ */ (0, B.jsx)(le, {
+					M && !x ? /* @__PURE__ */ (0, W.jsx)(ae, {
 						label: s.mode === "password" ? "新访问密码" : "设置访问密码",
 						password: h,
 						confirmation: v,
@@ -102,14 +102,14 @@ function de({ initial: n, receipt: i, devices: a, after: o }) {
 						confirmationError: C.confirmation,
 						passwordHint: "至少 8 个字符。保存后其他设备需要重新登录。"
 					}) : null,
-					x ? /* @__PURE__ */ (0, B.jsx)(g, {
+					x ? /* @__PURE__ */ (0, W.jsx)(g, {
 						tone: "warning",
 						title: "访问范围",
 						children: "保存后，能连接到 Peach 的设备将直接访问馆藏。"
 					}) : null,
-					D.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: D.error }) : null
+					D.error ? /* @__PURE__ */ (0, W.jsx)(c, { children: D.error }) : null
 				] })
-			}), M ? /* @__PURE__ */ (0, B.jsx)(f, { children: /* @__PURE__ */ (0, B.jsx)(t, {
+			}), M ? /* @__PURE__ */ (0, W.jsx)(f, { children: /* @__PURE__ */ (0, W.jsx)(t, {
 				type: "submit",
 				...A(D.busy === "save"),
 				children: "保存配置"
@@ -120,63 +120,63 @@ function de({ initial: n, receipt: i, devices: a, after: o }) {
 	] });
 }
 // src/react/settings/api-token-settings.tsx
-var fe = "/api/configuration/access/token/rotate";
-function pe(e, t) {
+var ce = "/api/configuration/access/token/rotate";
+function le(e, t) {
 	let n = "用旧口令的脚本和 API 调用会立即失效。", r = e === "legacy" ? `其他浏览器现在用这串口令登录，会全部退出，需要输入新口令重新登录；本机保持登录。${n}` : e === "open" ? `浏览器不需要登录，不受影响。${n}` : `用访问密码登录的浏览器不受影响。${n}`;
 	return t ? `${r}另一台电脑要换成同一份口令文件，两台之间才能继续互取复核结果。` : r;
 }
-function me({ initial: e, mode: n, receipt: r }) {
-	let [i, a] = (0, z.useState)(e), [o, s] = (0, z.useState)(null), c = F(), l = L();
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+function ue({ initial: e, mode: n, receipt: r }) {
+	let [i, a] = (0, U.useState)(e), [o, s] = (0, U.useState)(null), c = z(), l = V();
+	return /* @__PURE__ */ (0, W.jsxs)(b, {
 		guide: "token",
 		title: "访问口令",
-		children: [/* @__PURE__ */ (0, B.jsxs)(w, { children: [
-			/* @__PURE__ */ (0, B.jsx)(p, { children: "脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在这台电脑上，页面不显示。" }),
-			o ? /* @__PURE__ */ (0, B.jsxs)("div", {
+		children: [/* @__PURE__ */ (0, W.jsxs)(w, { children: [
+			/* @__PURE__ */ (0, W.jsx)(p, { children: "脚本和 API 调用在 X-Token 请求头里携带访问口令。口令只存在这台电脑上，页面不显示。" }),
+			o ? /* @__PURE__ */ (0, W.jsxs)("div", {
 				className: "flex min-w-0 flex-col gap-2",
 				children: [
-					/* @__PURE__ */ (0, B.jsxs)("div", {
+					/* @__PURE__ */ (0, W.jsxs)("div", {
 						className: "flex min-w-0 flex-wrap items-end gap-2",
-						children: [/* @__PURE__ */ (0, B.jsx)(m, {
+						children: [/* @__PURE__ */ (0, W.jsx)(m, {
 							className: "min-w-0 flex-1",
 							label: "新访问口令",
 							value: o.token,
 							isReadOnly: !0,
 							autoComplete: "off"
-						}), /* @__PURE__ */ (0, B.jsx)(t, {
+						}), /* @__PURE__ */ (0, W.jsx)(t, {
 							variant: "secondary",
 							"aria-label": "复制新访问口令",
 							onClick: () => void c.run("copy", () => navigator.clipboard.writeText(o.token), () => r("已复制口令")),
 							children: "复制口令"
 						})]
 					}),
-					c.error ? /* @__PURE__ */ (0, B.jsx)(p, {
+					c.error ? /* @__PURE__ */ (0, W.jsx)(p, {
 						role: "status",
 						children: "复制失败，请选中口令复制。"
 					}) : null,
-					/* @__PURE__ */ (0, B.jsx)(g, {
+					/* @__PURE__ */ (0, W.jsx)(g, {
 						tone: "info",
 						title: "新口令只显示这一次",
 						children: "已经生效，不用重启。离开本页后不再显示，之后在终端运行 peach token 查看。"
 					})
 				]
 			}) : null,
-			o?.relogin ? /* @__PURE__ */ (0, B.jsx)(g, {
+			o?.relogin ? /* @__PURE__ */ (0, W.jsx)(g, {
 				tone: "warning",
 				title: "本机需要重新登录",
 				children: "刷新页面后用新口令登录。"
 			}) : null,
-			i.rotatable ? null : /* @__PURE__ */ (0, B.jsx)(p, { children: i.reason })
-		] }), i.rotatable ? /* @__PURE__ */ (0, B.jsx)(f, {
+			i.rotatable ? null : /* @__PURE__ */ (0, W.jsx)(p, { children: i.reason })
+		] }), i.rotatable ? /* @__PURE__ */ (0, W.jsx)(f, {
 			status: "更换后立即生效。",
-			children: /* @__PURE__ */ (0, B.jsx)(t, {
+			children: /* @__PURE__ */ (0, W.jsx)(t, {
 				variant: "secondary",
 				onClick: () => void j({
 					title: "更换访问口令",
-					body: pe(n, i.paired),
+					body: le(n, i.paired),
 					confirmLabel: "更换口令",
 					onConfirm: async () => {
-						let e = await k(fe, {});
+						let e = await k(ce, {});
 						a(e), s(e), e.mode === "legacy" && l.invalidateQueries({ queryKey: ["access-sessions"] }), r(e.signed_out ? `已更换访问口令，${e.signed_out} 台设备需要重新登录` : "已更换访问口令");
 					}
 				}),
@@ -186,17 +186,17 @@ function me({ initial: e, mode: n, receipt: r }) {
 	});
 }
 // src/react/settings/configuration-panel.ts
-var V = "flex flex-col gap-6";
-function H(e) {
+var G = "flex flex-col gap-6";
+function K(e) {
 	return e ? {
-		className: e.active ? `${V} ui-board-group-active` : V,
+		className: e.active ? `${G} ui-board-group-active` : G,
 		"data-board-group": String(e.index),
 		id: e.id,
 		role: "tabpanel",
 		"aria-labelledby": e.labelledBy
-	} : { className: V };
+	} : { className: G };
 }
-var he = {
+var de = {
 	version: 1,
 	note: "浏览器品牌标识仅用于识别相应数据源；商标归各自所有者。",
 	icons: [
@@ -1005,13 +1005,13 @@ var he = {
 			bytes: 29648
 		}
 	]
-}, U = (e) => e.normalize("NFKC").toLowerCase().replace(/[\s_-]/g, ""), ge = new Map(he.icons.flatMap((e) => e.aliases.map((t) => [U(t), e.id])));
-function W(e) {
-	return ge.get(U(e));
+}, fe = (e) => e.normalize("NFKC").toLowerCase().replace(/[\s_-]/g, ""), pe = new Map(de.icons.flatMap((e) => e.aliases.map((t) => [fe(t), e.id])));
+function me(e) {
+	return pe.get(fe(e));
 }
-function G({ name: e, className: t }) {
-	let [n, r] = (0, z.useState)(""), i = W(e);
-	return i && n !== i ? /* @__PURE__ */ (0, B.jsx)("img", {
+function he({ name: e, className: t }) {
+	let [n, r] = (0, U.useState)(""), i = me(e);
+	return i && n !== i ? /* @__PURE__ */ (0, W.jsx)("img", {
 		src: `/browser-icon/${i}`,
 		width: 24,
 		height: 24,
@@ -1020,94 +1020,94 @@ function G({ name: e, className: t }) {
 		loading: "lazy",
 		className: `${t ?? "size-6 shrink-0"} object-contain`,
 		onError: () => r(i)
-	}) : /* @__PURE__ */ (0, B.jsx)(s, {
+	}) : /* @__PURE__ */ (0, W.jsx)(s, {
 		"aria-hidden": !0,
 		className: `${t ?? "size-5 shrink-0"} text-foreground-icon-secondary`
 	});
 }
 // src/react/settings/device-sessions.tsx
-var K = "/api/configuration/access/sessions", q = (e) => e.device || "未识别的浏览器", J = {
+var q = "/api/configuration/access/sessions", J = (e) => e.device || "未识别的浏览器", Y = {
 	glyph: h,
 	brand: "apple"
-}, Y = {
-	glyph: ie,
+}, ge = {
+	glyph: ee,
 	brand: "android"
 }, X = {
 	iPhone: {
-		platform: J,
+		platform: Y,
 		terminal: D
 	},
 	iPad: {
-		platform: J,
+		platform: Y,
 		terminal: l
 	},
 	Android: {
-		platform: Y,
+		platform: ge,
 		terminal: D
 	},
 	"Android 平板": {
-		platform: Y,
+		platform: ge,
 		terminal: l
 	},
 	ChromeOS: {
 		platform: { browser: "chrome" },
-		terminal: R
+		terminal: H
 	},
 	Windows: {
 		platform: {
 			glyph: T,
 			brand: "windows"
 		},
-		terminal: R
+		terminal: H
 	},
 	macOS: {
-		platform: J,
-		terminal: R
+		platform: Y,
+		terminal: H
 	},
-	Linux: { terminal: R }
+	Linux: { terminal: H }
 }, Z = "inline size-4 -mt-0.5 mr-1 align-middle";
 function _e({ platform: e }) {
-	if ("browser" in e) return /* @__PURE__ */ (0, B.jsx)(G, {
+	if ("browser" in e) return /* @__PURE__ */ (0, W.jsx)(he, {
 		name: e.browser,
 		className: Z
 	});
 	let { glyph: t, brand: n } = e;
-	return /* @__PURE__ */ (0, B.jsx)(t, {
+	return /* @__PURE__ */ (0, W.jsx)(t, {
 		"aria-hidden": !0,
 		"data-platform-mark": n,
 		className: Z
 	});
 }
 function ve({ row: e }) {
-	if (!e.device) return q(e);
+	if (!e.device) return J(e);
 	let t = e.device.split(" · "), n = X[t.at(-1) ?? ""] ? t.pop() : "", r = t.join(" · "), i = n ? X[n].platform : void 0;
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [
-		r ? /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [W(r) ? /* @__PURE__ */ (0, B.jsx)(G, {
+	return /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [
+		r ? /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [me(r) ? /* @__PURE__ */ (0, W.jsx)(he, {
 			name: r,
 			className: Z
 		}) : null, r] }) : null,
 		r && n ? " · " : null,
-		n ? /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [i ? /* @__PURE__ */ (0, B.jsx)(_e, { platform: i }) : null, n] }) : null
+		n ? /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [i ? /* @__PURE__ */ (0, W.jsx)(_e, { platform: i }) : null, n] }) : null
 	] });
 }
 function ye({ row: e }) {
 	let t = X[e.device.split(" · ").at(-1) ?? ""]?.terminal ?? M;
-	return /* @__PURE__ */ (0, B.jsx)(t, {
+	return /* @__PURE__ */ (0, W.jsx)(t, {
 		"aria-hidden": !0,
 		className: "size-5 shrink-0 text-foreground-icon-secondary"
 	});
 }
 function be({ row: e, children: t }) {
-	return /* @__PURE__ */ (0, B.jsxs)("div", {
+	return /* @__PURE__ */ (0, W.jsxs)("div", {
 		className: "flex min-h-13 w-full items-center justify-between gap-4 border-b border-separator-border py-2.5 pr-2.5 last:border-b-0",
-		children: [/* @__PURE__ */ (0, B.jsxs)("div", {
+		children: [/* @__PURE__ */ (0, W.jsxs)("div", {
 			className: "flex min-w-0 items-center gap-3",
-			children: [/* @__PURE__ */ (0, B.jsx)(ye, { row: e }), /* @__PURE__ */ (0, B.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, W.jsx)(ye, { row: e }), /* @__PURE__ */ (0, W.jsxs)("div", {
 				className: "flex min-w-0 flex-col",
-				children: [/* @__PURE__ */ (0, B.jsx)("p", {
+				children: [/* @__PURE__ */ (0, W.jsx)("p", {
 					className: "text-body-regular text-text-primary",
-					children: /* @__PURE__ */ (0, B.jsx)(ve, { row: e })
-				}), /* @__PURE__ */ (0, B.jsx)("p", {
+					children: /* @__PURE__ */ (0, W.jsx)(ve, { row: e })
+				}), /* @__PURE__ */ (0, W.jsx)("p", {
 					className: "text-body-2-regular text-text-secondary",
 					children: Ce(e)
 				})]
@@ -1124,76 +1124,76 @@ function Se(e) {
 }
 var Ce = (e) => [`最近活动 ${xe(e.last_seen)}`, Se(e)].filter(Boolean).join(" · ");
 function we({ revision: e, receipt: t }) {
-	let n = I({
+	let n = B({
 		queryKey: ["access-sessions", e],
 		refetchOnMount: "always",
-		queryFn: ({ signal: e }) => O(K, e)
+		queryFn: ({ signal: e }) => O(q, e)
 	});
-	return n.error ? /* @__PURE__ */ (0, B.jsx)(b, {
+	return n.error ? /* @__PURE__ */ (0, W.jsx)(b, {
 		guide: "devices",
 		title: "已登录的设备",
-		children: /* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(c, { children: N(n.error) }) })
-	}) : n.isFetching || !n.data ? /* @__PURE__ */ (0, B.jsx)(x, {
+		children: /* @__PURE__ */ (0, W.jsx)(w, { children: /* @__PURE__ */ (0, W.jsx)(c, { children: P(n.error) }) })
+	}) : n.isFetching || !n.data ? /* @__PURE__ */ (0, W.jsx)(x, {
 		label: "正在读取已登录的设备",
-		html: ee
-	}) : /* @__PURE__ */ (0, B.jsx)(Te, {
+		html: N
+	}) : /* @__PURE__ */ (0, W.jsx)(Te, {
 		initial: n.data,
 		receipt: t
 	});
 }
 function Te({ initial: e, receipt: n }) {
-	let [r, a] = (0, z.useState)(e);
-	(0, z.useEffect)(() => a(e), [e]);
+	let [r, a] = (0, U.useState)(e);
+	(0, U.useEffect)(() => a(e), [e]);
 	let o = r.sessions.filter((e) => !e.current);
-	(0, z.useEffect)(() => {
-		ae("devices", {
+	(0, U.useEffect)(() => {
+		te("devices", {
 			rows: Math.min(r.sessions.length, 8),
 			manageable: r.manageable && o.length > 0
 		});
 	}, [r, o.length]);
 	let s = (e) => void j({
 		title: "撤销这台设备的登录",
-		body: `${q(e)}（${Ce(e)}）下次打开 Peach 需要重新输入访问密码。`,
+		body: `${J(e)}（${Ce(e)}）下次打开 Peach 需要重新输入访问密码。`,
 		confirmLabel: "撤销登录",
 		onConfirm: async () => {
-			a(await k(`${K}/revoke`, {
+			a(await k(`${q}/revoke`, {
 				revision: r.revision,
 				id: e.id
 			})), n("已撤销登录");
 		}
 	});
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+	return /* @__PURE__ */ (0, W.jsxs)(b, {
 		guide: "devices",
 		title: "已登录的设备",
 		children: [
-			r.sessions.length ? /* @__PURE__ */ (0, B.jsx)(v, { children: r.sessions.map((e) => /* @__PURE__ */ (0, B.jsx)(be, {
+			r.sessions.length ? /* @__PURE__ */ (0, W.jsx)(v, { children: r.sessions.map((e) => /* @__PURE__ */ (0, W.jsx)(be, {
 				row: e,
-				children: e.current ? /* @__PURE__ */ (0, B.jsx)(i, {
+				children: e.current ? /* @__PURE__ */ (0, W.jsx)(i, {
 					color: "blue",
 					variant: "caption",
 					children: "本机"
-				}) : r.manageable ? /* @__PURE__ */ (0, B.jsx)(t, {
+				}) : r.manageable ? /* @__PURE__ */ (0, W.jsx)(t, {
 					size: "small",
 					variant: "secondary",
-					"aria-label": `撤销 ${q(e)} 的登录`,
+					"aria-label": `撤销 ${J(e)} 的登录`,
 					onClick: () => s(e),
 					children: "撤销"
 				}) : null
-			}, e.id)) }) : /* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(p, { children: "还没有浏览器用访问密码登录过。" }) }),
-			!r.manageable && o.length ? /* @__PURE__ */ (0, B.jsx)(w, {
+			}, e.id)) }) : /* @__PURE__ */ (0, W.jsx)(w, { children: /* @__PURE__ */ (0, W.jsx)(p, { children: "还没有浏览器用访问密码登录过。" }) }),
+			!r.manageable && o.length ? /* @__PURE__ */ (0, W.jsx)(w, {
 				divided: !0,
-				children: /* @__PURE__ */ (0, B.jsx)(p, { children: "在运行 Peach 的电脑上打开这一页才能撤销。" })
+				children: /* @__PURE__ */ (0, W.jsx)(p, { children: "在运行 Peach 的电脑上打开这一页才能撤销。" })
 			}) : null,
-			r.manageable && o.length ? /* @__PURE__ */ (0, B.jsx)(f, {
+			r.manageable && o.length ? /* @__PURE__ */ (0, W.jsx)(f, {
 				status: "修改访问密码会让全部设备退出。",
-				children: /* @__PURE__ */ (0, B.jsx)(t, {
+				children: /* @__PURE__ */ (0, W.jsx)(t, {
 					variant: "secondary",
 					onClick: () => void j({
 						title: "撤销其他设备的登录",
 						body: `除本机以外的 ${o.length} 台设备下次打开 Peach 需要重新输入访问密码。`,
 						confirmLabel: "撤销登录",
 						onConfirm: async () => {
-							let e = await k(`${K}/revoke`, {
+							let e = await k(`${q}/revoke`, {
 								revision: r.revision,
 								scope: "others"
 							});
@@ -1209,24 +1209,24 @@ function Te({ initial: e, receipt: n }) {
 // src/react/settings/drive-settings.tsx
 var Ee = {
 	redirect: {
-		label: P("settings:drive.mode.redirect"),
-		help: P("settings:drive.mode.redirectHelp")
+		label: R("settings:drive.mode.redirect"),
+		help: R("settings:drive.mode.redirectHelp")
 	},
 	proxy: {
-		label: P("settings:drive.mode.proxy"),
-		help: P("settings:drive.mode.proxyHelp")
+		label: R("settings:drive.mode.proxy"),
+		help: R("settings:drive.mode.proxyHelp")
 	}
 }, Q = (e) => Ee[e]?.label ?? e;
 function De({ receipt: e }) {
-	let n = L(), r = I({
+	let n = V(), r = B({
 		queryKey: a,
 		refetchOnMount: "always",
-		queryFn: ({ signal: e }) => ne(e)
+		queryFn: ({ signal: e }) => I(e)
 	});
-	if (r.error) return /* @__PURE__ */ (0, B.jsxs)(b, {
+	if (r.error) return /* @__PURE__ */ (0, W.jsxs)(b, {
 		guide: "drives",
 		title: "网盘",
-		children: [/* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(c, { children: N(r.error) }) }), /* @__PURE__ */ (0, B.jsx)(f, { children: /* @__PURE__ */ (0, B.jsx)(t, {
+		children: [/* @__PURE__ */ (0, W.jsx)(w, { children: /* @__PURE__ */ (0, W.jsx)(c, { children: P(r.error) }) }), /* @__PURE__ */ (0, W.jsx)(f, { children: /* @__PURE__ */ (0, W.jsx)(t, {
 			variant: "secondary",
 			onClick: () => {
 				r.refetch();
@@ -1236,10 +1236,10 @@ function De({ receipt: e }) {
 		}) })]
 	});
 	let i = r.data;
-	if (!i) return /* @__PURE__ */ (0, B.jsx)(b, {
+	if (!i) return /* @__PURE__ */ (0, W.jsx)(b, {
 		guide: "drives",
 		title: "网盘",
-		children: /* @__PURE__ */ (0, B.jsx)(w, { children: /* @__PURE__ */ (0, B.jsx)(p, {
+		children: /* @__PURE__ */ (0, W.jsx)(w, { children: /* @__PURE__ */ (0, W.jsx)(p, {
 			role: "status",
 			children: "正在读取网盘状态…"
 		}) })
@@ -1247,7 +1247,7 @@ function De({ receipt: e }) {
 	let o = () => {
 		n.invalidateQueries({ queryKey: a });
 	};
-	return /* @__PURE__ */ (0, B.jsx)(B.Fragment, { children: i.locations.map((t) => /* @__PURE__ */ (0, B.jsx)(Oe, {
+	return /* @__PURE__ */ (0, W.jsx)(W.Fragment, { children: i.locations.map((t) => /* @__PURE__ */ (0, W.jsx)(Oe, {
 		connection: t,
 		publicUrl: i.public_url,
 		receipt: e,
@@ -1255,127 +1255,180 @@ function De({ receipt: e }) {
 	}, t.location)) });
 }
 function Oe({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
-	let [a, s] = (0, z.useState)(e);
-	(0, z.useEffect)(() => s(e), [e]);
-	let l = F(), [p, m] = (0, z.useState)(!1), h = `${o}/${a.location}`, _ = n ? `${n.replace(/\/+$/, "")}/oauth/${a.location}/callback` : "", y = () => void l.run("authorize", (e) => k(`${h}/authorize`, {}, "POST", e), ({ url: e }) => {
+	let [a, s] = (0, U.useState)(e);
+	(0, U.useEffect)(() => s(e), [e]);
+	let l = z(), [h, _] = (0, U.useState)(!1), [y, x] = (0, U.useState)(!1), [C, T] = (0, U.useState)({
+		client_id: "",
+		client_secret: "",
+		refresh_token: "",
+		root: ""
+	}), E = `${o}/${a.location}`, D = n ? `${n.replace(/\/+$/, "")}/oauth/${a.location}/callback` : "", O = (e) => ({
+		id: `drive-${a.location}-${e}`,
+		name: e,
+		value: C[e],
+		autoComplete: "off",
+		onChange: (t) => T((n) => ({
+			...n,
+			[e]: t
+		}))
+	}), M = () => void l.run("credentials", (e) => k(`${E}/credentials`, C, "POST", e), (e) => {
+		s(e), x(!1), T({
+			client_id: "",
+			client_secret: "",
+			refresh_token: "",
+			root: ""
+		}), r(R("settings:drive.manual.saved", { label: e.label })), i();
+	}), N = () => void l.run("authorize", (e) => k(`${E}/authorize`, {}, "POST", e), ({ url: e }) => {
 		window.location.assign(e);
-	}), x = () => void l.run("refresh", (e) => k(`${h}/refresh`, {}, "POST", e), (e) => {
+	}), P = () => void l.run("refresh", (e) => k(`${E}/refresh`, {}, "POST", e), (e) => {
 		s(e), r(`已安排刷新 ${e.label}，下一轮同步先做这个来源`);
-	}), C = (e) => void l.run("roots", (t) => k(`${h}/roots`, { roots: e }, "POST", t), () => {
-		m(!1), r("已保存扫描起点"), i();
-	}), T = (e) => void l.run("mode", (t) => k(`${h}/mode`, { mode: e }, "POST", t), ({ mode: e }) => {
+	}), F = (e) => void l.run("roots", (t) => k(`${E}/roots`, { roots: e }, "POST", t), () => {
+		_(!1), r("已保存扫描起点"), i();
+	}), I = (e) => void l.run("mode", (t) => k(`${E}/mode`, { mode: e }, "POST", t), ({ mode: e }) => {
 		s({
 			...a,
 			mode: e
-		}), r(P("settings:drive.mode.switched", {
+		}), r(R("settings:drive.mode.switched", {
 			label: a.label,
 			mode: Q(e)
 		}));
+	}), L = () => void j({
+		title: `断开 ${a.label}`,
+		body: `Peach 会忘掉 ${a.email || a.display_name || "这个网盘"} 的账号与扫描起点，之后不再同步它。已经登记进馆藏的条目不动；重新授权后可以接着同步。`,
+		confirmLabel: "断开",
+		danger: !0,
+		onConfirm: async () => {
+			await k(E, {}, "DELETE"), r(`已断开 ${a.label}`), i();
+		}
 	});
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+	return /* @__PURE__ */ (0, W.jsxs)(b, {
 		guide: "account",
 		title: a.label,
 		children: [
-			/* @__PURE__ */ (0, B.jsxs)(w, { children: [
-				a.configured ? null : /* @__PURE__ */ (0, B.jsx)(g, {
+			/* @__PURE__ */ (0, W.jsxs)(w, { children: [
+				a.configured ? null : /* @__PURE__ */ (0, W.jsx)(g, {
 					tone: "warning",
 					title: `${a.label} 还没有接入`,
 					children: `在设置文件的 [drive.accounts.${a.location}] 段填好 client_id 与 client_secret，并在 [drive] 段的 public_url 填上这台 Peach 的 https 地址，保存后回到这一页授权。`
 				}),
-				a.configured && !a.connected && !_ ? /* @__PURE__ */ (0, B.jsx)(g, {
+				a.configured && !a.connected && !D ? /* @__PURE__ */ (0, W.jsx)(g, {
 					tone: "warning",
 					title: "没有配置回调基址",
 					children: `网盘授权要回到这台 Peach：先在设置文件的 [drive] 段填好 public_url（https 地址），网盘后台登记的回调地址是 public_url 加上 /oauth/${a.location}/callback。`
 				}) : null,
-				/* @__PURE__ */ (0, B.jsxs)(d, { children: [
-					/* @__PURE__ */ (0, B.jsx)(u, {
+				/* @__PURE__ */ (0, W.jsxs)(d, { children: [
+					/* @__PURE__ */ (0, W.jsx)(u, {
 						term: "账号",
 						children: a.connected ? a.email || a.display_name || "已授权" : "未授权"
 					}),
-					/* @__PURE__ */ (0, B.jsx)(u, {
+					/* @__PURE__ */ (0, W.jsx)(u, {
 						term: "扫描起点",
 						children: a.roots.length ? `${a.roots.length} 个目录` : "账号根目录"
 					}),
-					/* @__PURE__ */ (0, B.jsx)(u, {
+					/* @__PURE__ */ (0, W.jsx)(u, {
 						term: "上次同步",
 						children: a.synced_at || "还没有同步过"
 					}),
-					/* @__PURE__ */ (0, B.jsx)(u, {
-						term: P("settings:drive.mode.term"),
+					/* @__PURE__ */ (0, W.jsx)(u, {
+						term: R("settings:drive.mode.term"),
 						children: Q(a.mode)
 					})
 				] }),
-				a.last_error ? /* @__PURE__ */ (0, B.jsx)(g, {
+				a.last_error ? /* @__PURE__ */ (0, W.jsx)(g, {
 					tone: "warning",
 					title: "上次同步失败",
 					children: a.last_error
 				}) : null,
-				l.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: l.error }) : null
+				l.error ? /* @__PURE__ */ (0, W.jsx)(c, { children: l.error }) : null
 			] }),
-			a.roots.length ? /* @__PURE__ */ (0, B.jsx)(v, { children: a.roots.map((e) => /* @__PURE__ */ (0, B.jsx)(S, {
+			a.roots.length ? /* @__PURE__ */ (0, W.jsx)(v, { children: a.roots.map((e) => /* @__PURE__ */ (0, W.jsx)(S, {
 				label: e.name,
 				description: e.remote_id,
-				children: /* @__PURE__ */ (0, B.jsx)(t, {
+				children: /* @__PURE__ */ (0, W.jsx)(t, {
 					size: "small",
 					variant: "secondary",
 					"aria-label": `移除扫描起点 ${e.name}`,
-					onClick: () => C(a.roots.filter((t) => t.remote_id !== e.remote_id)),
+					onClick: () => F(a.roots.filter((t) => t.remote_id !== e.remote_id)),
 					...A(l.busy === "roots"),
 					children: "移除"
 				})
 			}, e.remote_id)) }) : null,
-			a.modes.length > 1 ? /* @__PURE__ */ (0, B.jsx)(v, { children: a.modes.map((e) => /* @__PURE__ */ (0, B.jsx)(S, {
+			a.modes.length > 1 ? /* @__PURE__ */ (0, W.jsx)(v, { children: a.modes.map((e) => /* @__PURE__ */ (0, W.jsx)(S, {
 				label: Q(e),
 				description: Ee[e]?.help ?? e,
-				children: /* @__PURE__ */ (0, B.jsx)(t, {
+				children: /* @__PURE__ */ (0, W.jsx)(t, {
 					size: "small",
 					variant: e === a.mode ? "primary" : "secondary",
 					"aria-pressed": e === a.mode,
 					disabled: e === a.mode,
-					"aria-label": `${P("settings:drive.mode.switchTo")} ${Q(e)}`,
-					onClick: () => T(e),
+					"aria-label": `${R("settings:drive.mode.switchTo")} ${Q(e)}`,
+					onClick: () => I(e),
 					...A(l.busy === "mode"),
-					children: e === a.mode ? P("settings:drive.mode.inUse") : P("settings:drive.mode.switchTo")
+					children: e === a.mode ? R("settings:drive.mode.inUse") : R("settings:drive.mode.switchTo")
 				})
 			}, e)) }) : null,
-			p && a.connected ? /* @__PURE__ */ (0, B.jsx)(ke, {
+			y ? /* @__PURE__ */ (0, W.jsxs)(w, { children: [
+				/* @__PURE__ */ (0, W.jsx)(p, { children: R("settings:drive.manual.help") }),
+				/* @__PURE__ */ (0, W.jsx)(m, {
+					label: R("settings:drive.manual.clientId"),
+					...O("client_id")
+				}),
+				/* @__PURE__ */ (0, W.jsx)(m, {
+					type: "password",
+					label: R("settings:drive.manual.clientSecret"),
+					...O("client_secret")
+				}),
+				/* @__PURE__ */ (0, W.jsx)(m, {
+					type: "password",
+					label: R("settings:drive.manual.refreshToken"),
+					...O("refresh_token")
+				}),
+				/* @__PURE__ */ (0, W.jsx)(m, {
+					label: R("settings:drive.manual.root"),
+					hint: R("settings:drive.manual.rootHelp"),
+					...O("root")
+				}),
+				/* @__PURE__ */ (0, W.jsx)(t, {
+					onClick: M,
+					...A(l.busy === "credentials"),
+					children: R("settings:drive.manual.submit")
+				})
+			] }) : null,
+			h && a.connected ? /* @__PURE__ */ (0, W.jsx)(ke, {
 				connection: a,
 				receipt: r,
-				onClose: () => m(!1),
+				onClose: () => _(!1),
 				onSaved: () => {
-					m(!1), i();
+					_(!1), i();
 				}
 			}) : null,
-			/* @__PURE__ */ (0, B.jsxs)(f, {
-				status: a.connected ? null : `回调地址 ${_ || "未配置"}`,
+			/* @__PURE__ */ (0, W.jsxs)(f, {
+				status: a.connected ? null : `回调地址 ${D || "未配置"}`,
 				children: [
-					a.connected ? /* @__PURE__ */ (0, B.jsx)(t, {
+					/* @__PURE__ */ (0, W.jsx)(t, {
 						variant: "secondary",
-						onClick: () => m(!p),
-						children: p ? "收起目录" : "选择扫描起点"
+						onClick: () => x(!y),
+						children: R(y ? "settings:drive.manual.hide" : "settings:drive.manual.show")
+					}),
+					a.connected ? /* @__PURE__ */ (0, W.jsx)(t, {
+						variant: "secondary",
+						onClick: () => _(!h),
+						children: h ? "收起目录" : "选择扫描起点"
 					}) : null,
-					a.connected ? /* @__PURE__ */ (0, B.jsx)(t, {
+					a.connected ? /* @__PURE__ */ (0, W.jsx)(t, {
 						variant: "secondary",
-						onClick: () => void j({
-							title: `断开 ${a.label}`,
-							body: `Peach 会忘掉 ${a.email || a.display_name || "这个网盘"} 的账号与扫描起点，之后不再同步它。已经登记进馆藏的条目不动；重新授权后可以接着同步。`,
-							confirmLabel: "断开",
-							danger: !0,
-							onConfirm: async () => {
-								await k(h, {}, "DELETE"), r(`已断开 ${a.label}`), i();
-							}
-						}),
+						onClick: L,
 						children: "断开"
 					}) : null,
-					a.connected ? /* @__PURE__ */ (0, B.jsx)(t, {
+					a.connected ? /* @__PURE__ */ (0, W.jsx)(t, {
 						variant: "secondary",
-						onClick: x,
+						onClick: P,
 						...A(l.busy === "refresh"),
 						children: "立即刷新"
 					}) : null,
-					a.configured ? /* @__PURE__ */ (0, B.jsx)(t, {
-						onClick: y,
-						disabled: !_,
+					a.configured ? /* @__PURE__ */ (0, W.jsx)(t, {
+						onClick: N,
+						disabled: !D,
 						...A(l.busy === "authorize"),
 						children: a.connected ? "重新授权" : "开始授权"
 					}) : null
@@ -1385,7 +1438,7 @@ function Oe({ connection: e, publicUrl: n, receipt: r, reloaded: i }) {
 	});
 }
 function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
-	let [a, s] = (0, z.useState)([]), l = a[a.length - 1], u = I({
+	let [a, s] = (0, U.useState)([]), l = a[a.length - 1], u = B({
 		queryKey: [
 			"drive-folders",
 			e.location,
@@ -1393,25 +1446,25 @@ function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
 		],
 		refetchOnMount: "always",
 		queryFn: ({ signal: t }) => O(`${o}/${e.location}/folders?parent_id=${encodeURIComponent(l?.remote_id ?? "")}`, t)
-	}), d = F(), f = !!(l && e.roots.some((e) => e.remote_id === l.remote_id)), m = u.data?.parent_id, h = [m ? e.roots.find((e) => e.remote_id === m)?.name ?? m : "账号根目录", ...a.map((e) => e.name)].join(" / ");
-	return /* @__PURE__ */ (0, B.jsxs)(B.Fragment, { children: [
-		/* @__PURE__ */ (0, B.jsxs)(w, {
+	}), d = z(), f = !!(l && e.roots.some((e) => e.remote_id === l.remote_id)), m = u.data?.parent_id, h = [m ? e.roots.find((e) => e.remote_id === m)?.name ?? m : "账号根目录", ...a.map((e) => e.name)].join(" / ");
+	return /* @__PURE__ */ (0, W.jsxs)(W.Fragment, { children: [
+		/* @__PURE__ */ (0, W.jsxs)(w, {
 			divided: !0,
 			children: [
-				/* @__PURE__ */ (0, B.jsxs)("div", {
+				/* @__PURE__ */ (0, W.jsxs)("div", {
 					className: "flex flex-wrap items-center justify-between gap-2",
-					children: [/* @__PURE__ */ (0, B.jsx)(p, {
+					children: [/* @__PURE__ */ (0, W.jsx)(p, {
 						role: "status",
 						children: h
-					}), /* @__PURE__ */ (0, B.jsxs)("div", {
+					}), /* @__PURE__ */ (0, W.jsxs)("div", {
 						className: "flex flex-wrap gap-2",
-						children: [/* @__PURE__ */ (0, B.jsx)(t, {
+						children: [/* @__PURE__ */ (0, W.jsx)(t, {
 							size: "small",
 							variant: "secondary",
 							disabled: !a.length,
 							onClick: () => s(a.slice(0, -1)),
 							children: "上一级"
-						}), /* @__PURE__ */ (0, B.jsx)(t, {
+						}), /* @__PURE__ */ (0, W.jsx)(t, {
 							size: "small",
 							variant: "secondary",
 							onClick: i,
@@ -1419,13 +1472,13 @@ function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
 						})]
 					})]
 				}),
-				u.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: N(u.error) }) : null,
-				u.data && !u.data.folders.length ? /* @__PURE__ */ (0, B.jsx)(p, { children: "这个目录里没有子目录。" }) : null
+				u.error ? /* @__PURE__ */ (0, W.jsx)(c, { children: P(u.error) }) : null,
+				u.data && !u.data.folders.length ? /* @__PURE__ */ (0, W.jsx)(p, { children: "这个目录里没有子目录。" }) : null
 			]
 		}),
-		u.data?.folders.length ? /* @__PURE__ */ (0, B.jsx)(v, { children: u.data.folders.map((e) => /* @__PURE__ */ (0, B.jsx)(S, {
+		u.data?.folders.length ? /* @__PURE__ */ (0, W.jsx)(v, { children: u.data.folders.map((e) => /* @__PURE__ */ (0, W.jsx)(S, {
 			label: e.name,
-			children: /* @__PURE__ */ (0, B.jsx)(t, {
+			children: /* @__PURE__ */ (0, W.jsx)(t, {
 				size: "small",
 				variant: "secondary",
 				"aria-label": `打开目录 ${e.name}`,
@@ -1433,11 +1486,11 @@ function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
 				children: "打开"
 			})
 		}, e.remote_id)) }) : null,
-		/* @__PURE__ */ (0, B.jsxs)(w, {
+		/* @__PURE__ */ (0, W.jsxs)(w, {
 			divided: !0,
-			children: [l ? /* @__PURE__ */ (0, B.jsxs)("div", {
+			children: [l ? /* @__PURE__ */ (0, W.jsxs)("div", {
 				className: "flex flex-wrap items-center justify-between gap-2",
-				children: [/* @__PURE__ */ (0, B.jsx)(p, { children: "设为扫描起点后，这一层的子目录都会同步。" }), /* @__PURE__ */ (0, B.jsx)(t, {
+				children: [/* @__PURE__ */ (0, W.jsx)(p, { children: "设为扫描起点后，这一层的子目录都会同步。" }), /* @__PURE__ */ (0, W.jsx)(t, {
 					disabled: f,
 					onClick: () => {
 						if (!l) return;
@@ -1452,30 +1505,30 @@ function ke({ connection: e, receipt: n, onSaved: r, onClose: i }) {
 					...A(d.busy === "save"),
 					children: f ? "这一层已经是扫描起点" : `设为扫描起点：${l.name}`
 				})]
-			}) : /* @__PURE__ */ (0, B.jsx)(p, { children: "打开要用的目录，再把它设为扫描起点。一个都不设时，同步从账号根目录开始。" }), d.error ? /* @__PURE__ */ (0, B.jsx)(c, { children: d.error }) : null]
+			}) : /* @__PURE__ */ (0, W.jsx)(p, { children: "打开要用的目录，再把它设为扫描起点。一个都不设时，同步从账号根目录开始。" }), d.error ? /* @__PURE__ */ (0, W.jsx)(c, { children: d.error }) : null]
 		})
 	] });
 }
 // src/react/settings/service-preferences.tsx
 function Ae({ receipt: e }) {
-	let t = I({
+	let t = B({
 		queryKey: y,
-		queryFn: ({ signal: e }) => re(e)
-	}), n = ce(), r = n.error || t.error;
-	return /* @__PURE__ */ (0, B.jsxs)(b, {
+		queryFn: ({ signal: e }) => L(e)
+	}), n = ie(), r = n.error || t.error;
+	return /* @__PURE__ */ (0, W.jsxs)(b, {
 		guide: "speed",
 		title: "后台任务",
-		children: [/* @__PURE__ */ (0, B.jsx)(v, { children: /* @__PURE__ */ (0, B.jsx)(S, {
+		children: [/* @__PURE__ */ (0, W.jsx)(v, { children: /* @__PURE__ */ (0, W.jsx)(S, {
 			label: "默认处理速度",
 			description: "新任务使用此档位。运行中的任务可在活动页单独调整。",
-			children: /* @__PURE__ */ (0, B.jsx)(_, {
+			children: /* @__PURE__ */ (0, W.jsx)(_, {
 				value: t.data?.taskSpeedMode || "standard",
 				busy: !t.data || n.isPending,
 				onChange: (t) => n.mutate({ taskSpeedMode: t }, { onSuccess: () => e("已保存默认处理速度") })
 			})
-		}) }), r ? /* @__PURE__ */ (0, B.jsx)(w, {
+		}) }), r ? /* @__PURE__ */ (0, W.jsx)(w, {
 			divided: !0,
-			children: /* @__PURE__ */ (0, B.jsx)(c, { children: N(r) })
+			children: /* @__PURE__ */ (0, W.jsx)(c, { children: P(r) })
 		}) : null]
 	});
 }
@@ -1507,11 +1560,11 @@ var je = [
 	}
 ], $ = new Map(je.map(({ id: e, title: t }) => [`#${e}`, t]));
 function Me({ receipt: e, section: t = "", diagnostics: r }) {
-	let i = I({
+	let i = B({
 		queryKey: n,
-		queryFn: ({ signal: e }) => te(e)
+		queryFn: ({ signal: e }) => F(e)
 	}), a = i.data;
-	return a ? /* @__PURE__ */ (0, B.jsx)(Fe, {
+	return a ? /* @__PURE__ */ (0, W.jsx)(Fe, {
 		data: a,
 		receipt: e,
 		section: t,
@@ -1520,22 +1573,22 @@ function Me({ receipt: e, section: t = "", diagnostics: r }) {
 		reload: () => {
 			i.refetch({ cancelRefetch: !1 });
 		}
-	}) : /* @__PURE__ */ (0, B.jsx)("div", {
+	}) : /* @__PURE__ */ (0, W.jsx)("div", {
 		className: "ui-configpage",
-		children: /* @__PURE__ */ (0, B.jsx)(g, {
+		children: /* @__PURE__ */ (0, W.jsx)(g, {
 			tone: "error",
 			title: "配置读取失败",
-			children: i.error ? N(i.error) : "未取得配置，请刷新页面重试。"
+			children: i.error ? P(i.error) : "未取得配置，请刷新页面重试。"
 		})
 	});
 }
 function Ne({ data: e, sections: n, reload: r, refreshing: i }) {
-	return /* @__PURE__ */ (0, B.jsx)(B.Fragment, { children: n.map((n) => {
+	return /* @__PURE__ */ (0, W.jsx)(W.Fragment, { children: n.map((n) => {
 		let a = e.section_errors?.[n];
-		return a ? /* @__PURE__ */ (0, B.jsx)(g, {
+		return a ? /* @__PURE__ */ (0, W.jsx)(g, {
 			tone: "error",
 			title: a.title,
-			action: /* @__PURE__ */ (0, B.jsx)(t, {
+			action: /* @__PURE__ */ (0, W.jsx)(t, {
 				variant: "secondary",
 				size: "small",
 				onClick: r,
@@ -1548,13 +1601,13 @@ function Ne({ data: e, sections: n, reload: r, refreshing: i }) {
 }
 var Pe = 0;
 function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refreshing: a }) {
-	let [o] = (0, z.useState)(() => `board-tabs-${++Pe}`), [s, c] = (0, z.useState)(() => $.get(window.location.hash) ?? n), l = (0, z.useRef)(null), u = (0, z.useRef)(s);
-	(0, z.useEffect)(() => {
+	let [o] = (0, U.useState)(() => `board-tabs-${++Pe}`), [s, c] = (0, U.useState)(() => $.get(window.location.hash) ?? n), l = (0, U.useRef)(null), u = (0, U.useRef)(s);
+	(0, U.useEffect)(() => {
 		c(n);
-	}, [n]), (0, z.useEffect)(() => {
+	}, [n]), (0, U.useEffect)(() => {
 		let e = () => c($.get(window.location.hash) ?? "");
 		return window.addEventListener("hashchange", e), () => window.removeEventListener("hashchange", e);
-	}, []), (0, z.useLayoutEffect)(() => {
+	}, []), (0, U.useLayoutEffect)(() => {
 		if (u.current === s) return;
 		u.current = s;
 		let e = l.current?.querySelector(".ui-board-local-nav"), t = l.current?.querySelector(".ui-board-group-active");
@@ -1568,12 +1621,12 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		c(e);
 		let t = je.find((t) => t.title === e)?.id;
 		t && window.location.hash !== `#${t}` && window.history.replaceState(window.history.state, "", `#${t}`);
-	}, [f, p] = (0, z.useState)(() => matchMedia("(max-width:900px)").matches);
-	(0, z.useEffect)(() => {
+	}, [f, p] = (0, U.useState)(() => matchMedia("(max-width:900px)").matches);
+	(0, U.useEffect)(() => {
 		let e = matchMedia("(max-width:900px)"), t = () => p(e.matches);
 		return e.addEventListener("change", t), () => e.removeEventListener("change", t);
 	}, []);
-	let m = (t) => /* @__PURE__ */ (0, B.jsx)(Ne, {
+	let m = (t) => /* @__PURE__ */ (0, W.jsx)(Ne, {
 		data: e,
 		sections: t,
 		reload: i,
@@ -1584,20 +1637,20 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		{
 			id: "drives",
 			title: "网盘",
-			body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-				...H(e),
+			body: (e) => /* @__PURE__ */ (0, W.jsx)("div", {
+				...K(e),
 				"data-guide-target": "drives",
-				children: /* @__PURE__ */ (0, B.jsx)(De, { receipt: t })
+				children: /* @__PURE__ */ (0, W.jsx)(De, { receipt: t })
 			})
 		},
 		...g ? [
 			{
 				id: "access",
 				title: "访问与安全",
-				body: (e) => /* @__PURE__ */ (0, B.jsxs)("div", {
-					...H(e),
+				body: (e) => /* @__PURE__ */ (0, W.jsxs)("div", {
+					...K(e),
 					"data-guide-target": "access",
-					children: [m(["access"]), /* @__PURE__ */ (0, B.jsx)(de, {
+					children: [m(["access"]), /* @__PURE__ */ (0, W.jsx)(se, {
 						initial: g,
 						receipt: h
 					})]
@@ -1606,10 +1659,10 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 			..._ ? [{
 				id: "token",
 				title: "API 令牌",
-				body: (e) => /* @__PURE__ */ (0, B.jsxs)("div", {
-					...H(e),
+				body: (e) => /* @__PURE__ */ (0, W.jsxs)("div", {
+					...K(e),
 					"data-guide-target": "token",
-					children: [m(["api_token"]), /* @__PURE__ */ (0, B.jsx)(me, {
+					children: [m(["api_token"]), /* @__PURE__ */ (0, W.jsx)(ue, {
 						initial: _,
 						mode: g.mode,
 						receipt: t
@@ -1619,10 +1672,10 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 			{
 				id: "devices",
 				title: "设备会话",
-				body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-					...H(e),
+				body: (e) => /* @__PURE__ */ (0, W.jsx)("div", {
+					...K(e),
 					"data-guide-target": "devices",
-					children: /* @__PURE__ */ (0, B.jsx)(we, {
+					children: /* @__PURE__ */ (0, W.jsx)(we, {
 						revision: g.revision,
 						receipt: t
 					})
@@ -1632,29 +1685,29 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 		{
 			id: "speed",
 			title: "任务速度",
-			body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-				...H(e),
+			body: (e) => /* @__PURE__ */ (0, W.jsx)("div", {
+				...K(e),
 				"data-guide-target": "speed",
-				children: /* @__PURE__ */ (0, B.jsx)(Ae, { receipt: t })
+				children: /* @__PURE__ */ (0, W.jsx)(Ae, { receipt: t })
 			})
 		},
 		{
 			id: "diagnostics",
 			title: "系统诊断",
-			body: (e) => /* @__PURE__ */ (0, B.jsx)("div", {
-				...H(e),
+			body: (e) => /* @__PURE__ */ (0, W.jsx)("div", {
+				...K(e),
 				"data-guide-target": "diagnostics",
 				children: e.active ? r : null
 			})
 		}
 	], y = Math.max(0, v.findIndex((e) => e.title === s));
-	return /* @__PURE__ */ (0, B.jsxs)("div", {
+	return /* @__PURE__ */ (0, W.jsxs)("div", {
 		ref: l,
 		className: "ui-configpage",
-		children: [/* @__PURE__ */ (0, B.jsx)("div", {
+		children: [/* @__PURE__ */ (0, W.jsx)("div", {
 			className: "ui-board-local-nav",
 			"data-section-nav": "",
-			children: /* @__PURE__ */ (0, B.jsx)(C, {
+			children: /* @__PURE__ */ (0, W.jsx)(C, {
 				group: "configuration",
 				label: "配置分区",
 				value: v[y].id,
@@ -1668,7 +1721,7 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 				className: "",
 				onChange: (e) => d(v.find((t) => t.id === e).title)
 			})
-		}), v.map(({ id: e, title: t, body: n }, r) => /* @__PURE__ */ (0, B.jsxs)(z.Fragment, { children: [/* @__PURE__ */ (0, B.jsx)("h2", {
+		}), v.map(({ id: e, title: t, body: n }, r) => /* @__PURE__ */ (0, W.jsxs)(U.Fragment, { children: [/* @__PURE__ */ (0, W.jsx)("h2", {
 			className: "ui-configgroup",
 			children: t
 		}), n({
@@ -1681,4 +1734,4 @@ function Fe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 }
 export { Me as ConfigurationPage };
 
-//# debugId=e83a7378-1073-4340-a59c-1f5cb4934292
+//# debugId=4cbf3148-79ae-49fa-a8cd-e70698a83631

@@ -9,6 +9,18 @@
       "switched": "{{label}} 改用{{mode}}",
       "switchTo": "改用这个",
       "term": "取流方式"
+    },
+    "manual": {
+      "clientId": "客户端 ID",
+      "clientSecret": "客户端密钥",
+      "help": "不走浏览器授权也能接：把网盘 OAuth 应用的客户端 ID、密钥与 refresh token 填进来，Peach 用它们自己换票。这三样要出自同一个应用。",
+      "hide": "收起手动填写",
+      "refreshToken": "refresh token",
+      "root": "扫描起点",
+      "rootHelp": "填目录路径（如 AV/示例合集）或远端目录 id；留空就从账号根目录开始。",
+      "saved": "已接上 {{label}}",
+      "show": "手动填认证信息",
+      "submit": "接上这个网盘"
     }
   },
   "interfaceLanguage": {

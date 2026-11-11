@@ -110,6 +110,7 @@ Peach 请求的范围是 `https://www.googleapis.com/auth/drive`，授权时带 
 - **扫描根**：`POST /api/drive/<网盘>/roots` 整条替换扫描根，外层的 `GET /api/drive/<网盘>/folders?parent_id=` 用来逐层列远端目录。存下来的是**远端目录 id**，不是路径；一个来源可以选多个目录，空数组表示从账号根目录开始。写入会同步改 `config.toml` 的 `[drive.roots]`，并清掉这一来源的增量游标——游标只认「哪些文件变了」，留着它新选中的目录要等最长一天才进账本。所以换完扫描根，下一轮是整棵重扫。
 - **立即同步**：`POST /api/drive/<网盘>/refresh` 让这个来源在下一轮先做，返回它同步后的状态。
 - **取流方式**：`POST /api/drive/<网盘>/mode` 改这个来源怎么把字节交到浏览器，写入 `config.toml` 的 `[drive.modes]`。`redirect` 只给 OneDrive 用：播放时返回 302，浏览器自己去网盘的预授权地址取，不占服务器流量；`proxy` 让 Peach 按 Range 去网盘取再转发，占服务器流量，但网盘地址不出现在浏览器里。Google Drive 的字节必须带着 Bearer 取，令牌不能交给浏览器，所以它只有 `proxy` 一种。设置页「数据来源」里的「改用这个」调的就是这个接口，改完立刻重建驱动实例，不用重启。
+- **填认证信息**：`POST /api/drive/<网盘>/credentials` 收 `client_id`、`client_secret`、`refresh_token` 与可选的 `root`，用它们直接接上，不经过授权回调——没有公网域名、或者手上已经有 refresh token（例如从 rclone 的 `~/.config/rclone/rclone.conf` 里取）时走这条。服务端先拿这三样换一次票，换不到就什么都不写；换到了才写 `config.toml` 的 `[drive.accounts.<网盘>]` 与 `drive-accounts.json`，再问一次网盘补上账号邮箱与显示名。`root` 可以是远端目录 id，也可以是 `AV/示例合集` 这样的路径；写进去同样清掉这一来源的增量游标。设置页「手动填认证信息」就是这个表单。
 - **断开**：`DELETE /api/drive/<网盘>` 删掉令牌并清空该来源的扫描根。账本里已经扫到的条目不动，它们会因为没有可用的驱动而进不了播放。
 
 ```sh
@@ -253,7 +254,7 @@ Windows 上把 `npm`、`uv` 换成对应的 `npm.cmd`、`uv.exe` 即可，命令
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| 发起授权报「没有配置回调基址，先填 [drive] public_url」 | `[drive] public_url` 为空 | 填对外域名后重启服务 |
+| 发起授权报「没有配置回调基址，先填 [drive] public_url」 | `[drive] public_url` 为空 | 填对外域名后重启服务，或者在设置页「手动填认证信息」里直接填客户端 ID、密钥与 refresh token |
 | 网盘侧报 `redirect_uri_mismatch` | 后台登记的回调地址与 `<public_url>/oauth/<网盘>/callback` 不一致 | 两边改成逐字符一致 |
 | 回调页报「授权回执已过期，回到设置页重新发起授权」 | `state` 超过 15 分钟、或换了网盘、或服务重启过 | 重新点授权 |
 | `/api/drive` 返回 401 | refresh token 失效：密码改过、权限被撤、账号被停用 | 重新授权；企业租户检查管理员同意 |

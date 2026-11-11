@@ -631,6 +631,33 @@ def save_drive_mode(request: Request, location: str, body: dict[str, Any] = Body
     return {"location": location, "mode": saved}
 
 
+@router.post("/api/drive/{location}/credentials")
+def save_drive_credentials(request: Request, location: str,
+                           body: dict[str, Any] = Body(default_factory=dict),
+                           _args=Depends(require_auth)):
+    """直接填认证信息接上一个网盘：客户端 ID、密钥、refresh token，可带扫描起点目录。"""
+    same_origin(request)
+    fields = {}
+    for name in ("client_id", "client_secret", "refresh_token", "root"):
+        value = body.get(name)
+        if value is None:
+            value = ""
+        if not isinstance(value, str):
+            raise HTTPException(400, f"{name} 要是字符串")
+        fields[name] = value
+    drive = _drive(request)
+    try:
+        location = _drive_location(location)
+        drive.set_credentials(location, client_id=fields["client_id"],
+                              client_secret=fields["client_secret"],
+                              refresh_token=fields["refresh_token"], root=fields["root"])
+    except DriveError as error:
+        raise _drive_failure(error) from error
+    # 凭证换了可能就是换了账号：旧游标指的是别人的盘。
+    _scan(request).restart(location)
+    return drive.connection(location)
+
+
 @router.get("/api/drive/{location}/folders")
 def drive_folders(request: Request, location: str, parent_id: str = "",
                   _args=Depends(require_auth)):
