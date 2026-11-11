@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -63,6 +64,8 @@ class DriveSync:
         self._synced: dict[str, float] = {}
         #: 手动刷新排进来的账号，`tick` 见到就先做。
         self._requested: set[str] = set()
+        #: 页面点「同步新增文件」会在任务线程里立刻同步一次；定时循环同时在跑，按账号串行。
+        self._lock = threading.Lock()
 
     def accounts(self) -> tuple[str, ...]:
         return self.service.accounts()
@@ -76,21 +79,22 @@ class DriveSync:
 
     def refresh(self, key: str) -> SyncReport:
         """同步一个账号：有游标走增量，没有或者太久没全量就整棵核对。"""
-        self._requested.discard(key)
-        stamp = self.state(key).get("full_synced_at")
-        seen = _moment(stamp)
-        full = seen is None or self._clock() - seen >= self.full_every
-        self._synced[key] = self._clock()
-        try:
-            result = self.service.full_sync(key) if full else self.service.sync_changes(key)
-        except (ScanTargetError, DriveError) as error:
-            return SyncReport(key, full, error=str(error))
-        if self._after is not None:
+        with self._lock:
+            self._requested.discard(key)
+            stamp = self.state(key).get("full_synced_at")
+            seen = _moment(stamp)
+            full = seen is None or self._clock() - seen >= self.full_every
+            self._synced[key] = self._clock()
             try:
-                self._after(key, result)
-            except Exception:  # 跟进失败不该让这一轮扫描白做，下一轮还会再试
-                LOGGER.exception('同步 %s 之后的跟进失败了', key)
-        return SyncReport(key, full, result=result)
+                result = self.service.full_sync(key) if full else self.service.sync_changes(key)
+            except (ScanTargetError, DriveError) as error:
+                return SyncReport(key, full, error=str(error))
+            if self._after is not None:
+                try:
+                    self._after(key, result)
+                except Exception:  # 跟进失败不该让这一轮扫描白做，下一轮还会再试
+                    LOGGER.exception('同步 %s 之后的跟进失败了', key)
+            return SyncReport(key, full, result=result)
 
     def tick(self) -> tuple[SyncReport, ...]:
         """到点的账号各同步一次。同一账号上一轮失败也会重试，只是要等下一轮。"""

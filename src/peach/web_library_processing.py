@@ -491,6 +491,28 @@ def _scoped_processing_request(contract, config, previous, body, resume):
     return config, library_id, retry_ids, asset_ids, stage, refresh
 
 
+def _refresh_new_files(contract, config, library_id):
+    """「同步新增文件」先把所选媒体库对应的账号各同步一轮，再把待处理 id 交给任务。
+
+    不重建 `DriveSync`：页面入口和定时循环共用同一个实例，`refresh` 内按账号串行。
+    """
+    sync = getattr(contract, 'drive_sync', None)
+    if sync is None:
+        return
+    locations = getattr(config, 'drive_locations', None) or {
+        key: key for key in getattr(config, 'drive_roots', {})}
+    location = library_id.split(':', 1)[0] if library_id else None
+    keys = [key for key in sync.accounts() if key in locations
+            and (location is None or locations.get(key) == location)]
+    errors = []
+    for key in keys:
+        report = sync.refresh(key)
+        if report.error:
+            errors.append(f'{key}: {report.error}')
+    if errors:
+        raise ValueError('同步网盘失败：' + '；'.join(errors))
+
+
 def w_library_processing(contract, body, *, resume=False):
     config = settings_file.active()
     if (body or {}).get('action'):
@@ -517,6 +539,9 @@ def w_library_processing(contract, body, *, resume=False):
     target_ids = asset_ids if asset_ids is not None else retry_ids
     def work(job_id):
         try:
+            # 先发现再处理：新上传的文件还没入账，立刻同步一次，待处理队列才有 id。
+            if incremental and not resume:
+                _refresh_new_files(contract, config, library_id)
             # 开工前重开旧决定；任务跑起来以后人再作出的判断不会被收尾覆盖。
             if refresh:
                 _reopen_metadata_reviews(contract, target_ids[0])

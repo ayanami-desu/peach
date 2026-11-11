@@ -111,7 +111,7 @@ process_library(config, db_path, candidate_root, cover_root, *,
 ```
 
 - 阶段：`STAGES = (ALL_STAGES, COLLECT_STAGE, METADATA_STAGE)`，即 `all`/`collect`/`metadata`。资产不再落本机，扫描与预览生成都已不在这里：`collect`（旧名）与 `all` 都按采集处理。
-- 范围：`location='configured'` 取 `config.drive_roots` 的全部来源；`asset_ids` 处理指定资产不重新扫描；`library_id` 把范围收窄到一个媒体库；`retry_ids` 只重跑上一轮记录的可重试失败，候选与封面照常复用。
+- 范围：`location='configured'` 取 `config.drive_roots` 的全部来源；`asset_ids` 处理指定资产不重新扫描；`library_id` 把范围收窄到一个媒体库；`retry_ids` 只重跑上一轮记录的可重试失败，候选与封面照常复用；`incremental=True` 只处理扫描登记在 `library-new-assets.json` 里的新影片，网页「同步新增文件」会先同步所选媒体库的账号再按这批 id 处理。
 - 候选写到 `candidate_root / 'library-metadata-field-candidates.csv'`，列见 `FIELDS`（`item_key`、`code`、`field`、`candidates_json`、`source_count`、`source_profile`、`policy_version`、`status` 等），中文标签见 `LABELS`。状态里最多留 `ISSUE_PREVIEW_LIMIT = 20` 条问题，完整问题写任务专属 JSONL；没有动作截止时间的阶段超过 `STALL_AFTER_SECONDS = 120` 没心跳，就在页面上预警。
 - 检查点与预算：`_LibraryCheckpoints`、`_ProcessingIssues`、`_SourceBudget`、`_NetworkGate`、`_MissCache`；`snapshot(config)` 与 `state_path(config)` 给界面与续跑用。
 

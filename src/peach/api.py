@@ -262,6 +262,9 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         ids = list(result.new_ids)
         if not ids:
             return
+        # 同步只负责登记；把新行留在「待补全」队列，页面点「同步新增文件」时按这批 id 处理。
+        from .library_new_assets import remember
+        remember(database.db_path, ids)
         choice = resolver.ffprobe()
         media_probe.probe_missing(database.db_path, media_engine, choice.path if choice else None,
                                   asset_ids=ids)
@@ -270,6 +273,8 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     drive_sync = DriveSync(scan_service, after=after_scan)
     drive.sync_state = drive_sync.state
     drive.refresh_hook = drive_sync.request
+    # 页面的「同步新增文件」在任务线程里先跑一轮同步再取待处理 id；契约只放这一个入口。
+    contract.drive_sync = drive_sync
     preview_service = PreviewService(
         repository, resolver, settings.snapshot_root, settings.poster_root,
         settings.avatar_root, settings.logo_root,

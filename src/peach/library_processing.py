@@ -2448,7 +2448,9 @@ def _initial_processing_scope(db_path, selected_ids, retry_ids, incremental, res
     if incremental:
         from .library_new_assets import pending
         previous = (resume_state or {}).get('incremental_ids')
-        return None, list(previous) if previous is not None else pending(db_path)
+        ids = list(previous) if previous is not None else pending(db_path)
+        # 增量就是处理这批新登记的行；`None` 会被下游当成整库，重新扫一遍全馆藏。
+        return ids, ids
     if selected_ids is not None:
         return selected_ids, selected_ids
     if retry_ids is not None:

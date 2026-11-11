@@ -2513,6 +2513,19 @@ class LibraryWatchdogTests(unittest.TestCase):
         self.assertFalse(result['asset_ids'])
         provider.query.assert_not_called()
 
+    def test_incremental_sync_only_processes_registered_new_assets(self):
+        from peach.library_new_assets import remember
+        db = fresh_ledger(self.root)
+        first, second = register_assets(db, 'ABW-001.mp4', 'ABW-002.mp4')
+        remember(db, [second])
+        provider = self._provider()
+        result = process_library(self._config(self.root), db, self.root / 'generated', self.root / 'covers',
+                                 incremental=True, provider_factory=lambda: provider)
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['asset_ids'], [second])
+        self.assertEqual(result['total'], 1)
+        self.assertNotIn(first, result['asset_ids'])
+
     def test_state_save_waits_for_a_reader_holding_the_file(self):
         # 进度条轮询读状态时，Windows 上替换被占着的目标会报 WinError 5，任务随之中断。
         config = self._config(self.root / 'media')
@@ -2808,8 +2821,13 @@ class LibraryWatchdogTests(unittest.TestCase):
             self.assertEqual(initial['stage'], '准备采集资料')
             w_library_processing(contract, {})
             self.assertEqual(run.call_args.kwargs['stage'], 'all')
+            sync = Mock()
+            sync.accounts.return_value = ('gdrive',)
+            sync.refresh.return_value = SimpleNamespace(error='')
+            contract.drive_sync = sync
             w_library_processing(contract, {'incremental':True})
             self.assertTrue(run.call_args.kwargs['incremental'])
+            sync.refresh.assert_called_once_with('gdrive')
             from peach.media_libraries import libraries
             library_id = libraries(config)[0]['id']
             initial = w_library_processing(contract, {'library_id': library_id, 'incremental': True})
