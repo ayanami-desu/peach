@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import psutil
 
-from peach import task_control, task_resources
+from peach import task_resources
 from peach.task_runs import TaskRunStore
 from support.ledger import fresh_ledger
 
@@ -108,13 +108,6 @@ class TaskResourceTests(unittest.TestCase):
     def monitor(self):
         return task_resources.Monitor(self.store, clock=self.clock)
 
-    def download(self, usage, size):
-        token = task_control.CURRENT.set(SimpleNamespace(usage=usage))
-        try:
-            task_resources.record_download(size)
-        finally:
-            task_control.CURRENT.reset(token)
-
     def test_cpu_uses_registered_native_threads_and_owned_children_as_a_share_of_host_capacity(self):
         first, second = self.new_run('first'), self.new_run('second')
         child, grandchild = self.child(5001, cpu=2), self.child(5002, cpu=4)
@@ -146,49 +139,17 @@ class TaskResourceTests(unittest.TestCase):
             usage.leave_thread()
             self.assertEqual(usage.snapshot()['threads'], [])
 
-    def test_network_uses_two_sample_differences_and_high_only_marks_the_readout(self):
-        run = self.new_run()
-        usage = self.usage(run, threads=(11,))
-        self.download(usage, 2048)
-        monitor = self.monitor()
-        initial = monitor.for_run(run)['network']
-        self.assertEqual(initial['state'], 'sampling')
-        self.assertIsNone(initial['bytes_per_second'])
-        self.clock.advance(2)
-        self.download(usage, 4 * 1024 * 1024)
-        measured = monitor.for_run(run)['network']
-        self.assertEqual(measured['bytes_per_second'], 2 * 1024 * 1024)
-        self.assertFalse(measured['high'])
-        self.clock.advance()
-        self.download(usage, 12 * 1024 * 1024)
-        high = monitor.for_run(run)['network']
-        self.assertEqual(high['bytes_per_second'], 12 * 1024 * 1024)
-        self.assertTrue(high['high'])
-        self.assertEqual(usage.snapshot()['network_bytes'], 16 * 1024 * 1024 + 2048)
-
-    def test_real_idle_zero_is_distinct_from_missing_registration_and_unobserved_network(self):
+    def test_real_idle_zero_is_distinct_from_missing_registration(self):
         idle, missing = self.new_run('idle'), self.new_run('missing')
-        usage = self.usage(idle, threads=(11,))
+        self.usage(idle, threads=(11,))
         monitor = self.monitor()
         monitor.for_run(idle)
         self.clock.advance()
         ready = monitor.for_run(idle)
         self.assertEqual((ready['cpu']['state'], ready['cpu']['percent']), ('ready', 0.0))
-        self.assertEqual((ready['network']['state'], ready['network']['bytes_per_second']), ('ready', 0))
         unknown = monitor.for_run(missing)
         self.assertEqual(unknown['cpu']['state'], 'unavailable')
-        self.assertIsNone(unknown['network']['bytes_per_second'])
-        token = task_control.CURRENT.set(SimpleNamespace(usage=usage))
-        try:
-            task_resources.unobserved_network('挂载盘传输无法准确归属')
-        finally:
-            task_control.CURRENT.reset(token)
-        self.clock.advance()
-        network = monitor.for_run(idle)['network']
-        self.assertEqual(network['state'], 'unavailable')
-        self.assertIsNone(network['bytes_per_second'])
-        self.assertEqual(network['reason'], '挂载盘传输无法准确归属')
-        self.assertNotIn('via', network)
+        self.assertIsNone(unknown['cpu']['percent'])
 
     def test_parent_aggregation_deduplicates_cpu_parts_shared_with_a_child_run(self):
         parent = self.new_run('parent')
@@ -230,7 +191,6 @@ class TaskResourceTests(unittest.TestCase):
         monitor = self.monitor()
         result = monitor.for_run(self.store.get(child_id))
         self.assertEqual((result['cpu']['state'], result['cpu']['percent']), ('ready', 0.0))
-        self.assertEqual((result['network']['state'], result['network']['bytes_per_second']), ('ready', 0.0))
         self.assertEqual((result['gpu']['state'], result['gpu']['percent']), ('ready', 0.0))
         sampled = monitor.for_run(running)['gpu']
         self.assertEqual((sampled['state'], sampled['percent']), ('unavailable', None))

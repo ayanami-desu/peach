@@ -53,8 +53,6 @@ export function sidebarDot(loc){
   if(loc==='online')return {kind:'glyph',name:'rss'};
   const mark=MEDIA_SOURCE_ICONS[loc];
   if(mark)return mark.startsWith('data:')?{kind:'image',src:mark}:{kind:'glyph',name:mark};
-  // 已登记的计费来源使用自己的标识。
-  return {kind:'cost',cost:'free'};
 }
 
 export function sidebarFacets(facetData,context){
@@ -220,8 +218,8 @@ preferencesState.SRCICON = {
     [location,mark.startsWith('data:')?`<img class="source-icon" src="${mark}" alt="">`:icon(mark)])),
   online:icon('rss'),
 };
-preferencesState.srcBadge = (loc,cost,cls)=>{const label=`${LOC[loc]||loc}${cost==='metered'?' · 计费':''}`;
-  return `<span class="${cls||'src'} ${cost==='metered'?'metered':'free'}" title="${esc(label)}" aria-label="${esc(label)}">`
+preferencesState.srcBadge = (loc,cls)=>{const label=LOC[loc]||loc;
+  return `<span class="${cls||'src'}" title="${esc(label)}" aria-label="${esc(label)}">`
     +(preferencesState.SRCICON[loc]||'')+'</span>'};
 preferencesState.emptyState = emptyStateHtml;
 }

@@ -101,7 +101,7 @@ class ProcessingControlTests(unittest.TestCase):
         from peach.processing_control import processing_item
         from peach.library_processing import _collect_allowed
         control = ProcessingControl(self.root / 'partial-skip.json')
-        remote, traffic = Mock(), Mock()
+        remote = Mock()
         published, issues = [], []
         def collect(*args, **options):
             options['received']([('javdb', {'title': '已取得的资料'}, self.root / 'evidence.json')])
@@ -109,15 +109,14 @@ class ProcessingControlTests(unittest.TestCase):
             checkpoint('network')
         remote.collect.side_effect = collect
         with control.bind('job', publish=lambda **values: None, active=lambda: True, db_path=self.db):
-            result = _collect_allowed(remote, traffic, {'id': 1}, 'ABC-123', ['title'], {'metadata'},
+            result = _collect_allowed(remote, {'id': 1}, 'ABC-123', ['title'], {'metadata'},
                 self.root, [], update=lambda **values: None,
                 issue=lambda row, message, **values: issues.append(values), answered=(),
-                received=published.extend, succeeded=lambda: not issues)
+                received=published.extend)
             self.assertEqual(result, ([], 0))
             self.assertEqual(published[0][1]['title'], '已取得的资料')
             self.assertEqual(issues[0], {'action': 'skipped', 'retryable': True})
             remote.reset.assert_called_once()
-            traffic.finish_work.assert_called_with('metadata', 'ABC-123', successful=False)
             with processing_item(2):
                 checkpoint('network')
 

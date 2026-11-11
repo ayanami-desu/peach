@@ -38,7 +38,7 @@ vi.mock('../../src/player', async (importOriginal) => {
 /* ── 假服务端 ── */
 
 const detail = (id: number): DetailItem => ({
-  id, name: `sample_${id}.mp4`, title: `作品 ${id}`, location: 'local', cost: 'free', size: 1024, duration: 3600,
+  id, name: `sample_${id}.mp4`, title: `作品 ${id}`, location: 'local', size: 1024, duration: 3600,
   rating: 60, performers: ['七海ひな'], tags: [{ k: '剧情' }],
 } as DetailItem);
 

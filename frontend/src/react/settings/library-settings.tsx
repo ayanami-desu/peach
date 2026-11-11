@@ -42,7 +42,6 @@ export interface LibraryRow {
   videos: number;
   missing: number;
   synced_at: string;
-  metered: boolean;
   folders: number;
 }
 
@@ -172,7 +171,6 @@ function LibraryCard({ library, options, onSaved, onDeleted, onMoved }: {
           <Fact term={t('settings:library.synced')}>{library.synced_at || t('settings:library.never')}</Fact>
           <Fact term={t('settings:library.root')}>
             <span title={library.root_id}>{`${library.account} · ${library.root_name}`}</span>
-            {library.metered ? t('settings:library.metered') : ''}
           </Fact>
         </FactList>
       </Stack>

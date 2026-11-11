@@ -106,7 +106,7 @@ process_library(config, db_path, candidate_root, cover_root, *,
                 database=None, route_overrides=None, state_file=None,
                 asset_ids=None, resume_state=None, speed_mode=None,
                 protected_ids=(), recheck_existing=False, incremental=False,
-                network=None, library_id=None, allow_metered=False,
+                network=None, library_id=None,
                 refresh_metadata=False)
 ```
 

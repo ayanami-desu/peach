@@ -23,7 +23,6 @@ export interface QualityGoal {
   size: number | null;
   duration: number | null;
   reason: string | null;
-  cost: string;
   has_thumb: boolean;
   has_cover: boolean;
   cover_version?: string;

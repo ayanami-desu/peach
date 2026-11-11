@@ -99,22 +99,6 @@ def _project_speed(contract, state, run, control):
 
 
 def q_library_processing(contract, _args):
-    if _args.get('estimate') == '1':
-        config = settings_file.active()
-        body = {'stage': _args.get('stage') or ALL_STAGES}
-        if 'incremental' in _args:
-            body['incremental'] = _args['incremental'] == '1'
-        if 'scope' in _args:
-            body['scope'] = _args['scope']
-        if 'asset_ids' in _args:
-            body['asset_ids'] = json.loads(_args['asset_ids'])
-        if 'library_id' in _args:
-            body['library_id'] = _args['library_id']
-        config = scoped_config(config, body.get('library_id'))
-        _, asset_ids, stage, _refresh = _processing_request(contract, config, {}, body)
-        from .processing_inventory import preview
-        return {'traffic': preview(config, contract.db_path, stage, asset_ids, _args.get('inventory'),
-                                   incremental=body.get('incremental', False), library_id=body.get('library_id'))}
     state = _current(contract)
     run = _active_run(contract, state) if state.get('status') in ACTIVE else None
     if run is not None:
@@ -410,26 +394,15 @@ def _processing_request(contract, config, previous, body):
 
 
 def _resume_request(previous, speed_mode):
-    """继续一趟暂停的任务：照原任务的阶段、媒体库、范围、流量保护授权与重新匹配重发，不另起范围。"""
+    """继续一趟暂停的任务：照原任务的阶段、媒体库、范围与重新匹配重发，不另起范围。"""
     return {
         'stage': previous.get('requested_stage') or ALL_STAGES,
         'library_id': previous.get('library_id'),
         **({'incremental': True} if previous.get('incremental') else
            {'asset_ids': previous['asset_ids']} if previous.get('asset_ids') else {}),
-        **({'allow_metered': True} if previous.get('allow_metered') else {}),
         **({'refresh': True} if previous.get('refresh_metadata') else {}),
         'speed_mode': speed_mode,
     }
-
-
-def _metered_grant(body, stage, asset_ids):
-    """开了流量保护的目录只在人点名的影片上读：整库处理不接受这个授权。"""
-    granted = (body or {}).get('allow_metered', False)
-    if type(granted) is not bool:
-        raise ValueError('流量保护授权必须为开关值')
-    if granted and asset_ids is None:
-        raise ValueError('流量保护授权只用于指定影片')
-    return granted
 
 
 def retry_after_network_recovery(contract, sync=None):
@@ -527,7 +500,6 @@ def w_library_processing(contract, body, *, resume=False):
     config, library_id, retry_ids, asset_ids, stage, refresh = _scoped_processing_request(
         contract, config, previous, body, resume)
     incremental = (body or {}).get('incremental', False)
-    allow_metered = _metered_grant(body, stage, asset_ids)
     if (body or {}).get('scope') == 'new':
         from .library_new_assets import remember
         remember(contract.db_path, asset_ids)
@@ -547,7 +519,6 @@ def w_library_processing(contract, body, *, resume=False):
                 _reopen_metadata_reviews(contract, target_ids[0])
             result = process_library(config, contract.db_path, contract.candidate_root, contract.cover_root,
                 job_id=job_id, retry_ids=retry_ids, stage=stage, asset_ids=asset_ids, incremental=incremental, library_id=library_id,
-                allow_metered=allow_metered,
                 # 自动落库与页面写的是同一个 `LedgerDatabase`：进程内写锁在实例上，
                 # 另建一个就是在同一个进程里开第二条写入路径。重新匹配只产候选，
                 # 不在这里落库。
@@ -563,15 +534,14 @@ def w_library_processing(contract, body, *, resume=False):
         finally:
             contract.cache_bust()
     result = _start_job(contract, config, work, stage=stage, refresh=refresh, asset_ids=asset_ids,
-                        retry_ids=retry_ids, incremental=incremental, mode=mode, library_id=library_id,
-                        allow_metered=allow_metered)
+                        retry_ids=retry_ids, incremental=incremental, mode=mode, library_id=library_id)
     if not resume:
         control.select_next_mode(None)
     return result
 
 
 def _start_job(contract, config, work, *, stage, refresh, asset_ids, retry_ids, incremental, mode,
-               library_id=None, allow_metered=False):
+               library_id=None):
     """起步那行字按这一趟真正要做的事写：点了「只扫描」却看到「准备采集资料」，人会以为点错了。
 
     恢复参数与起步文案同源：`retry` 那一路要靠 `refresh` 记住这次是重新匹配，
@@ -588,12 +558,9 @@ def _start_job(contract, config, work, *, stage, refresh, asset_ids, retry_ids, 
         work, restart=True, initial={'stage': labels[stage], 'requested_stage': stage,
                                     'library_id': library_id, 'library_name': library_name,
                                     'refresh_metadata': refresh,
-                                    **({'allow_metered': True} if allow_metered else {}),
-                                    **initial_estimate(config, contract.db_path, stage, estimate_ids, mode,
-                                                       allow_metered=allow_metered)},
+                                    **initial_estimate(config, contract.db_path, stage, estimate_ids, mode)},
         recovery={'stage': stage, 'speed_mode': mode, 'incremental': incremental, 'library_id': library_id,
                   'refresh': refresh,
-                  **({'allow_metered': True} if allow_metered else {}),
                   **({'asset_ids': asset_ids or retry_ids}
                                     if asset_ids is not None or retry_ids is not None else {})})
     return public_state(result)

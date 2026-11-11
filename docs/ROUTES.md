@@ -172,7 +172,7 @@
 | --- | --- |
 | `GET /api/providers` | 各媒体来源的健康状态 |
 | `GET /api/providers/opencode-go/models` | 该来源的模型清单；不可用时 502 `{"error":"provider unavailable"}` |
-| `GET /api/libraries` | 媒体库分组：`id`、`name`、`icon`、`folders`、`color`、`policy`、`stages`、`roots[{root_id,location}]`、`metered` |
+| `GET /api/libraries` | 媒体库分组：`id`、`name`、`icon`、`folders`、`color`、`policy`、`stages`、`roots[{root_id,location}]` |
 | `GET /api/tasks/{run_id}`、`POST /api/tasks/{run_id}/control` | 任务进度与暂停、继续、取消 |
 | `GET /api/background-issues` | 后台问题清单 |
 

@@ -89,7 +89,6 @@
     "iconNone": "No icon",
     "intro": "One drive directory is one library. Adding it only tells Peach to scan it; removing it only stops the scan, and entries already scanned stay.",
     "loading": "Reading libraries…",
-    "metered": " (metered)",
     "missing": "Pending",
     "move": "Change directory",
     "movePicking": "Hide directories",

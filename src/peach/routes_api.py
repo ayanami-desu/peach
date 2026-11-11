@@ -56,7 +56,6 @@ def media_library_options() -> dict[str, list[str]]:
 
 def media_library_row(request: Request, row: dict, config, live: dict[str, str] | None = None) -> dict:
     """一张媒体库卡片：可改的属性、它挂在哪台账号的哪个目录，以及在库的行数。"""
-    from .media_sources import cost_for
     facts = library_facts(request).get(row["id"], {})
     account = row.get("account") or row["roots"][0]["account"]
     location = row["roots"][0]["location"]
@@ -70,7 +69,6 @@ def media_library_row(request: Request, row: dict, config, live: dict[str, str] 
             "root_name": row.get("root_name") or row["roots"][0]["root_id"],
             "videos": facts.get("videos", 0), "missing": facts.get("missing", 0),
             "synced_at": state.get("synced_at") or "",
-            "metered": cost_for(location, row["roots"][0]["root_id"], config) == "metered",
             "folders": len(row["roots"])}
 
 

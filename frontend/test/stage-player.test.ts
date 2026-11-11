@@ -163,14 +163,12 @@ describe('播放墙的共享播放器', () => {
     expect(frame.contains(fake.mounts[0]!.player.el())).toBe(true);
     release();
   });
-  it('计费、在线和脱盘作品不能直接拉流', async () => {
+  it('在线和脱盘作品不能直接拉流', async () => {
     response();
     const frame = document.body.appendChild(document.createElement('div'));
     const signal = new AbortController().signal;
-    for (const extra of [{ cost: 'metered' }, { location: 'online' }]) {
-      response(extra);
-      await expect(stage.mountWallPlayer(item(1), frame, signal)).rejects.toThrow('请打开详情');
-    }
+    response({ location: 'online' });
+    await expect(stage.mountWallPlayer(item(1), frame, signal)).rejects.toThrow('请打开详情');
     response(); offline = true;
     await expect(stage.mountWallPlayer(item(1), frame, signal)).rejects.toThrow('来源未挂载');
     expect(fake.mounts).toHaveLength(0);
@@ -270,7 +268,6 @@ describe('小窗自己的键', () => {
     ['分卷组', { part_group: { key: 'p' } }],
     ['版次组', { edition_group: { key: 'e' } }],
     ['图片', { medium: 'image' }],
-    ['计费来源', { cost: 'metered', location: '115' }],
     ['反查不到关注条目的在线作品', { location: 'online' }],
   ])('小窗开着时%s的卡片照常进详情，不在小窗里换片', (_name, extra) => {
     show(1).leave(true);

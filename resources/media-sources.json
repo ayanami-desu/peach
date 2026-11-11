@@ -1,4 +1,16 @@
 [
-  {"id":"gdrive","name":"Google Drive","label":"Google Drive","default_cost":"metered","cloud":true,"icon":"database"},
-  {"id":"onedrive","name":"OneDrive","label":"OneDrive","default_cost":"metered","cloud":true,"icon":"database"}
+  {
+    "id": "gdrive",
+    "name": "Google Drive",
+    "label": "Google Drive",
+    "cloud": true,
+    "icon": "database"
+  },
+  {
+    "id": "onedrive",
+    "name": "OneDrive",
+    "label": "OneDrive",
+    "cloud": true,
+    "icon": "database"
+  }
 ]

@@ -51,7 +51,7 @@ function GoalCard({ item, openItem, javTitleHtml, javDisplayName, srcBadge }: { 
           <p className="flex flex-wrap items-center gap-2 text-body-2-regular text-text-secondary">
             {/* 插原始 HTML 要有个宿主元素，而来源徽标在遗留版本里是这个 flex 容器的直接
                 子项。`contents` 让宿主从布局里消失，徽标的对齐与间距保持不变。 */}
-            <span className="contents" dangerouslySetInnerHTML={{ __html: srcBadge(item.location, item.cost) }} />
+            <span className="contents" dangerouslySetInnerHTML={{ __html: srcBadge(item.location) }} />
             <span>{LOC[item.location] ?? item.location}</span>
             <span>{fmtDur(item.duration)}</span>
             <span>{Number(item.size) > 0 ? fmtSize(Number(item.size)) : '大小未知'}</span>

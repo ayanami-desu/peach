@@ -266,8 +266,8 @@ export interface QualityGoalsProps {
   javTitleHtml(item: QualityGoal): string;
   /** 同一条目的纯文本形态，用于无障碍名称。 */
   javDisplayName(item: QualityGoal): string;
-  /** 来源徽标（含计费标记）的 HTML。 */
-  srcBadge(location: string, cost: string): string;
+  /** 来源徽标的 HTML。 */
+  srcBadge(location: string, cls?: string): string;
 }
 
 /** 统计页仍由遗留层提供的能力。都是纯函数或导航，页面不持有它们的状态。 */

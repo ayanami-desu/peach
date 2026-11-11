@@ -23,7 +23,7 @@ afterEach(() => { queryClient.clear(); localStorage.removeItem('peach.recentTags
 notifyManager.setScheduler((notify) => notify());
 
 const item = (id: number, extra: Partial<DetailItem> = {}): DetailItem => ({
-  id, name: `sample_${id}.mp4`, location: 'local', cost: 'free', size: 1024, duration: 3600, rating: 60,
+  id, name: `sample_${id}.mp4`, location: 'local', size: 1024, duration: 3600, rating: 60,
   performers: ['七海ひな'], tags: [{ k: '剧情' }, { k: '高画质' }], ...extra,
 } as DetailItem);
 const row = (id: number, extra: Partial<QueueItem> = {}) => ({ id, name: `sample_${id}.mp4`, ...extra } as QueueItem);
@@ -293,10 +293,9 @@ describe('身份与标签', () => {
     expect([ratingText(60), ratingText(0), ratingText(null)]).toEqual(['3 星', '未评分', '未评分']);
   });
 
-  it('播放区挡在前面的说明：没挂载、在线作品、计费来源', () => {
+  it('播放区挡在前面的说明：没挂载、在线作品', () => {
     expect(mediaGate(item(1), true)).toBe('offline');
     expect(mediaGate(item(1, { location: 'online' }), false)).toBe('online');
-    expect(mediaGate(item(1, { cost: 'metered' }), false)).toBe('metered');
     expect(mediaGate(item(1), false)).toBe('');
     expect(mediaGate(item(1, { name: 'ABC-123.ISO' }), false)).toBe('disc');
   });
@@ -354,25 +353,14 @@ describe('交给壳的', () => {
     expect(host.querySelector('video')).toBeNull();
   });
 
-  it('没挂载与在线拦截不挂播放器；计费来源点了说明才挂，带 autoplay', async () => {
+  it('没挂载与在线拦截不挂播放器', async () => {
     serve();
     const offline = await show(item(1), { helpers: helpers({ sourceOffline: () => true }) });
     expect(offline.host.querySelector('[data-item-gate="offline"]')?.textContent).toContain('盘没挂上');
     expect(offline.actions.mountPlayer).not.toHaveBeenCalled();
     queryClient.clear();
-    const metered = await show(item(2, { cost: 'metered' }));
-    expect(metered.actions.mountPlayer).not.toHaveBeenCalled();
-    await click(metered.host.querySelector('[data-item-gate="metered"]'));
-    expect(metered.actions.mountPlayer).toHaveBeenCalledWith(metered.host.querySelector('[data-item-media="metered"]'), expect.objectContaining({ id: 2 }),
-      { autoplay: true });
-  });
-
-  it('计费来源只有封面、没有预览图时，闸上先给封面，而不是只剩一行字', async () => {
-    serve();
-    const metered = await show(item(3, { cost: 'metered', is_jav: true, code: 'SSIS-001', has_cover: true } as Partial<DetailItem>));
-    const gate = metered.host.querySelector('[data-item-gate="metered"]')!;
-    expect(gate.hasAttribute('data-item-cover')).toBe(true);
-    expect(gate.querySelector('[data-catalog-picture]')).not.toBeNull();
+    const online = await show(item(2, { location: 'online' }));
+    expect(online.actions.mountPlayer).not.toHaveBeenCalled();
   });
 
   it('队列里点另一条交给壳换，带着队列引用', async () => {

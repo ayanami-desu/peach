@@ -64,9 +64,6 @@ html>body{padding-left:var(--railW)}
 [data-sidebar-group][data-sidebar-kind=src] [data-sidebar-chip]{color:#7FBF7F;border-color:#7FBF7F44}
 [data-sidebar-group][data-sidebar-kind=src] [data-sidebar-chip][aria-pressed="true"]{background:#7FBF7F22;border-color:#7FBF7F}
 [data-sidebar-chip] [data-sidebar-count]{font-size:var(--fs-xs);color:var(--muted);font-variant-numeric:tabular-nums}
-[data-sidebar-cost]{width:5px;height:5px;border-radius:50%;flex:none}
-[data-sidebar-cost=free]{background:var(--keep)}
-[data-sidebar-cost=metered]{background:var(--meter)}
 /* 时长双滑块：两条 range 叠在同一条轨上，轨与填充是两层 span，`--lo`、`--hi` 由岛写。 */
 [data-sidebar-duration]{padding:3px 2px 8px}
 [data-sidebar-range]{position:relative;height:28px;--lo:0%;--hi:100%}

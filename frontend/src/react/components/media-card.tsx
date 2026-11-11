@@ -319,7 +319,7 @@ function VideoCard({ item, variant, layout, selected, selectMode, seekSeconds, h
   const visual = (
     <div data-media-visual="">
       {pic}
-      <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '', item.cost || '') }} />
+      <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '') }} />
     </div>
   );
 
@@ -388,7 +388,7 @@ function ResourceCard({ item, selected, selectMode, helpers, actions, onOpen }: 
             __html: `<img class="poster" src="/photo-thumb?id=${item.id}" width="640" height="360" alt="" loading="lazy" data-drop="self">`,
           }} />
           : null}
-        <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '', item.cost || '') }} />
+        <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '') }} />
         <span data-media-check=""><Icon name="check" /></span>
         <span data-media-trash-mark=""><Icon name="trash" /><b>回收站</b></span>
         {!selectMode ? <ResourceAction item={item} actions={actions} /> : null}

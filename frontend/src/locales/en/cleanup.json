@@ -143,7 +143,6 @@
     "librariesUnavailable": "Couldn't get the library list",
     "library": "Library",
     "loading": "Loading media repair status",
-    "meteredWarning": "This library is on metered storage, so each repair downloads the whole video.",
     "missingTool": "untrunc not found",
     "missingToolNotice_one": "{{count, number}} video missing an index needs untrunc first (Settings → Runtime info).",
     "missingToolNotice_other": "{{count, number}} videos missing an index need untrunc first (Settings → Runtime info).",

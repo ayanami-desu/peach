@@ -60,7 +60,6 @@ export interface PlayerItem {
   name?: string;
   title?: string;
   location?: string;
-  cost?: string;
   duration?: number | null;
   width?: number | null;
   height?: number | null;

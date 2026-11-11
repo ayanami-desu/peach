@@ -237,7 +237,7 @@ describe('续页', () => {
     vi.stubGlobal('IntersectionObserver', FakeObserver);
     const strip = [
       item(51, { location: 'local', has_thumb: false }),
-      item(52, { location: 'pikpak', cost: 'metered', has_thumb: false }),
+      item(52, { location: 'pikpak', has_thumb: false }),
       item(53, { location: 'local', is_jav: true, code: 'ABC-053', has_cover: true, cover_key: 'ABC-053', has_thumb: false }),
     ];
     const posts: unknown[] = [];
@@ -253,10 +253,10 @@ describe('续页', () => {
       <CatalogGridPage {...props({ sort: 'seed', q: '竖屏带缺图' })} shorts />
     </QueryClientProvider>);
     await until(() => !!host.querySelector('[data-library-completion]'), '状态条出现');
-    expect(host.querySelector('[data-library-completion]')?.textContent).toContain('这批影片中有 3 部暂无预览，其中 1 部在流量保护目录');
+    expect(host.querySelector('[data-library-completion]')?.textContent).toContain('这批影片中有 3 部暂无预览，可补全资料与图片。');
     await click(buttonNamed('同步这些影片', host));
     await until(() => posts.length > 0, '提交补全');
-    expect(posts[0]).toEqual({ stage: 'collect', asset_ids: [51, 53] });
+    expect(posts[0]).toEqual({ stage: 'collect', asset_ids: [51, 52, 53] });
     queryClient.removeQueries({ queryKey: ['catalog-grid'] });
   });
 
@@ -552,7 +552,6 @@ describe('作品卡', () => {
     [{ is_jav: true, code: 'ABC-001', location: 'local' }, true, '无预览', '还没抽帧', 'previews'],
     [{ location: 'local', duration: -1 }, false, '无预览', '探查失败，没能抽帧', 'previews'],
     [{ location: '115' }, false, '无预览', '还没抽帧', 'previews'],
-    [{ location: 'pikpak', cost: 'metered' }, false, '无预览', '流量保护 · 同步时不抽帧', 'previews'],
     [{ location: 'online' }, false, '无预览', '在线来源不抽帧', ''],
     [{ location: 'local', name: 'a.strm' }, false, '无预览', 'STRM 不抽帧', ''],
     [{ location: 'local', name: 'a.ISO' }, false, '无预览', 'ISO 不抽帧', ''],
@@ -599,29 +598,6 @@ describe('作品卡', () => {
     expect(host.querySelector('[data-artwork-gap]')?.textContent).toContain('生成预览图失败');
     await click(buttonNamed('重试', host));
     expect(host.querySelector('[data-media-art] img')?.getAttribute('src')).toBe('/poster?id=32&c=4&r=1');
-  });
-
-  it('流量保护的影片补全预览先确认：取消不发请求，确认后这一部带着授权抽帧', async () => {
-    queryClient.removeQueries({ queryKey: ['library-processing'] });
-    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => ({ ok: true, status: 200,
-      json: async () => init?.method === 'POST' ? { job_id: 'new', status: 'running' } : { job_id: 'old', status: 'complete' } }));
-    vi.stubGlobal('fetch', fetcher);
-    const { host } = await render(item(33, { location: 'pikpak', cost: 'metered', has_thumb: false }));
-    await settle();
-    expect(host.querySelector('[data-artwork-gap]')?.textContent).toContain('流量保护');
-    const posts = () => fetcher.mock.calls.filter(([, init]) => init?.method === 'POST');
-
-    await click(buttonNamed('补全预览', host));
-    await vi.waitFor(() => expect(document.querySelector('dialog')?.open).toBe(true));
-    await click(document.querySelector('dialog [data-modal-cancel]'));
-    expect(posts()).toEqual([]);
-
-    await click(buttonNamed('补全预览', host));
-    await vi.waitFor(() => expect(document.querySelector('dialog')?.open).toBe(true));
-    await click(document.querySelector('dialog [data-modal-confirm]'));
-    await vi.waitFor(() => expect(posts()).toHaveLength(1));
-    expect(JSON.parse(String(posts()[0]![1]!.body))).toEqual({ stage: 'collect', asset_ids: [33], allow_metered: true });
-    queryClient.removeQueries({ queryKey: ['library-processing'] });
   });
 
   it('不合并分卷时一卷一张卡：名字、时长写这一卷自己的，不叠纸边、不标卷数，打开时条目原样交出', async () => {

@@ -99,7 +99,7 @@ function JunkCardView({ item, view, selected, selectMode, helpers, actions }: Ju
             __html: `<img class="poster" src="${preview}" width="640" height="360" alt="" loading="lazy" data-drop="self">`,
           }} />
           : null}
-        <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '', item.cost || '') }} />
+        <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '') }} />
         <span data-media-check=""><Icon name="check" /></span>
       </div>
       <div data-junk-meta="">

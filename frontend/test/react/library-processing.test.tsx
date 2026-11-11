@@ -89,13 +89,6 @@ type Reply = (method: string, body: unknown) => LibraryProcessingData;
 function serve(reply: Reply) {
   const calls: { method: string; body: unknown }[] = [];
   const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
-    if (path.startsWith('/api/library-processing?')) return {
-      ok: true, status: 200, json: async () => ({ traffic: {
-        used_bytes: 0, estimated_min_bytes: 1024, estimated_max_bytes: 2048,
-        metered_used_bytes: 0, metered_estimated_min_bytes: 1024, metered_estimated_max_bytes: 2048,
-        sources: [], partial: false, unknown_files: true,
-      } }),
-    };
     if (path !== '/api/library-processing') throw new Error(`用例没有给 ${path} 造数据`);
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -104,7 +97,7 @@ function serve(reply: Reply) {
     return { ok: true, status: 200, json: async () => answer };
   });
   vi.stubGlobal('fetch', fetcher);
-  return { calls, fetcher, posts: () => calls.filter((call) => call.method === 'POST').map((call) => call.body) };
+  return { calls, posts: () => calls.filter((call) => call.method === 'POST').map((call) => call.body) };
 }
 
 /** 走完真实的首屏路径：先 prefetch 把 `first` 落进缓存，再换上用例自己的应答。
@@ -120,8 +113,8 @@ const card = (props: LibraryProcessingProps) => (
   <QueryClientProvider client={queryClient}><LibraryProcessingCard {...props} /></QueryClientProvider>
 );
 
-it('媒体库下拉显示图标并将选中范围传入估算与同步', async () => {
-  const { fetcher, posts } = await open({ status: 'idle' });
+it('媒体库下拉显示图标并将选中范围传入同步', async () => {
+  const { posts } = await open({ status: 'idle' });
   const host = await mount(card({ toast: vi.fn() }));
   const select = host.querySelector('select')!;
   await act(async () => { select.value = 'library-one'; select.dispatchEvent(new Event('change', { bubbles: true })) });
@@ -130,8 +123,6 @@ it('媒体库下拉显示图标并将选中范围传入估算与同步', async (
   expect(selected.querySelector('[data-library="library-one"] svg')).not.toBeNull();
   await click(buttonNamed('同步新增文件', host));
   expect(document.querySelector('[data-processing-scope]')?.textContent).toContain('媒体库一');
-  const request = fetcher.mock.calls.find(([url]) => String(url).startsWith('/api/library-processing?'))!;
-  expect(new URL(String(request[0]), 'https://peach.test').searchParams.get('library_id')).toBe('library-one');
   await submit(document.querySelector('dialog form'));
   expect(posts()).toEqual([{ incremental: true, library_id: 'library-one' }]);
 });
@@ -160,14 +151,14 @@ const startFrom = async (element: Element | null | undefined) => {
 };
 
 it.each([
-  ['同步新增文件', '同步新增文件', '新增文件与待补全影片', {incremental:true}, {stage:'all',incremental:'1'}],
-  ['仅发现新增文件', '同步新增文件', '新增文件与待补全影片', {incremental:true}, {stage:'all',incremental:'1'}],
-  ['补全待处理影片', '补全待处理影片', '已登记的待补全影片', {stage:'collect',scope:'new'}, {stage:'collect',scope:'new'}],
-  ['同步所有媒体库', '同步所有媒体库', '全部文件与影片', {}, {stage:'all'}],
-  ['补全资料与预览', '补全已入库影片', '全部文件与影片', {stage:'collect'}, {stage:'collect'}],
-  ['仅补全影片资料', '仅补全影片资料', '全部文件与影片', {stage:'metadata'}, {stage:'metadata'}],
-] as const)('%s 的确认范围、预估请求与提交保持一致', async (label, title, scope, command, estimate) => {
-  const {fetcher, posts} = await open({status:'idle',new_asset_count:2});
+  ['同步新增文件', '同步新增文件', '新增文件与待补全影片', {incremental:true}],
+  ['仅发现新增文件', '同步新增文件', '新增文件与待补全影片', {incremental:true}],
+  ['补全待处理影片', '补全待处理影片', '已登记的待补全影片', {stage:'collect',scope:'new'}],
+  ['同步所有媒体库', '同步所有媒体库', '全部文件与影片', {}],
+  ['补全资料与预览', '补全已入库影片', '全部文件与影片', {stage:'collect'}],
+  ['仅补全影片资料', '仅补全影片资料', '全部文件与影片', {stage:'metadata'}],
+] as const)('%s 的确认范围与提交保持一致', async (label, title, scope, command) => {
+  const {posts} = await open({status:'idle',new_asset_count:2});
   const host = await mount(card({toast:vi.fn()}));
   if (label === '同步新增文件') await click(buttonNamed(label,host));
   else {
@@ -176,9 +167,6 @@ it.each([
   }
   expect(document.querySelector('dialog')?.textContent).toContain(title);
   expect(document.querySelector('[data-processing-scope]')?.textContent).toBe(`处理范围：所有媒体库 · ${scope}`);
-  const requested = fetcher.mock.calls.map(([path]) => String(path)).find(path => path.includes('estimate=1'))!;
-  const params = new URL(requested, 'https://peach.test').searchParams;
-  expect(Object.fromEntries(params)).toEqual({estimate:'1',...estimate});
   await submit(document.querySelector('dialog form'));
   expect(posts()).toEqual([command]);
 });
@@ -522,7 +510,7 @@ it('来源说没有的计数带千分位，等待时长按分、时、天进位'
     .toBe('采集缺失封面 · 已等待 3 天 0 小时');
 });
 
-it('日常同步先显示流量预估，确认模式后才启动，取消不启动', async () => {
+it('日常同步先确认模式后才启动，取消不启动', async () => {
   const served = await open({ status: 'idle', speed_mode: 'standard' }, () => ({ status: 'running', job_id: 'one' }));
   const host = await mount(card({ toast: vi.fn() }));
   await click(buttonNamed('同步新增文件', host));
@@ -531,7 +519,6 @@ it('日常同步先显示流量预估，确认模式后才启动，取消不启�
   await click(buttonNamed('取消', document.querySelector('dialog')!));
   expect(served.posts()).toEqual([]);
   await click(buttonNamed('同步新增文件', host));
-  expect(document.querySelector('dialog [aria-label="流量预估"]')?.textContent).toContain('预计流量');
   expect(host.querySelector('[data-processing-controls]')).toBeNull();
   await chooseLow();
   await submit(document.querySelector('dialog form'));

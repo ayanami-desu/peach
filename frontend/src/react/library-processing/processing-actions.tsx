@@ -9,11 +9,9 @@ import { cx } from '@/utils/cx';
 import { formModal } from '@peach/legacy/ui';
 import { useMovingSurface } from '../components/use-moving-surface';
 import { busyProps } from '../settings/use-action';
-import { errorMessage } from '../../api';
 import { DRIVE_SETTINGS_PATH } from '../../history';
-import { fetchProcessingEstimate, type LibraryProcessingCommand, type ProcessingSpeed, type ProcessingTraffic } from './library-processing';
+import type { LibraryProcessingCommand, ProcessingSpeed } from './library-processing';
 import { ProcessingEffort } from './processing-effort';
-import { TrafficProgress } from './processing-traffic';
 
 interface ProcessingOption {
   label: string; description: string; command: LibraryProcessingCommand; disabled?: boolean;
@@ -40,45 +38,6 @@ function ProcessingMenuOption({ option, onRun }: {
     </span></button>;
 }
 
-function ProcessingPrompt({ command, speed, dialog, onSpeed, busy, libraryName }: {
-  libraryName?: string;
-  command: LibraryProcessingCommand; speed: ProcessingSpeed; dialog: ReturnType<typeof formModal>;
-  onSpeed(value: ProcessingSpeed): void; busy: boolean;
-}) {
-  const [mode, setMode] = useState(speed);
-  const [traffic, setTraffic] = useState<ProcessingTraffic>();
-  const [failure, setFailure] = useState('');
-  useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    const load = async (inventory?: string) => {
-      try {
-        const result = await fetchProcessingEstimate(command, controller.signal, inventory);
-        if (!result.traffic) throw new Error('服务端未提供流量预估');
-        if (controller.signal.aborted) return;
-        setTraffic(result.traffic);
-        dialog.confirmButton.disabled = false;
-        if (result.traffic.inventory?.token) timer = setTimeout(() => { void load(result.traffic.inventory?.token) }, 250);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setFailure(errorMessage(error));
-          dialog.confirmButton.disabled = false;
-        }
-      }
-    };
-    void load();
-    return () => { controller.abort(); clearTimeout(timer) };
-  }, [command, dialog]);
-  const scope = command.incremental ? '新增文件与待补全影片'
-    : command.scope === 'new' ? '已登记的待补全影片' : '全部文件与影片';
-  return <div className="flex flex-col gap-4">
-    <p data-processing-scope className="text-body-2-medium text-text-primary">处理范围：{libraryName || '所有媒体库'} · {scope}</p>
-    <div className="flex justify-center"><ProcessingEffort value={mode} busy={busy} onChange={value => { setMode(value); onSpeed(value) }} /></div>
-    {traffic ? <TrafficProgress traffic={traffic} initial /> : null}
-    {failure || !traffic ? <p role="status" className="text-body-2-regular text-text-secondary">{failure ? `流量预估未取得：${failure}` : '正在估算流量…'}</p> : null}
-  </div>;
-}
-
 /** 扫描和已有作品补全共用资料流水线，视频预览由媒体库设置决定。
  *
  * `busy` 是这次启动还在路上，按钮标 `aria-busy`，点击由共享的忙碌拦截吞掉。`occupied` 是已有
@@ -93,6 +52,7 @@ export function ProcessingActions({ busy, occupied = false, scan = false, metada
   const prompt = useRef<ReturnType<typeof formModal> | null>(null);
   const [promptView, setPromptView] = useState<{ host: HTMLElement; footer: HTMLElement; dialog: ReturnType<typeof formModal>; command: LibraryProcessingCommand } | null>(null);
   const selectedSpeed = useRef(speedMode);
+  const [promptSpeed, setPromptSpeed] = useState<ProcessingSpeed>(speedMode);
   useEffect(() => () => prompt.current?.close(), []);
   const [open, setOpen] = useState(false);
   const primary: ProcessingOption = { label: scan ? '同步新增文件' : '同步这些影片', description: '',
@@ -121,6 +81,7 @@ export function ProcessingActions({ busy, occupied = false, scan = false, metada
     }
     if (prompt.current) return;
     selectedSpeed.current = speedMode;
+    setPromptSpeed(speedMode);
     const title = command.scope === 'new' ? '补全待处理影片'
       : command.incremental ? '同步新增文件'
       : command.stage === 'metadata' ? '仅补全影片资料' : command.stage === 'collect' ? '补全已入库影片' : libraryId ? '同步所选媒体库' : '同步所有媒体库';
@@ -134,7 +95,6 @@ export function ProcessingActions({ busy, occupied = false, scan = false, metada
       description: `${libraryName ? `媒体库「${libraryName}」：` : '所有媒体库：'}${work}，可能让电脑变慢。需要同时使用电脑时，可选择低占用模式。`,
       body: '<div class="peach-react" data-processing-prompt></div>',
       confirmLabel: title,
-      confirmDisabled: true,
       onConfirm: async () => {
         await onRun({ ...command, ...(selectedSpeed.current === speedMode ? {} : { speed_mode: selectedSpeed.current }) });
       },
@@ -147,8 +107,11 @@ export function ProcessingActions({ busy, occupied = false, scan = false, metada
     void dialog.done.then(() => { if (prompt.current === dialog) { prompt.current = null; setPromptView(null) } });
   };
   return <>
-    {promptView ? createPortal(<ProcessingPrompt libraryName={libraryName} command={promptView.command} dialog={promptView.dialog}
-      speed={speedMode} busy={blocked} onSpeed={value => { selectedSpeed.current = value }} />, promptView.host) : null}
+    {promptView ? createPortal(<div className="flex flex-col gap-4">
+      <p data-processing-scope className="text-body-2-medium text-text-primary">处理范围：{libraryName || '所有媒体库'} · {promptView.command.incremental ? '新增文件与待补全影片' : promptView.command.scope === 'new' ? '已登记的待补全影片' : '全部文件与影片'}</p>
+      <div className="flex justify-center"><ProcessingEffort value={promptSpeed} busy={blocked}
+        onChange={value => { setPromptSpeed(value); selectedSpeed.current = value }} /></div>
+    </div>, promptView.host) : null}
     {promptView ? createPortal(<LinkButton href={DRIVE_SETTINGS_PATH} size="small" variant="primary" trailingIcon={RiArrowRightLine} disabled={blocked}
       onClick={event => {
         if (promptView.dialog.confirmButton.getAttribute('aria-busy') === 'true') { event.preventDefault(); return }

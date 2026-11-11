@@ -31,7 +31,7 @@ import type { CatalogGridProps, MediaCardLayout, MediaCardHelpers, MediaItem, Me
 import { VideoWall } from '../video-wall/video-wall';
 import { finiteWallFilters, wallHasCover } from '../video-wall/wall-layout';
 import { wallEmptyHtml } from '../video-wall/wall-empty';
-import { LibraryCompletionPrompt, meteredPreviewIds, missingPreviewIds } from '../library-processing/library-completion';
+import { LibraryCompletionPrompt, missingPreviewIds } from '../library-processing/library-completion';
 import { useCatalogView } from './catalog-view';
 import { queryClient } from '../query';
 import { CatalogListPage } from './catalog-list-page';
@@ -172,8 +172,6 @@ function GridBody(props: CatalogGridProps) {
   const merge = (...lists: number[][]) => [...new Set(lists.flat())];
   const missing = trash ? [] : merge(missingPreviewIds(shownItems, layout.javImage, portrait),
     missingPreviewIds(shortItems, layout.javImage, true));
-  const metered = trash ? [] : merge(meteredPreviewIds(shownItems, layout.javImage, portrait),
-    meteredPreviewIds(shortItems, layout.javImage, true));
 
   /* 读数排到微任务里报：壳画读数会顺带重排页头与选中态，那一路可能走到批量条的 `flushSync`，
      提交阶段里它画不出来。微任务在浏览器绘制前跑完；这一代已卸下就不报。 */
@@ -256,7 +254,7 @@ function GridBody(props: CatalogGridProps) {
 
   return (
     <div ref={body} data-media-body="" aria-busy={result.isFetching && !result.isFetchingNextPage}>
-      <LibraryCompletionPrompt assetIds={missing} meteredIds={metered} />
+      <LibraryCompletionPrompt assetIds={missing} />
       {props.wall ? content() : <SkeletonContent pending={result.isPending} skeletonHtml={props.skeletonHtml}>
         {content()}
       </SkeletonContent>}

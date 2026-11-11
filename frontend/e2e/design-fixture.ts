@@ -64,7 +64,7 @@ export async function openActivity(browser: Browser, runs: unknown[]): Promise<V
 /** 一条待升级的目标。字段以 `/api/quality-goals`（`src/peach/web_contract.py`）为准。 */
 export const qualityGoal = (id: number, name: string) => ({
   id, name, code: null, location: 'local', size: 2147483648, duration: 3725,
-  reason: '只有 720p', cost: 'free', has_thumb: true, has_cover: false,
+  reason: '只有 720p', has_thumb: true, has_cover: false,
 });
 
 /** 1×1 的透明 PNG，够让 `<img>` 走完一次加载。 */
@@ -199,7 +199,7 @@ export async function openJunk(browser: Browser): Promise<Visit> {
 /** 一条垃圾候选。字段以 `/api/ads`（`src/peach/web_batch.py` 的 `q_ads`）为准；类型都挑没有预览
  *  的，造出来的 id 取不到缩略图。 */
 export const junkItem = (id: number, kind: string, name: string) => ({
-  id, name, junk_kind: kind, why: '文件名像推广', size: 1048576 * id, location: 'local', cost: '',
+  id, name, junk_kind: kind, why: '文件名像推广', size: 1048576 * id, location: 'local',
 });
 
 /** 垃圾文件页按给定的候选打开：演示库里没有垃圾候选。`/api/ads` 每次都按当前名单回话，
@@ -577,7 +577,7 @@ export const photoWallFaces = (page: Page) => page.evaluate(() => {
 });
 
 /** 照片档里 `count` 张本地图，点开第一张的灯箱。大图是 `width`×`height` 的 SVG；取图口全部回桩图，
- *  `/photo` 原图走计费来源，设计用例也不碰真的。 */
+ *  `/photo` 原图会读来源，设计用例也不碰真的。 */
 export async function openLightbox(browser: Browser, { count, width, height }: { count: number; width: number; height: number }):
   Promise<Visit & { box: Locator }> {
   const name = '七沢みあ';

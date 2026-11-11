@@ -13,7 +13,6 @@ import { ProcessingControls } from './processing-controls';
 import { useLibraryProcessingJob } from './use-library-processing';
 import { ProcessingLine } from './processing-line';
 import { CollapseChevron, CollapseRegion } from '../components/collapse-region';
-import { TrafficProgress } from './processing-traffic';
 
 const COLLAPSE_KEY = 'peach.library-processing.collapsed';
 function expandedFor(jobId?: string): boolean {
@@ -43,12 +42,11 @@ export function ProcessingNoticePanel({ state, problem = '', measure = false, on
   const open = expanded && !crowded;
   const openRef = useRef(open); openRef.current = open;
   const bodyId = useId();
-  const [trafficExpanded, setTrafficExpanded] = useState(false);
   const panel = useRef<HTMLElement>(null);
   const partial = !problem && processingHasPartialResult(state);
   const failed = state?.status === 'failed' && !partial;
   const active = processingActive(state);
-  useEffect(() => { setExpanded(expandedFor(state?.job_id)); setTrafficExpanded(false) }, [state?.job_id]);
+  useEffect(() => { setExpanded(expandedFor(state?.job_id)) }, [state?.job_id]);
   const toggle = () => {
     // 腾空间时暂收的卡，用户点展开就照办；自己收起过的卡展开时同样越过这次暂收。
     if (crowded) { override.current = true; setCrowded(false); if (expanded) return }
@@ -56,7 +54,6 @@ export function ProcessingNoticePanel({ state, problem = '', measure = false, on
       if (expanded && state?.job_id) sessionStorage.setItem(COLLAPSE_KEY, state.job_id);
       else sessionStorage.removeItem(COLLAPSE_KEY);
     } catch { /* 会话存储不可用时当前页面仍可收起 */ }
-    if (expanded) setTrafficExpanded(false);
     setExpanded(!expanded);
   };
   useEffect(() => {
@@ -121,8 +118,7 @@ export function ProcessingNoticePanel({ state, problem = '', measure = false, on
       {onHide ? <Button size="small" variant="secondary" iconOnly leadingIcon={RiCloseLine}
         aria-label="隐藏任务提示" onClick={onHide} /> : null}
     </div>
-    {/* 收起时只留标题与文件计数；预估、步骤、原因与入口都在折叠区里。 */}
-    <TrafficProgress traffic={state?.traffic} compact={!open} detailsOpen={trafficExpanded} onDetailsChange={setTrafficExpanded} />
+    {/* 收起时只留标题与文件计数；步骤、原因与入口都在折叠区里。 */}
     {/* 收起时也露在外面：要人当场拿主意的事不能藏进折叠区。 */}
     {slow ? <SlowItemInline state={state!} slow={slow} /> : null}
     </div>

@@ -1,6 +1,6 @@
 /* 图片灯箱在真浏览器里走一遍：真 Swiper、真键鼠，从资料页照片墙和关注详情两处打开。
  *
- * 取图口全部由这里回桩图，`/photo` 原图走计费来源，用例绝不碰真的。大图是 4000×3000 的 SVG：
+ * 取图口全部由这里回桩图，`/photo` 原图会读来源，用例绝不碰真的。大图是 4000×3000 的 SVG：
  * 缩放条的百分比相对原图像素，图得真有尺寸，「适应窗口」和 1:1 才分得开。关灯箱走关闭键或
  * 点背景，不按 Escape：Playwright 合成的 Escape 触发不了 dialog 的 CloseWatcher。 */
 import assert from 'node:assert/strict';

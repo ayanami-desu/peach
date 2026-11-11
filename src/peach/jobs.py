@@ -1,4 +1,4 @@
-"""Peach 批处理任务共享的安全与成本策略，以及服务内后台任务的状态机。"""
+"""Peach 批处理任务共享的安全策略，以及服务内后台任务的状态机。"""
 from __future__ import annotations
 
 import copy
@@ -9,17 +9,12 @@ import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass
 from pathlib import Path
 
 from filelock import FileLock
 
-from .media_sources import SOURCE_COSTS, cost_for, cost_sql
 from .repository import in_background
 from .task_state import state_root
-
-DEFAULT_METERED_LOCATIONS = frozenset(location for location, cost in SOURCE_COSTS.items()
-                                    if cost == 'metered') | {'online'}
 
 
 def _mutex(db: Path) -> FileLock:
@@ -31,10 +26,6 @@ def _mutex(db: Path) -> FileLock:
 
 class JobPolicyError(RuntimeError):
     exit_code = 1
-
-
-class MeteredSourceDenied(JobPolicyError):
-    exit_code = 2
 
 
 class DiskSpaceDenied(JobPolicyError):
@@ -78,49 +69,6 @@ class TaskRunConflict(JobAlreadyRunning):
 #: `broken_source` 里，72 条是这种行，而且每次重跑都会再失败一遍。
 #: 点名重抽（`--asset`）不套这一条：那是用户指着某一行说「就抽它」。
 ACTIVE_ASSET_SQL = "disposal IS NULL"
-
-
-@dataclass(frozen=True)
-class SourceAccessPolicy:
-    metered_locations: frozenset[str] = DEFAULT_METERED_LOCATIONS
-
-    def requires_budget(self, location: str) -> bool:
-        """有正常读取目录的来源可筛选执行，全部受保护时需明确授权。"""
-        if self.metered_locations != DEFAULT_METERED_LOCATIONS:
-            return location in self.metered_locations
-        from .settings_file import active
-        return cost_for(location, config=active()) == 'metered'
-
-    def sql_filter(
-        self,
-        location: str | None,
-        allow_metered: bool,
-        column: str = "location",
-    ) -> tuple[str, tuple[str, ...]]:
-        """返回参数化 location 条件；显式计费授权是唯一放行入口。"""
-        if location and not allow_metered and self.requires_budget(location):
-            raise MeteredSourceDenied(
-                f"{location} 的目录已开启代理流量保护；确认预算后显式加 --allow-metered"
-            )
-
-        clauses: list[str] = []
-        parameters: list[str] = []
-        if location:
-            clauses.append(f"{column}=?")
-            parameters.append(location)
-        if not allow_metered:
-            if self.metered_locations == DEFAULT_METERED_LOCATIONS:
-                expression, values = cost_sql(column)
-                clauses.append(expression + "='free'")
-                parameters.extend(values)
-            else:
-                metered = tuple(sorted(self.metered_locations))
-                placeholders = ",".join("?" for _ in metered)
-                clauses.append(f"{column} NOT IN ({placeholders})")
-                parameters.extend(metered)
-        if not clauses:
-            return "", ()
-        return " AND " + " AND ".join(clauses), tuple(parameters)
 
 
 def require_free_space(path: Path | str, minimum_gb: float) -> float:

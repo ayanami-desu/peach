@@ -138,8 +138,8 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
   item: DetailItem; gate: MediaGate; helpers: ItemDetailHelpers; actions: ItemDetailActions;
   autoplay?: boolean; onEnded(): void;
 }) {
-  /* 计费来源先挡一层说明，点了才拉流；没挂载与在线拦截的那两种不挂播放器。 */
-  const [started, setStarted] = useState<'auto' | 'clicked' | ''>(gate ? '' : 'auto');
+  /* 没挂载、在线与 ISO 拦截的那几种只给说明块，等 gate 定下来再挂播放器。 */
+  const started = gate ? '' : 'auto';
   /* 播放器挂在这块框里，`<video>` 由舞台建：Video.js 会把它包进自己的 div，从小窗展开回来时
      整个实例还要搬进来，那一截 DOM 不归 React。 */
   const frameRef = useRef<HTMLDivElement>(null);
@@ -158,8 +158,6 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
     ...samples.map((sample, index) => ({ ...sample, label: `预览 ${index + 1}` })),
     { index: -2, label: '正片', video: true }] : [];
   const hasPictures = media.length > 1;
-  /* 计流量闸先给封面：只有封面、还没有预览图时也该给人看这一张，不当成「没有图」。 */
-  const cover = item.is_jav && !!item.code && !!item.has_cover;
   const selectImage = (index: number) => {
     if (index !== -2) frameRef.current?.querySelector('video')?.pause();
     setImage(index);
@@ -173,10 +171,10 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
     const complete = () => ended.current();
     node.addEventListener('ended', complete, true);
     const unmount = actions.mountPlayer(node, mounting.current,
-      started === 'clicked' || autoplay ? { autoplay: true } : undefined);
+      autoplay ? { autoplay: true } : undefined);
     return () => { node.removeEventListener('ended', complete, true); unmount() };
   }, [actions, started]);
-  const badge = helpers.badgeHtml(item.location || '', item.cost || '', 'srcbig');
+  const badge = helpers.badgeHtml(item.location || '', 'srcbig');
   return (
     <div ref={frameRef} data-stage-media="" data-item-media={gate || 'video'} data-item-gallery={hasPictures ? '' : undefined}
       data-item-picture={image !== -2 ? '' : undefined}>
@@ -210,13 +208,6 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
             <Html html={badge} />
             <b>在线作品</b>
             <span>在线作品的媒体地址不在馆藏里，无法播放。</span>
-          </div>
-        ) : gate === 'metered' && !started ? (
-          <div id="gate" data-item-gate="metered" data-item-cover={cover ? '' : undefined} onClick={() => setStarted('clicked')}>
-            {cover ? <CatalogPicture key={item.id} item={item} image={-1}
-              source={samples.find(sample => sample.index === media[0]!.index)?.source} /> : null}
-            <Html html={badge} />
-            <span><Glyph name="play" />点此开始拉流 · {sizeText(item.size)}</span>
           </div>
         ) : null}
     </div>
@@ -480,7 +471,7 @@ function DetailTitle({ item, queue, helpers, actions, onStatus }: {
   onStatus(text: string): void;
 }) {
   const { text, expanded, foldable, toggle } = useFoldedTitle(String(item.title || item.name || ''));
-  const html = helpers.badgeHtml(item.location || '', item.cost || '', 'srcbig') + helpers.titleHtml(item) + partLabelHtml(item, queue);
+  const html = helpers.badgeHtml(item.location || '', 'srcbig') + helpers.titleHtml(item) + partLabelHtml(item, queue);
   return (
     <div data-item-title="">
       <div data-stage-title="" data-title-line="" data-reveal-line="">

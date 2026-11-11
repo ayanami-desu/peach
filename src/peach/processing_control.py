@@ -372,7 +372,7 @@ def user_cancelled(db_path, job_id):
     return bool(job_id) and data.get('job_id') == job_id and data.get('cancelled') is True
 
 
-def initial_estimate(config, db_path, stage, asset_ids=None, mode=None, *, allow_metered=False):
+def initial_estimate(config, db_path, stage, asset_ids=None, mode=None):
     """仅使用账本统计，不在启动 HTTP 请求里遍历媒体目录。预览的范围同 `preview_readable`。"""
     if mode is None:
         from .repository import LedgerDatabase

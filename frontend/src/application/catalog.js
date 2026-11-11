@@ -554,7 +554,7 @@ catalogState.tagPressed = (value,tag)=>catalogState.tagList(value).includes(Stri
 catalogState.withTagToggled = (value,tag)=>{const cur=catalogState.tagList(value);const index=cur.indexOf(tag);
   if(index>=0)cur.splice(index,1);else cur.push(tag);return cur.join(',')};
 catalogState.gridHelpers = {
-  badgeHtml:(location,cost)=>preferencesState.srcBadge(location,cost),
+  badgeHtml:(location,cls)=>preferencesState.srcBadge(location,cls),
   titleHtml:(it,raw)=>javTitleHtml(it,raw),
   displayName:(it,raw)=>javDisplayName(it,raw),
   tagLabel:tag=>tagLabel(tag),
@@ -608,7 +608,7 @@ catalogState.hideCatalogCombo = ()=>{if(catalogState.catalogFilterProps)paintCat
 }
 
 export function installCatalog19() {
-catalogState.junkQueueHelpers = {badgeHtml:(location,cost)=>preferencesState.srcBadge(location,cost)};
+catalogState.junkQueueHelpers = {badgeHtml:(location,cls)=>preferencesState.srcBadge(location,cls)};
 catalogState.junkQueueActions = {
   /* 换分类、换视图：先收起多选，再改地址，由目录元素重读。 */
   navigate:path=>{if(selectMode)setSelectMode(false,true);navigationState.route(path)},

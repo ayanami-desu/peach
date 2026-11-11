@@ -89,8 +89,6 @@ def read_nfo(path: Path):
     """保留完整原文；拒绝 DTD，并限制 XML 的输入体积。"""
     with path.open('rb') as handle:
         raw = handle.read(1024 * 1024 + 1)
-    from .processing_traffic import record_media_read
-    record_media_read(path, len(raw))
     # XML 的 UTF-16/32 编码包含零字节；声明检查同样覆盖这些编码。
     declarations = raw.replace(b'\x00', b'').upper()
     if len(raw) > 1024 * 1024 or b'<!DOCTYPE' in declarations or b'<!ENTITY' in declarations:

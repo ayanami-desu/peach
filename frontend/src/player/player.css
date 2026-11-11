@@ -50,7 +50,7 @@ video.video-js{vertical-align:top;font-size:10px;line-height:1;font-family:Arial
 [data-stage]:not([data-ambient]) [data-ambient-canvas]{display:none}
 [data-stage-media]>video,[data-stage-media]>.video-js{position:relative;z-index:1}
 [data-stage-media] video{width:100%;max-height:76vh;display:block}
-/* 计费来源点击前只显示拉流入口。显式 display:block 会覆盖浏览器的 hidden 默认样式，
+/* 入口挡住、播放器还没启动时只显示拉流入口。显式 display:block 会覆盖浏览器的 hidden 默认样式，
    让尚未启动的播放器和入口各占一半，所以这里必须让隐藏视频完全退出布局。 */
 [data-stage-media]>video[hidden]{display:none}
 /* 高度只由 16:9 和宽度决定，不设最低高度。给一个像素地板的话，窄屏下画面按

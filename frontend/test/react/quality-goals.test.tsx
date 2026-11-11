@@ -29,7 +29,6 @@ const goal = (overrides: Partial<QualityGoal> = {}): QualityGoal => ({
   size: 2147483648,
   duration: 3725,
   reason: null,
-  cost: 'free',
   has_thumb: true,
   has_cover: false,
   ...overrides,
@@ -43,7 +42,7 @@ const legacyProps = () => ({
   openItem: vi.fn<(id: number) => void>(),
   javTitleHtml: (item: QualityGoal) => `<strong class="ui-javcode">${item.name}</strong>`,
   javDisplayName: (item: QualityGoal) => `名称 ${item.name}`,
-  srcBadge: (location: string, cost: string) => `<span class="src ${cost}" data-location="${location}"></span>`,
+  srcBadge: (location: string) => `<span class="src" data-location="${location}"></span>`,
 });
 
 /** 依次回这几份数据，最后一份之后一直回它。`null` 那一份回 500。 */
@@ -85,7 +84,7 @@ it('汇总说的是服务端的总数，不是这一页截到的条数', async (
 
 it('每条目标一张卡片，读数走遗留层同一套格式化口径', async () => {
   const { host } = await open(payload([goal({
-    id: 42, name: 'one.mp4', location: '115', cost: 'metered',
+    id: 42, name: 'one.mp4', location: '115',
     duration: 3725, size: 2147483648, reason: '只有 720p',
   })]));
   const card = host.querySelector('li[data-goal-id="42"]')!;
@@ -93,7 +92,6 @@ it('每条目标一张卡片，读数走遗留层同一套格式化口径', asyn
   expect([...card.querySelectorAll('h3 ~ p > span')].map((node) => node.textContent))
     .toEqual(['', '115', '1:02:05', '2.0 GB']);
   expect(card.querySelector('.src')?.getAttribute('data-location')).toBe('115');
-  expect(card.querySelector('.src')?.classList.contains('metered')).toBe(true);
   expect(card.querySelector('h3 .ui-javcode')?.textContent).toBe('one.mp4');
   expect(card.querySelector('h3 button')?.hasAttribute('data-middle-truncate')).toBe(false);
   expect(card.querySelector('h3 button')?.getAttribute('title')).toBe('名称 one.mp4');

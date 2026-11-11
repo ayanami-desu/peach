@@ -69,7 +69,7 @@ compositionState.shellActions = {
   failure:receiptsState.actionFailure,
   revealSource:revealForIsland,
   routeReview,
-  srcBadge:(location,cost)=>preferencesState.srcBadge(location,cost),
+  srcBadge:(location,cls)=>preferencesState.srcBadge(location,cls),
   /* 索引页：同一页换 search 由壳认领、不重挂；后退前进到另一份 search 时路由树的索引元素按地址重开。 */
   routeIndex:(next,{replace=false}={})=>navigationState.route(indexPath(next),replace),
   savePeopleLayout:({layout})=>{preferencesState.appSettings.peopleLayout=layout;preferencesState.saveSettings()},

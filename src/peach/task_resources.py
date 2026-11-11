@@ -1,4 +1,4 @@
-"""按已登记线程、子进程和实际传输计量任务资源，不使用整机占用代替任务占用。"""
+"""按已登记线程和子进程计量任务资源，不使用整机占用代替任务占用。"""
 from __future__ import annotations
 
 import json
@@ -18,7 +18,6 @@ _LIVE = {}
 _LOCK = threading.RLock()
 CPU_HIGH = 50.0
 GPU_HIGH = 50.0
-NETWORK_HIGH = 10 * 1024 * 1024
 
 
 def _path(db, identity):
@@ -32,8 +31,6 @@ class Usage:
         self.created = psutil.Process().create_time()
         self.threads = {}
         self.processes = {}
-        self.network_bytes = 0
-        self.network_error = ''
         self.lock = threading.RLock()
         self.saved_at = 0.0
         with _LOCK:
@@ -42,8 +39,7 @@ class Usage:
     def snapshot(self):
         with self.lock:
             return {'pid': self.pid, 'created': self.created, 'threads': list(self.threads),
-                    'processes': dict(self.processes), 'network_bytes': self.network_bytes,
-                    'network_error': self.network_error}
+                    'processes': dict(self.processes)}
 
     def publish(self, *, force=False):
         now = time.monotonic()
@@ -88,24 +84,6 @@ class Usage:
             _LIVE.pop((str(self.db.resolve()), self.identity), None)
 
 
-def record_download(size):
-    from .task_control import CURRENT
-    control = CURRENT.get()
-    if control is not None and size > 0:
-        with control.usage.lock:
-            control.usage.network_bytes += size
-        control.usage.publish()
-
-
-def unobserved_network(reason):
-    from .task_control import CURRENT
-    control = CURRENT.get()
-    if control is not None:
-        with control.usage.lock:
-            control.usage.network_error = reason
-        control.usage.publish(force=True)
-
-
 def _metric(state, field, value=None, reason='', threshold=0):
     return {'state': state, field: value, 'high': value is not None and value >= threshold,
             **({'reason': reason} if reason else {})}
@@ -138,10 +116,7 @@ class Monitor:
                            and type(created) in (int, float) and math.isfinite(created) and created > 0
                            for identity, created in value['processes'].items())
                 or type(value.get('created')) not in (int, float)
-                or not math.isfinite(value['created']) or value['created'] <= 0
-                or type(value.get('network_bytes')) not in (int, float)
-                or not math.isfinite(value['network_bytes']) or value['network_bytes'] < 0
-                or not isinstance(value.get('network_error', ''), str)):
+                or not math.isfinite(value['created']) or value['created'] <= 0):
             raise ValueError('这轮任务的资源归属记录无效')
         if value.get('pid') != run.pid:
             return None
@@ -149,8 +124,7 @@ class Monitor:
 
     def _sample(self, run, now):
         empty = {'cpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属'),
-                 'gpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属'),
-                 'network': _metric('unavailable', 'bytes_per_second', reason='这轮任务尚未登记传输计量')}
+                 'gpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属')}
         try:
             owners = self._owners(run)
         except ValueError as error:
@@ -186,11 +160,10 @@ class Monitor:
             empty['cpu']['reason'] = f'任务 CPU 计数器未取得：{type(error).__name__}'
             return empty
         previous = self.previous.get(run.id)
-        self.previous[run.id] = (now, cpu, owners['network_bytes'])
+        self.previous[run.id] = (now, cpu)
         parts = {}
         if previous is None:
             cpu_metric = _metric('sampling', 'percent')
-            network_metric = _metric('sampling', 'bytes_per_second')
         else:
             elapsed = max(.001, now - previous[0])
             try:
@@ -201,12 +174,8 @@ class Monitor:
                 parts = {key: 100 * max(0, value - previous[1].get(key, value)) / elapsed / capacity
                          for key, value in cpu.items()}
                 cpu_metric = _metric('ready', 'percent', round(min(100.0, sum(parts.values())), 1), threshold=CPU_HIGH)
-            rate = max(0.0, (owners['network_bytes'] - previous[2]) / elapsed)
-            network_metric = _metric('ready', 'bytes_per_second', round(rate), threshold=NETWORK_HIGH)
-        if owners.get('network_error'):
-            network_metric = _metric('unavailable', 'bytes_per_second', reason=owners['network_error'])
         gpu_metric = _metric('unavailable', 'percent', reason='Peach 不采集 GPU 占用')
-        return {'cpu': cpu_metric, 'gpu': gpu_metric, 'network': network_metric, '_cpu_parts': parts}
+        return {'cpu': cpu_metric, 'gpu': gpu_metric, '_cpu_parts': parts}
 
     def snapshot(self):
         with self.lock:
@@ -241,29 +210,23 @@ class Monitor:
             return None
         rows = self.snapshot()
         waiting = {'cpu': _metric('ready', 'percent', 0.0, threshold=CPU_HIGH),
-                   'gpu': _metric('ready', 'percent', 0.0, threshold=GPU_HIGH),
-                   'network': _metric('ready', 'bytes_per_second', 0.0, threshold=NETWORK_HIGH)}
+                   'gpu': _metric('ready', 'percent', 0.0, threshold=GPU_HIGH)}
         unknown = {'cpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得'),
-                   'gpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得'),
-                   'network': _metric('unavailable', 'bytes_per_second', reason='执行端的传输读数未取得')}
+                   'gpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得')}
         samples = [waiting if row['status'] == 'pending' else rows.get(row['id'], unknown) for row in family]
         result = {'sampled_at': datetime.now(timezone.utc).isoformat(),
                   'gpu': dict(samples[0]['gpu'])}
-        for name, field, threshold in (('cpu', 'percent', CPU_HIGH), ('network', 'bytes_per_second', NETWORK_HIGH)):
-            values = [sample[name] for sample in samples]
-            unavailable = next((value for value in values if value['state'] == 'unavailable'), None)
-            if unavailable is not None:
-                result[name] = dict(unavailable)
-            elif any(value['state'] == 'sampling' for value in values):
-                result[name] = _metric('sampling', field)
-            else:
-                if name == 'cpu':
-                    parts = {}
-                    for sample in samples:
-                        for key, value in sample.get('_cpu_parts', {}).items():
-                            parts[key] = max(parts.get(key, 0.0), value)
-                    value = round(min(100.0, sum(parts.values())), 1)
-                else:
-                    value = sum(value[field] for value in values)
-                result[name] = _metric('ready', field, value, threshold=threshold)
+        values = [sample['cpu'] for sample in samples]
+        unavailable = next((value for value in values if value['state'] == 'unavailable'), None)
+        if unavailable is not None:
+            result['cpu'] = dict(unavailable)
+        elif any(value['state'] == 'sampling' for value in values):
+            result['cpu'] = _metric('sampling', 'percent')
+        else:
+            parts = {}
+            for sample in samples:
+                for key, value in sample.get('_cpu_parts', {}).items():
+                    parts[key] = max(parts.get(key, 0.0), value)
+            result['cpu'] = _metric('ready', 'percent', round(min(100.0, sum(parts.values())), 1),
+                                    threshold=CPU_HIGH)
         return result

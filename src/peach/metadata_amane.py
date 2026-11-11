@@ -275,8 +275,6 @@ def rebuild(tools_root: Path, *, runner: Runner = run_task_process, timeout: int
             root: Path = BRIDGE_ROOT, proxy_options: Mapping[str, object] | None = None,
             force: bool = True) -> dict:
     """重建桥 venv，返回给设置页的回执。首次要下载约 98 MB，之后只校验。"""
-    from .task_resources import unobserved_network
-    unobserved_network('独立采集工具的网络传输未提供逐任务计量')
     if packaged_runtime(root=root):
         return {"ok": True, "result": "采集工具已随 Peach 安装，无需另行准备",
                 **describe(tools_root, root=root)}
@@ -488,8 +486,6 @@ class AmaneBridge:
               direct_sites: Sequence[str] = (),
               timeout: float | None = None) -> dict:
         """问几站，返回桥的整份报告（`sites` 键下每站一条记录）。"""
-        from .processing_traffic import unobserved
-        unobserved('外部采集器流量未观测')
         number = validate_provider_code(code)
         names = [str(site).strip() for site in sites]
         unknown = [site for site in names if site not in SITES]

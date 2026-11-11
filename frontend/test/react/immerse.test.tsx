@@ -74,7 +74,7 @@ vi.mock('../../src/player', async (importOriginal) => {
 /* ── 假服务端 ── */
 
 const row = (id: number, patch: Partial<ImmerseItem> = {}): ImmerseItem => ({
-  id, name: `clip-${id}.mp4`, duration: 60, cost: 'free', location: 'local', width: 1080, height: 1920, ctx_orient: '竖屏', ...patch,
+  id, name: `clip-${id}.mp4`, duration: 60, location: 'local', width: 1080, height: 1920, ctx_orient: '竖屏', ...patch,
 });
 
 const detail = (id: number, patch: Partial<DetailItem> = {}): DetailItem => ({
@@ -275,10 +275,9 @@ describe('片单与起播', () => {
     expect(extendList([row(1), row(2)], [row(2), row(3)]).map((item) => item.id)).toEqual([1, 2, 3]);
   });
 
-  it('片单不收按流量计费、没有时长与来源脱盘的片子', async () => {
+  it('片单不收没有时长与来源脱盘的片子', async () => {
     const offline = (location: string) => location === 'gone';
     expect(playable(row(1), offline)).toBe(true);
-    expect(playable(row(2, { cost: 'metered' }), offline)).toBe(false);
     expect(playable(row(3, { duration: 0 }), offline)).toBe(false);
     expect(playable(row(4, { location: 'gone' }), offline)).toBe(false);
     const rootOffline = (key: string) => key === 'root-offline';
@@ -352,7 +351,7 @@ describe('片单与起播', () => {
   });
 
   it('当前筛选下一条都放不了：关掉并带提示音警告', async () => {
-    serve({ draws: [[row(1, { cost: 'metered' })]] });
+    serve({ draws: [[row(1, { duration: 0 })]] });
     await open();
     expect(api.isOpen()).toBe(false);
     expect(host.warn).toHaveBeenCalledWith('当前筛选下没有可直接播放的内容');

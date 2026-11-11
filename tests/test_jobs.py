@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import signal
 import tempfile
 import threading
@@ -13,46 +12,13 @@ from peach.jobs import (
     DiskGuard,
     DiskSpaceDenied,
     JobAlreadyRunning,
-    MeteredSourceDenied,
     PidFileLock,
-    SourceAccessPolicy,
     job_main,
     require_free_space,
 )
 
 
 class JobPolicyTests(unittest.TestCase):
-    def test_metered_source_requires_explicit_authorization(self):
-        with self.assertRaises(MeteredSourceDenied):
-            SourceAccessPolicy().sql_filter("gdrive", allow_metered=False)
-        with self.assertRaises(MeteredSourceDenied):
-            SourceAccessPolicy().sql_filter("onedrive", allow_metered=False)
-
-    def test_a_location_outside_the_registry_is_treated_as_metered(self):
-        """来源清单只剩两个网盘，认不出的位置不能默认放行。"""
-        with self.assertRaises(MeteredSourceDenied):
-            SourceAccessPolicy().sql_filter("pikpak", allow_metered=False)
-
-    def test_an_explicit_budget_scopes_the_query_to_that_location(self):
-        sql, parameters = SourceAccessPolicy().sql_filter("gdrive", allow_metered=True)
-        self.assertEqual(sql, " AND location=?")
-        self.assertEqual(parameters, ("gdrive",))
-        with sqlite3.connect(':memory:') as connection:
-            connection.execute('CREATE TABLE asset(location TEXT,path TEXT)')
-            connection.executemany('INSERT INTO asset VALUES(?,?)',
-                                   [('gdrive', 'gdrive:/Media/one.mp4'),
-                                    ('onedrive', 'onedrive:/Media/two.mp4')])
-            self.assertEqual(connection.execute('SELECT location FROM asset WHERE 1=1' + sql,
-                                                parameters).fetchall(), [('gdrive',)])
-
-    def test_a_policy_naming_its_own_metered_sources_keeps_the_others(self):
-        policy = SourceAccessPolicy(metered_locations=frozenset({"onedrive"}))
-        sql, parameters = policy.sql_filter(None, allow_metered=False)
-        self.assertEqual(sql, " AND location NOT IN (?)")
-        self.assertEqual(parameters, ("onedrive",))
-        self.assertFalse(policy.requires_budget("gdrive"))
-        self.assertTrue(policy.requires_budget("onedrive"))
-
     def test_disk_guard_fails_closed_when_usage_is_unavailable(self):
         with patch("peach.jobs.shutil.disk_usage", side_effect=OSError("offline")):
             with self.assertRaises(DiskSpaceDenied):

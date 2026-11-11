@@ -405,15 +405,7 @@ class SourceTransport:
         for _ in range(6):
             from .processing_control import checkpoint
             checkpoint('network')
-            from .processing_traffic import CURRENT, download_route
-            if CURRENT.get() is None:
-                response = self._request(request, timeout, max_bytes)
-            else:
-                source = source_for(request.url)
-                direct = bool(source and values_for(self.root, source).get('network') == 'direct')
-                options = {'trust_env': False} if direct else peach_proxy.client_options(self.root)
-                with download_route(bool(options.get('proxy') or options.get('trust_env', True))):
-                    response = self._request(request, timeout, max_bytes)
+            response = self._request(request, timeout, max_bytes)
             if response.status not in {301, 302, 303, 307, 308} or not response.headers.get("location"):
                 return response
             target = urljoin(request.url, response.headers["location"])

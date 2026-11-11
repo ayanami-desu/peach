@@ -236,7 +236,7 @@ class HttpxTransport:
                     return HttpResponse(
                         response.status_code,
                         dict(response.headers),
-                        _bounded_body(_download_chunks(response), max_bytes),
+                        _bounded_body(response.iter_bytes(), max_bytes),
                         str(response.url),
                     )
                 target = response.url.join(location)
@@ -264,19 +264,6 @@ class HttpxTransport:
                 self._closed = True
                 if self._client is not None:
                     self._client.close()
-
-
-def _download_chunks(response):
-    from .processing_traffic import record_download
-    counted = 0
-    try:
-        for chunk in response.iter_bytes():
-            current = response.num_bytes_downloaded
-            record_download(current - counted)
-            counted = current
-            yield chunk
-    finally:
-        record_download(response.num_bytes_downloaded - counted)
 
 
 def _bounded_body(chunks, max_bytes: int) -> bytes:
@@ -328,8 +315,6 @@ class CurlCffiTransport:
     ) -> HttpResponse:
         from .processing_control import checkpoint as processing_checkpoint
         processing_checkpoint('network')
-        from .processing_traffic import unobserved
-        unobserved('浏览器指纹传输流量未观测')
         chunks: list[bytes] = []
         total = 0
         try:

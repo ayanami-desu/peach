@@ -67,7 +67,6 @@ const payload = (overrides: Partial<ActivityData> = {}): ActivityData => ({
 const resources = (overrides: Partial<TaskResourcesPayload> = {}): TaskResourcesPayload => ({
   cpu: { state: 'ready', percent: 12.5, high: false },
   gpu: { state: 'ready', percent: 0, high: false },
-  network: { state: 'ready', bytes_per_second: 2 * 1024 * 1024, high: false },
   sampled_at: '2026-10-31T08:00:00Z', ...overrides,
 });
 
@@ -223,19 +222,16 @@ it('总量未知时不画假进度条，只说正在做什么', async () => {
   expect(host.querySelector('[role=status]')?.textContent).toContain('正在查第三个来源');
 });
 
-it('活动主任务和后继持续显示各自的CPU、GPU与实测网速', async () => {
+it('活动主任务和后继持续显示各自的CPU与GPU', async () => {
   const child = followup(1, { status: 'running', resources: resources({
     cpu: { state: 'ready', percent: 3, high: false },
-    network: { state: 'ready', bytes_per_second: 1024, high: false },
   }) });
   const { host } = await open(payload({ running: [run({ resources: resources() }), child] }));
   const main = host.querySelector('[data-task-resources="1"]')!;
   const nested = host.querySelector('[data-task-resources="90"]')!;
   expect(main.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 12.5%');
   expect(main.querySelector('[data-task-resource="gpu"]')?.textContent).toBe('GPU 未使用');
-  expect(main.querySelector('[data-task-resource="network"]')?.textContent).toBe('网络 2 MB/s');
   expect(nested.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 3%');
-  expect(nested.querySelector('[data-task-resource="network"]')?.textContent).toBe('网络 1 KB/s');
   expect([...main.querySelectorAll('[data-task-resource]')].every(node => !node.hasAttribute('title'))).toBe(true);
 });
 
@@ -243,37 +239,21 @@ it('资源采样中和未取得分别显示，原因优先说明，不把null填
   const { host } = await open(payload({ running: [run({ resources: resources({
     cpu: { state: 'sampling', percent: null, high: false, reason: '正在建立采样基线' },
     gpu: { state: 'unavailable', percent: null, high: false, reason: '当前系统无法归属GPU引擎' },
-    network: { state: 'unavailable', bytes_per_second: null, high: false, reason: '挂载盘传输无法准确归属' },
   }) })] }));
   const metrics = host.querySelector('[data-task-resources="1"]')!;
   expect(metrics.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 采样中');
   expect(metrics.querySelector('[data-task-resource="gpu"]')?.textContent).toBe('GPU 未取得');
-  expect(metrics.querySelector('[data-task-resource="network"]')?.textContent).toBe('网络 未取得');
   expect(metrics.textContent).not.toContain('0%');
-  expect(metrics.textContent).not.toContain('0 B/s');
-  expect(metrics.querySelector('[data-task-resource="network"]')?.getAttribute('title')).toMatch(/^挂载盘传输无法准确归属/);
-});
-
-it('从网盘挂载读取时网络写网盘读取，仍不报告零值', async () => {
-  const { host } = await open(payload({ running: [run({ resources: resources({
-    network: { state: 'unavailable', bytes_per_second: null, high: false, via: 'cloud',
-      reason: '网盘挂载的缓存与预读无法按任务取得实际网速' },
-  }) })] }));
-  const network = host.querySelector('[data-task-resources="1"] [data-task-resource="network"]')!;
-  expect(network.textContent).toBe('网络 网盘读取');
-  expect(network.hasAttribute('data-resource-idle')).toBe(false);
-  expect(network.getAttribute('title')).toMatch(/^网盘挂载的缓存与预读/);
+  expect(metrics.querySelector('[data-task-resource="gpu"]')?.getAttribute('title')).toMatch(/^当前系统无法归属GPU引擎/);
 });
 
 it('真实零读数写成未使用，高占用由该指标的真实high状态强调', async () => {
   const { host } = await open(payload({ running: [run({ resources: resources({
     cpu: { state: 'ready', percent: 0, high: false },
     gpu: { state: 'ready', percent: 70.1, high: true },
-    network: { state: 'ready', bytes_per_second: 0, high: false },
   }) })] }));
   const metrics = host.querySelector('[data-task-resources="1"]')!;
   expect(metrics.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 未使用');
-  expect(metrics.querySelector('[data-task-resource="network"]')?.textContent).toBe('网络 未使用');
   expect(metrics.querySelector('[data-task-resource="cpu"]')?.hasAttribute('data-resource-idle')).toBe(true);
   const gpu = metrics.querySelector('[data-task-resource="gpu"]')!;
   expect(gpu.textContent).toBe('GPU 70.1%');

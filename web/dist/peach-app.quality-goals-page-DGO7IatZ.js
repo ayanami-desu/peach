@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "1745845c-e367-4c04-9952-009d534304a0", e._sentryDebugIdIdentifier = "sentry-dbid-1745845c-e367-4c04-9952-009d534304a0");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "08d633a1-fe97-43d8-9c8e-1d2197f35640", e._sentryDebugIdIdentifier = "sentry-dbid-08d633a1-fe97-43d8-9c8e-1d2197f35640");
 	} catch {}
 })();
 import { Button as e, CollectionSummary as t, EmptyState as n, LOC as r, Note as i, OA as a, QUALITY_GOALS_KEY as o, cardClass as s, errorMessage as c, fetchQualityGoals as l, fmtDur as u, fmtSize as d, previewUrl as f, require_jsx_runtime as p, useQuery as m } from "./peach-app.js";
@@ -51,7 +51,7 @@ function _({ item: t, openItem: n, javTitleHtml: i, javDisplayName: a, srcBadge:
 						children: [
 							/* @__PURE__ */ (0, g.jsx)("span", {
 								className: "contents",
-								dangerouslySetInnerHTML: { __html: o(t.location, t.cost) }
+								dangerouslySetInnerHTML: { __html: o(t.location) }
 							}),
 							/* @__PURE__ */ (0, g.jsx)("span", { children: r[t.location] ?? t.location }),
 							/* @__PURE__ */ (0, g.jsx)("span", { children: u(t.duration) }),
@@ -111,4 +111,4 @@ function v(e) {
 }
 export { v as QualityGoalsPage };
 
-//# debugId=1745845c-e367-4c04-9952-009d534304a0
+//# debugId=08d633a1-fe97-43d8-9c8e-1d2197f35640

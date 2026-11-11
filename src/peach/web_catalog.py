@@ -38,7 +38,6 @@ from .entities import normalize_entity_name, resolve_entity, upsert_asset_entity
 from .catalog_versions import foldable_versions, partition_versions, version_labels
 from .field_owners import parse_owners
 from .metadata_policy import SOURCE_SPECS
-from .media_sources import cost_for
 from .regions import infer_region, normalize_region, region_label
 from .web_activity import DEFAULT_PROFILE_ID
 from .web_state import WebContract
@@ -541,7 +540,6 @@ def q_items(contract: WebContract, args):
             r["_entity_kinds"] = tuple(canonical)
     sources = dict(_download_source_names(contract))
     for r in rows:
-        r["cost"] = cost_for(r['location'], r.get('path'))
         r["has_thumb"] = contract.has_snapshot(r["snapshot_path"])
         r['has_local_poster'] = (contract.poster_root / f"{r['id']}_4.jpg").is_file()
         attach_artwork_fields(contract, r)
@@ -1142,7 +1140,6 @@ def q_item(contract: WebContract, aid):
         d["creator"] = d["entities"]["creator"][0]
     if d["entities"]["studio"]:
         d["studio"] = d["entities"]["studio"][0]
-    d["cost"] = cost_for(d['location'], d.get('path'))
     d["has_thumb"] = contract.has_snapshot(d["snapshot_path"])
     d['has_local_poster'] = (contract.poster_root / f"{d['id']}_4.jpg").is_file()
     attach_artwork_fields(contract, d)
@@ -1290,7 +1287,6 @@ def q_related(contract: WebContract, aid, limit=24):
         _name_shared_tags(contract, aid, picked, related_tags)
     sources = dict(_download_source_names(contract))
     for d in picked:
-        d["cost"] = cost_for(d['location'], d.get('path'))
         d["has_thumb"] = contract.has_snapshot(d["snapshot_path"])
         d['has_local_poster'] = (contract.poster_root / f"{d['id']}_4.jpg").is_file()
         attach_artwork_fields(contract, d)

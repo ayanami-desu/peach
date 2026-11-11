@@ -22,7 +22,7 @@ describe('非 Windows 媒体目录配置', () => {
           const data = await (await route.fetch()).json();
           await route.fulfill({ json: { ...data, editable: true, windows: false,
             media_dirs: ['/media/movies'], media_sources: [
-              { location: 'local', path: '/media/movies', root: 'R:\\media', library: '电影', cost: 'free', online: true },
+              { location: 'local', path: '/media/movies', root: 'R:\\media', library: '电影', online: true },
             ] } });
         });
         await page.reload();

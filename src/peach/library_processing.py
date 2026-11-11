@@ -38,7 +38,6 @@ from .review_csv import read_rows_shared, write_rows
 from .jobs import JobDeferred, JobPolicyError
 from .storage_budget import CapacityGuard
 from .media_processing_policy import metadata_only
-from .processing_traffic import ProcessingTraffic
 from .processing_control import (task_control, bind_control, checkpoint_values,
                                  initial_estimate, ProcessingEstimate, interrupted_state,
                                  deadline_after, resume_fields, processing_item, ItemSkipped)
@@ -2130,8 +2129,8 @@ def budget_summary(state):
     return f'{head}，还有 {skipped} 部没问外部来源，再跑一次接着采。'
 
 
-def _collect_allowed(remote, traffic, row, code, missing, allowed, cover_root, covered, *,
-                     update, issue, answered, received, succeeded, gate=_NetworkGate(None), budget=None,
+def _collect_allowed(remote, row, code, missing, allowed, cover_root, covered, *,
+                     update, issue, answered, received, gate=_NetworkGate(None), budget=None,
                      fetch_cover=True):
     """按这一行所属媒体库的处理方式问外部来源（ADR-0116），返回 (证据条目, 新落盘的封面数)。
 
@@ -2145,7 +2144,6 @@ def _collect_allowed(remote, traffic, row, code, missing, allowed, cover_root, c
     if budget is not None and budget.skips(row, code, missing, allowed, cover_root, answered=answered):
         return found, covers
     if allowed & {'metadata', 'cover'}:
-        traffic.start_metadata(code)
         try:
             with processing_item(row['id']):
                 found, covers = remote.collect(row, code, missing if 'metadata' in allowed else [], cover_root,
@@ -2155,7 +2153,6 @@ def _collect_allowed(remote, traffic, row, code, missing, allowed, cover_root, c
             remote.reset()
             issue(row, '已跳过这部影片，可在任务结束后重试', action='skipped', retryable=True)
         finally:
-            traffic.finish_work('metadata', code, successful=succeeded())
             update(current_source=None)
     if 'people' in allowed:
         covered.append((row['id'], covers))
@@ -2475,7 +2472,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                     retry_ids=None, active=lambda: True, stage=ALL_STAGES,
                     database=None, route_overrides=None, state_file=None, asset_ids=None,
                     resume_state=None, speed_mode=None, protected_ids=(), recheck_existing=False,
-                    incremental=False, network=None, library_id=None, allow_metered=False,
+                    incremental=False, network=None, library_id=None,
                     refresh_metadata=False):
     """给已登记的作品补资料与视频属性，外部资料保留为可复核候选。
 
@@ -2486,8 +2483,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
     `collect` 只补已入库作品的资料、视频属性与接触印相，`metadata` 只采集资料。
     接触印相（卡片封面与悬停扫格用的那张 3×3）排在采集之后，只做还没有图的视频，
     `preview_sheets` 从网盘流里抽九帧拼一张；`metadata_only` 为真时整段跳过，因为那个
-    开关承诺不读视频字节。`allow_metered` 只影响采集的流量预估，不再有「只生成预览」
-    这一档。
+    开关承诺不读视频字节。
     `asset_ids` 指定仍在馆藏中的视频，不扫描来源目录；空选择无效。
     `library_id` 将目录扫描、资料处理与候选结算限制到一个媒体库，恢复时沿用原范围。
 
@@ -2524,26 +2520,20 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
     speed_mode = execution_mode(judgement_database, speed_mode, control=TASK_CONTROL.get())
     control = task_control(config, state_file)
     identity = job_id or uuid.uuid4().hex
-    from .processing_inventory import recent_rows
-    traffic = ProcessingTraffic(config, db_path, stage, initial_ids,
-                                resume_state=resume_state, inventory_rows=recent_rows(config, db_path, stage, scope_ids),
-                                allow_metered=allow_metered)
     def control_report(**values):
         resume_fields(state, values)
         state.update(values)
         estimate.update(state)
-        state['traffic'] = traffic.snapshot(finished=state.get('status') in ('complete', 'failed'))
         flush_state(force=True)
         report(dict(state))
     # 后台任务要让路时，`as active` 换上的那个会转为假；后面的检查点与闭包都读这一个。
-    with (traffic.bind(),
-          _processing_lock(config, background=state_file is not None, active=active) as active,
+    with (_processing_lock(config, background=state_file is not None, active=active) as active,
           bind_control(control, identity, publish=control_report, active=active, db_path=Path(db_path),
                        mode=speed_mode)):
         state = dict(job_id=identity, status='running',
                      stage='检查配套文件' if retrying else '准备处理',
                      checked=0, total=0, scanned=0, scanned_bytes=0, probed=0, identified=0, candidates=0, covers=0, previews=0,
-                     requested_stage=stage, asset_ids=scope_ids, incremental=incremental, allow_metered=allow_metered,
+                     requested_stage=stage, asset_ids=scope_ids, incremental=incremental,
                      library_id=library_id, library_name=config.library_catalog.get(library_id, {}).get('name', ''),
                      issue_count=0, paused_count=0, issue_preview=[], issues_truncated=False,
                      notes={}, retryable_asset_ids=[],
@@ -2556,7 +2546,6 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
         state.update(initial_estimate(config, db_path, stage, initial_ids, speed_mode))
         if incremental:
             state['incremental_ids'] = initial_ids
-            traffic.unknown_files = True
         state['steps'] = _processing_steps(stage, scope_ids,
             metadata_only_enabled=metadata_only(config.directory('state')))
         _restore_processing_counts(state, resume_state)
@@ -2581,24 +2570,15 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
             checkpoint_values(values)
             state.update(values)
             estimate.update(state)
-            state['traffic'] = traffic.snapshot(finished=state.get('status') in ('complete', 'failed'))
             state['last_progress_at'] = time.time()
             state['progress_seq'] += 1
             flush_state(force='status' in values)
             report(dict(state))
 
-        def traffic_report():
-            state['traffic'] = traffic.snapshot()
-            flush_state()
-            report(dict(state))
-
-        traffic.publish = traffic_report
-
         issue = _ProcessingIssues(state, log_path, flush_state, report)
 
         def finish_step(key):
             """阶段成功返回后发布完成状态；异常退出的阶段保留当前状态。"""
-            traffic.finish_work(key)
             update(steps=_complete_processing_step(state['steps'], key))
 
         update()
@@ -2613,11 +2593,8 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
             locations = drive_sources(config) if location == 'configured' else (location,)
             scope_ids = scoped_assets(config, db_path, library_id, scope_ids)
             state['asset_ids'] = scope_ids
-            traffic.asset_ids = scope_ids
-            traffic.unknown_files = False
             finish_step('inspect')
             rows, genre_decisions = _collection_rows(db_path, locations=locations, asset_ids=scope_ids)
-            traffic.refresh_plan(rows)
             update(estimate_pending={'metadata': len(rows)})
             if not rows:
                 _settle_collection_state(state, {}, [], update)
@@ -2680,7 +2657,6 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                 finish_step('collect')
                 _settle_collection_state(state, {}, rows, update)
                 return state
-            traffic.prepare_metadata(prepared)
             prepared = _active_prepared(judgement_database, prepared)
             gate = _NetworkGate(network, state['offline_skipped'])
             gate.probe(update)
@@ -2706,13 +2682,13 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                 target_key = f"asset:{row['id']}"
                 missing = list(COLLECTED_FIELDS) if verify_existing else _missing_fields(row, local_fields)
                 found, covers = _collect_allowed(
-                    remote, traffic, row, code, missing, stages_of(row['path']), cover_root, covered,
+                    remote, row, code, missing, stages_of(row['path']), cover_root, covered,
                     update=update, issue=issue,
                     answered=() if verify_existing else _answered_sources(groups, target_key, missing),
                     fetch_cover=not refresh_metadata,
                     received=lambda entries, row=row, code=code, fields=local_fields, verify=verify_existing:
                         publish(row, code, fields, verify, entries),
-                    succeeded=lambda before=issues_before: state['issue_count'] == before, gate=gate,
+                    gate=gate,
                     budget=budget)
                 state['offline_skipped'] = gate.skipped
                 state['covers'] += covers
@@ -2733,7 +2709,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                 active=active, update=update, issue=issue, watermark=entity_watermark, covered=covered,
                 people=_people_allowed(config), offline=gate.offline())
             # 接触印相排在采集之后：它要读视频字节，混在逐行的资料采集里会让一部片的一次远端
-            # 读取变成两种用途，流量与预算都对不上（`processing_traffic_plan` 按这一步单独记）。
+            # 读取变成两种用途，预算也对不上（按这一步单独记）。
             _generate_preview_sheets(config, judgement_database, rows, stage=stage,
                                      update=update, active=active)
             finish_step('collect')
@@ -2741,7 +2717,6 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
         except Exception:
             state.update(status='failed', outcome='interrupted', error='处理被中断。核对媒体目录后重试。', completed_at=time.time())
             state.update(interrupted_state(control))
-            state['traffic'] = traffic.snapshot(finished=state.get('status') in ('failed', 'cancelled'))
             _save(path, state)
             raise
         finally:

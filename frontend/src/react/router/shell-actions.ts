@@ -43,8 +43,8 @@ export interface ShellActions {
   revealSource(id: number): Promise<string>;
   /** 复核页把分类写回地址栏，不重开。 */
   routeReview(params: { category: string; queue?: string }): void;
-  /** 来源徽标（含计费标记）的 HTML。 */
-  srcBadge(location: string, cost: string): string;
+  /** 来源徽标的 HTML。 */
+  srcBadge(location: string, cls?: string): string;
   /** 索引页把过滤词、范围、视图与类型写回地址栏，不重开。`replace` 用在打字过滤那种一路改写的场合。 */
   routeIndex(params: IndexRoute, options?: { replace?: boolean }): void;
   /** 索引页的版式偏好改了，存储归壳（资料页的名册读的也是它）。 */

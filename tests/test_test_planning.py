@@ -606,7 +606,7 @@ class GateAndFlakyRerunTests(unittest.TestCase):
 
     def test_named_modules_include_their_direct_behavior_consumers(self):
         for module, consumers in (
-            ('http', {'test_processing_traffic.py', 'test_metadata_sources.py'}),
+            ('http', {'test_metadata_sources.py'}),
             ('ffmpeg', {'test_frame_capture.py', 'test_hardware_transcode.py'}),
         ):
             with self.subTest(module=module):

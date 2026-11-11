@@ -75,8 +75,8 @@ const isSample = (item: EntityWallPhoto): item is EntitySamplePhoto => (item as 
 /** 样张的地址按番号与序号由服务端查，缩略图与灯箱里的大图共用。 */
 const sampleQuery = (item: EntitySamplePhoto) => `code=${encodeURIComponent(item.code)}&n=${item.position}`;
 
-/* 缩略图一律走 `/photo-thumb`（服务端缓存），只有灯箱里的大图读原图：PikPak 是计费来源，一屏
- * 直接铺原图等于付几十兆流量。样张走 `/sample-thumb`。 */
+/* 缩略图一律走 `/photo-thumb`（服务端缓存），只有灯箱里的大图读原图；一屏直接铺原图会把
+ * 来源请求一次拉满。样张走 `/sample-thumb`。 */
 const thumbSrc = (item: EntityWallPhoto) => isSample(item)
   ? `/sample-thumb?${sampleQuery(item)}`
   : `/photo-thumb?id=${item.id}`;

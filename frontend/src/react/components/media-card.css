@@ -305,9 +305,8 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-varia
   transition: opacity .15s ease;
 }
 /* 旧样式表的来源图标是浅绿、浅橙，配它自己垫的深色底；这里底换成了随主题的玻璃，图标颜色也跟角标的
- * 文字走，浅色主题下才看得见。计费来源单独用计费色。115、PikPak 是自带底色的位图，不受颜色影响。 */
+ * 文字走，浅色主题下才看得见。115、PikPak 是自带底色的位图，不受颜色影响。 */
 .peach-react [data-media-badge] > span { width: 20px; height: 20px; padding: 0; background: transparent; color: inherit; }
-.peach-react [data-media-badge] > span[class~="metered"] { color: var(--meter); }
 .peach-react [data-media-duration] {
   position: absolute;
   right: 6px;

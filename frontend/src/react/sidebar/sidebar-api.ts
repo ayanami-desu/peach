@@ -10,11 +10,10 @@
  * （`host.store`）：设置面板或这一列自己拖动改了顺序，侧栏按 store 的通知当场重排。 */
 import type { SettingsStore } from '../../settings-store';
 
-/** 来源那一行开头的小记号：本地与在线是雪碧图字形，网盘是官方站标，其余按计费画一个点。 */
+/** 来源那一行开头的小记号：本地与在线是雪碧图字形，网盘是官方站标。 */
 export type SidebarDot =
   | { kind: 'glyph'; name: string }
-  | { kind: 'image'; src: string }
-  | { kind: 'cost'; cost: 'free' | 'metered' };
+  | { kind: 'image'; src: string };
 
 /** 一枚筛选键。`label` 已由壳按 `LOC`、`tagLabel` 或聚合里的显示名换好。 */
 export interface SidebarChip {

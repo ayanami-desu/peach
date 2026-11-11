@@ -82,7 +82,7 @@
 | `src/peach/task_runs.py`：`TaskRunStore`、`TaskRun`、`TaskRunHandle`、`cli_run()`、`declared_rows()`、`task_label()` | 任务中心的运行记录、进度、后继登记；`cli_run()` 让命令行那一轮也进同一张表 |
 | `src/peach/task_retry.py`：`transient_delay()`、`retry_delay()`、`RetryableTaskError`、`RetryableIOError` | 哪些失败值得重试、隔多久重试 |
 | `src/peach/task_state.py`：`state_root()` | 任务检查点落在 `state/` |
-| `src/peach/task_resources.py`：`Monitor`、`record_download()`、`unobserved_network()` | 流量与资源统计；不知道的数字标成「未观测」，不猜 |
+| `src/peach/task_resources.py`：`Monitor`、`Usage` | 按任务登记的线程与子进程统计 CPU、GPU 占用；不知道的数字标成「未观测」，不猜 |
 | `src/peach/processing_control.py` | 处理偏好、安全停点与带依据的耗时范围 |
 
 新的长任务接进任务中心，而不是自己开一个后台线程加一个进度字典：停止、限速、重启后继续、失败重试都只在这一层实现一次。

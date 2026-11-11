@@ -540,33 +540,6 @@ describe('播放墙的浏览与详情', () => {
       assert.deepEqual(await camera(page), position);
     } finally { await opened.close() }
   });
-  it('真实演示短片在墙内点播放被计费闸门拦下，详情页从闸门开始播', async () => {
-    const opened = await visit(browser, '/', VIEWPORTS[0]!);
-    const { page } = opened;
-    try {
-      await page.locator('[data-media-card]').first().waitFor();
-      await addWallCovers(page);
-      await enter(page); await pick(page);
-      await page.getByRole('button', { name: '播放', exact: true }).click();
-      /* 网盘来源一律按流量计费（`resources/media-sources.json` 里每个来源都是 metered），
-         墙内直接拉流会绕开计费确认：`frontend/src/react/stage/stage-player.ts:174` 就在这里拦住，
-         把认领交回详情页。 */
-      const note = page.locator('[data-wall-play-error]');
-      await note.waitFor();
-      assert.match(await note.innerText(), /请打开详情确认计费来源/);
-      assert.equal(await page.locator('[data-wall-player] video').count(), 0, '墙内不该起播放器');
-      await page.getByRole('button', { name: '详情', exact: true }).click();
-      const gate = page.locator('#stage[open] #gate');
-      await gate.waitFor();
-      await gate.click();
-      await page.waitForFunction(() => {
-        const video = document.querySelector<HTMLVideoElement>('#stage video.vjs-tech');
-        return !!video && video.readyState >= 2;
-      }, undefined, { timeout: 30_000 });
-      await page.keyboard.press('Escape');
-      await page.locator('#stage[open]').waitFor({ state: 'hidden' });
-    } finally { await page.unrouteAll({ behavior:'wait' }); await opened.close() }
-  });
   it('搜索无结果时保留返回和工具，清空搜索可继续浏览', async () => {
     const opened = await visit(browser, '/wall?q=不会匹配的查询', VIEWPORTS[0]!);
     const { page } = opened;

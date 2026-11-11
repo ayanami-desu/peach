@@ -122,7 +122,6 @@
     "librariesUnavailable": "媒体库列表未取得",
     "library": "媒体库",
     "loading": "正在读取媒体修复状态",
-    "meteredWarning": "这个库在计费来源上，每修一部都要把片子完整拉一遍。",
     "missingTool": "缺少 untrunc",
     "missingToolNotice": "{{count, number}} 部缺索引的片子需要先安装 untrunc（配置页「运行信息」）。",
     "nothingToRepair": "已检查媒体库，没有需要修复的视频",

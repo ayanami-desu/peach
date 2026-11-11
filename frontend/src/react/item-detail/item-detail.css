@@ -7,8 +7,8 @@
  *
  * 选择器全用 `data-*`，前面挂 `[data-item-detail]`（「接着看」在格子外面，挂 `[data-item-related]`）：
  * 舞台样式表与 `web/` 下的遗留样式表都排在后面，同权重时它们赢，多一层属性才压得住
- * `[data-stage-actions] button` 这类通用规则。反过来，共用容器的通用规则（操作键的底色、
- * `.srcbig.metered` 的字色）在这里不能被顺手压掉，碰到这种地方选择器用 `:where()` 把权重降回去。
+ * `[data-stage-actions] button` 这类通用规则。反过来，共用容器的通用规则（操作键的底色）在这里
+ * 不能被顺手压掉，碰到这种地方选择器用 `:where()` 把权重降回去。
  *
  * 类选择器一条不写，否则产物里的类名会和旧样式表同名（`test/legacy-class-names.test.ts`）。
  * 有两处的类不是岛挂的：来源徽标由壳的 `badgeHtml` 画成 `srcbig`，选择器收起时由
@@ -23,7 +23,7 @@
   padding: 16px;
 }
 
-/* ── 播放区：没挂载、在线与计费三种说明块 ──
+/* ── 播放区：没挂载、在线与 ISO 三种说明块 ──
    说明块铺满播放器格，不上下留黑；圆角跟着格走（格只圆左上角，右边贴着侧栏）。 */
 .peach-react [data-item-gallery] { display: flex; flex-direction: column; justify-content: center; align-items: center; }
 .peach-react [data-item-gallery] > [class~="video-js"] { order: 0; flex: none; }
@@ -52,7 +52,7 @@
   cursor: pointer;
 }
 :where(.peach-react [data-item-detail] [data-item-gate]) b { font-size: var(--fs-md); }
-/* 来源徽标自己的字色（`.srcbig.metered` 那一档）要留着，这两条的权重不能高过它。 */
+/* 来源徽标自己的字色要留着，这两条的权重不能高过它。 */
 :where(.peach-react [data-item-detail] [data-item-gate]) span { font-size: var(--fs-xs); color: var(--muted); }
 /* 脱盘：实线框、页面底色，说明一句一行居中；「重新检测」是这一块唯一的动作。 */
 .peach-react [data-item-detail] [data-item-gate="offline"] {
@@ -72,35 +72,6 @@
   color: var(--ink-2);
 }
 .peach-react [data-item-detail] [data-item-gate="offline"] button { cursor: pointer; margin-top: 4px; }
-/* 计流量闸：先给封面，再给一句话。图上压一条半透明说明，别让说明占掉画面。 */
-.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] {
-  position: relative;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  background: var(--ground);
-}
-.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] [data-catalog-picture] {
-  max-height: calc(76vh - 112px);
-  object-fit: contain;
-}
-.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] > span {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--ground) 82%, transparent);
-  backdrop-filter: blur(6px);
-  color: var(--ink);
-  white-space: nowrap;
-}
-.peach-react [data-item-detail] [data-item-gate="metered"][data-item-cover] > span svg { width: 14px; height: 14px; }
 
 /* ── 队列行 ──
    徽章和标题同一行，标题那一行自己是 flex 容器：`[data-mix-item-text]` 的 b/span 都是块级的，并排只能靠

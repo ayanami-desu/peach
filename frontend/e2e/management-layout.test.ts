@@ -208,7 +208,7 @@ describe('管理页面容器与骨架', () => {
           await pending;
           await route.fulfill({ json: { total: 3, offset: 0, has_more: false, items: [1, 2, 3].map(id => ({
             id, name: `DEMO-${id}.mp4`, code: `DEMO-${id}`, location: 'local', size: 1e9, duration: 3600,
-            reason: '', cost: '', has_thumb: false, has_cover: false })) } });
+            reason: '', has_thumb: false, has_cover: false })) } });
         });
         await page.reload({ waitUntil: 'load' });
         const skeleton = page.locator('[data-skeleton="board/quality-goals"]');
@@ -253,7 +253,7 @@ describe('管理页面容器与骨架', () => {
           await pending;
           await route.fulfill({ json: { total: 2, all_total: 2, dismissed_total: 0, counts: { video: 2 },
             items: [1, 2].map(id => ({ id, name: `推广-${id}.mp4`, junk_kind: 'video', why: '文件名像推广',
-              size: 1048576, location: 'local', cost: '' })) } });
+              size: 1048576, location: 'local' })) } });
         });
         await page.reload({ waitUntil: 'load' });
         await page.locator('#grid .catalog-skeleton .skeletoncard').first().waitFor();
@@ -318,7 +318,7 @@ describe('管理页在极端内容下不撑出视口', () => {
       await page.route('**/api/quality-goals**', route => route.fulfill({ json: {
         total: 1234567, offset: 0, has_more: true, items: [{
           id: 1, name: 'FC2-PPV-4728193.mp4', code: 'FC2-PPV-4728193', location: 'local', size: 1e9, duration: 3600,
-          reason: LONG_PATH, cost: '', has_thumb: false, has_cover: false }] } }));
+          reason: LONG_PATH, has_thumb: false, has_cover: false }] } }));
       await page.reload({ waitUntil: 'load' });
       const card = page.locator('#stats li[data-goal-id]').first();
       await card.waitFor();

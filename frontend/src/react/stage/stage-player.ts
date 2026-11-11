@@ -149,14 +149,13 @@ export function attachStagePlayer(frame: HTMLElement, options: StagePlayerOption
   };
 }
 
-/** 墙面接收已选定的本地视频条目；计费与在线作品使用详情的来源门槛。 */
+/** 墙面接收已选定的本地视频条目；在线作品使用详情的来源门槛。 */
 export async function mountWallPlayer(summary: PlayerItem, frame: HTMLElement, signal: AbortSignal): Promise<(continuePlaying?: boolean) => void> {
   const item = await api(`/api/item?id=${summary.id}`, { signal }) as PlayerItem & { error?: string };
   signal.throwIfAborted();
   if (!item || item.error) throw new Error(item?.error || '作品未取得');
   if (item.medium && item.medium !== 'video') throw new Error('这条作品没有可播放的视频');
   if (item.location === 'online') throw new Error('请打开详情播放在线作品');
-  if (item.cost === 'metered') throw new Error('请打开详情确认计费来源');
   const sources = await stageHost().player.loadSourceStatus();
   signal.throwIfAborted();
   if (sources[String(item.root_id || item.location || '')] === false) throw new Error(stageHost().player.offlineReason(String(item.root_id || item.location || '')));
@@ -388,13 +387,11 @@ export function seekMiniplayer(side: 1 | -1): void {
   player.currentTime(total ? Math.min(total, at) : at);
 }
 
-/** 小窗里能直接换的只有普通视频卡：分卷／版次组要先选卷，计费与脱盘的在线资产都要先过
- *  详情里那道门。 */
+/** 小窗里能直接换的只有普通视频卡：分卷／版次组要先选卷，脱盘的在线资产都要先过详情里那道门。 */
 export function miniplayerTakesCard(item: PlayerItem | null | undefined): boolean {
   if (!miniplayerActive() || !item) return false;
   if (item.part_group || item.edition_group) return false;
   if (item.medium && item.medium !== 'video') return false;
-  if (item.cost === 'metered' && item.location !== 'online') return false;
   if (item.location === 'online') return false;
   if (stageHost().sourceOffline(String(item.root_id || item.location || ''))) return false;
   return true;

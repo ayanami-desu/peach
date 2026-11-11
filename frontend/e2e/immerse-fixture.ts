@@ -5,13 +5,13 @@ import assert from 'node:assert/strict';
 
 import type { Page } from 'playwright-core';
 
-export type Clip = { id: number; width: number; height: number; duration: number; cost?: string; [field: string]: unknown };
+export type Clip = { id: number; width: number; height: number; duration: number; [field: string]: unknown };
 
 /** 演示库里能直接放的一条横屏与一条竖屏（整条卡片，原样交给抽样）。 */
 export async function pickClips(page: Page): Promise<{ wide: Clip; tall: Clip; all: Clip[] }> {
   const items: Clip[] = await page.evaluate(async () =>
     (await (await fetch('/api/items?limit=60&offset=0&thumb=')).json()).items);
-  const all = items.filter((item) => item.duration && item.cost !== 'metered');
+  const all = items.filter((item) => item.duration);
   const wide = all.find((item) => item.width > item.height);
   const tall = all.find((item) => item.height > item.width);
   assert.ok(wide && tall, '演示库里横屏、竖屏各要有一条');

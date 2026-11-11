@@ -79,46 +79,7 @@ export interface LibraryProcessingData {
   stalled?: boolean;
   waited_seconds?: number;
   completed_at?: number;
-  traffic?: ProcessingTraffic;
 }
-
-export interface TrafficWorkload {
-  video_files: number; jav_files: number; jav_titles: number;
-  pending_jav_titles?: number; metadata_average_bytes?: number;
-}
-export interface TrafficSource {
-  connection?: 'direct' | 'proxy' | 'system' | 'unknown';
-  workload?: TrafficWorkload;
-  estimated_bytes?: number;
-  key: string; label: string; root: string; location: string; metered: boolean;
-  used_bytes: number; estimated_min_bytes: number; estimated_max_bytes: number;
-  unobserved: string[];
-}
-export interface ProcessingTraffic {
-  disk?: {
-    estimated_bytes: number; temporary_bytes: number; can_fit: boolean | null; cache_unknown: boolean;
-    volumes: { path: string; labels: string[]; free_bytes: number | null; estimated_bytes: number;
-      temporary_bytes: number; reserve_bytes: number | null; required_bytes: number | null;
-      shortfall_bytes: number | null; can_fit: boolean | null }[];
-  };
-  unknown_route_estimated_bytes?: number;
-  workload?: TrafficWorkload;
-  inventory?: { complete: boolean; errors: number; token?: string };
-  estimated_bytes?: number; metered_estimated_bytes?: number;
-  used_bytes: number; estimated_min_bytes: number; estimated_max_bytes: number;
-  metered_used_bytes: number; metered_estimated_min_bytes: number; metered_estimated_max_bytes: number;
-  sources: TrafficSource[]; partial: boolean; unknown_files: boolean;
-}
-
-export const fetchProcessingEstimate = (command: LibraryProcessingCommand, signal?: AbortSignal, inventory?: string) => {
-  const params = new URLSearchParams({ estimate: '1', stage: command.stage || 'all' });
-  if (command.asset_ids) params.set('asset_ids', JSON.stringify(command.asset_ids));
-  if (command.scope) params.set('scope', command.scope);
-  if (command.library_id) params.set('library_id', command.library_id);
-  if (command.incremental) params.set('incremental', '1');
-  if (inventory) params.set('inventory', inventory);
-  return apiGet<{ traffic: ProcessingTraffic }>(`${LIBRARY_PROCESSING_URL}?${params}`, signal);
-};
 
 /** 一次写操作的请求体：指定处理阶段与影片，或者按任务号重试失败项。 */
 export type ProcessingSpeed = 'low' | 'standard' | 'high';

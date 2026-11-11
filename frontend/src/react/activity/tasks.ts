@@ -15,13 +15,11 @@ export const TASKS_KEY = ['tasks'] as const;
 export type TaskControlAction = 'pause' | 'resume' | 'cancel';
 export type TaskControlState = 'running' | 'pausing' | 'paused' | 'cancelling';
 export type TaskResourceState = 'ready' | 'sampling' | 'unavailable';
-/** `via` 只出现在未取得的网络读数上：`cloud` 是从网盘挂载读的，网速无法按任务计量。 */
-export interface TaskResourceMetric { state: TaskResourceState; high: boolean; reason?: string; via?: 'cloud' }
+export interface TaskResourceMetric { state: TaskResourceState; high: boolean; reason?: string }
 export interface TaskPercentMetric extends TaskResourceMetric { percent: number | null }
 export interface TaskResourcesPayload {
   cpu: TaskPercentMetric;
   gpu: TaskPercentMetric;
-  network: TaskResourceMetric & { bytes_per_second: number | null };
   sampled_at: string;
 }
 

@@ -287,9 +287,7 @@ const GroupToggle = createContext<() => void>(() => {});
 
 function Dot({ dot }: { dot?: SidebarDot }) {
   if (!dot) return null;
-  if (dot.kind === 'glyph') return <Icon name={dot.name} />;
-  if (dot.kind === 'image') return <img data-sidebar-source-icon="" src={dot.src} alt="" />;
-  return <i data-sidebar-cost={dot.cost} />;
+  return dot.kind === 'glyph' ? <Icon name={dot.name} /> : <img data-sidebar-source-icon="" src={dot.src} alt="" />;
 }
 
 function ChipList({ rows, filterKey, multi, selected, counts, host: at, onToggle = at.toggleChip }: {

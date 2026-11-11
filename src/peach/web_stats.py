@@ -18,7 +18,6 @@ from . import media_libraries, settings_file
 from .platform import system_volume
 from .web_activity import DEFAULT_PROFILE_ID
 from .web_catalog import tag_is_not_a_performer_name, tag_not_hidden
-from .media_sources import cost_for
 from .web_state import WebContract
 
 
@@ -282,7 +281,7 @@ def q_quality_goals(contract: WebContract, args):
             (DEFAULT_PROFILE_ID, limit, offset),
         )]
     for row in rows:
-        row["cost"] = cost_for(row['location'], row.pop('path', None))
+        row.pop('path', None)
         row["has_thumb"] = contract.has_snapshot(row["snapshot_path"])
         row["has_cover"] = contract.has_cover(row.get("code"))
         row["cover_version"] = contract.cover_version(row.get("code"))

@@ -17,7 +17,7 @@ from pathlib import Path, PureWindowsPath
 from . import junk
 from .catalog_rules import duration_clusters, is_jav_code, normalise_code_key
 from .field_owners import USER_MANUAL, write_owned_fields
-from .media_sources import SCANNABLE_LOCATIONS, cost_for
+from .media_sources import SCANNABLE_LOCATIONS
 from .personal_records import ASSET_REFERENCE_TABLES, VANISHED
 from .regions import normalize_region
 from .task_runs import TaskRunHandle
@@ -131,10 +131,9 @@ def q_ads(contract: WebContract, limit=200, offset=0, kind="", status="pending")
 
 
 def _scored_junk(contract: WebContract) -> tuple[list[dict], frozenset[int]]:
-    """领域评分加上页面需要的成本与缩略图状态，路径留在服务内部。"""
+    """领域评分加上页面需要的缩略图状态，路径留在服务内部。"""
     out, dismissed = junk.scored_candidates(contract)
     for item in out:
-        item["cost"] = cost_for(item['location'], item.get('path'))
         item["has_thumb"] = contract.has_snapshot(item.pop("snapshot_path", None))
         item.pop("path", None)
     return out, dismissed

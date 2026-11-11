@@ -20,7 +20,7 @@ const detail = (id: number, extra: Record<string, unknown> = {}): Row => {
   const performers = (extra.performers as string[] | undefined) || [NAMES[0]!];
   return {
     id, name: `sample_${id}.mp4`, title: `演示作品 ${id}`, is_jav: false, medium: 'video', location: 'local',
-    cost: 'free', size: 1_234_567_890, duration: 3600, play_seconds: 900, play_count: 2, leave_ratio: 0.4,
+    size: 1_234_567_890, duration: 3600, play_seconds: 900, play_count: 2, leave_ratio: 0.4,
     has_cover: false, has_thumb: true, has_local_poster: false, performers, performer_total: performers.length,
     performer_entities: performers.map((_, at) => ({ id: at + 1, has_image: false })), creator: '', studio: 'Peach Studio',
     feedback: null, disposal: null, watch_later: false, width: 1920, height: 1080, release_date: '2026-08-01',

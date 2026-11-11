@@ -15,7 +15,6 @@ export interface MediaItem {
   is_jav?: boolean;
   medium?: string;
   location?: string;
-  cost?: string;
   size?: number | null;
   duration?: number | null;
   width?: number | null;
@@ -69,7 +68,7 @@ export interface MediaCardLayout { active: boolean; size: 'big' | 'small'; portr
 /** 卡片上仍由遗留层拼的几段 HTML。封面、头像与悬停预览直接取 `@peach/card-art`。 */
 export interface MediaCardHelpers {
   /** 来源角标（遗留层 `srcBadge`）。 */
-  badgeHtml(location: string, cost: string): string;
+  badgeHtml(location: string, cls?: string): string;
   /** 标题的 HTML：番号 + 版次徽章 + 片名，非番号作品是转义后的名字（遗留层 `javTitleHtml`）。 */
   titleHtml(item: MediaItem, raw: string): string;
   /** 同一标题的纯文本，用于无障碍名称（遗留层 `javDisplayName`）。 */

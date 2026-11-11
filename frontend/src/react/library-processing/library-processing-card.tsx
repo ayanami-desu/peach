@@ -37,7 +37,6 @@ import { useLibraryProcessingJob } from './use-library-processing';
 import { setProcessingNoticeVisible, useProcessingNoticeVisibility } from './processing-notice-visibility';
 import { ProcessingActions } from './processing-actions';
 import { ProcessingProgress } from './processing-line';
-import { TrafficProgress } from './processing-traffic';
 import { ProcessingControls } from './processing-controls';
 import { downloadIssueList, exportProcessingIssues } from './issue-export';
 import { busyProps, useAction } from '../settings/use-action';
@@ -280,7 +279,6 @@ export function LibraryProcessingCard(props: LibraryProcessingProps) {
           {processingActive(state) ? <p className="text-body-2-regular text-text-secondary tabular-nums" data-processing-eta="">
             {remainingTime(state)}
           </p> : null}
-          {processingActive(state) ? <TrafficProgress traffic={state.traffic} /> : null}
           {processingActive(state) ? <ProcessingControls state={state} /> : null}
         </div>
       </Fieldset>

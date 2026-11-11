@@ -172,7 +172,7 @@ async function stubTrash(page: Page) {
 
 /** 垃圾候选挑没有预览的类型：造出来的 id 取不到缩略图。 */
 const junkItem = (id: number) => ({ id, name: `推广-${id}.zip`, junk_kind: 'archive', why: '文件名像推广',
-  size: 1048576 * id, location: 'local', cost: '' });
+  size: 1048576 * id, location: 'local' });
 
 async function stubJunk(page: Page) {
   await page.route('**/api/ads?**', (route) => route.fulfill({ json: {

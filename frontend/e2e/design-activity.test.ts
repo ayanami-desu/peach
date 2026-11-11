@@ -11,7 +11,6 @@ describe('任务页云下载布局', () => {
     const reading = (high: boolean) => ({
       cpu: { state: 'ready', percent: high ? 75 : 5, high },
       gpu: { state: 'ready', percent: high ? 80 : 4, high },
-      network: { state: 'ready', bytes_per_second: high ? 15 * 1024 * 1024 : 1024, high },
       sampled_at: '2026-10-31T08:00:00Z',
     });
     const row = (id: number, status: string) => ({
@@ -35,7 +34,7 @@ describe('任务页云下载布局', () => {
     try {
       const page = opened.page;
       await page.locator('[data-task-resources="1"]').waitFor();
-      const pairs = [['cpu', 'blue'], ['gpu', 'purple'], ['network', 'cyan']] as const;
+      const pairs = [['cpu', 'blue'], ['gpu', 'purple']] as const;
       const backgrounds: string[] = [];
       for (const [metric, color] of pairs) {
         const high = page.locator(`[data-task-resources="1"] [data-task-resource="${metric}"]`);
@@ -47,7 +46,7 @@ describe('任务页云下载布局', () => {
         assert.notEqual(highBackground, normalBackground);
         backgrounds.push(highBackground);
       }
-      assert.equal(new Set(backgrounds).size, 3);
+      assert.equal(new Set(backgrounds).size, 2);
       const red = await tokenColor(page, 'body', '--color-status-rose-background');
       for (const [id, label] of [[3, '已取消'], [4, '后续任务已取消'], [5, '部分后续任务已取消']] as const) {
         const badge = page.locator(`#run-${id}`).getByText(label, { exact: true });
@@ -90,8 +89,6 @@ describe('任务页云下载布局', () => {
           resources: {
             cpu: { state: 'ready', percent: 61.6, high: true },
             gpu: { state: 'ready', percent: 0, high: false },
-            network: { state: 'unavailable', bytes_per_second: null, high: false, via: 'cloud',
-              reason: '网盘挂载的缓存与预读无法按任务取得实际网速' },
             sampled_at: '2026-11-03T08:02:20Z',
           },
         }],
@@ -103,8 +100,7 @@ describe('任务页云下载布局', () => {
       await chips.waitFor();
       const idle = await chips.locator('[data-task-resource]').evaluateAll(nodes =>
         Object.fromEntries(nodes.map(node => [(node as HTMLElement).dataset.taskResource, 'resourceIdle' in (node as HTMLElement).dataset])));
-      assert.deepEqual(idle, { cpu: false, gpu: true, network: false });
-      assert.equal(await chips.locator('[data-task-resource="network"]').getAttribute('data-resource-via'), 'cloud');
+      assert.deepEqual(idle, { cpu: false, gpu: true });
       const link = page.locator('[data-task-subject="7"]');
       assert.equal(await link.getAttribute('href'), '/assets/6297');
       assert.equal(await link.getAttribute('title'), name);

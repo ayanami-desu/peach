@@ -1139,7 +1139,7 @@
 </termEntry>
 <termEntry id="ref.48">
 <langSet xml:lang="zh-CN"><tig><term>流量</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Data usage</term><note from="translator">流量保护 = Data saver，预计流量 = Estimated data usage。</note></tig></langSet>
+<langSet xml:lang="en"><tig><term>Data usage</term><note from="translator">流量 = Data usage。</note></tig></langSet>
 </termEntry>
 <termEntry id="ref.49">
 <langSet xml:lang="zh-CN"><tig><term>镜像</term></tig></langSet>

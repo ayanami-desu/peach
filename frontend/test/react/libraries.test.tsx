@@ -20,7 +20,7 @@ const stepBoxes = (root: ParentNode) => [...root.querySelectorAll<HTMLInputEleme
 const library = (over: Partial<LibraryRow> = {}): LibraryRow => ({
   id: 'onedrive:root1', name: 'AV', icon: '', color: '', policy: 'auto', stages: '',
   account: 'onedrive', location: 'onedrive', root_id: 'root1', root_name: '示例合集',
-  videos: 12, missing: 3, synced_at: '2026-11-11 09:00:00', metered: false, folders: 1,
+  videos: 12, missing: 3, synced_at: '2026-11-11 09:00:00', folders: 1,
   ...over,
 });
 

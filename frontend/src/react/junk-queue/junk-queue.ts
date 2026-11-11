@@ -20,7 +20,6 @@ export interface JunkItem {
   why?: string;
   size?: number | null;
   location?: string;
-  cost?: string;
   [field: string]: unknown;
 }
 
@@ -71,7 +70,7 @@ export async function fetchJunkPage(route: JunkRoute, signal: AbortSignal): Prom
 
 /** 卡片上仍由遗留层拼的那一段：来源角标（遗留层 `srcBadge`）。 */
 export interface JunkQueueHelpers {
-  badgeHtml(location: string, cost: string): string;
+  badgeHtml(location: string, cls?: string): string;
 }
 
 /** 卡片与分类条上的动作。写 ledger、打开详情与换页都归壳。 */

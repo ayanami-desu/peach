@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "14fa1db0-0838-454d-b454-051550576378", e._sentryDebugIdIdentifier = "sentry-dbid-14fa1db0-0838-454d-b454-051550576378");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "2654892f-ba98-49c6-abcd-dab0d8104ce1", e._sentryDebugIdIdentifier = "sentry-dbid-2654892f-ba98-49c6-abcd-dab0d8104ce1");
 	} catch {}
 })();
 import { ACCENT_CHOICES as e, ApiError as t, Button as n, CONFIGURATION_KEY as r, Checkbox as i, Chip as a, DRIVE_KEY as o, DRIVE_URL as s, E3 as c, ErrorText as l, Eu as u, Fact as d, FactList as f, Footer as p, Help as m, Input as h, L1 as g, Note as _, ProcessingMode as v, Rows as y, SETTINGS_KEY as b, Section as x, SectionSkeleton as S, Select$1 as C, SelectItem as w, SettingsRow as T, SortableBoardTabs as E, Stack as D, Uz as ee, __toESM as O, _p as k, apiGet as A, apiSend as j, busyProps as M, confirmModal as N, d6 as te, devicesSkeleton as ne, errorMessage as P, fetchConfiguration as re, fetchDrives as ie, fetchSettings as ae, l1 as oe, rememberShape as se, require_jsx_runtime as ce, require_react as le, t as F, useAction as I, useQuery as L, useQueryClient as R, useSaveSettings as ue, z3 as z } from "./peach-app.js";
@@ -1658,12 +1658,12 @@ function We({ library: t, options: r, onSaved: a, onDeleted: o, onMoved: s }) {
 					term: F("settings:library.synced"),
 					children: t.synced_at || F("settings:library.never")
 				}),
-				/* @__PURE__ */ (0, V.jsxs)(d, {
+				/* @__PURE__ */ (0, V.jsx)(d, {
 					term: F("settings:library.root"),
-					children: [/* @__PURE__ */ (0, V.jsx)("span", {
+					children: /* @__PURE__ */ (0, V.jsx)("span", {
 						title: t.root_id,
 						children: `${t.account} · ${t.root_name}`
-					}), t.metered ? F("settings:library.metered") : ""]
+					})
 				})
 			] }) }),
 			/* @__PURE__ */ (0, V.jsxs)(y, { children: [
@@ -2082,4 +2082,4 @@ function Qe({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 }
 export { Ye as ConfigurationPage };
 
-//# debugId=14fa1db0-0838-454d-b454-051550576378
+//# debugId=2654892f-ba98-49c6-abcd-dab0d8104ce1

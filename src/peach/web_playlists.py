@@ -6,7 +6,6 @@ from typing import Protocol
 from .personal_records import VANISHED
 from .web_activity import DEFAULT_PROFILE_ID
 from .web_catalog import con_entities, entity_ref
-from .media_sources import cost_for
 
 
 MAX_PLAYLIST_ITEMS = 200
@@ -178,7 +177,7 @@ def q_playlist(contract: PlaylistContract, args):
             (playlist_id,),
         )]
     for item in items:
-        item["cost"] = cost_for(item['location'], item.pop('path', None))
+        item.pop('path', None)
         item["has_thumb"] = contract.has_snapshot(item.pop("snapshot_path", None))
     playlist["items"] = items
     playlist["item_count"] = len(items)

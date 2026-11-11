@@ -226,7 +226,7 @@ export interface TagCount { k: string; n?: number; cat?: string }
  *  身份格与队列行的图、头像和署名直接取 `@peach/card-art`。 */
 export interface ItemDetailHelpers {
   /** 来源角标（遗留层 `srcBadge`）；`cls` 是 `srcbig` 这类尺寸档。 */
-  badgeHtml(location: string, cost: string, cls?: string): string;
+  badgeHtml(location: string, cls?: string): string;
   /** 番号 + 版次徽章 + 片名（遗留层 `javTitleHtml`）。 */
   titleHtml(item: DetailItem): string;
   /** 同一标题的纯文本（遗留层 `javDisplayName`）。 */
@@ -271,7 +271,7 @@ export interface ItemDetailActions {
   openQueueItem(queue: QueueRef, id: number, push?: boolean): void;
   /** 把媒体框交给舞台挂播放器：`<video>` 由舞台建在框里、交给 Video.js，不进这棵 React 树——
    *  从小窗展开回来时同一个实例要整块搬进这块框。返回的清理在这块媒体区卸下时调；`autoplay`
-   *  不给就按设置，计费拦截点开的那一下给 true。 */
+   *  不给就按设置。 */
   mountPlayer(frame: HTMLElement, item: DetailItem, options?: { autoplay?: boolean }): () => void;
   /** 盘回来了：按正常路径重开这一条，不在半路挂播放器。 */
   reopen(): void;
@@ -457,15 +457,13 @@ export const sameOrder = (a: readonly number[], b: readonly number[]) =>
 
 /* ── 播放区 ── */
 
-export type MediaGate = 'offline' | 'online' | 'metered' | 'disc' | '';
+export type MediaGate = 'offline' | 'online' | 'disc' | '';
 
-/** 播放区此刻挡在视频前面的是哪一种说明：来源没挂载、在线作品没有本地媒体、计费来源要
- *  点一下才拉流。 */
+/** 播放区此刻挡在视频前面的是哪一种说明：来源没挂载、在线作品没有本地媒体。 */
 export function mediaGate(item: DetailItem, offline: boolean): MediaGate {
   if (offline) return 'offline';
   if (String(item.name || '').toLowerCase().endsWith('.iso')) return 'disc';
   if (item.location === 'online') return 'online';
-  if (item.cost === 'metered') return 'metered';
   return '';
 }
 
