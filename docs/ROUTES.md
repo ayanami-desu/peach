@@ -45,7 +45,7 @@
 | --- | --- |
 | `/` | 全部馆藏 |
 | `/?browse=folders` | 按目录浏览，`folder` 指定目录，`folder_recursive=0` 只看当前层，见 [目录浏览](DIRECTORY_BROWSING.md) |
-| `/jav` | JAV 馆藏，`tab=library` 与 `tab=explore` 两个页签 |
+| `/jav` | JAV 探索；JAV 馆藏是目录页的 `?jav=1` 筛选 |
 | `/works/{code}` | 作品详情，`code` 先规范化再判重定向 |
 | `/assets/{id}` | 资产详情 |
 | `/performers`、`/creators`、`/studios`、`/agencies`、`/series`、`/tags` | 实体名册 |

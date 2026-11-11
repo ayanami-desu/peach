@@ -32,7 +32,7 @@ const ROUTE_ENTRIES = {
   // Peach 配置：`/settings` 与它下面六格都开这一页，管理区身份是「配置」，侧栏入口取登记的第一条。
   '/settings': { section: 'configuration', title: 'Peach 配置', refresh: 'reopen' },
   ...Object.fromEntries(Object.entries(CONFIGURATION_SECTIONS).map(([key, title]) => [`/settings/${key}`, { title, section: 'configuration', refresh: 'reopen' }])),
-  '/jav': { nav: 'jav', title: 'JAV', refresh: 'reopen' },
+  '/jav': { nav: 'jav', title: '探索', refresh: 'reopen' },
   '/stats': { section: 'stats', title: '统计' },
   '/review': { section: 'review', title: '人工复核', refresh: 'reopen' },
   '/data-cleanup': { section: 'cleanup', title: '数据管理' },

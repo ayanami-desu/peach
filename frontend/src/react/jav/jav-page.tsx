@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RiCompassLine } from '@remixicon/react';
-import { Button, ButtonLink } from '@/components/base/buttons/button';
+import { Button } from '@/components/base/buttons/button';
 import { appSettingsStore, javLayout, storeJavLayout, JAV_LAYOUTS, cardRatio, gridLayout } from '@peach/appearance';
 import { wireHorizontalScroller } from '../../ui-kit/scroll';
 import { javContentSkeleton, javTagSkeleton, JAV_RECOMMENDATION_GRID } from '../../jav-skeleton';
@@ -17,20 +17,16 @@ import { LibraryShortcuts } from '../library-shortcuts/shortcut-controls';
 import { Segments, SortKeys } from '../entity-filter/entity-filter-page';
 import { DISCOVERY_SORTS, type DiscoverySort } from './discovery-sorts';
 
-const SEARCH_LABELS: Record<string, string> = { explore: '筛选推荐', library: '筛选' };
+const SEARCH_LABEL = '筛选推荐';
 
-export function JavPage({ tab, readOnly, navigate }: {
-  tab: string; readOnly: boolean; navigate(path: string): void; receipt(message: string): void;
+export function JavPage({ readOnly, navigate }: {
+  readOnly: boolean; navigate(path: string): void; receipt(message: string): void;
 }) {
   const [text, changeText] = useState(() => new URLSearchParams(location.search).get('q') || '');
   const setText = (value: string) => { changeText(value); writeJavQuery({ q: value }) };
   return <div className="flex w-full flex-col gap-6">
-    <JavHeader tab={tab} navigate={navigate}
-      search={<IndexSearch label={SEARCH_LABELS[tab] || '筛选'} value={text} onQuery={setText} />} />
-    {tab === 'library'
-      ? <EmptyState icon={RiCompassLine} title="馆藏" actions={<ButtonLink variant="primary" size="small" href="/?jav=1">浏览馆藏</ButtonLink>}>
-        馆藏在目录页按库、演员与标签筛选。</EmptyState>
-      : <Explore query={text.trim()} navigate={navigate} clearText={() => setText('')} readOnly={readOnly} />}
+    <JavHeader search={<IndexSearch label={SEARCH_LABEL} value={text} onQuery={setText} />} />
+    <Explore query={text.trim()} navigate={navigate} clearText={() => setText('')} readOnly={readOnly} />
   </div>;
 }
 

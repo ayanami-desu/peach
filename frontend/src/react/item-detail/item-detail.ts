@@ -205,13 +205,11 @@ export async function prefetchItemDetail(props: ItemDetailProps, signal: AbortSi
     actions.redirect(queue?.kind === 'playlist' ? { kind: 'playlists' } : { kind: 'gone' });
     return;
   }
-  let item: DetailItem;
   /* 重开同一条也重取：缓存里那份是上一次打开时的，这期间封面、评分、标签都可能在别处改过，
      而挂载不重取（`query.ts`）。只有 Mix 的种子不重取，取队列那一步刚把它写进缓存。 */
   const cachedItem = seeded && id === queue?.seedId ? queryClient.getQueryData<DetailItem>(itemKey(id)) : undefined;
   try {
-    item = cachedItem
-      || await queryClient.fetchQuery({ queryKey: itemKey(id), queryFn: () => fetchItem(id, signal), staleTime: 0 });
+    if (!cachedItem) await queryClient.fetchQuery({ queryKey: itemKey(id), queryFn: () => fetchItem(id, signal), staleTime: 0 });
   } catch (error) {
     if (signal.aborted) throw error;
     if (error instanceof ItemGone) { actions.redirect({ kind: 'gone' }); return }

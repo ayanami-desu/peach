@@ -129,20 +129,6 @@ class OfficialPreviewTests(unittest.TestCase):
                 official.assert_called_once()
                 self.assertEqual(page.call_count, 0 if dmm == DMM_VIDEO else 1)
 
-    def test_dmm_preview_cache_is_separate_and_rechecks_daily(self):
-        now = [1791936000.0]
-        api = PublicAPI(clock=lambda: now[0], wallclock=lambda: now[0])
-        fetch = Mock(return_value=DMM_VIDEO)
-        for _ in range(2):
-            self.assertEqual(api.official_preview('RCTD-764', fetch, provider='dmm', released='2020-01-01')['url'], DMM_VIDEO)
-        self.assertEqual(fetch.call_count, 1)
-        now[0] += 86400
-        api.official_preview('RCTD-764', fetch, provider='dmm', released='2020-01-01')
-        self.assertEqual(fetch.call_count, 2)
-        other = Mock(return_value=VIDEO)
-        self.assertEqual(api.official_preview('RCTD-764', other, provider='prestige')['url'], VIDEO)
-        other.assert_called_once()
-
     def test_official_preview_is_available_when_webui_metadata_is_unavailable(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -205,25 +191,6 @@ class OfficialPreviewTests(unittest.TestCase):
             prestige_preview('EXM-001', Path('unused'), transport=offline)
         self.assertEqual(slept, [2, 4, 6, 8])
         self.assertEqual(offline.call_count, 5)
-
-    def test_empty_preview_rechecks_daily_and_good_old_preview_survives_restart(self):
-        with tempfile.TemporaryDirectory() as directory:
-            now = [1791936000.0]
-            root = Path(directory).resolve()
-            api = PublicAPI(cache_root=root, clock=lambda: now[0], wallclock=lambda: now[0])
-            fetch = Mock(return_value='')
-            self.assertEqual(api.official_preview('EXM-001', fetch, released='2020-01-01')['url'], '')
-            api.official_preview('EXM-001', fetch, released='2020-01-01')
-            self.assertEqual(fetch.call_count, 1)
-            now[0] += 86400
-            fetch.return_value = VIDEO
-            self.assertEqual(api.official_preview('EXM-001', fetch, released='2020-01-01')['url'], VIDEO)
-            self.assertEqual(fetch.call_count, 2)
-            now[0] += 86400 * 400
-            restarted = PublicAPI(cache_root=root, clock=lambda: now[0], wallclock=lambda: now[0])
-            forbidden = Mock(side_effect=AssertionError('来源请求不可执行'))
-            self.assertEqual(restarted.official_preview('EXM-001', forbidden)['url'], VIDEO)
-            forbidden.assert_not_called()
 
     def test_detail_projects_official_mp4_and_preserves_movie_metadata(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -9,7 +9,7 @@ export function homeRouteLabel(pathname: string, search: string): string {
   const query = new URLSearchParams(search);
   const term = (query.get('q') || '').trim();
   if (term) return t('navigation:pageTitle.search', { term });
-  return query.get('jav') === '1' ? t('navigation:sidebar.jav') : portraitColumn(query) ? t('navigation:pageTitle.portrait') : '';
+  return query.get('jav') === '1' ? t('navigation:pageTitle.javLibrary') : portraitColumn(query) ? t('navigation:pageTitle.portrait') : '';
 }
 
 let presentedPost: { id: number; label: string } | null = null;

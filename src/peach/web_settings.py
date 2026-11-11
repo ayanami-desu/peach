@@ -81,7 +81,6 @@ NAVIGATION_ORDERS = {
                'studio_logos', 'fc2_markings', 'fc2_similarity', 'video_endcards'),
     'configuration': ('drives', 'libraries', 'access', 'token', 'devices', 'speed', 'diagnostics'),
     'favorites': ('all', 'filters', 'performer', 'creator', 'tag', 'series', 'studio', 'agency'),
-    'jav': ('library', 'explore'),
     'tags': ('local',),
     'preferences': ('appearance', 'browsing', 'jav', 'search', 'content'),
 }

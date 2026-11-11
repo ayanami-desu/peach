@@ -6,7 +6,7 @@ import { esc } from '@peach/legacy/core';
 import { peachHistory, shellNavigate } from '@peach/history';
 import type { DiscoveryDirection, DiscoverySort } from './discovery-sorts';
 
-export { JAV_TABS, javTab, javPath, javLibraryPath } from './jav-navigation';
+export { javLibraryPath } from './jav-navigation';
 
 /** 分区里的筛选写进地址栏：替换当前记录，不多压一条历史。 */
 export function writeJavQuery(patch: Record<string, string>): void {
@@ -102,8 +102,7 @@ export function discoveryArtwork(item: Discovery, layout: 'big' | 'small', javIm
     .replace('data-drop="self"', 'data-drop="initial" data-initial="封面未取得" data-drop-class="media-nopic"');
 }
 
-export async function prefetchJav(tab: string, signal: AbortSignal) {
-  if (tab !== 'explore') return;
+export async function prefetchJav(signal: AbortSignal) {
   await queryClient.ensureQueryData({ queryKey: discoveryKey(), queryFn: () => fetchDiscoveries(signal),
     staleTime: 30_000, revalidateIfStale: true });
 }

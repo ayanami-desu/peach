@@ -1,5 +1,4 @@
 import { islandGlyph, islandSearchInput, islandShortcutsEntry } from './island-skeleton';
-import { JAV_TABS } from './react/jav/jav-navigation';
 import { cardRatio, gridLayout, javLayout } from './appearance';
 import { DISCOVERY_SORTS } from './react/jav/discovery-sorts';
 
@@ -25,13 +24,12 @@ export function javContentSkeleton(layout = javLayout()): string {
   </div>`).join('')}</div>`;
 }
 
-/** 照 `JavPage` 的静止态画：页头一行是标题、靠右的筛选框，分区按地址栏里的那一个按下，下面画筛选条与卡片占位。 */
-export function javPageSkeleton(tab: string): string {
+/** 照 `JavPage` 的静止态画：页头一行是标题、靠右的筛选框，下面画筛选条与卡片占位。 */
+export function javPageSkeleton(): string {
   const q = new URLSearchParams(location.search).get('q') || '';
   const body = `<section class="flex min-w-0 flex-col gap-4">${javFilterSkeleton()}${javContentSkeleton()}</section>`;
   return `<div class="peach-react"><div class="flex w-full flex-col gap-6">
-    <div class="flex w-full flex-col gap-4"><div class="flex min-w-0 flex-wrap items-center gap-3 max-board-narrow:gap-x-2"><h2 data-page-title class="text-display-4-medium text-text-primary max-board-narrow:text-title-1-medium">JAV</h2><div data-index-search class="ml-auto min-w-0 max-w-80 flex-1">${islandSearchInput('', q, tab === 'explore' ? '筛选推荐' : '筛选')}</div></div>
-    <div class="relative flex flex-none gap-1 overflow-x-auto max-board-narrow:gap-0">${JAV_TABS.map(([key, label]) => `<span class="relative flex flex-none items-center whitespace-nowrap rounded-md px-3 py-2 text-body-regular max-board-narrow:px-2.25 max-board-narrow:text-body-2-regular ${key === tab ? 'bg-background-tertiary-default text-text-primary' : 'text-text-secondary'}">${label}</span>`).join('')}</div></div>
+    <div class="flex w-full flex-col gap-4"><div class="flex min-w-0 flex-wrap items-center gap-3 max-board-narrow:gap-x-2"><h2 data-page-title class="text-display-4-medium text-text-primary max-board-narrow:text-title-1-medium">探索</h2><div data-index-search class="ml-auto min-w-0 max-w-80 flex-1">${islandSearchInput('', q, '筛选推荐')}</div></div></div>
     ${body}</div></div>`;
 }
 

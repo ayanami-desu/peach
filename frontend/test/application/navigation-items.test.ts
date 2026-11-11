@@ -11,10 +11,10 @@ describe('应用导航词表', () => {
     expect(NAV_CATALOG.map(([key]) => key)).toContain('immerse');
   });
 
-  it('每个导航身份只有一项，JAV 与播放列表有各自可见名称', () => {
+  it('每个导航身份只有一项，探索与播放列表有各自可见名称', () => {
     const keys = NAV_CATALOG.map(([key]) => key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(NAV_CATALOG.find(([key]) => key === 'jav')?.[1]).toBe('JAV');
+    expect(NAV_CATALOG.find(([key]) => key === 'jav')?.[1]).toBe('探索');
     expect(NAV_CATALOG.find(([key]) => key === 'playlists')?.[1]).toBe('播放列表');
   });
 

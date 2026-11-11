@@ -1,6 +1,5 @@
 import { PREFERENCE_SECTIONS, CONFIGURATION_SECTIONS } from '../history/settings-route';
 import type { RegisteredRoutePath } from '../history/route-meta';
-import { javPath } from '../react/jav/jav-navigation';
 
 /** 沿用应用的路由类型，页面移除或改名会在类型检查中指出教程的旧链接。 */
 type GuidePath = RegisteredRoutePath;
@@ -37,9 +36,9 @@ export const INTERFACE_CHAPTERS: GuideChapter[] = [
     page('tags', '标签与主题', '选择标签继续浏览相关馆藏；标签来自已入库作品，可在标签管理里整理。', '/tags', '[data-index-body] [data-alpha-tag], [data-index-body] [data-tag-chip], [data-index-body] [data-empty-state]'),
     page('manage-tags', '管理标签', '铅笔按钮打开标签管理，用于整理标签名称和关系；再次点击返回浏览。', '/tags', '[data-tag-mode]'),
   ] },
-  { id: 'jav', kind: 'interface', title: 'JAV 馆藏', summary: '馆藏与馆藏探索两个分区。', steps: [
-    page('library', 'JAV 馆藏', '按番号、出演者和厂牌查找已入库的作品，可以选择官方封面或预览图。', javPath('library') as GuideRoute, '[data-catalog-frame]'),
-    page('explore', '馆藏探索', '探索分区从馆藏里挑出值得看的作品，可按标签与排序收窄；筛选推荐框在页头右侧。', javPath('explore') as GuideRoute, '[data-index-search] input, [data-filter-glass]'),
+  { id: 'jav', kind: 'interface', title: 'JAV 与探索', summary: '馆藏在目录页筛选，探索在侧栏。', steps: [
+    page('library', 'JAV 馆藏', '在目录页勾选 JAV，按番号、出演者和厂牌查找已入库的作品，可以选择官方封面或预览图。', '/?jav=1', '[data-catalog-frame]'),
+    page('explore', '探索', '侧栏的探索从馆藏里挑出还没看过的作品，可按标签与排序收窄；筛选推荐框在页头右侧。', '/jav', '[data-index-search] input, [data-filter-glass]'),
     page('quality', '高清版', '待升级卡片列出当前版本信息和判定原因；没有目标时这里显示空状态。', '/quality-goals', '[data-goal-id], #main [data-empty-state]'),
   ] },
   { id: 'viewing', kind: 'interface', title: '专注观看', summary: '播放墙、沉浸模式与详情小窗。', steps: [

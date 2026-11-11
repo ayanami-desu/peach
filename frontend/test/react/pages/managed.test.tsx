@@ -77,11 +77,6 @@ const tasks = (label = '追更检查') => ({
     parent_run_id: null, root_run_id: null, followup_key: '', followup_depth: 0,
   }],
 });
-const configuration = {
-  editable: true, notice: '', revision: 'rev-1', media_dirs: ['D:\\Media'], port: 9123, facts: [],
-  startup: { available: true, enabled: false, silent: true, message: '', desktop: false, desktop_message: '' },
-  peach_proxy: { mode: 'environment', proxy_saved: false, needs_selection: false },
-};
 type Reply = { ok: boolean; status: number; json(): Promise<unknown> };
 const reply = (body: unknown): Reply => ({ ok: true, status: 200, json: async () => body });
 

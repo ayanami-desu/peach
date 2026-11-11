@@ -5,7 +5,7 @@ import type { EntityPageHelpers } from '../../src/react/entity-page/entity-page'
 import { entityPortraitImg } from '../../src/react/entity-page/entity-portrait';
 import { createEntityEntryState, emptyEntityFilters, entityFilterSearch, entityViewPath, parseEntityFilters, parseMediaView } from '../../src/react/entity-page/entity-route';
 import { createPhotoSurfaceController, photoViewActive } from '../../src/react/entity-page/photo-surface';
-import { createIndexController, indexPath, personAvatar } from '../../src/react/index/index-controller';
+import { indexPath, personAvatar } from '../../src/react/index/index-controller';
 const helpers: EntityPageHelpers = { portraitImg: entityPortraitImg, wireDrag: vi.fn(), wireScroller: vi.fn(), receipt: vi.fn(), failure: vi.fn(), aliasForm: async () => {}, sourceToolsHtml: () => '',
   wireSourceTools: vi.fn(), comboItems: () => [], sortKeys: () => [] };
 const preference = { sort: 'rating', dir: 'asc' };

@@ -4,7 +4,7 @@
     "performers": "Performers",
     "studios": "Studios",
     "tags": "Tags",
-    "jav": "JAV",
+    "jav": "Discover",
     "flagged": "Flagged",
     "playlists": "Playlists",
     "following": "Following",
@@ -23,6 +23,7 @@
   },
   "pageTitle": {
     "search": "Search {{term}}",
-    "portrait": "Vertical"
+    "portrait": "Vertical",
+    "javLibrary": "JAV"
   }
 }

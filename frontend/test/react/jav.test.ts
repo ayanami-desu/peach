@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { advanceImageFallback } from '../../src/card-art/image-fallback';
-import { discoveryArtwork, discoveryKey, fetchDiscoveries, javLibraryPath, javPath, javTab, prefetchJav,
+import { discoveryArtwork, discoveryKey, fetchDiscoveries, javLibraryPath, prefetchJav,
   type Discovery } from '../../src/react/jav/jav';
 import { queryClient } from '../../src/react/query';
 
@@ -22,15 +22,13 @@ it('馆藏探索只读，按排序与方向各取一份，不带范围参数', a
   } finally { vi.unstubAllGlobals() }
 });
 
-it('预取只认馆藏探索分区，馆藏沿用目录那一份', async () => {
+it('打开 /jav 时预取探索那一份', async () => {
   const fetcher = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ items: [], candidate_total: 0,
     limited: false, source: 'library' }) }));
   vi.stubGlobal('fetch', fetcher);
   try {
     queryClient.clear();
-    await prefetchJav('library', new AbortController().signal);
-    expect(fetcher).not.toHaveBeenCalled();
-    await prefetchJav('explore', new AbortController().signal);
+    await prefetchJav(new AbortController().signal);
     expect(fetcher).toHaveBeenCalledOnce();
     expect(queryClient.getQueryData(discoveryKey())).toBeTruthy();
   } finally { vi.unstubAllGlobals(); queryClient.clear() }
@@ -52,16 +50,7 @@ it('发现封面优先本机缓存，远程封面经 Peach 代理并保留原地
   expect(discoveryArtwork({ ...item, has_cover: false, code: '' }, 'small', 'cover')).toBe('');
 });
 
-it('JAV 分区只有馆藏与馆藏探索，认不出的落到馆藏探索', () => {
-  expect(javTab('library')).toBe('library');
-  expect(javTab('explore')).toBe('explore');
-  for (const value of ['wants', 'releases', 'discover', 'other', null]) expect(javTab(value)).toBe('explore');
-});
-
-it('馆藏探索与馆藏各一条地址，馆藏深链保留目录的搜索和筛选条件', () => {
-  expect(javPath('library')).toBe('/?jav=1');
-  expect(javPath('explore')).toBe('/jav?tab=explore');
-  expect(javPath('other')).toBe('/jav?tab=explore');
+it('馆藏深链保留目录的搜索和筛选条件，只有探索地址不再带页签', () => {
   const url = new URL(javLibraryPath('?tab=explore&q=ABC-123&studio=演示厂牌&loc=cloud&sort=new&jav=0'), 'https://peach.test');
   expect(url.pathname).toBe('/');
   expect(Object.fromEntries(url.searchParams)).toEqual({ q: 'ABC-123', studio: '演示厂牌', loc: 'cloud', sort: 'new', jav: '1' });

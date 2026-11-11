@@ -173,13 +173,6 @@ class RenameTests(unittest.TestCase):
         tag_renames.apply_rows(self.connection, tag_renames.collect(self.connection))
         self.assertEqual(self._tags_of(7), ["足系"])
 
-    def test_a_followed_bucket_entity_is_kept_for_a_person_to_look_at(self):
-        self._entity(21, "足系")
-        self.connection.execute("INSERT INTO follow_source(entity_id) VALUES(21)")
-        counts = tag_renames.apply_rows(self.connection, tag_renames.collect(self.connection))
-        self.assertEqual(counts["entities"], 0)
-        self.assertIsNotNone(self.connection.execute("SELECT 1 FROM entity WHERE id=21").fetchone())
-
     def test_a_preview_run_writes_the_csv_and_leaves_the_ledger_alone(self):
         self._tag(4, "足控")
         self.connection.commit()

@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "2c3f594c-09f8-4dd5-a2fb-c165c2bb9cbf", e._sentryDebugIdIdentifier = "sentry-dbid-2c3f594c-09f8-4dd5-a2fb-c165c2bb9cbf");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "95894fb3-5400-451b-a12e-1d79aa1fbced", e._sentryDebugIdIdentifier = "sentry-dbid-95894fb3-5400-451b-a12e-1d79aa1fbced");
 	} catch {}
 })();
 import { ArtSlot as e, Button as t, ButtonLink as n, DISCOVERY_SORTS as r, E3 as i, EmptyState as a, FilterGlassRows as o, FilterPill as s, GlassPill as c, IndexSearch as l, JAV_LAYOUTS as u, JAV_RECOMMENDATION_GRID as d, JavHeader as f, LibraryShortcuts as p, Note as m, Segments as h, SortKeys as g, SourceAvatar as _, Wt as v, __toESM as y, appSettingsStore as b, avatarInner as x, cardRatio as S, coverArrived as C, coverFetching as w, discoveryArtwork as T, discoveryKey as E, entityDisplayName as D, entityPath as O, errorMessage as k, fetchCoverNow as A, fetchDiscoveries as j, gaugeHtml as M, gridLayout as N, javContentSkeleton as P, javLayout as F, javTagSkeleton as I, relayoutCovers as L, require_jsx_runtime as R, require_react as z, storeJavLayout as B, textLang as V, useAction as H, useEntityNames as U, useQuery as W, wireHorizontalScroller as G, writeJavQuery as K } from "./peach-app.js";
@@ -205,39 +205,22 @@ function Q({ item: t, layout: r, javImage: i, readOnly: a, navigate: o, tag: s, 
 	});
 }
 // src/react/jav/jav-page.tsx
-var $ = {
-	explore: "筛选推荐",
-	library: "筛选"
-};
-function ee({ tab: e, readOnly: t, navigate: r }) {
-	let [o, s] = (0, q.useState)(() => new URLSearchParams(location.search).get("q") || ""), c = (e) => {
-		s(e), K({ q: e });
+var $ = "筛选推荐";
+function ee({ readOnly: e, navigate: t }) {
+	let [n, r] = (0, q.useState)(() => new URLSearchParams(location.search).get("q") || ""), i = (e) => {
+		r(e), K({ q: e });
 	};
 	return /* @__PURE__ */ (0, J.jsxs)("div", {
 		className: "flex w-full flex-col gap-6",
-		children: [/* @__PURE__ */ (0, J.jsx)(f, {
-			tab: e,
-			navigate: r,
-			search: /* @__PURE__ */ (0, J.jsx)(l, {
-				label: $[e] || "筛选",
-				value: o,
-				onQuery: c
-			})
-		}), e === "library" ? /* @__PURE__ */ (0, J.jsx)(a, {
-			icon: i,
-			title: "馆藏",
-			actions: /* @__PURE__ */ (0, J.jsx)(n, {
-				variant: "primary",
-				size: "small",
-				href: "/?jav=1",
-				children: "浏览馆藏"
-			}),
-			children: "馆藏在目录页按库、演员与标签筛选。"
-		}) : /* @__PURE__ */ (0, J.jsx)(te, {
-			query: o.trim(),
-			navigate: r,
-			clearText: () => c(""),
-			readOnly: t
+		children: [/* @__PURE__ */ (0, J.jsx)(f, { search: /* @__PURE__ */ (0, J.jsx)(l, {
+			label: $,
+			value: n,
+			onQuery: i
+		}) }), /* @__PURE__ */ (0, J.jsx)(te, {
+			query: n.trim(),
+			navigate: t,
+			clearText: () => i(""),
+			readOnly: e
 		})]
 	});
 }
@@ -392,4 +375,4 @@ function te({ query: e, navigate: n, clearText: l, readOnly: f }) {
 }
 export { ee as JavPage };
 
-//# debugId=2c3f594c-09f8-4dd5-a2fb-c165c2bb9cbf
+//# debugId=95894fb3-5400-451b-a12e-1d79aa1fbced

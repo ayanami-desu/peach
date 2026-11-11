@@ -244,7 +244,7 @@ describe('舞台与小窗之间交接播放器', () => {
 
     open = false;
     stage.toggleMiniplayer();
-    expect(expand).toHaveBeenCalledWith('item', 1, null);
+    expect(expand).toHaveBeenCalledWith(1);
   });
 });
 

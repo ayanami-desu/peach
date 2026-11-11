@@ -39,7 +39,7 @@ export function JavDetailPage(props: JavDetailProps) {
 const Close = ({ close }: { close(): void }) => <button type="button" data-stage-close="" id="closeStage"
   aria-label="关闭" title="关闭" onClick={close} dangerouslySetInnerHTML={{ __html: icon('x') }} />;
 
-function Work({ code, item, actions, readOnly, retry, retrying }: JavDetailProps & { item: JavDetail; retry(): void; retrying: boolean }) {
+function Work({ item, actions, retry, retrying }: JavDetailProps & { item: JavDetail; retry(): void; retrying: boolean }) {
   useEffect(() => { actions.canonicalCode?.(item.code) }, [actions, item.code]);
   useEffect(() => { if (item.state === 'ready') void queryClient.invalidateQueries({ queryKey: ['jav-discoveries'] }) }, [item.code, item.state]);
   const [preview, setPreview] = useState(-1);

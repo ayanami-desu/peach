@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { boardPageSkeleton, detailSkeletonBody } from '../src/board-skeleton';
-import { wireBoardSegments } from '../src/board-controls';
 
 vi.mock('@peach/legacy/core', async importOriginal => ({
   ...await importOriginal<object>(),
@@ -28,14 +27,13 @@ describe('Board 页面骨架', () => {
       expect(control.closest('[inert]')).not.toBeNull();
     }
   });
-  it('JAV 馆藏探索分区按地址栏里的排序画排序键，页头是筛选推荐', () => {
+  it('探索页骨架是标题与筛选推荐框，排序键按地址栏画', () => {
     const before = location.pathname + location.search;
-    history.replaceState(null, '', '/jav?tab=explore&sort=duration&dir=asc');
+    history.replaceState(null, '', '/jav?sort=duration&dir=asc');
     const root = document.createElement('div');
     root.innerHTML = boardPageSkeleton('/jav');
     history.replaceState(null, '', before);
-    expect([...root.querySelectorAll('span.whitespace-nowrap.rounded-md')]
-      .find(node => node.classList.contains('bg-background-tertiary-default'))?.textContent).toBe('馆藏探索');
+    expect(root.querySelector('[data-page-title]')?.textContent).toBe('探索');
     expect(root.querySelector('[data-index-search] input')?.getAttribute('aria-label')).toBe('筛选推荐');
     expect([...root.querySelectorAll('[data-entity-sort]')].map(node => node.textContent))
       .toEqual(['发行时间', '来源评分', '时长', '番号']);

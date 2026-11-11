@@ -53,7 +53,7 @@ const VIEWING_COLOR = CHART_COLORS[4];
 
 const CARD = `${cardClass()} flex flex-col gap-4`;
 
-const NO_VIDEO_HINT = '添加媒体目录或关注来源后，这里会显示馆藏统计。';
+const NO_VIDEO_HINT = '添加媒体目录后，这里会显示馆藏统计。';
 const NO_TAG_HINT = '补全资料或添加标签后，这里会显示馆藏中的内容标签。';
 const NO_WATCH_HINT = '开始播放后，这里会显示最近的真实观看证据。';
 const NO_TAG_SOURCE_HINT = '补充作品资料或手动添加标签后，这里会显示各个标签来源对应的视频数量。';
@@ -127,10 +127,7 @@ function InventoryDetail({ data }: { data: StatsData } & StatsProps) {
   if (!videos) {
     return (
       <EmptyState icon={RiVideoLine} title="还没有视频" actions={
-        <>
-          <ButtonLink variant="secondary" href="/subscriptions?tab=add" size="small">添加关注</ButtonLink>
-          <ButtonLink variant="primary" href={MEDIA_SETTINGS} size="small">添加媒体</ButtonLink>
-        </>
+        <ButtonLink variant="primary" href={MEDIA_SETTINGS} size="small">添加媒体</ButtonLink>
       }>{NO_VIDEO_HINT}</EmptyState>
     );
   }

@@ -2,10 +2,9 @@ import { act } from 'react';
 import { QueryClientProvider, notifyManager, useQuery } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { createResultRefresher, ResultUpdates } from '../../src/react/result-updates';
-import { RESULT_UPDATES_KEY } from '../../src/react/activity/tasks';
+import { createResultRefresher } from '../../src/react/result-updates';
 import { queryClient } from '../../src/react/query';
-import { mount, pending, settle } from './render';
+import { mount, pending } from './render';
 
 notifyManager.setScheduler(notify => notify());
 afterEach(() => queryClient.clear());

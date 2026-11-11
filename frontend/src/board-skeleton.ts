@@ -1,7 +1,6 @@
 import { islandButton } from './island-skeleton';
 import { configurationSkeleton } from './configuration-skeleton';
 import { javPageSkeleton } from './jav-skeleton';
-import { javTab } from './react/jav/jav-navigation';
 import { duplicatesSkeleton, qualityGoalsSkeleton, statsSkeleton } from './management-skeletons';
 import { configurationSection, isConfigurationPath } from './history/settings-route';
 
@@ -28,7 +27,7 @@ export function boardPageSkeleton(path: string): string {
   if (path === '/stats') {
     body = statsSkeleton();
   } else if (path === '/jav') {
-    body = javPageSkeleton(javTab(new URLSearchParams(location.search).get('tab')));
+    body = javPageSkeleton();
   } else if (isConfigurationPath(path)) {
     body = configurationSkeleton(configurationSection(path));
   } else if (path === '/tasks') {

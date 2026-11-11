@@ -13,18 +13,17 @@ const item = (id: number, code: string, tags: string[] = []) => ({
   link: '', cover_url: '', has_cover: true, has_thumb: true, tags,
 });
 
-const open = (tab: string, navigate = vi.fn()) => mount(
+const open = (navigate = vi.fn()) => mount(
   <QueryClientProvider client={queryClient}>
-    <JavPage tab={tab} readOnly={false} navigate={navigate} receipt={vi.fn()} />
+    <JavPage readOnly={false} navigate={navigate} receipt={vi.fn()} />
   </QueryClientProvider>);
 
-it('JAV 页签只有馆藏与探索，馆藏指向目录里的 JAV 视图', async () => {
-  const host = await open('library');
+it('探索页只有一节内容，页头是标题与筛选推荐框', async () => {
+  const host = await open();
   await settle();
-  expect([...host.querySelectorAll('[role="tab"]')].map(tab => tab.textContent?.trim())).toEqual(['馆藏', '馆藏探索']);
-  expect(host.querySelector('[data-index-search] input')?.getAttribute('aria-label')).toContain('筛选');
-  const link = host.querySelector<HTMLAnchorElement>('[data-empty-state] a')!;
-  expect(link.getAttribute('href')).toBe('/?jav=1');
+  expect(host.querySelector('[data-page-title]')?.textContent).toBe('探索');
+  expect(host.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  expect(host.querySelector('[data-index-search] input')?.getAttribute('aria-label')).toContain('筛选推荐');
 });
 
 it('探索列表按缓存立即呈现，读数是这一屏的部数', async () => {
@@ -32,18 +31,18 @@ it('探索列表按缓存立即呈现，读数是这一屏的部数', async () =
     items: [item(1, 'ABC-001', ['巨乳']), item(2, 'ABC-002')], candidate_total: 2,
     sort: 'release_date', direction: 'desc', limited: false, source: 'library',
   });
-  const host = await open('explore');
+  const host = await open();
   await settle();
   expect([...host.querySelectorAll('[data-jav-title] b')].map(code => code.textContent)).toEqual(['ABC-001', 'ABC-002']);
   expect(host.querySelector('[data-catalog-readout]')?.textContent).toBe('2 部');
 });
 
-it('标签键在探索分区里筛这一屏，再按一次取消', async () => {
+it('标签键在探索页筛这一屏，再按一次取消', async () => {
   queryClient.setQueryData(discoveryKey('release_date', 'desc'), {
     items: [item(1, 'ABC-001', ['巨乳']), item(2, 'ABC-002')], candidate_total: 2,
     sort: 'release_date', direction: 'desc', limited: false, source: 'library',
   });
-  const host = await open('explore');
+  const host = await open();
   await settle();
   const pill = host.querySelector<HTMLElement>('[data-catalog-tag="巨乳"]')!;
   await click(pill);
@@ -59,7 +58,7 @@ it('点卡片进作品详情', async () => {
     sort: 'release_date', direction: 'desc', limited: false, source: 'library',
   });
   const navigate = vi.fn();
-  const host = await open('explore', navigate);
+  const host = await open(navigate);
   await settle();
   await click(host.querySelector('[data-jav-card]')!);
   expect(navigate).toHaveBeenCalledWith('/works/ABC-001');

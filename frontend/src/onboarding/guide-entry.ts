@@ -1,6 +1,6 @@
+import { t } from '../i18n';
 import { ROUTE_META } from '../history/route-meta';
 import { PREFERENCE_SECTIONS, CONFIGURATION_SECTIONS } from '../history/settings-route';
-import { JAV_TABS } from '../react/jav/jav-navigation';
 import type { GuideStep } from './guide-catalog';
 
 export interface GuideEntry { path: readonly string[]; hint?: string }
@@ -26,8 +26,7 @@ export function guideEntry(step: GuideStep): GuideEntry | undefined {
   }
   const params = new URLSearchParams(query);
   if (pathname === '/jav' || params.get('jav') === '1') {
-    const tab = JAV_TABS.find(([id]) => id === (params.get('tab') || 'library'));
-    return sidebar('JAV', tab?.[1] || JAV_TABS[0][1]);
+    return sidebar(t('navigation:sidebar.jav'));
   }
   if (pathname === '/') {
     switch (step.id) {

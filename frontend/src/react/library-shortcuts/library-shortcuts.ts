@@ -16,7 +16,7 @@ export function useShortcuts(enabled = true) {
 export function useShortcutWrite() {
   return useMutation({ mutationKey: SHORTCUTS_KEY,
     mutationFn: (body: Record<string, unknown>) => apiSend<Shortcuts>(URL, body),
-    onSuccess: (data, body) => {
+    onSuccess: (data) => {
       queryClient.setQueryData(SHORTCUTS_KEY, data);
     },
   });

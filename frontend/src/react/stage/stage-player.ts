@@ -27,7 +27,7 @@ export interface StagePlayerHost {
   /** 这个来源此刻是不是脱盘。 */
   sourceOffline(location: string): boolean;
   /** 小窗里的「展开」：回到这一条的详情，壳负责地址与来处。 */
-  expand(kind: 'item', id: number, mediaIndex: number | null): void;
+  expand(id: number): void;
   /** 小窗接不了的卡片照常打开详情。 */
   openItem(id: number): void;
 }
@@ -363,7 +363,7 @@ export function closeMiniplayer(): void {
 
 export function expandMiniplayer(): void {
   if (!miniplayerActive() || !held) return;
-  stageHost().expand('item', held.item.id, null);
+  stageHost().expand(held.item.id);
 }
 
 /** i 键与 YouTube 同义：详情里进小窗，小窗里展开回详情。 */

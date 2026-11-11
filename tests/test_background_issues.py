@@ -86,8 +86,9 @@ class BackgroundIssueTests(unittest.TestCase):
         def fine(_state, _contract, _config):
             return [Issue("probe", "某一项失败了", "/settings", "打开设置")]
 
-        self.assertEqual(keys(self.log.collect(self.state, self.contract, None,
-                                               providers=[broken, fine])), ["probe"])
+        with self.assertLogs("peach.background_issues", level="ERROR"):
+            self.assertEqual(keys(self.log.collect(self.state, self.contract, None,
+                                                   providers=[broken, fine])), ["probe"])
 
     def test_a_missing_amane_bridge_can_be_rebuilt_in_place_unless_a_rebuild_is_running(self):
         self.contract.tools_root = self.root / "empty-tools"
@@ -123,14 +124,6 @@ class BackgroundIssueTests(unittest.TestCase):
         # 重新下载在跑时这一行先收起。
         latest[0] = SimpleNamespace(id=43, active=True, status="running", finished_at=None, error="")
         self.assertEqual(self.collect(), [])
-
-    def test_one_broken_service_does_not_hide_the_others(self):
-        def broken():
-            raise RuntimeError("状态文件读坏了")
-        self.contract.follow_scheduler = SimpleNamespace(status=broken)
-        self.contract.tools_root = self.root / "empty-tools"
-        with self.assertLogs("peach.background_issues", level="ERROR"):
-            self.assertEqual(keys(self.collect()), ["amane-bridge"])
 
 
 if __name__ == "__main__":

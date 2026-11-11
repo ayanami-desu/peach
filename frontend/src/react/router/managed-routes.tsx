@@ -145,7 +145,7 @@ export const MANAGED_ROUTES: ManagedRouteTable = {
   ...cleanupRoutes,
   '/jav': {
     element: <ManagedMatch path="/jav" />,
-    prefetch: (open, signal) => withPage(javPage, prefetchJav(open.tab, signal)),
+    prefetch: (_open, signal) => withPage(javPage, prefetchJav(signal)),
     page: (open, actions) => {
       const { JavPage } = javPage.get();
       return <JavPage {...open} navigate={actions.navigate} receipt={message => actions.receipt(message)} />;

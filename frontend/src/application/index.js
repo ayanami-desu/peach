@@ -2,7 +2,7 @@ import { indexPath as pathForIndex, personAvatar as avatarForPerson, createIndex
 /* index 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
 import { $ } from '../core';
 import { preferencesState } from './preferences.js';
-import { navigationState, openRoutedPage, syncNavigation } from './navigation.js';
+import { navigationState, syncNavigation } from './navigation.js';
 import { applicationEffects } from './effects';
 import { openConfigurationSection } from './playlists.js';
 import { peopleLayoutOf } from './../index-skeleton';

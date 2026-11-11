@@ -14,7 +14,6 @@
 import { useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useLocation } from 'react-router';
 
-import { javTab } from '../../jav/jav-navigation';
 import { isOverlayPath, managedEntry, openManagedRoute, peachHistory, isConfigurationPath } from '@peach/history';
 import { api, isAbort } from '@peach/legacy/core';
 import { pageOpens, subscribeShell } from '@peach/shell';
@@ -68,8 +67,7 @@ async function openProps(path: ManagedPath, run: Run): Promise<object | null> {
   if (path === '/jav') {
     const runtime = await readRuntime(run);
     if (!run.live) return null;
-    /* 两个分区地址（`?tab=library|explore`）各画各的：页签从地址读，缺省回馆藏探索。 */
-    return { tab: javTab(search().get('tab')), readOnly: !!runtime?.ledger_read_only } satisfies ManagedOpenProps['/jav'];
+    return { readOnly: !!runtime?.ledger_read_only } satisfies ManagedOpenProps['/jav'];
   }
   if (path === '/review') {
     const category = search().get('category') || '';

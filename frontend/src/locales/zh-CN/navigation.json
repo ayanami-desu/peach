@@ -4,7 +4,7 @@
     "performers": "艺人",
     "studios": "厂牌",
     "tags": "标签",
-    "jav": "JAV",
+    "jav": "探索",
     "flagged": "已标记",
     "playlists": "播放列表",
     "following": "关注",
@@ -23,6 +23,7 @@
   },
   "pageTitle": {
     "search": "搜索 {{term}}",
-    "portrait": "竖屏"
+    "portrait": "竖屏",
+    "javLibrary": "JAV"
   }
 }

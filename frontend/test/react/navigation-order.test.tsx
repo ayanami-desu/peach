@@ -18,7 +18,7 @@ afterEach(() => {
 
 it('收藏固定全部首项，导航追加新增项并剔除重复及过期键', () => {
   expect(normalizeNavigationOrder('favorites', ['tag', 'all', 'tag', 'removed']).slice(0, 3)).toEqual(['all', 'tag', 'filters']);
-  expect(normalizeNavigationOrder('jav', null)).toEqual(['library', 'explore']);
+  expect(normalizeNavigationOrder('favorites', null).slice(0, 2)).toEqual(['all', 'filters']);
   expect(orderLibraries([{ id: 'a' }, { id: 'b' }, { id: 'new' }], ['gone', 'b', 'a'], row => row.id).map(row => row.id))
     .toEqual(['b', 'a', 'new']);
 });
@@ -31,22 +31,22 @@ it('键盘调整导航保存稳定 ID，选中分区保留，重置后可撤销'
     return { ok: true, json: async () => body };
   }));
   const change = vi.fn();
-  const host = await mount(<SortableBoardTabs group="jav" value="library" onChange={change} label="JAV 分区"
-    tabs={navigationDefaults('jav').map(value => ({ value, label: value }))} />);
+  const host = await mount(<SortableBoardTabs group="preferences" value="appearance" onChange={change} label="个人设置"
+    tabs={[{ value: 'appearance', label: '外观与导航' }, { value: 'browsing', label: '浏览与播放' }]} />);
   expect(host.querySelector('[data-navigation-menu]')).toBeNull();
-  await act(async () => host.querySelector('[data-tab="explore"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true })));
+  await act(async () => host.querySelector('[data-tab="browsing"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true })));
   await settle();
-  expect([...host.querySelectorAll('[role="tab"]')].map(el => el.getAttribute('data-tab'))).toEqual(['explore', 'library']);
-  expect(host.querySelector('[aria-selected="true"]')?.getAttribute('data-tab')).toBe('library');
+  expect([...host.querySelectorAll('[role="tab"]')].map(el => el.getAttribute('data-tab'))).toEqual(['browsing', 'appearance']);
+  expect(host.querySelector('[aria-selected="true"]')?.getAttribute('data-tab')).toBe('appearance');
   expect(change).not.toHaveBeenCalled();
   expect(host.querySelector('[data-navigation-menu]')).not.toBeNull();
-  expect(writes).toContainEqual({ navigationOrders: { jav: ['explore', 'library'] } });
+  expect(writes.at(-1)).toEqual({ navigationOrders: { preferences: normalizeNavigationOrder('preferences', ['browsing', 'appearance']) } });
   const commit = vi.fn();
-  restoreNavigationOrder({ label: 'JAV 分区', keys: ['explore', 'library'], defaults: navigationDefaults('jav'), commit });
-  expect(commit).toHaveBeenLastCalledWith(navigationDefaults('jav'));
+  restoreNavigationOrder({ label: '个人设置', keys: ['browsing', 'appearance'], defaults: navigationDefaults('preferences'), commit });
+  expect(commit).toHaveBeenLastCalledWith(navigationDefaults('preferences'));
   const options = vi.mocked(showToast).mock.calls.at(-1)![1];
   options.action?.run(document.createElement('button'));
-  expect(commit).toHaveBeenLastCalledWith(['explore', 'library']);
+  expect(commit).toHaveBeenLastCalledWith(['browsing', 'appearance']);
 });
 
 it('对象顺序先在弹层调整，保存失败保留顺序和错误，重试成功才关闭', async () => {

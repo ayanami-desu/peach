@@ -15,7 +15,6 @@ export const NAVIGATION_GROUPS = {
     ['all', '全部'], ['filters', '保存的筛选'], ['performer', '艺人'], ['creator', '创作者'],
     ['tag', '标签'], ['series', '系列'], ['studio', '片商与厂牌'], ['agency', '事务所'],
   ] },
-  jav: { label: 'JAV 分区', items: [['library', '馆藏'], ['explore', '馆藏探索']] },
   tags: { label: '标签词表', items: [['local', '本地']] },
   preferences: { label: '个人设置', items: [
     ['appearance', '外观与导航'], ['browsing', '浏览与播放'], ['jav', 'JAV'],

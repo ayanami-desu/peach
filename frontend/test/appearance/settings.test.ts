@@ -151,14 +151,14 @@ describe('数据库那一份落进本地缓存', () => {
 
   it('新客户端与已有缓存都采用实例保存的导航和媒体库顺序', () => {
     const fresh = stage();
-    const cached = stage({ navigationOrders: { jav: ['library', 'explore'] }, libraryOrder: ['a', 'b'] });
-    const instance = { navigationOrders: { jav: ['explore', 'library'] }, libraryOrder: ['b', 'a'] };
+    const cached = stage({ navigationOrders: { favorites: ['series', 'performer'] }, libraryOrder: ['a', 'b'] });
+    const instance = { navigationOrders: { favorites: ['performer', 'series'] }, libraryOrder: ['b', 'a'] };
     for (const client of [fresh, cached]) {
       applySyncedSettings(instance, client.changed, client.store);
-      expect(client.store.value.navigationOrders.jav).toEqual(['explore', 'library']);
+      expect(client.store.value.navigationOrders.favorites?.slice(1, 3)).toEqual(['performer', 'series']);
       expect(client.store.value.libraryOrder).toEqual(['b', 'a']);
-      applySyncedSettings({ navigationOrders: { jav: ['library', 'explore'] }, libraryOrder: [] }, client.changed, client.store);
-      expect(client.store.value.navigationOrders.jav).toEqual(['library', 'explore']);
+      applySyncedSettings({ navigationOrders: { favorites: ['series', 'performer'] }, libraryOrder: [] }, client.changed, client.store);
+      expect(client.store.value.navigationOrders.favorites?.slice(1, 3)).toEqual(['series', 'performer']);
       expect(client.store.value.libraryOrder).toEqual([]);
     }
   });

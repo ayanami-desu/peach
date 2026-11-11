@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "5a9cca63-0fa3-4a93-8a86-4590091314e3", e._sentryDebugIdIdentifier = "sentry-dbid-5a9cca63-0fa3-4a93-8a86-4590091314e3");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "4b196502-d837-44d0-a528-e9c4c31473db", e._sentryDebugIdIdentifier = "sentry-dbid-4b196502-d837-44d0-a528-e9c4c31473db");
 	} catch {}
 })();
 import { $b4f18e3395fe64d7$export$3d96ec278d3efce4 as e, $b4f18e3395fe64d7$export$3e41faf802a29e71 as t, $b4f18e3395fe64d7$export$b2539bed5023c21c as n, $b4f18e3395fe64d7$export$e51a686c67fdaa2d as r, ButtonLink as i, DRIVE_SETTINGS_PATH as a, EmptyState as o, LOC as s, MEDIA_SOURCE_ICONS as c, MotionConfigContext as l, NR as u, Note as d, Progress as f, SEGMENT as p, SEGMENTED_TRACK as m, STATS_KEY as h, STAT_STRIP as g, SegmentedTabList as _, SourceMark as v, StatCard as y, StatusLabel as b, WithPromise as x, Xc as S, Xt as C, _8 as w, __commonJSMin as T, __exportAll as E, __toESM as D, asNumber as O, bandRows as k, calcGeneratorVelocity as A, cancelFrame as j, cardClass as M, clsx as N, collectMotionValues as ee, cx as te, errorMessage as ne, f1 as re, fetchStats as ie, fmtCount as ae, fmtSize as oe, frame as se, interpolate as ce, isMotionValue as le, known as ue, lengthRows as de, mM as fe, mediumRows as pe, motion as me, motionValue as he, percentText as ge, playedFor as _e, playedItemUrl as ve, radialArc as ye, radialBarSize as be, radialCeiling as xe, radialSlices as Se, reachedShare as Ce, replayRows as we, require_jsx_runtime as Te, require_react as Ee, require_react_dom as De, require_with_selector as Oe, resolveStartTime as ke, spring as Ae, statCardClass as je, time as Me, uo as Ne, useConstant as Pe, useIsomorphicLayoutEffect as Fe, useQuery as Ie, useReducedMotion as Le, watchNote as Re, watchedShare as ze } from "./peach-app.js";
@@ -21316,7 +21316,7 @@ function qW({ title: e, rows: t, empty: n, unit: r = "个视频" }) {
 	});
 }
 // src/react/stats/stats-page.tsx
-var JW = a, YW = 10, XW = nW[5], ZW = nW[4], QW = `${M()} flex flex-col gap-4`, $W = "添加媒体目录或关注来源后，这里会显示馆藏统计。", eG = "补全资料或添加标签后，这里会显示馆藏中的内容标签。", tG = "开始播放后，这里会显示最近的真实观看证据。", nG = "补充作品资料或手动添加标签后，这里会显示各个标签来源对应的视频数量。", rG = "添加媒体目录后，这里会显示存储空间。", iG = "把媒体目录归进媒体库后，这里会按库显示视频数。", aG = "探测时长后，这里会显示时长分布。", oG = "探测画质后，这里会显示画质分布。", sG = "开始播放后，这里会显示播放落在一周的哪些时段。", cG = "开始播放后，这里会显示每个作品播了几次。", lG = (e, t) => Math.min(Math.max(e, 0), t);
+var JW = a, YW = 10, XW = nW[5], ZW = nW[4], QW = `${M()} flex flex-col gap-4`, $W = "添加媒体目录后，这里会显示馆藏统计。", eG = "补全资料或添加标签后，这里会显示馆藏中的内容标签。", tG = "开始播放后，这里会显示最近的真实观看证据。", nG = "补充作品资料或手动添加标签后，这里会显示各个标签来源对应的视频数量。", rG = "添加媒体目录后，这里会显示存储空间。", iG = "把媒体目录归进媒体库后，这里会按库显示视频数。", aG = "探测时长后，这里会显示时长分布。", oG = "探测画质后，这里会显示画质分布。", sG = "开始播放后，这里会显示播放落在一周的哪些时段。", cG = "开始播放后，这里会显示每个作品播了几次。", lG = (e, t) => Math.min(Math.max(e, 0), t);
 function uG({ term: e, value: t }) {
 	return /* @__PURE__ */ (0, $.jsxs)("div", {
 		className: "flex min-h-16 min-w-0 flex-col gap-1.5 rounded-2lg bg-background-primary-default p-3",
@@ -21435,17 +21435,12 @@ function mG({ data: e }) {
 	}) : /* @__PURE__ */ (0, $.jsx)(o, {
 		icon: u,
 		title: "还没有视频",
-		actions: /* @__PURE__ */ (0, $.jsxs)($.Fragment, { children: [/* @__PURE__ */ (0, $.jsx)(i, {
-			variant: "secondary",
-			href: "/subscriptions?tab=add",
-			size: "small",
-			children: "添加关注"
-		}), /* @__PURE__ */ (0, $.jsx)(i, {
+		actions: /* @__PURE__ */ (0, $.jsx)(i, {
 			variant: "primary",
 			href: JW,
 			size: "small",
 			children: "添加媒体"
-		})] }),
+		}),
 		children: $W
 	});
 }
@@ -21886,4 +21881,4 @@ function CG(i) {
 }
 export { CG as StatsPage };
 
-//# debugId=5a9cca63-0fa3-4a93-8a86-4590091314e3
+//# debugId=4b196502-d837-44d0-a528-e9c4c31473db

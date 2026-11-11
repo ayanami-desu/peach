@@ -65,7 +65,7 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 
 ## 馆藏探索
 
-JAV 页两个页签：`tab=library` 是馆藏本身，`tab=explore` 是馆藏探索。探索只读账本，不发 HTTP、不问来源：`web_jav_discovery.q_jav_discoveries()` 按 `JAV_ASSET_PREDICATE` 与 `medium='video'` 取候选，再筛掉已移除、标记过 `dislike`／`seen`、看过两次以上、以及播放进度已过半的片子；男优记录不参与，同番号只留一张卡。
+JAV 探索页在 `/jav`；馆藏 JAV 是目录页的 `?jav=1` 筛选。探索只读账本，不发 HTTP、不问来源：`web_jav_discovery.q_jav_discoveries()` 按 `JAV_ASSET_PREDICATE` 与 `medium='video'` 取候选，再筛掉已移除、标记过 `dislike`／`seen`、看过两次以上、以及播放进度已过半的片子；男优记录不参与，同番号只留一张卡。
 
 - 上限：候选按 `CANDIDATE_LIMIT = 4000` 截断，一次最多返回 100 部（`limit` 缺省 60）。
 - 排序：`DISCOVERY_SORTS = ("release_date", "source_score", "duration", "code")`，升降序由 `direction` 指定；缺失值排在末尾。

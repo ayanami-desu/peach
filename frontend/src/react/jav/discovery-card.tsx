@@ -6,7 +6,7 @@ import { gaugeHtml } from '@peach/legacy/ui';
 import { relayoutCovers } from '../../card-art/framing';
 import { textLang } from '../../core/text-lang';
 import { ArtSlot } from '../components/art-slot';
-import { busyProps, useAction } from '../settings/use-action';
+import { useAction } from '../settings/use-action';
 import { DiscoveryFaces } from './discovery-faces';
 import { coverArrived, coverFetching, discoveryArtwork, fetchCoverNow, type Discovery } from './jav';
 

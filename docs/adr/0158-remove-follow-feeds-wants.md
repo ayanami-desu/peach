@@ -23,7 +23,7 @@
 
 **二、保留项。**
 
-- 馆藏探索换入口：`/api/jav/discoveries` 留在 JAV 页的 `tab=explore`，只读账本、不发 HTTP；候选按 `JAV_ASSET_PREDICATE` 与 `medium='video'` 取，筛掉已移除、标记过 `dislike`/`seen`、看过两次以上与播放进度过半的片子，同番号只留一张卡；排序是发行时间（默认）、来源评分、时长与番号。
+- 馆藏探索换入口：`/api/jav/discoveries` 留在 `/jav` 探索页，只读账本、不发 HTTP；馆藏 JAV 是目录页的 `?jav=1` 筛选。候选按 `JAV_ASSET_PREDICATE` 与 `medium='video'` 取，筛掉已移除、标记过 `dislike`/`seen`、看过两次以上与播放进度过半的片子，同番号只留一张卡；排序是发行时间（默认）、来源评分、时长与番号。
 - 作品资料持久化：javdb 只取作品资料，刮削走匿名接口（ADR-0144）。快照写进 `generated/jav-public/`，抓到一次就永久保存：`src/peach/jav_cache.py` 的 `cache_fresh()` 只认时间戳是否可信，不判新旧；盘上没有、手动重匹配或带 `?refresh=1` 才再问来源。
 - 样张永久：官方样张随作品资料一起留在同一目录，不按天数失效。
 - 后继框架保留：`src/peach/followups.py` 的后继仍只由任务结果声明（`TaskRunStore.enqueue_followups`），写账本的后继串行走 `LEDGER_LANE = "ledger"`，一次一条、重启后重排队、必须幂等（ADR-0053）。现存种类是 `entity-avatar`、`creator-identity`、`performer-alias`、`performer-profile`、`code-samples`、`seed-import`、`studio-mark`。
@@ -52,5 +52,5 @@
 
 - 旧的 `/follow*`、`/follow-manage` 书签落进壳给出的默认页面；`/subscriptions` 与设置里的旧分区名重定向到 `/sources`，采集来源列表留在那里。
 - 资料页与标签页都不再有「在线」一档，只剩本地索引与本地词表。
-- JAV 页只剩 `tab=library` 与 `tab=explore`；详情页只剩作品资料、样张与播放。
+- JAV 页只剩探索，馆藏 JAV 走目录页的 `?jav=1` 筛选；详情页只剩作品资料、样张与播放。
 - 删除后仍需清理的残留：`migrations/` 里那几张表的建表说明，以及 `src/peach/task_runs.py` 的 `TASK_LABELS` 里已删任务的标签（后者只为历史任务行显示）。这些不影响新行为，但会让下次读代码的人以为功能还在。

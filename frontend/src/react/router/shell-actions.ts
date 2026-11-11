@@ -127,7 +127,7 @@ export type SurfaceKind = 'management' | 'index' | 'entity' | 'catalog' | 'playl
  *  管理区那几页画进 `#stats`。 */
 export interface ManagedOpenProps extends Record<ConfigurationPath, { section?: string }>,
   Record<import('../../cleanup-tools').CleanupToolPath, Record<string, never>> {
-  '/jav': { tab: string; readOnly: boolean };
+  '/jav': { readOnly: boolean };
   '/stats': Record<string, never>;
   '/review': { category: string; queue?: string; readOnly: boolean; readOnlyMessage: string; writerUrl: string };
   '/data-cleanup': Record<string, never>;

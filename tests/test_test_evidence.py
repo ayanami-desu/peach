@@ -1084,12 +1084,12 @@ class VerificationTests(unittest.TestCase):
         self.git("add", "--", name)
         contents = runner.changed_contents(self.repo, "HEAD", [name])
         with mock.patch.object(runner, '_import_index', return_value=({}, {}, frozenset())):
-            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("catalog",))
+            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("catalog", "web"))
         self.git("commit", "-m", "test: fixture")
         path.unlink()
         contents = runner.changed_contents(self.repo, "HEAD", [name])
         with mock.patch.object(runner, '_import_index', return_value=({}, {}, frozenset())):
-            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("catalog",))
+            self.assertEqual(runner.scopes_for_changes([name], contents=contents)[0], ("catalog", "web"))
 
     def test_known_python_file_execute_mode_requires_full(self):
         name = "src/peach/web_library_shortcuts.py"

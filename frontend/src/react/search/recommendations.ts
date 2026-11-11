@@ -11,7 +11,7 @@ type Latest = { id: number; code: string; release_date: string };
 const GROUPS = [
   { kind: 'performer', label: '艺人与新作', href: '/performers', action: '全部艺人', size: 3 },
   { kind: 'asset', label: '作品推荐', href: '/', action: '全部作品', size: 5 },
-  { kind: 'jav', label: 'JAV 推荐', href: '/jav?tab=explore', action: '探索 JAV', size: 5 },
+  { kind: 'jav', label: 'JAV 推荐', href: '/jav', action: '探索 JAV', size: 5 },
 ] as const;
 
 /** 一组都还没取到时的推荐栏：版式与取齐之后相同。 */

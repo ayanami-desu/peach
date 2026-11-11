@@ -873,7 +873,7 @@ class OperationalScriptTests(unittest.TestCase):
         self.assertEqual(pick(["tests/test_context_budget.py"])[0], ("tooling",))
         scopes, why = pick(["src/peach/web_library_shortcuts.py", "web/app.js"])
         self.assertTrue(why.startswith("Peach auto scope: catalog, web <- "), why)
-        self.assertIn("web: web/app.js", why)
+        self.assertIn("web: src/peach/web_library_shortcuts.py, web/app.js", why)
         self.assertEqual(pick([])[0], ("checks",))
         # full 覆盖公共设施和未知影响面。
         for paths, fragment in ((["migrations/0099_next.sql"], "必须 full"),

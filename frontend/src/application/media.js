@@ -182,7 +182,7 @@ mediaState.stageHost = {
   },
   sourceOffline:key=>preferencesState.sourceOffline(key),
   /* 小窗里的「展开」：同一个播放器搬回这一条的详情，地址与来处照点卡片进来的那一条走。 */
-  expand:(kind,id,mediaIndex)=>void openItem(id,true),
+  expand:id=>void openItem(id,true),
   openItem:id=>void openItem(id),
 };
 mediaState.stageOpen = ()=>!!stageApi()?.isOpen();

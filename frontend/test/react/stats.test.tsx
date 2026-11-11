@@ -19,7 +19,7 @@ import {
 import { RadialCard } from '../../src/react/stats/radial-card';
 import { StatsPage } from '../../src/react/stats/stats-page';
 
-import { actionOrder, buttonNamed, click, mount, mountRoot } from './render';
+import { buttonNamed, click, mount, mountRoot } from './render';
 
 // 客户端是模块级的单例（所有 React 根共用一个），用例之间不清就互相喂数据。
 afterEach(() => queryClient.clear());
@@ -395,14 +395,6 @@ it('空馆藏提供添加媒体入口，链到网盘设置', async () => {
   expect(host.querySelector('[role=tabpanel] section[aria-label]')).toBeNull();
   expect(buttonNamed('添加媒体', host)).toBeNull();
   expect(linkNamed(host, '添加媒体')?.getAttribute('href')).toBe('/settings/drives');
-});
-
-it('媒体配置与添加关注是两个独立去向，次要的添加关注在左', async () => {
-  const props = legacyProps();
-  const { host } = await open(payload({ by_loc: [], by_library: [] }), props);
-  expect(actionOrder(host.querySelector('[data-empty-state]'))).toEqual(['添加关注', '添加媒体']);
-  expect(linkNamed(host, '添加关注')?.getAttribute('href')).toBe('/subscriptions?tab=add');
-  expect(looksLikeButton(linkNamed(host, '添加关注'))).toBe(true);
 });
 
 /** 空态里的去处画成次级实底按钮（白底、发丝边框），不是一行带下划线的文字链接。 */
