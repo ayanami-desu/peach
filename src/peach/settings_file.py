@@ -560,4 +560,6 @@ def write(config: PeachConfig, *, force: bool = False) -> Path:
         raise SettingsFileError(f"设置文件已存在，加 --force 才覆盖：{path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(render(config), encoding="utf-8")
+    # 设置是运行期真相：写完当场读回新值，别让同进程继续拿启动时那份缓存。
+    reset_cache()
     return path

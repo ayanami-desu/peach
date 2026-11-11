@@ -195,6 +195,7 @@ def delete_media_library(request: Request, library_id: str,
     """删掉一个媒体库：只动配置，网盘上的文件与账本里的行都不碰。"""
     from dataclasses import replace
 
+    from . import settings_file
     from .drive_provider import DriveError
     from .web_drives import drive_failure
     from .web_settings import persist_config
@@ -206,6 +207,8 @@ def delete_media_library(request: Request, library_id: str,
     except DriveError as error:
         raise drive_failure(error) from error
     request.app.state.scan.restart(account)
+    # `remove_root` 已经写过配置；用写后的设置重算目录，别拿删除前的快照把根写回来。
+    config = settings_file.active()
     catalog = {name: dict(value) for name, value in (config.library_catalog or {}).items()}
     catalog.pop(library_id, None)
     persist_config(replace(config, library_catalog=catalog))

@@ -263,9 +263,9 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         if not ids:
             return
         choice = resolver.ffprobe()
-        media_probe.probe_missing(database, media_engine, choice.path if choice else None,
+        media_probe.probe_missing(database.db_path, media_engine, choice.path if choice else None,
                                   asset_ids=ids)
-        record_rehome.reattach_in(database, ids)
+        record_rehome.reattach_in(database.db_path, ids)
 
     drive_sync = DriveSync(scan_service, after=after_scan)
     drive.sync_state = drive_sync.state

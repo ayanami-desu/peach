@@ -375,6 +375,15 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
             patcher = patch.object(target, attribute, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        real_write = settings_file.write
+
+        def write(config, **kwargs):
+            self.config = config
+            return real_write(config, **kwargs)
+
+        patcher = patch.object(settings_file, "write", write)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         settings_file.reset_cache()
 
         self.defaults = dict(
@@ -736,6 +745,50 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
             "/api/libraries/gdrive%3Amissing", params={"t": "secret"},
             json=self._library_row())
         self.assertEqual(answer.status_code, 404, answer.text)
+
+    async def test_adding_a_library_answers_with_its_new_root(self) -> None:
+        drive = self.app.state.drive
+        with patch.object(drive, "add_root",
+                          side_effect=lambda key, target: drive._save_roots(key, (*drive.roots(key), target))):
+            answer = await self.client.post(
+                "/api/libraries", params={"t": "secret"},
+                json={"account": "gdrive", "remote_id": "root-2"})
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["id"], "gdrive:root-2")
+        self.assertIn("root-2", self.config_path.read_text(encoding="utf-8"))
+
+    async def test_moving_a_library_answers_with_the_new_root(self) -> None:
+        drive = self.app.state.drive
+        with patch.object(drive, "move_root",
+                          side_effect=lambda key, old, target: drive._save_roots(key, (target,))):
+            answer = await self.client.post(
+                "/api/libraries/gdrive%3Aroot-1/move", params={"t": "secret"},
+                json={"remote_id": "root-2"})
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["id"], "gdrive:root-2")
+        text = self.config_path.read_text(encoding="utf-8")
+        self.assertIn("root-2", text)
+        self.assertNotIn("root-1", text)
+
+    async def test_deleting_a_library_leaves_no_scan_root(self) -> None:
+        drive = self.app.state.drive
+        with patch.object(drive, "remove_root",
+                          side_effect=lambda key, root: drive._save_roots(key, ())):
+            answer = await self.client.delete(
+                "/api/libraries/gdrive%3Aroot-1", params={"t": "secret"})
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json(), {"deleted": "gdrive:root-1"})
+        self.assertNotIn("root-1", self.config_path.read_text(encoding="utf-8"))
+
+    async def test_after_scan_hands_the_database_path_to_follow_ups(self) -> None:
+        from types import SimpleNamespace
+
+        from peach import media_probe, record_rehome
+        with patch.object(media_probe, "probe_missing") as probe, \
+                patch.object(record_rehome, "reattach_in") as reattach:
+            self.app.state.drive_sync._after("gdrive", SimpleNamespace(new_ids=[7]))
+        self.assertEqual(probe.call_args.args[0], self.settings.db_path)
+        reattach.assert_called_once_with(self.settings.db_path, [7])
 
     def _library_row(self, name: str = "主库", key: str = "gdrive:root-1", icon: str = "database") -> dict:
         return {"id": key, "name": name, "icon": icon, "color": "blue",

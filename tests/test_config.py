@@ -511,6 +511,18 @@ class SerialisationTests(unittest.TestCase):
                 settings_file.write(loaded)
             self.assertEqual(settings_file.write(loaded, force=True), loaded.path)
 
+    def test_a_write_is_visible_to_the_next_active_read(self):
+        with TempTree() as tree:
+            loaded = tree.load()
+            settings_file.reset_cache()
+            with patch.object(settings_file, "load_config", return_value=loaded) as load:
+                settings_file.active()
+                settings_file.active()
+                self.assertEqual(load.call_count, 1)
+                settings_file.write(loaded, force=True)
+                settings_file.active()
+            self.assertEqual(load.call_count, 2)
+
 
 class ModuleConstantTests(unittest.TestCase):
     """`config` 的模块常量被大量 import；名字和相对关系都是契约。"""
