@@ -101,6 +101,21 @@ class DriveTests(unittest.TestCase):
         self.assertEqual([(row.remote_id, row.removed) for row in rows], [("V1", True), ("V2", False)])
         self.assertEqual(rows[1].entry.duration, 95)
 
+    def test_a_trashed_file_in_the_change_feed_counts_as_removed(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/drive/v3/about":
+                return httpx.Response(200, json={"user": {}, "root": "ROOT"})
+            self.assertEqual(request.url.path, "/drive/v3/changes")
+            return httpx.Response(200, json={
+                "changes": [{"fileId": "V1", "file": {**video_raw("V1", "a.mp4"), "trashed": True}}],
+                "newStartPageToken": "S2",
+            })
+
+        drive = self.drive(handler)
+        rows, cursor = drive.changes("S1")
+        self.assertEqual([(row.remote_id, row.removed) for row in rows], [("V1", True)])
+        self.assertEqual(cursor, "S2")
+
     def test_download_target_is_proxied_with_bearer(self):
         drive = self.drive(lambda request: httpx.Response(200, json={"user": {}, "root": "ROOT"}))
         target = drive.download_target("V1")

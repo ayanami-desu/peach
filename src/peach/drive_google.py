@@ -27,7 +27,8 @@ API = "https://www.googleapis.com/drive/v3"
 SCOPE = "https://www.googleapis.com/auth/drive"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 #: 列表与增量共用的字段，含免费的视频元数据。
-FILE_FIELDS = ("id,name,mimeType,size,modifiedTime,parents,videoMediaMetadata(width,height,durationMillis)")
+FILE_FIELDS = ("id,name,mimeType,size,modifiedTime,parents,trashed,"
+               "videoMediaMetadata(width,height,durationMillis)")
 PAGE_SIZE = 1000
 
 
@@ -231,7 +232,7 @@ class GoogleDrive:
             for change in body.get("changes", []):
                 file = change.get("file") or {}
                 remote_id = str(change.get("fileId") or file.get("id") or "")
-                if change.get("removed") or not file:
+                if change.get("removed") or not file or file.get("trashed"):
                     rows.append(Change(remote_id, True, None))
                     continue
                 if file.get("mimeType", "").startswith("application/vnd.google-apps."):
