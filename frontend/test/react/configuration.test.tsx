@@ -20,10 +20,15 @@ const DRIVE_URL = '/api/drive';
 
 interface DriveRoot { remote_id: string; name: string }
 
+interface DriveAccount {
+  key: string; configured: boolean; connected: boolean; email: string; display_name: string;
+  roots: DriveRoot[]; synced_at: string | null; last_error: string;
+}
+
 interface DriveConnection {
   location: string; label: string; configured: boolean; connected: boolean;
-  email: string; display_name: string; roots: DriveRoot[]; synced_at: string | null; last_error: string;
-  mode: string; modes: string[];
+  email: string; display_name: string; accounts: DriveAccount[]; roots: DriveRoot[];
+  synced_at: string | null; last_error: string; mode: string; modes: string[];
 }
 
 interface DriveSnapshot { public_url: string; locations: DriveConnection[] }
@@ -35,9 +40,16 @@ const data = (over: Partial<ConfigurationData> = {}): ConfigurationData => ({
   ...over,
 });
 
+const account = (over: Partial<DriveAccount> = {}): DriveAccount => ({
+  key: 'onedrive', configured: true, connected: true, email: 'me@outlook.com', display_name: 'Me',
+  roots: [{ remote_id: 'root1', name: 'Movies' }], synced_at: '2026-11-10 08:00:00', last_error: '',
+  ...over,
+});
+
 const connected = (over: Partial<DriveConnection> = {}): DriveConnection => ({
   location: 'onedrive', label: 'OneDrive', configured: true, connected: true,
-  email: 'me@outlook.com', display_name: 'Me', roots: [{ remote_id: 'root1', name: 'Movies' }],
+  email: 'me@outlook.com', display_name: 'Me', accounts: [account()],
+  roots: [{ remote_id: 'root1', name: 'Movies' }],
   synced_at: '2026-11-10 08:00:00', last_error: '', mode: 'redirect', modes: ['redirect', 'proxy'], ...over,
 });
 
@@ -151,10 +163,12 @@ it('没有访问配置时只留网盘、任务速度与系统诊断，认不出�
 it('网盘这一格一张卡对一个来源：没接写的只说怎么接，没有回调基址就不给授权', async () => {
   const { host } = await open(data(), snapshot({ public_url: '', locations: [
     connected({ location: 'google', label: 'Google Drive', configured: false, connected: false,
-      email: '', display_name: '', roots: [], synced_at: null }),
-    connected({ connected: false, email: '', display_name: '', roots: [], synced_at: null }),
+      email: '', display_name: '', accounts: [], roots: [], synced_at: null }),
+    connected({ connected: false, email: '', display_name: '',
+      accounts: [account({ connected: false, email: '', display_name: '', synced_at: null })],
+      roots: [], synced_at: null }),
   ] }), {}, '网盘');
-  expect(section(host, 'Google Drive')?.textContent).toContain('[drive.accounts.google]');
+  expect(section(host, 'Google Drive')?.textContent).toContain('[drive.accounts.<账号名>]');
   expect(buttonNamed('开始授权', section(host, 'Google Drive'))).toBeNull();
   expect(section(host, 'OneDrive')?.textContent).toContain('没有配置回调基址');
   expect(section(host, 'OneDrive')?.textContent).toContain('未授权');
@@ -164,7 +178,10 @@ it('网盘这一格一张卡对一个来源：没接写的只说怎么接，没�
 });
 
 it('已授权的来源读账号、扫描起点与上次同步，立即刷新只换这一张卡', async () => {
-  const refreshed = connected({ synced_at: '2026-11-11 09:30:00' });
+  const refreshed = connected({
+    synced_at: '2026-11-11 09:30:00',
+    accounts: [account({ synced_at: '2026-11-11 09:30:00' })],
+  });
   const { host, fetcher } = await open(data(), snapshot(), {
     [`POST ${DRIVE_URL}/onedrive/refresh`]: refreshed,
   });
@@ -176,7 +193,7 @@ it('已授权的来源读账号、扫描起点与上次同步，立即刷新只�
   await click(buttonNamed('立即刷新', card));
   await settle();
   expect(calls(fetcher, 'POST')).toEqual([`${DRIVE_URL}/onedrive/refresh`]);
-  expect(receipt).toHaveBeenCalledWith('已安排刷新 OneDrive，下一轮同步先做这个来源');
+  expect(receipt).toHaveBeenCalledWith('已安排刷新 me@outlook.com，下一轮同步先做这个账号');
   expect(section(host, 'OneDrive')?.textContent).toContain('2026-11-11 09:30:00');
 });
 
@@ -209,11 +226,14 @@ it('选择扫描起点逐层列远端目录，设成起点后交回这一格重�
 });
 
 it('没有回调基址也能填客户端凭据接上网盘，填的目录一起交给后端解析', async () => {
-  const saved = connected({ roots: [{ remote_id: 'rir', name: '示例合集' }], synced_at: null });
+  const saved = connected({
+    roots: [{ remote_id: 'rir', name: '示例合集' }], synced_at: null,
+    accounts: [account({ roots: [{ remote_id: 'rir', name: '示例合集' }], synced_at: null })],
+  });
   const { host, fetcher } = await open(data(), snapshot({ public_url: '' }), {
     [`POST ${DRIVE_URL}/onedrive/credentials`]: saved,
   });
-  await click(buttonNamed('手动填认证信息', section(host, 'OneDrive')));
+  await click(buttonNamed('添加账号', section(host, 'OneDrive')));
   await type(host.querySelector('#drive-onedrive-client_id'), 'id-2');
   await type(host.querySelector('#drive-onedrive-client_secret'), 'secret-2');
   await type(host.querySelector('#drive-onedrive-refresh_token'), 'rotated');
@@ -223,8 +243,9 @@ it('没有回调基址也能填客户端凭据接上网盘，填的目录一起�
   const posted = fetcher.mock.calls.find(([url]) => url === `${DRIVE_URL}/onedrive/credentials`);
   expect(JSON.parse(String(posted?.[1]?.body))).toEqual({
     client_id: 'id-2', client_secret: 'secret-2', refresh_token: 'rotated', root: 'AV/示例合集',
+    location: 'onedrive',
   });
-  expect(receipt).toHaveBeenCalledWith('已接上 OneDrive');
+  expect(receipt).toHaveBeenCalledWith('已接上 onedrive');
   expect(section(host, 'OneDrive')?.textContent).toContain('示例合集');
   expect(buttonNamed('接上这个网盘', section(host, 'OneDrive'))).toBeNull();
 });
@@ -252,11 +273,11 @@ it('断开只忘掉账号与扫描起点', async () => {
   await click(buttonNamed('断开', section(host, 'OneDrive')));
   await settle();
   expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
-    title: '断开 OneDrive',
+    title: '断开 me@outlook.com',
     body: expect.stringContaining('已经登记进馆藏的条目不动'),
   }));
   expect(calls(fetcher, 'DELETE')).toEqual([`${DRIVE_URL}/onedrive`]);
-  expect(receipt).toHaveBeenCalledWith('已断开 OneDrive');
+  expect(receipt).toHaveBeenCalledWith('已断开 me@outlook.com');
 });
 
 it('网盘状态读不到时给出原因与重新读取', async () => {

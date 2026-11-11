@@ -29,6 +29,9 @@ class StoredAccount:
     access_token: str = ""
     expires_at: int = 0
     scope: str = ""
+    #: 账号名：设置文件里 `[drive.accounts.<key>]` 的键。同一个来源可以接多个账号，
+    #: 所以它和 `location`（来源类型 `gdrive`／`onedrive`）是两件事，没写时两者相同。
+    key: str = ""
 
     def usable(self, now: float) -> bool:
         return bool(self.access_token) and self.expires_at > now + REFRESH_MARGIN_SECONDS
@@ -56,23 +59,26 @@ class TokenStore:
         os.chmod(temporary, 0o600)
         os.replace(temporary, self.path)
 
-    def load(self, location: str) -> StoredAccount | None:
-        row = self._read().get(location)
+    def load(self, key: str) -> StoredAccount | None:
+        row = self._read().get(key)
         if not isinstance(row, dict):
             return None
         try:
-            return StoredAccount(**row)
+            account = StoredAccount(**row)
         except TypeError:
             return None
+        # 老文件按来源名存，也没有 `key`：读出来补齐，之后一律按账号名索回。
+        account.key = account.key or key
+        return account
 
     def save(self, account: StoredAccount) -> None:
         rows = self._read()
-        rows[account.location] = asdict(account)
+        rows[account.key or account.location] = asdict(account)
         self._write(rows)
 
-    def drop(self, location: str) -> None:
+    def drop(self, key: str) -> None:
         rows = self._read()
-        if rows.pop(location, None) is not None:
+        if rows.pop(key, None) is not None:
             self._write(rows)
 
 

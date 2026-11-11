@@ -80,7 +80,7 @@ class DriveSettingsTests(unittest.TestCase):
 
     def test_unknown_drive_account_is_rejected(self):
         body = BASE.replace('[drive.accounts.onedrive]', '[drive.accounts.115]')
-        with self.assertRaisesRegex(settings_file.SettingsFileError, '不认识的网盘'):
+        with self.assertRaisesRegex(settings_file.SettingsFileError, '只接受 gdrive、onedrive'):
             self.load(body)
 
     def test_client_secret_is_required(self):

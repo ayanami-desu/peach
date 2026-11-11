@@ -283,21 +283,23 @@ class FakeStreamer:
         self.body = body
         self.calls: list[tuple] = []
 
-    def open(self, location: str, remote_id: str):
-        self.calls.append(("open", location, remote_id))
+    def open(self, location: str, root: str, remote_id: str):
+        self.calls.append(("open", location, root, remote_id))
         return httpx.Response(200, content=self.body)
 
-    def read(self, location: str, remote_id: str, offset: int, length: int, timeout: float = 60):
-        self.calls.append(("read", location, remote_id, offset, length))
+    def read(self, location: str, root: str, remote_id: str, offset: int, length: int,
+             timeout: float = 60):
+        self.calls.append(("read", location, root, remote_id, offset, length))
         return self.body[offset:offset + length]
 
-    def input_url(self, location: str, remote_id: str) -> str:
+    def input_url(self, location: str, root: str, remote_id: str) -> str:
         return f"{location}://{remote_id}"
 
-    def response(self, request, location: str, remote_id: str, mime_type: str, *, download: bool = False):
+    def response(self, request, location: str, root: str, remote_id: str, mime_type: str, *,
+                 download: bool = False):
         from starlette.responses import Response
 
-        self.calls.append(("response", location, remote_id, mime_type, download))
+        self.calls.append(("response", location, root, remote_id, mime_type, download))
         start, last = self.bounds(request.headers.get("range"), len(self.body))
         return Response(self.body[start:last + 1], status_code=206, media_type=mime_type,
                         headers={"content-range": f"bytes {start}-{last}/{len(self.body)}",
@@ -812,7 +814,7 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_unknown_drive_location_is_missing(self) -> None:
         answer = await self.client.get("/api/drive/ftp/folders", params={"t": "secret"})
         self.assertEqual(answer.status_code, 404)
-        self.assertEqual(answer.json()["error"], "没有这个网盘")
+        self.assertEqual(answer.json()["error"], "没有这个网盘账号")
 
     async def test_drive_management_needs_the_token(self) -> None:
         self.assertEqual((await self.client.post("/api/drive/gdrive/authorize")).status_code, 401)
@@ -831,7 +833,8 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         # 路由在这个响应上设了 no-referrer，头部中间件只补没有设过的头，不覆盖它。
         self.assertEqual(answer.headers["referrer-policy"], "no-referrer")
         self.assertEqual(answer.headers["x-content-type-options"], "nosniff")
-        self.assertEqual(self.streamer.calls[0], ("response", "gdrive", "file-1", "video/mp4", False))
+        self.assertEqual(self.streamer.calls[0],
+                         ("response", "gdrive", "root-1", "file-1", "video/mp4", False))
 
     async def test_the_stream_route_serves_the_whole_file_without_a_range(self) -> None:
         answer = await self.client.get("/stream", params={"id": 1, "t": "secret"})
@@ -1104,7 +1107,7 @@ PUBLIC_ROUTES = {
     ("GET,HEAD", "/dist/peach-pages.css"),
     # 网盘授权的回执地址。浏览器从 Google/微软跳回来时还没有 Peach 的会话，凭据是
     # 发起授权时签发、一刻钟内有效的一次性 `state`；处理函数自己核这个串。
-    ("GET", "/oauth/{location}/callback"),
+    ("GET", "/oauth/{key}/callback"),
     # 拒绝收录的声明。爬虫没有会话，被 401 挡住等于这份声明根本没被读到。
     ("GET,HEAD", "/robots.txt"),
     # 外部播放器没有浏览器会话；两条路由各自验证进程密钥签发的限时 HMAC，

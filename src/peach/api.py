@@ -262,13 +262,13 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     drive = DriveConnections(settings, lambda: http_transport.client)
     # 整理那一片按来源问「接没接上」，走的是契约而不是请求对象。
     contract.drive = drive
-    # 取流按需问一句当前驱动：换过取字节方式之后 `DriveConnections` 会重建实例，抓一份旧表就换了没用。
-    streamer = build_streamer(drive.provider, lambda: http_transport.client)
+    # 取流按需问一句当前驱动：来源与扫描起点一起问，同来源多个账号才不会串。
+    streamer = build_streamer(drive.provider_for, lambda: http_transport.client)
     media_engine = MediaEngine(repository, streamer, cache_root=settings.photo_root.parent / "media-cache")
     # 扫描按需问一句当前驱动与扫描起点：换过账号或扫描起点之后驱动实例会重建，抓表会抓旧。
     scan_service = ScanService(drive, repository)
 
-    def after_scan(location: str, result) -> None:
+    def after_scan(key: str, result) -> None:
         """新登记的行要探时长、与「想要」对账、把消失作品的个人记录接回来。
 
         扫描只负责登记；这三件事都靠 `new_ids` 认对象，所以挂在同步之后一次做完。

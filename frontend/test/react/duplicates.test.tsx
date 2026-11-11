@@ -41,12 +41,12 @@ const drives: DriveSnapshot = {
   public_url: 'http://127.0.0.1:8080',
   locations: [
     { location: 'gdrive', label: 'Google Drive', configured: true, connected: true, email: '', display_name: '',
-      roots: [{ remote_id: 'root-1', name: 'Movies' }], synced_at: null, last_error: '',
+      accounts: [], roots: [{ remote_id: 'root-1', name: 'Movies' }], synced_at: null, last_error: '',
       mode: 'proxy', modes: ['proxy'] },
     { location: 'onedrive', label: 'OneDrive', configured: true, connected: true, email: '', display_name: '',
-      roots: [], synced_at: null, last_error: '', mode: 'redirect', modes: ['redirect', 'proxy'] },
+      accounts: [], roots: [], synced_at: null, last_error: '', mode: 'redirect', modes: ['redirect', 'proxy'] },
     { location: 'pikpak', label: 'PikPak', configured: false, connected: false, email: '', display_name: '',
-      roots: [], synced_at: null, last_error: '', mode: 'proxy', modes: ['proxy'] },
+      accounts: [], roots: [], synced_at: null, last_error: '', mode: 'proxy', modes: ['proxy'] },
   ],
 };
 

@@ -76,22 +76,23 @@ class MediaEngine:
             if path is None or not path.is_file():
                 raise MediaUnavailable(asset.id)
             return path
-        location, remote_id = self._drive(asset)
+        location, root, remote_id = self._drive(asset)
         if self.cache_root is None:
             raise MediaUnavailable(asset.id)
         target = self.cache_root / location / f"{remote_id}{suffix_of(asset.name or asset.path)}"
         if target.is_file():
             return target
         target.parent.mkdir(parents=True, exist_ok=True)
-        target = self._download(location, remote_id, target, asset.id)
+        target = self._download(location, root, remote_id, target, asset.id)
         return target
 
-    def _download(self, location: str, remote_id: str, target: Path, asset_id: int) -> Path:
+    def _download(self, location: str, root: str, remote_id: str, target: Path,
+                  asset_id: int) -> Path:
         import os
         import tempfile
 
         try:
-            response = self.streamer.open(location, remote_id)
+            response = self.streamer.open(location, root, remote_id)
         except (DriveNotFound, DriveAuthRequired, DriveUnavailable) as exc:
             raise MediaUnavailable(asset_id) from exc
         handle, temporary = tempfile.mkstemp(dir=str(target.parent), suffix=".part")
@@ -106,43 +107,44 @@ class MediaEngine:
             response.close()
         return target
 
-    def _drive(self, asset: MediaAsset) -> tuple[str, str]:
+    def _drive(self, asset: MediaAsset) -> tuple[str, str, str]:
+        """`(来源类型, 扫描起点, 远端 id)`：同一个来源可以接多个账号，取字节要看扫描起点。"""
         if not asset.location or not asset.remote_id:
             # 旧来源的行与本地磁盘行都进不来：它们没有远端 id，取字节的入口不成立。
             raise MediaUnavailable(asset.id)
-        return asset.location, asset.remote_id
+        return asset.location, asset.drive_root or "", asset.remote_id
 
     def plan(self, asset_id: int) -> StreamPlan:
         asset = self.asset(asset_id)
-        location, remote_id = self._drive(asset)
+        self._drive(asset)  # 没有远端 id 的行连计划都不该成立
         mime = browser_mime(asset.name or asset.path)
         if mime is None:
             raise MediaUnavailable(asset.id)
         return StreamPlan("range", mime, "drive-range")
 
     def response(self, request, asset: MediaAsset, *, download: bool = False):
-        location, remote_id = self._drive(asset)
+        location, root, remote_id = self._drive(asset)
         mime = browser_mime(asset.name or asset.path)
         if mime is None:
             raise MediaUnavailable(asset.id)
         try:
-            return self.streamer.response(request, location, remote_id, mime, download=download)
+            return self.streamer.response(request, location, root, remote_id, mime, download=download)
         except DriveNotFound:
             raise MediaUnavailable(asset.id) from None
         except (DriveAuthRequired, DriveUnavailable) as exc:
             raise MediaUnavailable(asset.id) from exc
 
     def read(self, asset: MediaAsset, offset: int, length: int) -> bytes:
-        location, remote_id = self._drive(asset)
+        location, root, remote_id = self._drive(asset)
         try:
-            return self.streamer.read(location, remote_id, offset, length)
+            return self.streamer.read(location, root, remote_id, offset, length)
         except (DriveNotFound, DriveAuthRequired, DriveUnavailable) as exc:
             raise MediaUnavailable(asset.id) from exc
 
     def ffmpeg_input(self, asset: MediaAsset) -> tuple[str, dict[str, str]]:
         """FFmpeg 的输入地址与请求头；探测与抽帧都不落本地文件。"""
-        location, remote_id = self._drive(asset)
+        location, root, remote_id = self._drive(asset)
         try:
-            return self.streamer.input_url(location, remote_id)
+            return self.streamer.input_url(location, root, remote_id)
         except (DriveNotFound, DriveAuthRequired, DriveUnavailable) as exc:
             raise MediaUnavailable(asset.id) from exc

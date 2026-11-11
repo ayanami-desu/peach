@@ -170,8 +170,10 @@ class PeachConfig:
     #: 网盘授权的回调基址，形如 `https://peach.example.com`；空串表示还没填，
     #: 此时授权入口拒绝发起（回调落不回这台服务）。
     drive_public_url: str = ""
-    #: 网盘来源 -> (client_id, client_secret)。缺一项就说明那个网盘还没接进来。
+    #: 账号名 -> (client_id, client_secret)。缺一项就说明那个账号还没接进来。
     drive_clients: dict[str, tuple[str, str]] = field(default_factory=dict)
+    #: 账号名 -> 来源类型（`gdrive`／`onedrive`）。账号名就是来源名时两者相同。
+    drive_locations: dict[str, str] = field(default_factory=dict)
     #: 网盘来源 -> 扫描起点的远端目录 id；网站点自己的选法，与账号根目录无关。
     drive_roots: dict[str, tuple[str, ...]] = field(default_factory=dict)
     #: 网盘来源 -> 取字节方式（`redirect` 或 `proxy`）。没写的来源用驱动自己的默认值。
@@ -268,7 +270,7 @@ def _root_map(table: dict, path: Path, prefix: str) -> dict[str, tuple[str, ...]
     return result
 
 
-def _mode_map(table: dict, path: Path, clients: dict[str, tuple[str, str]]) -> dict[str, str]:
+def _mode_map(table: dict, path: Path, locations: dict[str, str]) -> dict[str, str]:
     """`[drive.modes]`：每个来源用哪种取字节方式。
 
     只接受内置来源，且必须已经在 `[drive.accounts]` 里配过——一个没接进来的网盘谈
@@ -280,7 +282,7 @@ def _mode_map(table: dict, path: Path, clients: dict[str, tuple[str, str]]) -> d
     for key, value in table.items():
         if key not in LOCATIONS:
             raise _fail(path, f"`[drive.modes]` 里不认识的网盘：{key}")
-        if key not in clients:
+        if key not in set(locations.values()):
             raise _fail(path, f"`[drive.modes.{key}]` 对应的网盘没在 `[drive.accounts]` 里配置")
         if not isinstance(value, str):
             raise _fail(path, f"`[drive.modes.{key}]` 必须是字符串")
@@ -293,25 +295,36 @@ def _mode_map(table: dict, path: Path, clients: dict[str, tuple[str, str]]) -> d
     return result
 
 
-def _drive_clients(table: dict, path: Path) -> dict[str, tuple[str, str]]:
-    """`[drive.accounts.<来源>]`：每个网盘一套 OAuth 客户端凭据。"""
+def _drive_clients(
+    table: dict, path: Path,
+) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+    """`[drive.accounts.<账号名>]`：每个账号一套 OAuth 客户端凭据。
+
+    账号名可以就是来源名（`gdrive`／`onedrive`），也可以自取，此时要写 `location` 说明它属于
+    哪个来源：同一个人在两个 OneDrive 账号上各有一库文件时，两者都得接进来。
+    """
     from .drive_provider import LOCATIONS
-    result: dict[str, tuple[str, str]] = {}
+    clients: dict[str, tuple[str, str]] = {}
+    locations: dict[str, str] = {}
     for key, value in table.items():
-        if key not in LOCATIONS:
-            raise _fail(path, f"`[drive.accounts]` 里不认识的网盘：{key}；"
-                              f"只接受 {'、'.join(LOCATIONS)}")
         if not isinstance(value, dict):
             raise _fail(path, f"`[drive.accounts.{key}]` 必须是一张表")
-        stray = sorted(set(value) - {"client_id", "client_secret"})
+        stray = sorted(set(value) - {"client_id", "client_secret", "location"})
         if stray:
             raise _fail(path, f"`[drive.accounts.{key}]` 里有不认识的键：" + "、".join(stray))
+        location = _string(value, "location", "", path, f"drive.accounts.{key}.").strip()
+        if not location:
+            location = key
+        if location not in LOCATIONS:
+            raise _fail(path, f"`[drive.accounts.{key}]` 的网盘：{location}；"
+                              f"只接受 {'、'.join(LOCATIONS)}")
         client_id = _string(value, "client_id", "", path, f"drive.accounts.{key}.")
         client_secret = _string(value, "client_secret", "", path, f"drive.accounts.{key}.")
         if not client_id or not client_secret:
             raise _fail(path, f"`[drive.accounts.{key}]` 的 client_id 与 client_secret 都要填")
-        result[key] = (client_id, client_secret)
-    return result
+        clients[key] = (client_id, client_secret)
+        locations[key] = location
+    return clients, locations
 
 
 def _merge(
@@ -337,13 +350,13 @@ def _merge(
     public_url = _string(drive, "public_url", "", path, "drive.").strip()
     if public_url and not (public_url.startswith("https://") and len(public_url) > len("https://")):
         raise _fail(path, "`drive.public_url` 必须是 https 地址，例如 https://peach.example.com")
-    drive_clients = _drive_clients(_table(drive, "accounts", path), path)
+    drive_clients, drive_locations = _drive_clients(_table(drive, "accounts", path), path)
     drive_roots = _root_map(_table(drive, "roots", path), path, "drive.roots.")
     unknown_roots = sorted(set(drive_roots) - set(drive_clients))
     if unknown_roots:
         raise _fail(path, "`[drive.roots]` 里有没在 `[drive.accounts]` 配置过的网盘："
                           + "、".join(unknown_roots))
-    drive_modes = _mode_map(_table(drive, "modes", path), path, drive_clients)
+    drive_modes = _mode_map(_table(drive, "modes", path), path, drive_locations)
 
     media = _table(document, "media", path)
     stray = sorted(set(media) - {"libraries", "library_icons", "library_catalog"})
@@ -364,7 +377,7 @@ def _merge(
         library_catalog=library_catalog,
         server=server,
         drive_public_url=public_url, drive_clients=drive_clients, drive_roots=drive_roots,
-        drive_modes=drive_modes,
+        drive_modes=drive_modes, drive_locations=drive_locations,
     )
 
 
@@ -486,11 +499,15 @@ def render(config: PeachConfig) -> str:
     ]
     lines += _render_pairs({"public_url": config.drive_public_url})
     for key, (client_id, client_secret) in config.drive_clients.items():
+        values = {"client_id": client_id, "client_secret": client_secret}
+        location = config.drive_locations.get(key, key)
+        if location != key:
+            values["location"] = location
         lines += [
             "",
             f"[drive.accounts.{_render_key(key)}]",
             "# 该网盘 OAuth 应用的凭据。client_secret 是钥匙，本文件是它唯一的存放处。",
-            *_render_pairs({"client_id": client_id, "client_secret": client_secret}),
+            *_render_pairs(values),
         ]
     lines += [
         "",

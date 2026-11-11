@@ -80,12 +80,15 @@ class GoogleDrive:
     location = GOOGLE
 
     def __init__(self, accounts: Accounts, client: Callable[[], httpx.Client],
-                 client_id: str = "", client_secret: str = "", redirect_uri: str = ""):
+                 client_id: str = "", client_secret: str = "", redirect_uri: str = "",
+                 key: str = GOOGLE):
         self.accounts = accounts
         self._client = client
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
+        #: 账号名：同一个来源可以接多个账号，令牌与扫描根都按它的名字存。
+        self.key = key
         self.account = self._profile()
 
     # -- 授权 ---------------------------------------------------------------
@@ -113,7 +116,7 @@ class GoogleDrive:
             refresh_token=refresh_token,
             access_token=payload.get("access_token", ""),
             expires_at=int(time.time()) + int(payload.get("expires_in", 0)),
-            scope=payload.get("scope", ""),
+            scope=payload.get("scope", ""), key=self.key,
         )
         stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(stored.access_token)
         self.accounts.store.save(stored)
@@ -137,12 +140,12 @@ class GoogleDrive:
                 str(user.get("displayName", "")), str(root.get("id", "")))
 
     def _profile(self) -> DriveAccount:
-        stored = self.accounts.store.load(GOOGLE)
+        stored = self.accounts.store.load(self.key)
         if stored is None:
             return DriveAccount(GOOGLE, "", "", "", "")
         if not stored.account_id:
             stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(
-                self.accounts.token(GOOGLE)[0])
+                self.accounts.token(self.key)[0])
             self.accounts.store.save(stored)
         return DriveAccount(GOOGLE, stored.account_id, stored.email, stored.display_name, stored.root_id)
 
@@ -152,7 +155,7 @@ class GoogleDrive:
     # -- 读取 ---------------------------------------------------------------
 
     def _request(self, method: str, path: str, params: dict | None = None) -> httpx.Response:
-        token, _ = self.accounts.token(GOOGLE)
+        token, _ = self.accounts.token(self.key)
         response = self._client().request(
             method, API + path, params=params, timeout=60,
             headers={"Authorization": f"Bearer {token}"},
@@ -189,7 +192,7 @@ class GoogleDrive:
 
     def download_target(self, remote_id: str) -> DownloadTarget:
         # `alt=media` 必须带 Authorization，浏览器拿不走这份令牌，只能由 Peach 转发。
-        token, _ = self.accounts.token(GOOGLE)
+        token, _ = self.accounts.token(self.key)
         return DownloadTarget("proxy", f"{API}/files/{remote_id}?alt=media",
                               {"Authorization": f"Bearer {token}"})
 
@@ -204,7 +207,7 @@ class GoogleDrive:
         return _entry(response.json(), parent_id)
 
     def _request_with_body(self, method: str, path: str, params: dict, body: dict) -> httpx.Response:
-        token, _ = self.accounts.token(GOOGLE)
+        token, _ = self.accounts.token(self.key)
         response = self._client().request(
             method, API + path, params=params, json=body, timeout=60,
             headers={"Authorization": f"Bearer {token}"},
@@ -241,6 +244,6 @@ class GoogleDrive:
 
 
 def build(accounts: Accounts, client: Callable[[], httpx.Client], *, client_id: str,
-          client_secret: str, redirect_uri: str) -> GoogleDrive:
+          client_secret: str, redirect_uri: str, key: str = GOOGLE) -> GoogleDrive:
     return GoogleDrive(accounts, client, client_id=client_id,
-                       client_secret=client_secret, redirect_uri=redirect_uri)
+                       client_secret=client_secret, redirect_uri=redirect_uri, key=key)

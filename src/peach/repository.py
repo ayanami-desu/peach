@@ -125,6 +125,8 @@ class MediaAsset:
     size: int | None = None
     #: 网盘里的稳定 id；旧来源（115/PikPak/光鸭/已挂载网盘）的行没有这个值。
     remote_id: str | None = None
+    #: 扫描起点（远端目录 id）；同一个来源可以接多个账号，靠它认哪本账。
+    drive_root: str | None = None
 
 
 class LedgerRepository:
@@ -137,7 +139,7 @@ class LedgerRepository:
     def media_asset(self, asset_id: int) -> MediaAsset | None:
         with self.database.read_connection() as connection:
             row = connection.execute(
-                "SELECT id,path,snapshot_path,location,name,duration,size,remote_id "
+                "SELECT id,path,snapshot_path,location,name,duration,size,remote_id,drive_root "
                 "FROM asset WHERE id=?",
                 (asset_id,),
             ).fetchone()
@@ -152,4 +154,5 @@ class LedgerRepository:
             row["duration"],
             row["size"],
             row["remote_id"],
+            row["drive_root"],
         )

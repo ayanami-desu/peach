@@ -1,5 +1,24 @@
 {
   "drive": {
+    "account": {
+      "add": "添加账号",
+      "added": "已接上 {{name}}",
+      "authorize": "开始授权",
+      "callback": "回调地址 {{url}}",
+      "disconnect": "断开",
+      "empty": "这个网盘还没有接上账号。填认证信息可以直接接上，也可以配好回调基址后走浏览器授权。",
+      "forgetBody": "Peach 会忘掉 {{name}} 的账号与扫描起点，之后不再同步这个账号。已经登记进馆藏的条目不动；重新授权后可以接着同步。",
+      "forgetTitle": "断开 {{name}}",
+      "forgotten": "已断开 {{name}}",
+      "name": "账号名",
+      "nameHelp": "同一个网盘接多个账号时靠它区分；留空就用网盘名。填的字会写进设置文件的 [drive.accounts.<账号名>]。",
+      "pick": "选择扫描起点",
+      "picking": "收起目录",
+      "reauthorize": "重新授权",
+      "refresh": "立即刷新",
+      "refreshed": "已安排刷新 {{name}}，下一轮同步先做这个账号",
+      "rootsSaved": "已保存扫描起点"
+    },
     "mode": {
       "inUse": "在用",
       "proxy": "Peach 转发",

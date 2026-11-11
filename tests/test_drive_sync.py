@@ -19,7 +19,7 @@ class StubService:
         self.full: list[str] = []
         self.incremental: list[str] = []
 
-    def locations(self) -> tuple[str, ...]:
+    def accounts(self) -> tuple[str, ...]:
         return self.sources
 
     def sync_state(self, location: str) -> dict:
@@ -79,11 +79,11 @@ class DriveSyncTests(unittest.TestCase):
                                "onedrive": _STATE})
         clock = drive_sync.DriveSync(service, clock=lambda: 500.0, interval=900.0)
         first = clock.tick()
-        self.assertEqual([report.location for report in first], ["gdrive", "onedrive"])
+        self.assertEqual([report.key for report in first], ["gdrive", "onedrive"])
         self.assertEqual(clock.tick(), ())
         clock.request("onedrive")
         forced = clock.tick()
-        self.assertEqual([report.location for report in forced], ["onedrive"])
+        self.assertEqual([report.key for report in forced], ["onedrive"])
 
     def test_scan_target_error_becomes_report_instead_of_raising(self):
         service = StubService({"gdrive": _STATE},

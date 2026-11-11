@@ -35,24 +35,24 @@ class FakeStreamer:
         self.reads = []
         self.opens = []
 
-    def open(self, location, remote_id):
+    def open(self, location, root, remote_id):
         if self.error is not None:
             raise self.error
-        self.opens.append((location, remote_id))
+        self.opens.append((location, root, remote_id))
         return httpx.Response(200, content=self.body, request=httpx.Request("GET", "https://x.test"))
 
-    def read(self, location, remote_id, offset, length, timeout=60):
+    def read(self, location, root, remote_id, offset, length, timeout=60):
         if self.error is not None:
             raise self.error
-        self.reads.append((location, remote_id, offset, length))
+        self.reads.append((location, root, remote_id, offset, length))
         return self.body[offset:offset + length]
 
-    def input_url(self, location, remote_id):
+    def input_url(self, location, root, remote_id):
         if self.error is not None:
             raise self.error
         return (f"https://x.test/{remote_id}", {"Authorization": "Bearer t"})
 
-    def response(self, request, location, remote_id, mime, download=False):
+    def response(self, request, location, root, remote_id, mime, download=False):
         from starlette.responses import Response
         if self.error is not None:
             raise self.error
@@ -118,7 +118,7 @@ class MediaEngineTests(unittest.TestCase):
                            remote_id="file-1")
         engine, streamer = self.engine(asset)
         self.assertEqual(engine.read(asset, 2, 3), b"234")
-        self.assertEqual(streamer.reads, [("gdrive", "file-1", 2, 3)])
+        self.assertEqual(streamer.reads, [("gdrive", "", "file-1", 2, 3)])
 
     def test_drive_errors_become_unavailable(self):
         asset = MediaAsset(1, "gdrive:/a.mp4", None, location="gdrive", name="a.mp4",
@@ -168,9 +168,9 @@ class MediaEngineTests(unittest.TestCase):
             path = engine.file_for(asset)
             self.assertEqual(path, cache / "gdrive" / "file-1.mp4")
             self.assertEqual(path.read_bytes(), b"0123456789")
-            self.assertEqual(streamer.opens, [("gdrive", "file-1")])
+            self.assertEqual(streamer.opens, [("gdrive", "", "file-1")])
             self.assertEqual(engine.file_for(1), path)
-            self.assertEqual(streamer.opens, [("gdrive", "file-1")])
+            self.assertEqual(streamer.opens, [("gdrive", "", "file-1")])
 
     def test_full_file_needs_a_cache_root(self):
         asset = MediaAsset(1, "gdrive:/a.jpg", None, location="gdrive", name="a.jpg",

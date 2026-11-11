@@ -44,8 +44,10 @@ SERVE_PORT: int = _SETTINGS.server.port
 #: 网盘授权的回调基址，例如 `https://peach.example.com`。空串表示还没填，
 #: 此时授权入口拒绝发起——回调落不回这台服务。
 DRIVE_PUBLIC_URL: str = _SETTINGS.drive_public_url
-#: 网盘来源 -> (client_id, client_secret)。缺一项就说明那个网盘还没接进来。
+#: 账号名 -> (client_id, client_secret)。缺一项就说明那个账号还没接进来。
 DRIVE_CLIENTS: dict[str, tuple[str, str]] = dict(_SETTINGS.drive_clients)
+#: 账号名 -> 来源类型（`gdrive`／`onedrive`）。账号名就是来源名时两者相同。
+DRIVE_LOCATIONS: dict[str, str] = dict(_SETTINGS.drive_locations)
 #: 网盘来源 -> 扫描起点的远端目录 id。空元组表示扫该账号的根目录。
 DRIVE_ROOTS: dict[str, tuple[str, ...]] = dict(_SETTINGS.drive_roots)
 #: 网盘来源 -> 取字节方式（`redirect` 或 `proxy`）。没写的来源用驱动自己的默认值。
@@ -74,6 +76,8 @@ class PeachSettings:
     drive_public_url: str = DRIVE_PUBLIC_URL
     drive_clients: dict[str, tuple[str, str]] = field(
         default_factory=lambda: dict(DRIVE_CLIENTS))
+    drive_locations: dict[str, str] = field(
+        default_factory=lambda: dict(DRIVE_LOCATIONS))
     drive_roots: dict[str, tuple[str, ...]] = field(
         default_factory=lambda: dict(DRIVE_ROOTS))
     drive_modes: dict[str, str] = field(

@@ -110,20 +110,22 @@ def _stamp(moment: float) -> str:
 
 
 class DriveLookup(Protocol):
-    """扫描要用到的三件东西：已授权来源、按来源取驱动、按来源取扫描起点。
+    """扫描要用到的三件东西：已授权账号、按账号取驱动、按账号取扫描起点。
 
-    全部按当前设置现问：`DriveConnections` 换过账号或扫描起点会重建驱动实例，抓住一份旧表
-    就等于换了没用。真实实现就是 `DriveConnections` 本身。
+    键一律是账号名（`[drive.accounts]` 的键），不是来源类型：同一个来源可以接多个账号，
+    两个账号的增量游标与扫描根各管各的，得分开排队、分开判消失。全部按当前设置现问：
+    `DriveConnections` 换过账号或扫描起点会重建驱动实例，抓住一份旧表就等于换了没用。
+    真实实现就是 `DriveConnections` 本身。
     """
 
     @property
     def providers(self) -> Mapping[str, DriveProvider]: ...
 
-    def locations(self) -> tuple[str, ...]:
-        """当前配了扫描起点的来源：同步节拍按它排队。"""
+    def accounts(self) -> tuple[str, ...]:
+        """当前配了扫描起点的账号：同步节拍按它排队。"""
         return tuple(sorted(self.drive.roots_map()))
 
-    def provider(self, location: str) -> DriveProvider: ...
+    def provider(self, key: str) -> DriveProvider: ...
 
     def roots_map(self) -> Mapping[str, Sequence[str]]: ...
 
@@ -146,27 +148,28 @@ class ScanService:
     def database(self):
         return self.repository.database
 
-    def locations(self) -> tuple[str, ...]:
-        """当前配了扫描起点的来源：同步节拍按它排队。"""
+    def accounts(self) -> tuple[str, ...]:
+        """当前配了扫描起点的账号：同步节拍按它排队。"""
         return tuple(sorted(self.drive.roots_map()))
 
-    def provider(self, location: str) -> DriveProvider:
+    def provider(self, key: str) -> DriveProvider:
         try:
-            return self.drive.provider(location)
+            return self.drive.provider(key)
         except DriveUnavailable as missing:
-            known = "、".join(sorted(self.drive.providers)) or "（一个都没配）"
-            raise ScanTargetError(f"✗ 未授权的来源 {location!r}；已授权的：{known}") from missing
+            known = "、".join(sorted(self.drive.accounts())) or "（一个都没配）"
+            raise ScanTargetError(f"✗ 未授权的账号 {key!r}；已授权的：{known}") from missing
 
-    def _roots(self, location: str, provider: DriveProvider) -> tuple[str, ...]:
-        roots = tuple(self.drive.roots_map().get(location) or ())
+    def _roots(self, key: str, provider: DriveProvider) -> tuple[str, ...]:
+        roots = tuple(self.drive.roots_map().get(key) or ())
         if not roots:
-            raise ScanTargetError(f"✗ 媒体来源 {location!r} 没有配置扫描目录")
+            raise ScanTargetError(f"✗ 账号 {key!r} 没有配置扫描目录")
         return roots
 
-    def full_sync(self, location: str) -> ScanResult:
-        """从扫描起点递归登记全部视频，再把本次没见到的行标「已消失」。"""
-        provider = self.provider(location)
-        roots = self._roots(location, provider)
+    def full_sync(self, key: str) -> ScanResult:
+        """从一个账号的扫描起点递归登记全部视频，再把本次没见到的行标「已消失」。"""
+        provider = self.provider(key)
+        source = provider.location
+        roots = self._roots(key, provider)
         started = self._clock()
         stamp = _stamp(started)
         folders = files = total = failures = conflicts = 0
@@ -193,7 +196,7 @@ class ScanService:
                             continue
                         files += 1
                         total += int(entry.size or 0)
-                        batch.append(self._row(location, entry, segments, stamp, root_id))
+                        batch.append(self._row(source, entry, segments, stamp, root_id))
                     if page is None:
                         break
                 if len(batch) >= BATCH_SIZE:
@@ -204,32 +207,33 @@ class ScanService:
         fresh, conflicts_here = self._write(batch)
         new_ids.update(dict.fromkeys(fresh))
         conflicts += conflicts_here
-        vanished = 0 if failures else self._vanish_missing(location, stamp, started)
-        self._save_sync(location, provider.account.account_id, cursor=None, synced_at=stamp,
+        vanished = 0 if failures else self._vanish_missing(source, roots, stamp, started)
+        self._save_sync(key, provider.account.account_id, cursor=None, synced_at=stamp,
                         full_synced_at=stamp)
         return ScanResult(
-            location, folders=folders, files=files, total_bytes=total,
+            key, folders=folders, files=files, total_bytes=total,
             seconds=self._clock() - started, new_ids=tuple(new_ids), vanished=vanished,
-            failures=failures, conflicts=conflicts, cursor=self._cursor(location))
+            failures=failures, conflicts=conflicts, cursor=self._cursor(key))
 
-    def sync_changes(self, location: str) -> ScanResult:
+    def sync_changes(self, key: str) -> ScanResult:
         """按游标取增量：新增与修改登记，删除的标「已消失」。"""
-        provider = self.provider(location)
-        self._roots(location, provider)
+        provider = self.provider(key)
+        source = provider.location
+        roots = self._roots(key, provider)
         started = self._clock()
         stamp = _stamp(started)
-        cursor = self._cursor(location)
+        cursor = self._cursor(key)
         try:
             changes, next_cursor = provider.changes(cursor)
         except DriveError as error:
-            self._save_sync(location, provider.account.account_id, cursor=cursor,
+            self._save_sync(key, provider.account.account_id, cursor=cursor,
                             last_error=str(error))
             raise
         if cursor is None:
             # 第一次只取起点：游标之前发生过的变更无从知道，等全量核对。
-            self._save_sync(location, provider.account.account_id, cursor=next_cursor, synced_at=stamp)
-            return ScanResult(location, seconds=self._clock() - started, cursor=next_cursor)
-        names = self._root_names(location, provider)
+            self._save_sync(key, provider.account.account_id, cursor=next_cursor, synced_at=stamp)
+            return ScanResult(key, seconds=self._clock() - started, cursor=next_cursor)
+        names = self._root_names(key, provider)
         known: dict[str, tuple[tuple[str, ...], str] | None] = {}
         rows, removed = [], []
         for change in changes:
@@ -243,12 +247,12 @@ class ScanService:
             if found is None:
                 continue
             segments, root_id = found
-            rows.append(self._row(location, entry, segments, stamp, root_id))
+            rows.append(self._row(source, entry, segments, stamp, root_id))
         fresh, conflicts = self._write(rows)
-        vanished = self._vanish_ids(location, removed, started)
-        self._save_sync(location, provider.account.account_id, cursor=next_cursor, synced_at=stamp)
+        vanished = self._vanish_ids(source, roots, removed, started)
+        self._save_sync(key, provider.account.account_id, cursor=next_cursor, synced_at=stamp)
         return ScanResult(
-            location, files=len(rows) - conflicts,
+            key, files=len(rows) - conflicts,
             total_bytes=sum(int(row[6] or 0) for row in rows),
             seconds=self._clock() - started, new_ids=tuple(dict.fromkeys(fresh)),
             vanished=vanished, conflicts=conflicts, cursor=next_cursor)
@@ -312,26 +316,36 @@ class ScanService:
                     found[(location, remote_id)] = int(identifier)
         return found
 
-    def _vanish_missing(self, location: str, stamp: str, started: float) -> int:
-        """全量核对：这个来源里本次没再见到的行标「已消失」。"""
+    def _vanish_missing(self, source: str, roots: Sequence[str], stamp: str,
+                        started: float) -> int:
+        """全量核对：这个账号的扫描根里本次没再见到的行标「已消失」。
+
+        同一来源下的另一个账号可能也扫着同一批目录名，所以判据带上扫描根：
+        只看 `location` 会把别人账号的行一起标掉。
+        """
+        marks = ",".join("?" * len(roots))
         with self.database.write_transaction() as connection:
             ids = [int(row[0]) for row in connection.execute(
-                "SELECT id FROM asset WHERE location=? AND remote_id IS NOT NULL "
+                "SELECT id FROM asset WHERE location=? AND drive_root IN ("
+                + marks + ") AND remote_id IS NOT NULL "
                 "AND disposal IS NULL AND (last_seen IS NULL OR last_seen<?)",
-                (location, stamp))]
+                (source, *roots, stamp))]
             return len(mark_vanished(connection, ids, started))
 
-    def _vanish_ids(self, location: str, remote_ids: Sequence[str], started: float) -> int:
-        """增量删除：按远端 id 找到在库的行，标「已消失」。"""
+    def _vanish_ids(self, source: str, roots: Sequence[str], remote_ids: Sequence[str],
+                    started: float) -> int:
+        """增量删除：按远端 id 找到这个账号扫描根下的行，标「已消失」。"""
         if not remote_ids:
             return 0
+        marks = ",".join("?" * len(roots))
         with self.database.write_transaction() as connection:
             ids = []
             for offset in range(0, len(remote_ids), 500):
                 portion = remote_ids[offset:offset + 500]
                 ids.extend(int(row[0]) for row in connection.execute(
-                    "SELECT id FROM asset WHERE location=? AND remote_id IN ("
-                    + ",".join("?" * len(portion)) + ")", (location, *portion)))
+                    "SELECT id FROM asset WHERE location=? AND drive_root IN ("
+                    + marks + ") AND remote_id IN ("
+                    + ",".join("?" * len(portion)) + ")", (source, *roots, *portion)))
             return len(mark_vanished(connection, ids, started))
 
     def _name(self, provider: DriveProvider, remote_id: str) -> str:
@@ -341,9 +355,9 @@ class ScanService:
         except DriveError:
             return remote_id
 
-    def _root_names(self, location: str, provider: DriveProvider) -> dict[str, str]:
+    def _root_names(self, key: str, provider: DriveProvider) -> dict[str, str]:
         """扫描起点 id → 名字，增量里追父目录时用来收尾。"""
-        return {root: self._name(provider, root) for root in self._roots(location, provider)}
+        return {root: self._name(provider, root) for root in self._roots(key, provider)}
 
     def _folder_segments(self, provider: DriveProvider, names: Mapping[str, str],
                          known: dict[str, tuple[tuple[str, ...], str] | None],
@@ -373,8 +387,8 @@ class ScanService:
         known[folder_id] = found
         return found
 
-    def sync_state(self, location: str) -> dict:
-        """这个来源的同步状态：页面上的「上次同步」「最近一次错误」都读它。
+    def sync_state(self, key: str) -> dict:
+        """这个账号的同步状态：页面上的「上次同步」「最近一次错误」都读它。
 
         `synced_at` 是最近一次成功同步，`full_synced_at` 是最近一次整棵核对；两者分开，
         「立即刷新」按完才看得见时间在动，而整棵重扫的节拍照旧由后者决定。
@@ -387,7 +401,7 @@ class ScanService:
                 row = connection.execute(
                     "SELECT cursor, COALESCE(synced_at, full_synced_at), full_synced_at, last_error "
                     "FROM drive_sync WHERE location=?",
-                    (location,)).fetchone()
+                    (key,)).fetchone()
         except sqlite3.Error:
             return empty
         if row is None:
@@ -395,25 +409,25 @@ class ScanService:
         return {"cursor": row[0], "synced_at": row[1], "full_synced_at": row[2],
                 "last_error": row[3] or ""}
 
-    def _cursor(self, location: str) -> str | None:
+    def _cursor(self, key: str) -> str | None:
         with self.database.read_connection() as connection:
             try:
                 row = connection.execute(
-                    "SELECT cursor FROM drive_sync WHERE location=?", (location,)).fetchone()
+                    "SELECT cursor FROM drive_sync WHERE location=?", (key,)).fetchone()
             except sqlite3.Error:
                 return None
         return row[0] if row else None
 
-    def restart(self, location: str) -> None:
+    def restart(self, key: str) -> None:
         """换扫描起点或重新授权之后游标不再可信：清掉它，下一轮整棵重扫。
 
         增量游标只认「哪些文件变了」，它不会因为换了根目录就把新根下的存量文件重报一遍；
         留着旧游标会让新选的目录直到下一次全量核对（最长一天）才出现在账本里。
         """
         with self.database.write_transaction() as connection:
-            connection.execute("DELETE FROM drive_sync WHERE location=?", (location,))
+            connection.execute("DELETE FROM drive_sync WHERE location=?", (key,))
 
-    def _save_sync(self, location: str, account_id: str, *, cursor: str | None,
+    def _save_sync(self, key: str, account_id: str, *, cursor: str | None,
                    synced_at: str | None = None, full_synced_at: str | None = None,
                    last_error: str = "") -> None:
         """记下游标、这次同步的时刻与最近一次全量核对；失败原因也留在这里给页面看。
@@ -423,4 +437,4 @@ class ScanService:
         """
         with self.database.write_transaction() as connection:
             connection.execute(_SAVE_SYNC,
-                               (location, account_id, cursor, synced_at, full_synced_at, last_error))
+                               (key, account_id, cursor, synced_at, full_synced_at, last_error))

@@ -547,9 +547,21 @@ def _scan(request: Request):
 
 
 def _drive_location(location: str) -> str:
+    """来源类型（`gdrive`/`onedrive`）：取字节方式这类设置按它存。"""
     if location not in LOCATIONS:
         raise HTTPException(404, "没有这个网盘")
     return location
+
+
+def _drive_key(drive, key: str) -> str:
+    """账号名（`[drive.accounts]` 的键）。
+
+    还没填凭据的来源名也算账号：它是「要以这个名字接上」的起点，报错交给下面按来源
+    说明（例如还没接入），而不是当成一个不存在的账号。
+    """
+    if key not in drive.keys() and key not in LOCATIONS:
+        raise HTTPException(404, "没有这个网盘账号")
+    return key
 
 
 def _drive_failure(error: DriveError) -> HTTPException:
@@ -569,18 +581,18 @@ def read_drives(request: Request, _args=Depends(require_auth)):
     return _drive(request).snapshot()
 
 
-@router.post("/api/drive/{location}/authorize")
-def drive_authorize(request: Request, location: str, _args=Depends(require_auth)):
+@router.post("/api/drive/{key}/authorize")
+def drive_authorize(request: Request, key: str, _args=Depends(require_auth)):
     """发起授权：回一个远端同意页地址，页面整窗跳过去。"""
     same_origin(request)
     try:
-        return {"url": _drive(request).authorize(_drive_location(location))}
+        return {"url": _drive(request).authorize(_drive_key(_drive(request), key))}
     except DriveError as error:
         raise _drive_failure(error) from error
 
 
-@router.get("/oauth/{location}/callback")
-def drive_callback(request: Request, location: str, code: str = "", state: str = "", error: str = ""):
+@router.get("/oauth/{key}/callback")
+def drive_callback(request: Request, key: str, code: str = "", state: str = "", error: str = ""):
     """网盘授权回执：把 code 换成令牌，然后回到设置页的网盘分区。
 
     这条是网盘跳回浏览器的那一步，没有会话保证，所以不查登录凭据；边界是本次授权开始时
@@ -589,9 +601,9 @@ def drive_callback(request: Request, location: str, code: str = "", state: str =
     if error:
         return JSONResponse({"error": f"授权未完成：{error}"}, status_code=400)
     try:
-        _drive(request).accept(location, code, state)
+        _drive(request).accept(key, code, state)
         # 换了账号，旧游标指的是别人的盘：不清掉就永远只追增量。
-        _scan(request).restart(location)
+        _scan(request).restart(key)
     except DriveError as failure:
         return JSONResponse({"error": str(failure)}, status_code=400)
     response = RedirectResponse("/settings#drives", status_code=302)
@@ -599,8 +611,8 @@ def drive_callback(request: Request, location: str, code: str = "", state: str =
     return response
 
 
-@router.post("/api/drive/{location}/roots")
-def save_drive_roots(request: Request, location: str, body: dict[str, Any] = Body(default_factory=dict),
+@router.post("/api/drive/{key}/roots")
+def save_drive_roots(request: Request, key: str, body: dict[str, Any] = Body(default_factory=dict),
                      _args=Depends(require_auth)):
     """选定扫描起点：整条列表替换，空列表表示回到账号根目录。"""
     same_origin(request)
@@ -608,12 +620,12 @@ def save_drive_roots(request: Request, location: str, body: dict[str, Any] = Bod
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise HTTPException(400, "roots 要是对象数组")
     try:
-        ids = _drive(request).set_roots(_drive_location(location), rows)
+        ids = _drive(request).set_roots(_drive_key(_drive(request), key), rows)
     except DriveError as error:
         raise _drive_failure(error) from error
     # 换了扫描起点，旧游标不会把新根下的存量文件再报一遍：清掉它，下一轮整棵重扫。
-    _scan(request).restart(location)
-    return {"location": location, "roots": list(ids)}
+    _scan(request).restart(key)
+    return {"key": key, "roots": list(ids)}
 
 
 @router.post("/api/drive/public-url")
@@ -646,14 +658,18 @@ def save_drive_mode(request: Request, location: str, body: dict[str, Any] = Body
     return {"location": location, "mode": saved}
 
 
-@router.post("/api/drive/{location}/credentials")
-def save_drive_credentials(request: Request, location: str,
+@router.post("/api/drive/{key}/credentials")
+def save_drive_credentials(request: Request, key: str,
                            body: dict[str, Any] = Body(default_factory=dict),
                            _args=Depends(require_auth)):
-    """直接填认证信息接上一个网盘：客户端 ID、密钥、refresh token，可带扫描起点目录。"""
+    """直接填认证信息接上一个网盘账号：客户端 ID、密钥、refresh token，可带扫描起点目录。
+
+    新账号还没接上，所以 `key` 允许是没登记过的名字——那样必须在 `location` 里说清它是
+    哪个网盘；已接上的账号只改凭据时 `location` 可省。
+    """
     same_origin(request)
     fields = {}
-    for name in ("client_id", "client_secret", "refresh_token", "root"):
+    for name in ("client_id", "client_secret", "refresh_token", "root", "location"):
         value = body.get(name)
         if value is None:
             value = ""
@@ -661,27 +677,30 @@ def save_drive_credentials(request: Request, location: str,
             raise HTTPException(400, f"{name} 要是字符串")
         fields[name] = value
     drive = _drive(request)
+    source = fields["location"] or drive.location_of(key)
+    if key not in drive.keys() and source not in LOCATIONS:
+        raise HTTPException(404, "没有这个网盘")
     try:
-        location = _drive_location(location)
-        drive.set_credentials(location, client_id=fields["client_id"],
+        drive.set_credentials(key, client_id=fields["client_id"],
                               client_secret=fields["client_secret"],
-                              refresh_token=fields["refresh_token"], root=fields["root"])
+                              refresh_token=fields["refresh_token"], root=fields["root"],
+                              location=source)
     except DriveError as error:
         raise _drive_failure(error) from error
     # 凭证换了可能就是换了账号：旧游标指的是别人的盘。
-    _scan(request).restart(location)
-    return drive.connection(location)
+    _scan(request).restart(key)
+    return drive.connection(source)
 
 
-@router.get("/api/drive/{location}/folders")
-def drive_folders(request: Request, location: str, parent_id: str = "",
+@router.get("/api/drive/{key}/folders")
+def drive_folders(request: Request, key: str, parent_id: str = "",
                   _args=Depends(require_auth)):
     """挑扫描起点用的目录列表，只列文件夹；不给 `parent_id` 就从扫描起点那一层开始。"""
-    _drive_location(location)
     drive = _drive(request)
-    parent = parent_id or next(iter(drive.roots(location)), "")
+    _drive_key(drive, key)
+    parent = parent_id or next(iter(drive.roots(key)), "")
     try:
-        entries, _cursor = drive.provider(location).list_folder(parent)
+        entries, _cursor = drive.provider(key).list_folder(parent)
     except DriveError as error:
         raise _drive_failure(error) from error
     return {"parent_id": parent,
@@ -689,26 +708,28 @@ def drive_folders(request: Request, location: str, parent_id: str = "",
                         for entry in entries if entry.folder]}
 
 
-@router.delete("/api/drive/{location}")
-def forget_drive(request: Request, location: str, _args=Depends(require_auth)):
-    """断开一个网盘：删掉账号、清空它的扫描起点，账本里的行不动。"""
+@router.delete("/api/drive/{key}")
+def forget_drive(request: Request, key: str, _args=Depends(require_auth)):
+    """断开一个网盘账号：删掉账号、清空它的扫描起点，账本里的行不动。"""
     same_origin(request)
     try:
-        _drive(request).forget(_drive_location(location))
+        _drive(request).forget(_drive_key(_drive(request), key))
     except DriveError as error:
         raise _drive_failure(error) from error
-    return {"forgotten": location}
+    return {"forgotten": key}
 
 
-@router.post("/api/drive/{location}/refresh")
-def refresh_drive(request: Request, location: str, _args=Depends(require_auth)):
-    """立刻增量同步一次这个网盘。"""
+@router.post("/api/drive/{key}/refresh")
+def refresh_drive(request: Request, key: str, _args=Depends(require_auth)):
+    """立刻增量同步一次这个账号。"""
     same_origin(request)
+    drive = _drive(request)
+    _drive_key(drive, key)
     try:
-        _drive(request).refresh(_drive_location(location))
+        drive.refresh(key)
     except DriveError as error:
         raise _drive_failure(error) from error
-    return _drive(request).connection(location)
+    return drive.connection(drive.location_of(key))
 
 
 # --------------------------------------------------------------------------- 存储与流量

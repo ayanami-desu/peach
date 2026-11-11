@@ -10,7 +10,7 @@
 """
 from __future__ import annotations
 
-from typing import Callable, Iterator, Mapping
+from typing import Callable, Iterator
 
 import httpx
 from fastapi import Request
@@ -33,16 +33,16 @@ CHUNK = 256 * 1024
 class DriveStreamer:
     """把资产的 `DownloadTarget` 变成 HTTP 响应；`read` 给 ffprobe 与抽帧按段取字节。"""
 
-    def __init__(self, providers: Callable[[str], DriveProvider], client: Callable[[], httpx.Client]):
+    def __init__(self, providers: Callable[[str, str], DriveProvider], client: Callable[[], httpx.Client]):
         self._providers = providers
         self._client = client
 
-    def target(self, location: str, remote_id: str) -> DownloadTarget:
-        return self._providers(location).download_target(remote_id)
+    def target(self, location: str, root: str, remote_id: str) -> DownloadTarget:
+        return self._providers(location, root).download_target(remote_id)
 
-    def response(self, request: Request, location: str, remote_id: str,
+    def response(self, request: Request, location: str, root: str, remote_id: str,
                  mime: str, *, download: bool = False) -> Response:
-        target = self.target(location, remote_id)
+        target = self.target(location, root, remote_id)
         if target.kind == "redirect":
             return RedirectResponse(target.url, status_code=302, headers={"Cache-Control": "no-store"})
         return self._proxy(request, target, mime, download=download)
@@ -94,9 +94,9 @@ class DriveStreamer:
         finally:
             upstream.close()
 
-    def open(self, location: str, remote_id: str) -> httpx.Response:
+    def open(self, location: str, root: str, remote_id: str) -> httpx.Response:
         """完整取一份字节（图片落缓存用）。上游拒绝时按状态码转成领域异常。"""
-        target = self.target(location, remote_id)
+        target = self.target(location, root, remote_id)
         client = self._client()
         response = client.send(
             client.build_request("GET", target.url, headers=dict(target.headers)),
@@ -112,10 +112,10 @@ class DriveStreamer:
             raise DriveUnavailable(f"upstream {status}")
         return response
 
-    def read(self, location: str, remote_id: str, offset: int, length: int,
+    def read(self, location: str, root: str, remote_id: str, offset: int, length: int,
              *, timeout: float = 60.0) -> bytes:
         """按段取字节，给 ffprobe 与时间轴抽帧用。上游不支持 Range 时退化成整段前缀截取。"""
-        target = self.target(location, remote_id)
+        target = self.target(location, root, remote_id)
         headers = dict(target.headers)
         headers["Range"] = f"bytes={offset}-{offset + length - 1}"
         response = self._client().get(target.url, headers=headers, timeout=timeout)
@@ -125,16 +125,15 @@ class DriveStreamer:
             return response.content[offset:offset + length]
         raise OSError(f"range read failed: {response.status_code}")
 
-    def input_url(self, location: str, remote_id: str) -> tuple[str, dict[str, str]]:
+    def input_url(self, location: str, root: str, remote_id: str) -> tuple[str, dict[str, str]]:
         """给 FFmpeg 的输入地址与请求头；`redirect` 形态没有头。"""
-        target = self.target(location, remote_id)
+        target = self.target(location, root, remote_id)
         if target.kind == "redirect":
             return target.url, {}
         return target.url, dict(target.headers)
 
 
-def build(providers: Mapping[str, DriveProvider] | Callable[[str], DriveProvider],
+def build(resolve: Callable[[str, str], DriveProvider],
           client: Callable[[], httpx.Client]) -> DriveStreamer:
-    """`providers` 可以是一张表，也可以是一句「按来源取当前驱动」——后者才对得上会重建的驱动实例。"""
-    resolve = providers if callable(providers) else (lambda location: providers[location])
+    """`resolve(来源, 扫描起点)` 现问驱动：账号会重建，缓存下来的那份迟早是旧的。"""
     return DriveStreamer(resolve, client)

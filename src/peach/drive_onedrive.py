@@ -80,7 +80,7 @@ class OneDrive:
 
     def __init__(self, accounts: Accounts, client: Callable[[], httpx.Client],
                  client_id: str = "", client_secret: str = "", redirect_uri: str = "",
-                 mode: str = REDIRECT):
+                 mode: str = REDIRECT, key: str = ONEDRIVE):
         self.accounts = accounts
         self._client = client
         self.client_id = client_id
@@ -88,6 +88,8 @@ class OneDrive:
         self.redirect_uri = redirect_uri
         #: 取字节方式，`redirect` 或 `proxy`，由设置里的 `[drive.modes]` 决定。
         self.mode = mode
+        #: 账号名：同一个来源可以接多个账号，令牌与扫描根都按它的名字存。
+        self.key = key
         self.account = self._profile()
 
     # -- 授权 ---------------------------------------------------------------
@@ -115,7 +117,7 @@ class OneDrive:
             refresh_token=refresh_token,
             access_token=payload.get("access_token", ""),
             expires_at=int(time.time()) + int(payload.get("expires_in", 0)),
-            scope=payload.get("scope", ""),
+            scope=payload.get("scope", ""), key=self.key,
         )
         stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(
             stored.access_token)
@@ -142,12 +144,12 @@ class OneDrive:
                 str(owner.get("displayName") or ""), str(root.get("id", "")))
 
     def _profile(self) -> DriveAccount:
-        stored = self.accounts.store.load(ONEDRIVE)
+        stored = self.accounts.store.load(self.key)
         if stored is None:
             return DriveAccount(ONEDRIVE, "", "", "", "")
         if not stored.account_id:
             stored.account_id, stored.email, stored.display_name, stored.root_id = self.identify(
-                self.accounts.token(ONEDRIVE)[0])
+                self.accounts.token(self.key)[0])
             self.accounts.store.save(stored)
         return DriveAccount(ONEDRIVE, stored.account_id, stored.email, stored.display_name,
                             stored.root_id)
@@ -160,7 +162,7 @@ class OneDrive:
     def _request(self, method: str, url: str, params: dict | None = None, body: dict | None = None,
                  token: str | None = None) -> httpx.Response:
         """`url` 是路径时拼上 Graph 前缀；`nextLink`/`deltaLink` 本来就是绝对地址。"""
-        access = token or self.accounts.token(ONEDRIVE)[0]
+        access = token or self.accounts.token(self.key)[0]
         response = self._client().request(
             method, url if url.startswith("http") else GRAPH + url, params=params, json=body,
             timeout=60, headers={"Authorization": f"Bearer {access}"},
@@ -234,6 +236,7 @@ class OneDrive:
 
 
 def build(accounts: Accounts, client: Callable[[], httpx.Client], *, client_id: str,
-          client_secret: str, redirect_uri: str, mode: str = REDIRECT) -> OneDrive:
+          client_secret: str, redirect_uri: str, mode: str = REDIRECT,
+          key: str = ONEDRIVE) -> OneDrive:
     return OneDrive(accounts, client, client_id=client_id, client_secret=client_secret,
-                    redirect_uri=redirect_uri, mode=mode)
+                    redirect_uri=redirect_uri, mode=mode, key=key)

@@ -176,10 +176,13 @@ class FakeDrive:
         self._provider = provider
         self._roots = tuple(roots)
 
-    def provider(self, _location):
+    def key_for(self, _location, _root=""):
+        return "gdrive"
+
+    def provider(self, _key):
         return self._provider
 
-    def roots(self, _location):
+    def roots(self, _key):
         return self._roots
 
     def connection(self, location):

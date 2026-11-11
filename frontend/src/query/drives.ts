@@ -8,6 +8,21 @@ export const DRIVE_KEY = ['drive'] as const;
 
 export interface DriveRoot { remote_id: string; name: string }
 
+/** 一个网盘账号：同一个来源可以接多个（`[drive.accounts.<key>]`），`key` 就是它的名字。 */
+export interface DriveAccount {
+  key: string;
+  /** 这个账号的驱动建起来了（客户端凭据齐、能换票）。 */
+  configured: boolean;
+  /** 有授权过的令牌。 */
+  connected: boolean;
+  email: string;
+  display_name: string;
+  /** 这个账号的扫描起点。 */
+  roots: DriveRoot[];
+  synced_at: string | null;
+  last_error: string;
+}
+
 export interface DriveConnection {
   location: string;
   label: string;
@@ -17,6 +32,8 @@ export interface DriveConnection {
   connected: boolean;
   email: string;
   display_name: string;
+  /** 这个来源下的全部账号。 */
+  accounts: DriveAccount[];
   roots: DriveRoot[];
   /** 现在的取字节方式：`redirect` 让浏览器跟网盘的预授权地址走，`proxy` 由 Peach 转发 Range。 */
   mode: string;

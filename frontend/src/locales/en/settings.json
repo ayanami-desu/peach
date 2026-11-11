@@ -1,5 +1,24 @@
 {
   "drive": {
+    "account": {
+      "add": "Add account",
+      "added": "Connected {{name}}",
+      "authorize": "Start authorization",
+      "callback": "Callback URL {{url}}",
+      "disconnect": "Disconnect",
+      "empty": "No account is connected for this drive yet. Paste credentials to connect one, or set a callback base URL and authorize in the browser.",
+      "forgetBody": "Peach will forget {{name}}'s credentials and scan roots and stop syncing this account. Entries already in the library stay; authorizing again picks syncing back up.",
+      "forgetTitle": "Disconnect {{name}}",
+      "forgotten": "Disconnected {{name}}",
+      "name": "Account name",
+      "nameHelp": "Distinguishes accounts when one drive has several; blank uses the drive name. The value becomes [drive.accounts.<name>] in the settings file.",
+      "pick": "Choose scan roots",
+      "picking": "Hide folders",
+      "reauthorize": "Authorize again",
+      "refresh": "Refresh now",
+      "refreshed": "Refresh of {{name}} queued; the next sync round starts with it",
+      "rootsSaved": "Scan roots saved"
+    },
     "mode": {
       "inUse": "In use",
       "proxy": "Relayed by Peach",

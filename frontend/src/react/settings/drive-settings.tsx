@@ -1,14 +1,16 @@
 /* 网盘连接：媒体只在网盘上，Peach 只读目录清单与播放所需的字节（ADR-0157）。
  *
- * 一张卡对一个来源，状态全来自 `GET /api/drive`：`configured` 是这台机器有没有该网盘的 OAuth 客户端凭据，
- * `connected` 是有没有授权过的账号。没有账号时只给「开始授权」：点了整窗跳到网盘同意页，回跳落在 `/settings#drives`。
- * 扫描起点决定同步从哪些目录开始，用 `GET /api/drive/{location}/folders` 逐层列目录挑，挑完整条换掉
- * （`POST /api/drive/{location}/roots`）；一个都不选就是从账号根目录开始。
- * 「立即刷新」让下一轮同步先做这个来源（`POST /api/drive/{location}/refresh`）。
- * 取字节方式两种都要（`POST /api/drive/{location}/mode`）：`redirect` 让浏览器直接跟网盘的预授权地址走，
+ * 一张卡对一个来源，卡里按账号列：同一个来源可以接多个账号（设置文件里的 `[drive.accounts.<账号名>]`，
+ * 名字不同而 `location` 相同）。状态全来自 `GET /api/drive`：`configured` 是这台机器有没有该账号的
+ * OAuth 客户端凭据，`connected` 是有没有授权过的令牌。没有账号时只给「添加账号」与「开始授权」：
+ * 授权整窗跳到网盘同意页，回跳落在 `/settings#drives`。
+ * 扫描起点按账号记，用 `GET /api/drive/{账号}/folders` 逐层列目录挑，挑完整条换掉
+ * （`POST /api/drive/{账号}/roots`）；一个都不选就是从账号根目录开始。
+ * 「立即刷新」让下一轮同步先做这个账号（`POST /api/drive/{账号}/refresh`）。
+ * 取字节方式按来源（`POST /api/drive/{location}/mode`）：`redirect` 让浏览器直接跟网盘的预授权地址走，
  * 不占服务器流量；`proxy` 由 Peach 带 Range 转发，浏览器只跟 Peach 说话。能带鉴权取的来源只能选后者。
- * 「断开」只忘掉账号与扫描起点（`DELETE /api/drive/{location}`），已经登记进馆藏的条目不动。
- * 不想开公网回调时可以在这一页直接填客户端 ID、密钥与 refresh token（`POST /api/drive/{location}/credentials`），
+ * 「断开」只忘掉这个账号与它的扫描起点（`DELETE /api/drive/{账号}`），已经登记进馆藏的条目不动。
+ * 不想开公网回调时可以在这一页直接填客户端 ID、密钥与 refresh token（`POST /api/drive/{账号}/credentials`），
  * Peach 用它们自己换票；顺手填的目录会解析成扫描起点。 */
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,7 +20,10 @@ import { SettingsRow } from '@/components/application/settings/settings-rows';
 import { Button } from '@/components/base/buttons/button';
 import { Input } from '@/components/base/input/input';
 
-import { DRIVE_KEY, DRIVE_URL, fetchDrives, type DriveConnection, type DriveRoot } from '@peach/query';
+import {
+  DRIVE_KEY, DRIVE_URL, fetchDrives,
+  type DriveAccount, type DriveConnection, type DriveRoot,
+} from '@peach/query';
 
 import { apiGet, apiSend, errorMessage } from '../../api';
 import { t } from '../../i18n';
@@ -39,6 +44,9 @@ const MODE_LABELS: Record<string, { label: string; help: string }> = {
 };
 
 const modeLabel = (mode: string) => MODE_LABELS[mode]?.label ?? mode;
+
+/** 账号在页面上的称呼：授权过就报邮箱，没授权就报账号名。 */
+const accountName = (account: DriveAccount) => account.email || account.display_name || account.key;
 
 export function DriveSettings({ receipt }: { receipt(message: string): void }) {
   const queries = useQueryClient();
@@ -99,17 +107,17 @@ function CallbackSection({ publicUrl, receipt, reloaded }: {
   </Section>;
 }
 
+/** 一个来源的卡：取字节方式按来源，账号逐个列。 */
 function DriveCard({ connection, publicUrl, receipt, reloaded }: {
   connection: DriveConnection; publicUrl: string; receipt(message: string): void; reloaded(): void;
 }) {
   const [state, setState] = useState(connection);
   useEffect(() => setState(connection), [connection]);
   const action = useAction();
-  const [picking, setPicking] = useState(false);
-  const [manual, setManual] = useState(false);
-  const [form, setForm] = useState({ client_id: '', client_secret: '', refresh_token: '', root: '' });
-  const base = `${DRIVE_URL}/${state.location}`;
-  const callback = publicUrl ? `${publicUrl.replace(/\/+$/, '')}/oauth/${state.location}/callback` : '';
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({
+    key: '', client_id: '', client_secret: '', refresh_token: '', root: '',
+  });
 
   const field = (name: keyof typeof form) => ({
     id: `drive-${state.location}-${name}`,
@@ -118,81 +126,45 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
     autoComplete: 'off',
     onChange: (value: string) => setForm(current => ({ ...current, [name]: value })),
   });
-  const saveCredentials = () => void action.run('credentials',
-    (signal) => apiSend<DriveConnection>(`${base}/credentials`, form, 'POST', signal),
-    (next) => {
-      setState(next);
-      setManual(false);
-      setForm({ client_id: '', client_secret: '', refresh_token: '', root: '' });
-      receipt(t('settings:drive.manual.saved', { label: next.label }));
-      reloaded();
-    });
-
-  const authorize = () => void action.run('authorize',
-    (signal) => apiSend<{ url: string }>(`${base}/authorize`, {}, 'POST', signal),
-    ({ url }) => { window.location.assign(url); });
-  const refresh = () => void action.run('refresh',
-    (signal) => apiSend<DriveConnection>(`${base}/refresh`, {}, 'POST', signal),
-    (next) => { setState(next); receipt(`已安排刷新 ${next.label}，下一轮同步先做这个来源`); });
-  const saveRoots = (roots: DriveRoot[]) => void action.run('roots',
-    (signal) => apiSend<{ location: string; roots: string[] }>(`${base}/roots`, { roots }, 'POST', signal),
-    () => { setPicking(false); receipt('已保存扫描起点'); reloaded(); });
+  const reset = () => setForm({ key: '', client_id: '', client_secret: '', refresh_token: '', root: '' });
+  const addAccount = () => {
+    const key = form.key.trim() || state.location;
+    void action.run('credentials',
+      signal => apiSend<DriveConnection>(`${DRIVE_URL}/${encodeURIComponent(key)}/credentials`, {
+        client_id: form.client_id,
+        client_secret: form.client_secret,
+        refresh_token: form.refresh_token,
+        root: form.root,
+        location: state.location,
+      }, 'POST', signal),
+      (next) => {
+        setState(next);
+        setAdding(false);
+        reset();
+        receipt(t('settings:drive.account.added', { name: key }));
+        reloaded();
+      });
+  };
   const saveMode = (mode: string) => void action.run('mode',
-    (signal) => apiSend<{ location: string; mode: string }>(`${base}/mode`, { mode }, 'POST', signal),
+    (signal) => apiSend<{ location: string; mode: string }>(`${DRIVE_URL}/${state.location}/mode`, { mode }, 'POST', signal),
     ({ mode: saved }) => {
       setState({ ...state, mode: saved });
       receipt(t('settings:drive.mode.switched', { label: state.label, mode: modeLabel(saved) }));
     });
-  const forget = () => void confirmModal({
-    title: `断开 ${state.label}`,
-    body: `Peach 会忘掉 ${state.email || state.display_name || '这个网盘'} 的账号与扫描起点，之后不再同步它。`
-      + '已经登记进馆藏的条目不动；重新授权后可以接着同步。',
-    confirmLabel: '断开',
-    danger: true,
-    onConfirm: async () => {
-      await apiSend<{ forgotten: string }>(base, {}, 'DELETE');
-      receipt(`已断开 ${state.label}`);
-      reloaded();
-    },
-  });
 
   return (
     <Section guide="account" title={state.label}>
       <Stack>
         {state.configured ? null : (
           <Note tone="warning" title={`${state.label} 还没有接入`}>
-            {`两条路任选：在设置文件的 [drive.accounts.${state.location}] 段填好 client_id 与 client_secret，`
-              + '再用下面「手动填认证信息」贴一次客户端凭据；要走浏览器授权，还要在 [drive] 段填上这台 Peach 的 https 地址 public_url。'}
+            {`在下面「添加账号」里填 client_id、client_secret 与 refresh token 就能接上，名字会写进设置文件的 [drive.accounts.<账号名>]；`
+              + '要走浏览器授权，还得在 [drive] 段填上这台 Peach 的 https 地址 public_url。'}
           </Note>
         )}
-        {state.configured && !state.connected && !callback ? (
-          <Note tone="warning" title="没有配置回调基址">
-            {`浏览器授权要回到这台 Peach：先在设置文件的 [drive] 段填好 public_url（https 地址），`
-              + `网盘后台登记的回调地址是 public_url 加上 /oauth/${state.location}/callback。不想开公网回调就改用「手动填认证信息」，那条路不用 public_url。`}
-          </Note>
-        ) : null}
-        <FactList>
-          <Fact term="账号">
-            {state.connected ? state.email || state.display_name || '已授权' : '未授权'}
-          </Fact>
-          <Fact term="扫描起点">{state.roots.length ? `${state.roots.length} 个目录` : '账号根目录'}</Fact>
-          <Fact term="上次同步">{state.synced_at || '还没有同步过'}</Fact>
-          <Fact term={t('settings:drive.mode.term')}>{modeLabel(state.mode)}</Fact>
-        </FactList>
+        {state.accounts.length ? null : <Help>{t('settings:drive.account.empty')}</Help>}
         {state.last_error ? <Note tone="warning" title="上次同步失败">{state.last_error}</Note> : null}
         {action.error ? <ErrorText>{action.error}</ErrorText> : null}
       </Stack>
-      {state.roots.length ? (
-        <Rows>
-          {state.roots.map(root => (
-            <SettingsRow key={root.remote_id} label={root.name} description={root.remote_id}>
-              <Button size="small" variant="secondary" aria-label={`移除扫描起点 ${root.name}`}
-                onClick={() => saveRoots(state.roots.filter(item => item.remote_id !== root.remote_id))}
-                {...busyProps(action.busy === 'roots')}>移除</Button>
-            </SettingsRow>
-          ))}
-        </Rows>
-      ) : null}
       {state.modes.length > 1 ? (
         <Rows>
           {state.modes.map(mode => (
@@ -209,39 +181,119 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
           ))}
         </Rows>
       ) : null}
-      {manual ? (
+      {state.accounts.map(account => (
+        <AccountBlock key={account.key} account={account} publicUrl={publicUrl}
+          apply={next => setState(next)} receipt={receipt} reloaded={reloaded} />
+      ))}
+      {adding ? (
         <Stack>
           <Help>{t('settings:drive.manual.help')}</Help>
+          <Input label={t('settings:drive.account.name')} hint={t('settings:drive.account.nameHelp')}
+            {...field('key')} />
           <Input label={t('settings:drive.manual.clientId')} {...field('client_id')} />
           <Input type="password" label={t('settings:drive.manual.clientSecret')} {...field('client_secret')} />
           <Input type="password" label={t('settings:drive.manual.refreshToken')} {...field('refresh_token')} />
           <Input label={t('settings:drive.manual.root')} hint={t('settings:drive.manual.rootHelp')}
             {...field('root')} />
-          <Button onClick={saveCredentials} {...busyProps(action.busy === 'credentials')}>
+          <Button onClick={addAccount} {...busyProps(action.busy === 'credentials')}>
             {t('settings:drive.manual.submit')}
           </Button>
         </Stack>
       ) : null}
-      {picking && state.connected
-        ? <RootPicker connection={state} receipt={receipt} onClose={() => setPicking(false)}
+      <Footer>
+        <Button variant="secondary" onClick={() => setAdding(!adding)}>
+          {adding ? t('settings:drive.manual.hide') : t('settings:drive.account.add')}
+        </Button>
+      </Footer>
+    </Section>
+  );
+}
+
+/** 一个账号：扫描起点、同步状态与它自己的授权/断开入口。 */
+function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
+  account: DriveAccount; publicUrl: string; apply(next: DriveConnection): void;
+  receipt(message: string): void; reloaded(): void;
+}) {
+  const action = useAction();
+  const [picking, setPicking] = useState(false);
+  const base = `${DRIVE_URL}/${encodeURIComponent(account.key)}`;
+  const callback = publicUrl ? `${publicUrl.replace(/\/+$/, '')}/oauth/${account.key}/callback` : '';
+  const name = accountName(account);
+
+  const refresh = () => void action.run('refresh',
+    (signal) => apiSend<DriveConnection>(`${base}/refresh`, {}, 'POST', signal),
+    (next) => { apply(next); receipt(t('settings:drive.account.refreshed', { name })); });
+  const saveRoots = (roots: DriveRoot[]) => void action.run('roots',
+    (signal) => apiSend<{ key: string; roots: string[] }>(`${base}/roots`, { roots }, 'POST', signal),
+    () => { setPicking(false); receipt(t('settings:drive.account.rootsSaved')); reloaded(); });
+  const authorize = () => void action.run('authorize',
+    (signal) => apiSend<{ url: string }>(`${base}/authorize`, {}, 'POST', signal),
+    ({ url }) => { window.location.assign(url); });
+  const forget = () => void confirmModal({
+    title: t('settings:drive.account.forgetTitle', { name }),
+    body: t('settings:drive.account.forgetBody', { name }),
+    confirmLabel: t('settings:drive.account.disconnect'),
+    danger: true,
+    onConfirm: async () => {
+      await apiSend<{ forgotten: string }>(base, {}, 'DELETE');
+      receipt(t('settings:drive.account.forgotten', { name }));
+      reloaded();
+    },
+  });
+
+  return (
+    <Section title={name}>
+      <Stack>
+        <FactList>
+          <Fact term={t('settings:drive.account.name')}>{account.key}</Fact>
+          <Fact term="账号">
+            {account.connected ? account.email || account.display_name || '已授权' : '未授权'}
+          </Fact>
+          <Fact term="扫描起点">{account.roots.length ? `${account.roots.length} 个目录` : '账号根目录'}</Fact>
+          <Fact term="上次同步">{account.synced_at || '还没有同步过'}</Fact>
+        </FactList>
+        {account.last_error ? <Note tone="warning" title="上次同步失败">{account.last_error}</Note> : null}
+        {account.configured && !account.connected && !callback ? (
+          <Note tone="warning" title="没有配置回调基址">
+            {`浏览器授权要回到这台 Peach：先在 [drive] 段填好 public_url（https 地址），`
+              + `网盘后台登记的回调地址是 public_url 加上 /oauth/${account.key}/callback。不想开公网回调就直接填认证信息，那条路不用 public_url。`}
+          </Note>
+        ) : null}
+        {action.error ? <ErrorText>{action.error}</ErrorText> : null}
+      </Stack>
+      {account.roots.length ? (
+        <Rows>
+          {account.roots.map(root => (
+            <SettingsRow key={root.remote_id} label={root.name} description={root.remote_id}>
+              <Button size="small" variant="secondary" aria-label={`移除扫描起点 ${root.name}`}
+                onClick={() => saveRoots(account.roots.filter(item => item.remote_id !== root.remote_id))}
+                {...busyProps(action.busy === 'roots')}>移除</Button>
+            </SettingsRow>
+          ))}
+        </Rows>
+      ) : null}
+      {picking && account.connected
+        ? <RootPicker driveKey={account.key} roots={account.roots} receipt={receipt}
+            onClose={() => setPicking(false)}
             onSaved={() => { setPicking(false); reloaded(); }} />
         : null}
-      <Footer status={state.connected ? null : `回调地址 ${callback || '未配置'}`}>
-        <Button variant="secondary" onClick={() => setManual(!manual)}>
-          {manual ? t('settings:drive.manual.hide') : t('settings:drive.manual.show')}
-        </Button>
-        {state.connected
-          ? <Button variant="secondary" onClick={() => setPicking(!picking)}>{picking ? '收起目录' : '选择扫描起点'}</Button>
+      <Footer status={account.connected ? null : t('settings:drive.account.callback', { url: callback || '未配置' })}>
+        {account.connected
+          ? <Button variant="secondary" onClick={() => setPicking(!picking)}>
+              {picking ? t('settings:drive.account.picking') : t('settings:drive.account.pick')}
+            </Button>
           : null}
-        {state.connected
-          ? <Button variant="secondary" onClick={forget}>断开</Button>
+        {account.connected
+          ? <Button variant="secondary" onClick={refresh} {...busyProps(action.busy === 'refresh')}>
+              {t('settings:drive.account.refresh')}
+            </Button>
           : null}
-        {state.connected
-          ? <Button variant="secondary" onClick={refresh} {...busyProps(action.busy === 'refresh')}>立即刷新</Button>
+        {account.connected
+          ? <Button variant="secondary" onClick={forget}>{t('settings:drive.account.disconnect')}</Button>
           : null}
-        {state.configured
+        {account.configured
           ? <Button onClick={authorize} disabled={!callback} {...busyProps(action.busy === 'authorize')}>
-              {state.connected ? '重新授权' : '开始授权'}
+              {account.connected ? t('settings:drive.account.reauthorize') : t('settings:drive.account.authorize')}
             </Button>
           : null}
       </Footer>
@@ -250,22 +302,23 @@ function DriveCard({ connection, publicUrl, receipt, reloaded }: {
 }
 
 /* 逐层列远端目录：只出子目录，点「打开」进一层，「上一级」退回去，当前这层可以直接设成扫描起点。 */
-function RootPicker({ connection, receipt, onSaved, onClose }: {
-  connection: DriveConnection; receipt(message: string): void; onSaved(): void; onClose(): void;
+function RootPicker({ driveKey, roots, receipt, onSaved, onClose }: {
+  driveKey: string; roots: DriveRoot[]; receipt(message: string): void;
+  onSaved(): void; onClose(): void;
 }) {
   const [path, setPath] = useState<DriveRoot[]>([]);
   const current = path[path.length - 1];
   const folders = useQuery({
-    queryKey: ['drive-folders', connection.location, current?.remote_id ?? ''],
+    queryKey: ['drive-folders', driveKey, current?.remote_id ?? ''],
     refetchOnMount: 'always',
     queryFn: ({ signal }) => apiGet<{ parent_id: string; folders: DriveRoot[] }>(
-      `${DRIVE_URL}/${connection.location}/folders?parent_id=${encodeURIComponent(current?.remote_id ?? '')}`, signal),
+      `${DRIVE_URL}/${encodeURIComponent(driveKey)}/folders?parent_id=${encodeURIComponent(current?.remote_id ?? '')}`, signal),
   });
   const action = useAction();
-  const picked = Boolean(current && connection.roots.some(root => root.remote_id === current.remote_id));
+  const picked = Boolean(current && roots.some(root => root.remote_id === current.remote_id));
   /* 不给 parent_id 时服务端从第一个扫描起点那一层开始，没设过就是账号根目录；带回的 parent_id 说明到底落在哪。 */
   const head = folders.data?.parent_id;
-  const start = head ? connection.roots.find(root => root.remote_id === head)?.name ?? head : '账号根目录';
+  const start = head ? roots.find(root => root.remote_id === head)?.name ?? head : '账号根目录';
   const trail = [start, ...path.map(folder => folder.name)].join(' / ');
 
   return (
@@ -298,9 +351,9 @@ function RootPicker({ connection, receipt, onSaved, onClose }: {
             <Help>设为扫描起点后，这一层的子目录都会同步。</Help>
             <Button disabled={picked} onClick={() => {
               if (!current) return;
-              const rows = [...connection.roots, current].map(({ remote_id, name }) => ({ remote_id, name }));
-              void action.run('save', (signal) => apiSend<{ location: string; roots: string[] }>(
-                `${DRIVE_URL}/${connection.location}/roots`, { roots: rows }, 'POST', signal),
+              const rows = [...roots, current].map(({ remote_id, name }) => ({ remote_id, name }));
+              void action.run('save', (signal) => apiSend<{ key: string; roots: string[] }>(
+                `${DRIVE_URL}/${encodeURIComponent(driveKey)}/roots`, { roots: rows }, 'POST', signal),
                 () => { receipt(`已把「${current.name}」设为扫描起点`); onSaved(); });
             }} {...busyProps(action.busy === 'save')}>
               {picked ? '这一层已经是扫描起点' : `设为扫描起点：${current.name}`}

@@ -77,9 +77,8 @@ class Lookup:
         self.table = dict(providers or {})
         self.roots = dict(roots or {})
 
-    @property
-    def providers(self) -> dict:
-        return dict(self.table)
+    def accounts(self) -> tuple[str, ...]:
+        return tuple(sorted(self.table))
 
     def provider(self, location: str):
         if location not in self.table:
@@ -99,8 +98,9 @@ class ScanServiceTest(unittest.TestCase):
         self.drive = FakeDrive()
         self.roots = {"gdrive": ["movies", "shows"]}
         self.lookup = Lookup({"gdrive": self.drive}, self.roots)
+        self.now = 1_780_000_000.0
         self.service = scan.ScanService(self.lookup, LedgerRepository(self.database),
-                                        clock=lambda: 1_780_000_000.0)
+                                        clock=lambda: self.now)
 
     def test_incremental_sync_moves_the_last_sync_stamp_but_not_the_full_one(self):
         self._tree()
@@ -278,3 +278,56 @@ class PathShapeTests(unittest.TestCase):
 
     def test_stamps_stay_sqlite_sortable(self):
         self.assertRegex(scan._stamp(1_780_000_000), r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$")
+
+
+class TwinAccountTest(unittest.TestCase):
+    """同一个来源接两个账号：各扫各的根，互不把对方的行标「已消失」。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db_path = fresh_ledger(self.tmp.name)
+        self.database = LedgerDatabase(self.db_path)
+        family = self._twin("root-fav", "f1", "v-fav", "FAM-001.mp4")
+        maths = self._twin("root-math", "m1", "v-math", "MTH-001.mp4")
+        self.lookup = Lookup({"family": family, "math": maths}, {
+            "family": ("root-fav",), "math": ("root-math",),
+        })
+        self.now = 1_780_000_000.0
+        self.service = scan.ScanService(self.lookup, LedgerRepository(self.database),
+                                        clock=lambda: self.now)
+
+    def _twin(self, root: str, folder: str, video: str, name: str) -> FakeDrive:
+        drive = FakeDrive()
+        drive.location = "onedrive"
+        drive.account = DriveAccount("onedrive", f"acct-{root}", f"{root}@example.com", root, root)
+        drive.folder(folder, "示例合集", root)
+        drive.video(video, name, folder)
+        return drive
+
+    def _rows(self):
+        with self.database.read_connection() as connection:
+            return {
+                row["name"]: (row["location"], row["drive_root"], row["disposal"])
+                for row in connection.execute(
+                    "SELECT name,location,drive_root,disposal FROM asset ORDER BY name")
+            }
+
+    def test_both_accounts_keep_their_own_rows(self):
+        self.service.full_sync("family")
+        self.service.full_sync("math")
+        self.assertEqual(self._rows(), {
+            "FAM-001.mp4": ("onedrive", "root-fav", None),
+            "MTH-001.mp4": ("onedrive", "root-math", None),
+        })
+
+    def test_one_account_vanishing_leaves_the_other_alone(self):
+        self.service.full_sync("family")
+        self.service.full_sync("math")
+        self.lookup.provider("math").children["m1"].clear()
+        self.now += 60.0  # 判「已消失」要求这一行不是本轮见的，换个时刻才看得出来
+        report = self.service.full_sync("math")
+        self.assertEqual(report.vanished, 1)
+        rows = self._rows()
+        self.assertEqual(rows["MTH-001.mp4"][2], "vanished")
+        self.assertIsNone(rows["FAM-001.mp4"][2])

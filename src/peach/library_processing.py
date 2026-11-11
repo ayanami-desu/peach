@@ -1881,10 +1881,10 @@ def _preview_engine(config, database):
         secrets_root=config.directory('secrets'),
     )
     drive = DriveConnections(settings, lambda: transport.client)
-    if not drive.providers:
+    if not drive.keys():
         return None
     return MediaEngine(LedgerRepository(database),
-                       build_streamer(drive.providers, lambda: transport.client))
+                       build_streamer(drive.provider_for, lambda: transport.client))
 
 
 def _generate_preview_sheets(config, database, rows, *, stage, update, active):

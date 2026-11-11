@@ -364,13 +364,14 @@ class _Listing:
         return None
 
 
-def _listing(drive, location: str) -> _Listing:
-    """这个来源的目录缓存。没接入网盘或没配起点时，告诉用户缺的是哪一样。"""
+def _listing(drive, location: str, root: str = "") -> _Listing:
+    """这本账的目录缓存。同来源多账号时靠 `root`（扫描起点）认是哪一本。"""
     if drive is None:
         raise OrganizeError("还没有接入网盘，整理无处执行")
     try:
-        provider = drive.provider(location)
-        roots = drive.roots(location)
+        key = drive.key_for(location, root)
+        provider = drive.provider(key)
+        roots = drive.roots(key)
     except DriveError as error:
         raise OrganizeError(str(error)) from error
     if not roots:
@@ -417,10 +418,11 @@ def _move_one(drive, connection: sqlite3.Connection, asset_id: int,
     和正常的行没有任何区别。
     """
     location = str(new_path).partition(":")[0]
-    listing = listing or _listing(drive, location)
-    provider = listing.provider
     current = connection.execute(
-        "SELECT remote_id,path,disposal FROM asset WHERE id=?", (int(asset_id),)).fetchone()
+        "SELECT remote_id,path,disposal,drive_root FROM asset WHERE id=?",
+        (int(asset_id),)).fetchone()
+    listing = listing or _listing(drive, location, current[3] if current else "")
+    provider = listing.provider
     if current is None or current[1] != old_path:
         return "数据库里这一行已经变了"
     if current[2] is not None:
@@ -478,7 +480,7 @@ def apply_plan(drive, connection: sqlite3.Connection, rows: Sequence[dict], *,
     entries = list(previous.get("entries") or [])
     failures: list[dict] = []
     done = {int(entry["asset_id"]) for entry in entries}
-    listings: dict[str, _Listing] = {}
+    listings: dict[tuple[str, str], _Listing] = {}
 
     def save() -> None:
         atomic_write_text(log_path, json.dumps(
@@ -491,18 +493,18 @@ def apply_plan(drive, connection: sqlite3.Connection, rows: Sequence[dict], *,
             if asset_id not in done:
                 old_path, new_path = str(row["current_path"]), str(row["target_path"])
                 current = connection.execute(
-                    "SELECT path,disposal FROM asset WHERE id=?", (asset_id,)).fetchone()
+                    "SELECT path,disposal,drive_root FROM asset WHERE id=?", (asset_id,)).fetchone()
                 if current is None or current[1] is not None:
                     outcome = "资产已不在馆藏，未执行整理"
                 elif current[0] == new_path:
                     outcome = "ok"
                 else:
-                    location = new_path.partition(":")[0]
+                    location, root = new_path.partition(":")[0], current[2] or ""
                     try:
-                        if location not in listings:
-                            listings[location] = _listing(drive, location)
+                        if (location, root) not in listings:
+                            listings[(location, root)] = _listing(drive, location, root)
                         outcome = _move_one(drive, connection, asset_id, old_path, new_path,
-                                            listings[location])
+                                            listings[(location, root)])
                     except OrganizeError as error:
                         outcome = str(error)
                 if outcome == "ok":
@@ -537,7 +539,7 @@ def rollback_batch(drive, connection: sqlite3.Connection, log_path: Path | str, 
     restored = int(payload.get("restored_count") or 0)
     remaining = list(entries)
     failures: list[dict] = []
-    listings: dict[str, _Listing] = {}
+    listings: dict[tuple[str, str], _Listing] = {}
 
     def save() -> None:
         payload["entries"] = remaining
@@ -548,15 +550,16 @@ def rollback_batch(drive, connection: sqlite3.Connection, log_path: Path | str, 
         old_path, new_path = str(entry["old_path"]), str(entry["new_path"])
         location = old_path.partition(":")[0]
         current = connection.execute(
-            "SELECT path FROM asset WHERE id=?", (int(entry["asset_id"]),)).fetchone()
+            "SELECT path,drive_root FROM asset WHERE id=?", (int(entry["asset_id"]),)).fetchone()
         if current is not None and current[0] == old_path:
             outcome = "ok"
         else:
+            root = (current[1] if current else "") or ""
             try:
-                if location not in listings:
-                    listings[location] = _listing(drive, location)
+                if (location, root) not in listings:
+                    listings[(location, root)] = _listing(drive, location, root)
                 outcome = _move_one(drive, connection, int(entry["asset_id"]), new_path, old_path,
-                                    listings[location])
+                                    listings[(location, root)])
             except OrganizeError as error:
                 outcome = str(error)
         if outcome == "ok":
