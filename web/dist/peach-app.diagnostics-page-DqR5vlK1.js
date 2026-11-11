@@ -1,13 +1,13 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "64d69a9b-edd4-4461-9cc6-721dc1e7dfe6", e._sentryDebugIdIdentifier = "sentry-dbid-64d69a9b-edd4-4461-9cc6-721dc1e7dfe6");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "7168abf0-e5d3-4f98-84d8-d09f06cb87f4", e._sentryDebugIdIdentifier = "sentry-dbid-7168abf0-e5d3-4f98-84d8-d09f06cb87f4");
 	} catch {}
 })();
 import { ApiError as e, Button as t, ButtonLink as n, Chip as r, DIAGNOSTICS_KEY as i, Disclosure as a, EmptyState as o, Fact as s, FactList as c, Fieldset as l, FieldsetTitle as u, Input as d, LOC as f, LinkButton as p, Note as m, Section as h, SettingsCard as g, SettingsSectionLabel as _, Stack as v, TaskProgress as y, __toESM as b, apiGet as ee, apiSend as x, busyProps as S, configurationSection as C, cx as w, diagnosticHeaders as T, diagnosticsSkeleton as E, errorMessage as D, fetchDiagnostics as O, fmtDur as k, fmtSize as A, queryClient as j, require_jsx_runtime as M, require_react as N, settingsTarget as P, tl as F, useAction as I, useQuery as L } from "./peach-app.js";
 import { ErrorExcerpt as R } from "./peach-app.error-excerpt-B8v2xEIP.js";
 import { SiteMark as z } from "./peach-app.site-mark-D_VlIyJz.js";
-import { DataTable as B } from "./peach-app.data-table-CPTRrw04.js";
+import { DataTable as B } from "./peach-app.data-table-DZw_zoee.js";
 // src/react/diagnostics/health-list.tsx
 var V = /* @__PURE__ */ b(N(), 1), H = M(), U = (e) => e.title || e.name || e.code || `作品 #${e.id}`, W = (e) => [[
 	"作品",
@@ -504,4 +504,4 @@ function ie(e) {
 }
 export { ie as DiagnosticsPage };
 
-//# debugId=64d69a9b-edd4-4461-9cc6-721dc1e7dfe6
+//# debugId=7168abf0-e5d3-4f98-84d8-d09f06cb87f4
