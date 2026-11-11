@@ -1,5 +1,5 @@
-/* Peach 配置页：六格页签一件一件事，第一格是网盘（媒体只在网盘上，ADR-0157）。
- * 网盘卡的状态全来自 `GET /api/drive`，这一页只负责把它分格摆出来、把深链落到对应那一格。
+/* Peach 配置页：七格页签一件一件事，头两格是网盘与媒体库（媒体只在网盘上，ADR-0157）。
+ * 网盘卡的状态全来自 `GET /api/drive`，媒体库卡来自 `GET /api/libraries`；这一页只负责把深链落到对应那一格。
  * 外观由预览与 e2e 量。 */
 import { notifyManager, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
@@ -69,6 +69,7 @@ function serve(config: ConfigurationData, drive: DriveSnapshot | Reply = snapsho
     '/api/settings': { followInitialDays: 30, taskSpeedMode: 'standard' },
     '/api/configuration/access/sessions': { revision: 'access-1', sessions: [], manageable: false },
     [DRIVE_URL]: drive,
+    '/api/libraries': { libraries: [], options: { icons: [], policies: ['auto', 'custom'], stages: [] } },
     ...others,
   };
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -102,10 +103,10 @@ const press = (target: Element, key: string) => act(async () => {
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 });
 
-it('六格页签各管一件事，网盘默认打开，每格都是独立面板', async () => {
+it('七格页签各管一件事，网盘默认打开，每格都是独立面板', async () => {
   const { host } = await open();
   expect(tabs(host).map(tab => tab.textContent)).toEqual(
-    ['网盘', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
+    ['网盘', '媒体库', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
   expect(chosen(host).textContent).toBe('网盘');
   for (const tab of tabs(host)) {
     const panel = host.querySelector(`#${tab.getAttribute('aria-controls')}`)!;
@@ -115,8 +116,9 @@ it('六格页签各管一件事，网盘默认打开，每格都是独立面板'
   const inPanel = (selector: string) =>
     host.querySelector(selector)?.closest('[role="tabpanel"]')?.getAttribute('aria-labelledby');
   expect(inPanel('[data-guide-target="drives"]')).toBe(tabs(host)[0]!.id);
-  expect(inPanel('[data-guide-target="token"]')).toBe(tabs(host)[2]!.id);
-  expect(inPanel('[data-guide-target="speed"]')).toBe(tabs(host)[4]!.id);
+  expect(inPanel('[data-guide-target="libraries"]')).toBe(tabs(host)[1]!.id);
+  expect(inPanel('[data-guide-target="token"]')).toBe(tabs(host)[3]!.id);
+  expect(inPanel('[data-guide-target="speed"]')).toBe(tabs(host)[5]!.id);
 });
 
 it('方向键在页签条里首尾循环，Home 与 End 到两头并同步焦点', async () => {
@@ -131,7 +133,7 @@ it('方向键在页签条里首尾循环，Home 与 End 到两头并同步焦点
   expect(chosen(host).textContent).toBe('系统诊断');
   await press(chosen(host), 'Home');
   expect(chosen(host).textContent).toBe('网盘');
-  expect(tabs(host).map(tab => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1]);
+  expect(tabs(host).map(tab => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1]);
 });
 
 it('分区深链按页签名与地址锚点打开对应那一格，重读配置不换格', async () => {
@@ -154,9 +156,9 @@ it('地址上带着网盘授权回跳的锚点时打开那一格', async () => {
   }
 });
 
-it('没有访问配置时只留网盘、任务速度与系统诊断，认不出的页签名回到网盘', async () => {
+it('没有访问配置时只留网盘、媒体库、任务速度与系统诊断，认不出的页签名回到网盘', async () => {
   const { host } = await open(data({ editable: false, access: undefined, api_token: undefined }), snapshot(), {}, '不存在');
-  expect(tabs(host).map(tab => tab.textContent)).toEqual(['网盘', '任务速度', '系统诊断']);
+  expect(tabs(host).map(tab => tab.textContent)).toEqual(['网盘', '媒体库', '任务速度', '系统诊断']);
   expect(chosen(host).textContent).toBe('网盘');
 });
 
@@ -177,7 +179,7 @@ it('网盘这一格一张卡对一个来源：没接写的只说怎么接，没�
   expect(section(host, 'OneDrive')?.textContent).toContain('回调地址 未配置');
 });
 
-it('已授权的来源读账号、扫描起点与上次同步，立即刷新只换这一张卡', async () => {
+it('已授权的来源读账号、媒体库数与上次同步，立即刷新只换这一张卡', async () => {
   const refreshed = connected({
     synced_at: '2026-11-11 09:30:00',
     accounts: [account({ synced_at: '2026-11-11 09:30:00' })],
@@ -189,7 +191,6 @@ it('已授权的来源读账号、扫描起点与上次同步，立即刷新只�
   expect(card.textContent).toContain('me@outlook.com');
   expect(card.textContent).toContain('1 个目录');
   expect(card.textContent).toContain('2026-11-10 08:00:00');
-  expect(card.textContent).toContain('Movies');
   await click(buttonNamed('立即刷新', card));
   await settle();
   expect(calls(fetcher, 'POST')).toEqual([`${DRIVE_URL}/onedrive/refresh`]);
@@ -197,32 +198,12 @@ it('已授权的来源读账号、扫描起点与上次同步，立即刷新只�
   expect(section(host, 'OneDrive')?.textContent).toContain('2026-11-11 09:30:00');
 });
 
-it('选择扫描起点逐层列远端目录，设成起点后交回这一格重读', async () => {
-  const { host, fetcher } = await open(data(), snapshot(), {
-    [`${DRIVE_URL}/onedrive/folders?parent_id=`]: { parent_id: '', folders: [{ remote_id: 'm1', name: 'Movies' }] },
-    [`${DRIVE_URL}/onedrive/folders?parent_id=m1`]: { parent_id: 'm1', folders: [{ remote_id: 'm2', name: '2024' }] },
-    [`${DRIVE_URL}/onedrive/folders?parent_id=m2`]: { parent_id: 'm2', folders: [] },
-    [`POST ${DRIVE_URL}/onedrive/roots`]: { location: 'onedrive', roots: ['root1', 'm2'] },
-  });
-  await click(buttonNamed('选择扫描起点', section(host, 'OneDrive')));
-  await settle();
-  expect(section(host, 'OneDrive')?.textContent).toContain('账号根目录');
-  expect(buttonNamed('设为扫描起点：Movies', section(host, 'OneDrive'))).toBeNull();
-  await click(host.querySelector('[aria-label="打开目录 Movies"]'));
-  await settle();
-  expect(buttonNamed('上一级', section(host, 'OneDrive'))).not.toBeNull();
-  expect(buttonNamed('设为扫描起点：Movies', section(host, 'OneDrive'))).not.toBeNull();
-  await click(host.querySelector('[aria-label="打开目录 2024"]'));
-  await settle();
-  await click(buttonNamed('设为扫描起点：2024', section(host, 'OneDrive')));
-  await settle();
-  expect(fetcher.mock.calls.some(([url]) => url === `${DRIVE_URL}/onedrive/folders?parent_id=m1`)).toBe(true);
-  const roots = fetcher.mock.calls.find(([url]) => url === `${DRIVE_URL}/onedrive/roots`);
-  expect(roots?.[1]?.method).toBe('POST');
-  expect(JSON.parse(String(roots?.[1]?.body))).toEqual({ roots: [
-    { remote_id: 'root1', name: 'Movies' }, { remote_id: 'm2', name: '2024' },
-  ] });
-  expect(receipt).toHaveBeenCalledWith('已把「2024」设为扫描起点');
+it('网盘这一格不再管扫描目录，加删媒体库只在媒体库一页', async () => {
+  const { host } = await open(data(), snapshot(), {}, '网盘');
+  const card = section(host, 'OneDrive')!;
+  expect(buttonNamed('选择扫描起点', card)).toBeNull();
+  expect(buttonNamed('移除', card)).toBeNull();
+  expect(card.textContent).toContain('1 个目录');
 });
 
 it('没有回调基址也能填客户端凭据接上网盘，填的目录一起交给后端解析', async () => {
@@ -246,7 +227,7 @@ it('没有回调基址也能填客户端凭据接上网盘，填的目录一起�
     location: 'onedrive',
   });
   expect(receipt).toHaveBeenCalledWith('已接上 onedrive');
-  expect(section(host, 'OneDrive')?.textContent).toContain('示例合集');
+  expect(section(host, 'OneDrive')?.textContent).toContain('1 个目录');
   expect(buttonNamed('接上这个网盘', section(host, 'OneDrive'))).toBeNull();
 });
 
@@ -262,7 +243,7 @@ it('回调基址在这一页就能填，保存后写进设置文件', async () =
   expect(receipt).toHaveBeenCalledWith('回调基址已改为 https://peach.test');
 });
 
-it('断开只忘掉账号与扫描起点', async () => {
+it('断开只忘掉账号，它底下的媒体库跟着消失', async () => {
   const confirm = vi.spyOn(legacyUi, 'confirmModal').mockImplementation((async (options: { onConfirm?(): Promise<unknown> }) => {
     await options.onConfirm?.();
     return { confirmed: true };
@@ -274,7 +255,7 @@ it('断开只忘掉账号与扫描起点', async () => {
   await settle();
   expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
     title: '断开 me@outlook.com',
-    body: expect.stringContaining('已经登记进馆藏的条目不动'),
+    body: expect.stringContaining('它底下的媒体库跟着消失'),
   }));
   expect(calls(fetcher, 'DELETE')).toEqual([`${DRIVE_URL}/onedrive`]);
   expect(receipt).toHaveBeenCalledWith('已断开 me@outlook.com');

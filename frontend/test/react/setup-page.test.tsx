@@ -333,7 +333,7 @@ it('别的设备打开时读题接口回 403，只说去哪里打开、不画表
   const host = await mount(<SetupPage />);
   await settle();
   expect(host.querySelector('form')).toBeNull();
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe('请在运行 Peach 的这台电脑上打开设置。');
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe('请在运行 Peach 的服务器上打开设置。');
 });
 
 it('读题失败时给原因和重试', async () => {

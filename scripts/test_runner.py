@@ -72,6 +72,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
               # 网盘这一组是播放链路的两端：拉清单、换直链、按 Range 转发。
               "test_drive_google.py", "test_drive_onedrive.py", "test_drive_stream.py",
               "test_drive_sync.py", "test_drive_modes.py", "test_drive_credentials.py",
+              "test_drive_roots.py",
               "test_scan_drives.py",
               "test_media_sources.py"),
     "metadata": ("test_custom_metadata.py", "test_scraping_access.py", "test_metadata*.py", "test_genre_taxonomy.py", "test_processing_control.py", "test_processing_traffic.py", "test_processing_inventory.py",

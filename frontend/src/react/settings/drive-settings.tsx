@@ -4,14 +4,14 @@
  * 名字不同而 `location` 相同）。状态全来自 `GET /api/drive`：`configured` 是这台机器有没有该账号的
  * OAuth 客户端凭据，`connected` 是有没有授权过的令牌。没有账号时只给「添加账号」与「开始授权」：
  * 授权整窗跳到网盘同意页，回跳落在 `/settings#drives`。
- * 扫描起点按账号记，用 `GET /api/drive/{账号}/folders` 逐层列目录挑，挑完整条换掉
- * （`POST /api/drive/{账号}/roots`）；一个都不选就是从账号根目录开始。
+ * 扫描起点这一层概念收在媒体库一页：一个媒体库就是一个远端目录，加删都在那里做
+ * （`POST /api/libraries`、`DELETE /api/libraries/{库}`），这一页只管账号、凭据与取流方式。
  * 「立即刷新」让下一轮同步先做这个账号（`POST /api/drive/{账号}/refresh`）。
  * 取字节方式按来源（`POST /api/drive/{location}/mode`）：`redirect` 让浏览器直接跟网盘的预授权地址走，
  * 不占服务器流量；`proxy` 由 Peach 带 Range 转发，浏览器只跟 Peach 说话。能带鉴权取的来源只能选后者。
- * 「断开」只忘掉这个账号与它的扫描起点（`DELETE /api/drive/{账号}`），已经登记进馆藏的条目不动。
+ * 「断开」只忘掉这个账号（`DELETE /api/drive/{账号}`），它底下的媒体库跟着消失，已经登记进馆藏的条目不动。
  * 不想开公网回调时可以在这一页直接填客户端 ID、密钥与 refresh token（`POST /api/drive/{账号}/credentials`），
- * Peach 用它们自己换票；顺手填的目录会解析成扫描起点。 */
+ * Peach 用它们自己换票；顺手填的目录会解析成该账号唯一的媒体库。 */
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { confirmModal } from '@peach/legacy/ui';
@@ -22,10 +22,10 @@ import { Input } from '@/components/base/input/input';
 
 import {
   DRIVE_KEY, DRIVE_URL, fetchDrives,
-  type DriveAccount, type DriveConnection, type DriveRoot,
+  type DriveAccount, type DriveConnection,
 } from '@peach/query';
 
-import { apiGet, apiSend, errorMessage } from '../../api';
+import { apiSend, errorMessage } from '../../api';
 import { t } from '../../i18n';
 import { Note } from '../components/note';
 import { ErrorText, Fact, FactList, Footer, Help, Rows, Section, Stack } from './section';
@@ -215,7 +215,6 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
   receipt(message: string): void; reloaded(): void;
 }) {
   const action = useAction();
-  const [picking, setPicking] = useState(false);
   const base = `${DRIVE_URL}/${encodeURIComponent(account.key)}`;
   const callback = publicUrl ? `${publicUrl.replace(/\/+$/, '')}/oauth/${account.key}/callback` : '';
   const name = accountName(account);
@@ -223,9 +222,6 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
   const refresh = () => void action.run('refresh',
     (signal) => apiSend<DriveConnection>(`${base}/refresh`, {}, 'POST', signal),
     (next) => { apply(next); receipt(t('settings:drive.account.refreshed', { name })); });
-  const saveRoots = (roots: DriveRoot[]) => void action.run('roots',
-    (signal) => apiSend<{ key: string; roots: string[] }>(`${base}/roots`, { roots }, 'POST', signal),
-    () => { setPicking(false); receipt(t('settings:drive.account.rootsSaved')); reloaded(); });
   const authorize = () => void action.run('authorize',
     (signal) => apiSend<{ url: string }>(`${base}/authorize`, {}, 'POST', signal),
     ({ url }) => { window.location.assign(url); });
@@ -249,7 +245,7 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
           <Fact term="账号">
             {account.connected ? account.email || account.display_name || '已授权' : '未授权'}
           </Fact>
-          <Fact term="扫描起点">{account.roots.length ? `${account.roots.length} 个目录` : '账号根目录'}</Fact>
+          <Fact term="媒体库">{account.roots.length ? `${account.roots.length} 个目录` : '还没建媒体库'}</Fact>
           <Fact term="上次同步">{account.synced_at || '还没有同步过'}</Fact>
         </FactList>
         {account.last_error ? <Note tone="warning" title="上次同步失败">{account.last_error}</Note> : null}
@@ -261,28 +257,7 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
         ) : null}
         {action.error ? <ErrorText>{action.error}</ErrorText> : null}
       </Stack>
-      {account.roots.length ? (
-        <Rows>
-          {account.roots.map(root => (
-            <SettingsRow key={root.remote_id} label={root.name} description={root.remote_id}>
-              <Button size="small" variant="secondary" aria-label={`移除扫描起点 ${root.name}`}
-                onClick={() => saveRoots(account.roots.filter(item => item.remote_id !== root.remote_id))}
-                {...busyProps(action.busy === 'roots')}>移除</Button>
-            </SettingsRow>
-          ))}
-        </Rows>
-      ) : null}
-      {picking && account.connected
-        ? <RootPicker driveKey={account.key} roots={account.roots} receipt={receipt}
-            onClose={() => setPicking(false)}
-            onSaved={() => { setPicking(false); reloaded(); }} />
-        : null}
       <Footer status={account.connected ? null : t('settings:drive.account.callback', { url: callback || '未配置' })}>
-        {account.connected
-          ? <Button variant="secondary" onClick={() => setPicking(!picking)}>
-              {picking ? t('settings:drive.account.picking') : t('settings:drive.account.pick')}
-            </Button>
-          : null}
         {account.connected
           ? <Button variant="secondary" onClick={refresh} {...busyProps(action.busy === 'refresh')}>
               {t('settings:drive.account.refresh')}
@@ -301,67 +276,4 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
   );
 }
 
-/* 逐层列远端目录：只出子目录，点「打开」进一层，「上一级」退回去，当前这层可以直接设成扫描起点。 */
-function RootPicker({ driveKey, roots, receipt, onSaved, onClose }: {
-  driveKey: string; roots: DriveRoot[]; receipt(message: string): void;
-  onSaved(): void; onClose(): void;
-}) {
-  const [path, setPath] = useState<DriveRoot[]>([]);
-  const current = path[path.length - 1];
-  const folders = useQuery({
-    queryKey: ['drive-folders', driveKey, current?.remote_id ?? ''],
-    refetchOnMount: 'always',
-    queryFn: ({ signal }) => apiGet<{ parent_id: string; folders: DriveRoot[] }>(
-      `${DRIVE_URL}/${encodeURIComponent(driveKey)}/folders?parent_id=${encodeURIComponent(current?.remote_id ?? '')}`, signal),
-  });
-  const action = useAction();
-  const picked = Boolean(current && roots.some(root => root.remote_id === current.remote_id));
-  /* 不给 parent_id 时服务端从第一个扫描起点那一层开始，没设过就是账号根目录；带回的 parent_id 说明到底落在哪。 */
-  const head = folders.data?.parent_id;
-  const start = head ? roots.find(root => root.remote_id === head)?.name ?? head : '账号根目录';
-  const trail = [start, ...path.map(folder => folder.name)].join(' / ');
 
-  return (
-    <>
-      <Stack divided>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Help role="status">{trail}</Help>
-          <div className="flex flex-wrap gap-2">
-            <Button size="small" variant="secondary" disabled={!path.length}
-              onClick={() => setPath(path.slice(0, -1))}>上一级</Button>
-            <Button size="small" variant="secondary" onClick={onClose}>收起</Button>
-          </div>
-        </div>
-        {folders.error ? <ErrorText>{errorMessage(folders.error)}</ErrorText> : null}
-        {folders.data && !folders.data.folders.length ? <Help>这个目录里没有子目录。</Help> : null}
-      </Stack>
-      {folders.data?.folders.length ? (
-        <Rows>
-          {folders.data.folders.map(folder => (
-            <SettingsRow key={folder.remote_id} label={folder.name}>
-              <Button size="small" variant="secondary" aria-label={`打开目录 ${folder.name}`}
-                onClick={() => setPath([...path, folder])}>打开</Button>
-            </SettingsRow>
-          ))}
-        </Rows>
-      ) : null}
-      <Stack divided>
-        {current ? (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Help>设为扫描起点后，这一层的子目录都会同步。</Help>
-            <Button disabled={picked} onClick={() => {
-              if (!current) return;
-              const rows = [...roots, current].map(({ remote_id, name }) => ({ remote_id, name }));
-              void action.run('save', (signal) => apiSend<{ key: string; roots: string[] }>(
-                `${DRIVE_URL}/${encodeURIComponent(driveKey)}/roots`, { roots: rows }, 'POST', signal),
-                () => { receipt(`已把「${current.name}」设为扫描起点`); onSaved(); });
-            }} {...busyProps(action.busy === 'save')}>
-              {picked ? '这一层已经是扫描起点' : `设为扫描起点：${current.name}`}
-            </Button>
-          </div>
-        ) : <Help>打开要用的目录，再把它设为扫描起点。一个都不设时，同步从账号根目录开始。</Help>}
-        {action.error ? <ErrorText>{action.error}</ErrorText> : null}
-      </Stack>
-    </>
-  );
-}

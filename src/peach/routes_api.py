@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Request, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
@@ -22,7 +22,7 @@ from .field_owners import RevisionConflict
 from .folder_rules import FolderRuleConflict
 from .jobs import TaskRunConflict
 from .providers import ProviderUnavailable
-from .routes_auth import require_auth
+from .routes_auth import require_authenticated_client, require_auth, same_origin
 from .task_runs import task_label
 from .task_control import Cancelled as TaskCancelled
 
@@ -39,15 +39,177 @@ def provider_health(request: Request, args: dict[str, str] = Depends(require_aut
 @router.get("/api/libraries")
 def media_library_list(request: Request, args: dict[str, str] = Depends(require_auth)):
     from . import media_libraries, settings_file
-    from .media_sources import cost_for
     config = settings_file.active()
     live = getattr(request.app.state.drive, "root_names", lambda: {})()
-    return {"libraries": [{"id": row["id"], "name": row["name"], "icon": row["icon"], "folders": len(row["roots"]),
-                           "color": row["color"], "policy": row["policy"], "stages": row["stages"],
-                           "roots": [{"root_id": root["root_id"], "location": root["location"]} for root in row["roots"]],
-                           "metered": any(cost_for(root['location'], root['root'], config) == 'metered'
-                                          for root in row['roots'])}
-                          for row in media_libraries.libraries(config, live)]}
+    return {"libraries": [media_library_row(request, row, config, live)
+                          for row in media_libraries.libraries(config, live)],
+            "options": media_library_options()}
+
+
+def media_library_options() -> dict[str, list[str]]:
+    """可选的图标、处理方式与处理步骤：前端不另抄一份清单，省得两边各写一套。"""
+    from . import media_libraries
+    return {"icons": sorted(media_libraries.LIBRARY_ICONS),
+            "policies": list(media_libraries.POLICIES),
+            "stages": list(media_libraries.STAGES)}
+
+
+def media_library_row(request: Request, row: dict, config, live: dict[str, str] | None = None) -> dict:
+    """一张媒体库卡片：可改的属性、它挂在哪台账号的哪个目录，以及在库的行数。"""
+    from .media_sources import cost_for
+    facts = library_facts(request).get(row["id"], {})
+    account = row.get("account") or row["roots"][0]["account"]
+    location = row["roots"][0]["location"]
+    state = request.app.state.drive.sync_state(account) or {}
+    stages = row["stages"]
+    if isinstance(stages, str):
+        stages = [part for part in stages.split(",") if part]
+    return {"id": row["id"], "name": row["name"], "icon": row["icon"], "color": row["color"],
+            "policy": row["policy"], "stages": ",".join(stages), "account": account,
+            "location": location, "root_id": row["roots"][0]["root_id"],
+            "root_name": row.get("root_name") or row["roots"][0]["root_id"],
+            "videos": facts.get("videos", 0), "missing": facts.get("missing", 0),
+            "synced_at": state.get("synced_at") or "",
+            "metered": cost_for(location, row["roots"][0]["root_id"], config) == "metered",
+            "folders": len(row["roots"])}
+
+
+def library_facts(request: Request) -> dict[str, dict]:
+    """每个媒体库在库的行数、待处理数：按 (来源, 扫描根) 在账本里数一遍。"""
+    from . import media_libraries
+    try:
+        connection = request.app.state.database.connect()
+    except Exception:
+        return {}
+    try:
+        rows = connection.execute(
+            "SELECT location, drive_root, COUNT(*) AS videos,"
+            " SUM(duration IS NULL OR snapshot_path IS NULL) AS missing"
+            " FROM asset WHERE disposal IS NULL AND medium='video' AND remote_id IS NOT NULL"
+            " GROUP BY location, drive_root").fetchall()
+    except Exception:
+        return {}
+    finally:
+        connection.close()
+    return {media_libraries.key(row["location"], row["drive_root"]):
+            {"videos": int(row["videos"] or 0), "missing": int(row["missing"] or 0)}
+            for row in rows}
+
+
+def _library_or_404(request: Request, library_id: str) -> tuple[dict, Any]:
+    from . import media_libraries, settings_file
+    config = settings_file.active()
+    live = getattr(request.app.state.drive, "root_names", lambda: {})()
+    for row in media_libraries.libraries(config, live):
+        if row["id"] == library_id:
+            return row, config
+    raise HTTPException(404, "没有这个媒体库")
+
+
+@router.post("/api/libraries")
+def add_media_library(request: Request, body: dict[str, Any] = Body(default_factory=dict),
+                      _args=Depends(require_auth)):
+    """新增媒体库：在某个账号底下选一个远端目录，它同时就是这台账号的扫描根。"""
+    from . import media_libraries
+    from .drive_provider import DriveError
+    from .web_drives import drive_failure
+    same_origin(request)
+    account = str(body.get("account") or "").strip()
+    remote_id = str(body.get("remote_id") or "").strip()
+    drive = request.app.state.drive
+    try:
+        drive.add_root(account, remote_id)
+    except DriveError as error:
+        raise drive_failure(error) from error
+    request.app.state.scan.restart(account)
+    library_id = media_libraries.key(drive.location_of(account), remote_id)
+    row, config = _library_or_404(request, library_id)
+    return media_library_row(request, row, config)
+
+
+@router.post("/api/libraries/{library_id}")
+def save_media_library(request: Request, library_id: str,
+                       body: dict[str, Any] = Body(default_factory=dict),
+                       _args=Depends(require_authenticated_client)):
+    """改一个媒体库的名称、图标、来源色与处理方式。"""
+    from dataclasses import replace
+
+    from . import media_libraries
+    from .web_settings import persist_config
+    same_origin(request)
+    row, config = _library_or_404(request, library_id)
+    try:
+        fields = media_libraries.row(body)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    catalog = {name: dict(value) for name, value in (config.library_catalog or {}).items()}
+    catalog[library_id] = {**catalog.get(library_id, {}), **fields}
+    persist_config(replace(config, library_catalog=catalog))
+    row.update(fields)
+    return media_library_row(request, row, replace(config, library_catalog=catalog))
+
+
+@router.post("/api/libraries/{library_id}/move")
+def move_media_library(request: Request, library_id: str,
+                       body: dict[str, Any] = Body(default_factory=dict),
+                       _args=Depends(require_authenticated_client)):
+    """把一个媒体库换到另一个目录：名称、图标、来源色与处理方式跟着走，账本里的行不碰。"""
+    from dataclasses import replace
+
+    from . import media_libraries, settings_file
+    from .drive_provider import DriveError
+    from .web_drives import drive_failure
+    from .web_settings import persist_config
+    same_origin(request)
+    row, _ = _library_or_404(request, library_id)
+    account, old = row["account"], row["roots"][0]["root_id"]
+    target = str(body.get("remote_id") or "").strip()
+    if not target:
+        raise HTTPException(400, "请选择要作为媒体库的目录")
+    try:
+        request.app.state.drive.move_root(account, old, target)
+    except DriveError as error:
+        raise drive_failure(error) from error
+    new_id = media_libraries.key(row["roots"][0]["location"], target)
+    if new_id != library_id:
+        config = settings_file.active()
+
+        def moved(table: dict[str, Any]) -> dict[str, Any]:
+            table = {name: dict(value) if isinstance(value, dict) else value
+                     for name, value in (table or {}).items()}
+            if library_id in table:
+                table[new_id] = table.pop(library_id)
+            return table
+
+        persist_config(replace(config, library_catalog=moved(config.library_catalog),
+                               library_names=moved(config.library_names),
+                               library_icons=moved(config.library_icons)))
+        request.app.state.scan.restart(account)
+    moved_row, config = _library_or_404(request, new_id)
+    return media_library_row(request, moved_row, config)
+
+
+@router.delete("/api/libraries/{library_id}")
+def delete_media_library(request: Request, library_id: str,
+                         _args=Depends(require_authenticated_client)):
+    """删掉一个媒体库：只动配置，网盘上的文件与账本里的行都不碰。"""
+    from dataclasses import replace
+
+    from .drive_provider import DriveError
+    from .web_drives import drive_failure
+    from .web_settings import persist_config
+    same_origin(request)
+    row, config = _library_or_404(request, library_id)
+    account = row["account"]
+    try:
+        request.app.state.drive.remove_root(account, row["roots"][0]["root_id"])
+    except DriveError as error:
+        raise drive_failure(error) from error
+    request.app.state.scan.restart(account)
+    catalog = {name: dict(value) for name, value in (config.library_catalog or {}).items()}
+    catalog.pop(library_id, None)
+    persist_config(replace(config, library_catalog=catalog))
+    return {"deleted": library_id}
 
 
 @router.get("/api/providers/opencode-go/models")

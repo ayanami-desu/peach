@@ -43,7 +43,7 @@
   "src/follow-sort.ts": 7,
   "src/history/page-title.ts": 1,
   "src/history/route-meta.ts": 27,
-  "src/history/settings-route.ts": 11,
+  "src/history/settings-route.ts": 12,
   "src/identity-filter.ts": 7,
   "src/index-skeleton.ts": 31,
   "src/island-skeleton.ts": 1,

@@ -11,7 +11,6 @@ from dataclasses import replace
 import hashlib
 import json
 import os
-import re
 import threading
 import time
 import uuid
@@ -21,17 +20,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from filelock import FileLock, Timeout
 
-from . import access, auth, data_storage, folder_picker, ledger_backups, onboarding, settings_file
-from .drive_provider import (
-    LOCATIONS,
-    DriveAuthRequired,
-    DriveError,
-    DriveForbidden,
-    DriveNotFound,
-)
+from . import access, auth, data_storage, folder_picker, ledger_backups, settings_file
+from .drive_provider import LOCATIONS, DriveError
 from .jobs import JobAlreadyRunning
-from .media_libraries import POLICIES as MEDIA_POLICIES, STAGES as MEDIA_STAGES
-from .media_libraries import LIBRARY_ICONS
 from .routes_auth import (
     login_mode,
     origin_allowed,
@@ -42,15 +33,12 @@ from .routes_auth import (
     set_auth_cookie,
     sessions as access_sessions,
 )
+from .web_drives import drive_failure
 from .web_entry import runtime_fact_entries
 
 router = APIRouter()
-_SAVE_LOCK = threading.Lock()
-RELOAD_NAME = onboarding.RELOAD_NAME
 #: 设置文件不归 Peach 写的部署，设置页只读，改由运维编辑那份文件。
 FILE_MANAGED_NOTICE = "这个部署由配置文件管理服务；请在部署机器上编辑设置文件。"
-#: 媒体库的来源色取界面强调色的键名，具体色值由界面按键名取，这里只校验写法。
-_LIBRARY_COLOR = re.compile(r"[a-z]{2,16}")
 
 
 def revision(config) -> str:
@@ -279,74 +267,6 @@ def read_configuration(request: Request, _args=Depends(require_authenticated_cli
     return result
 
 
-def _library_row(value: object) -> dict[str, str]:
-    """一条媒体库分组：名称 1–80 个可见字符，图标、来源色与处理方式取自内置列表。"""
-    if not isinstance(value, dict):
-        raise ValueError("媒体库分组格式无效")
-    name = value.get("name", "")
-    if not isinstance(name, str) or not name.strip() or len(name) > 80 or any(ord(char) < 32 for char in name):
-        raise ValueError("媒体库名称请使用 1 到 80 个可见字符")
-    icon = value.get("icon", "")
-    if icon not in ("", *LIBRARY_ICONS):
-        raise ValueError("请选择列表中的媒体库图标")
-    color = value.get("color", "")
-    if color and not _LIBRARY_COLOR.fullmatch(str(color)):
-        raise ValueError("请选择列表中的来源色")
-    policy = value.get("policy", "")
-    if policy not in ("", *MEDIA_POLICIES):
-        raise ValueError("请选择列表中的处理方式")
-    stages = [stage for stage in str(value.get("stages", "") or "").split(",") if stage]
-    if any(stage not in MEDIA_STAGES for stage in stages) or (stages and policy != "custom"):
-        raise ValueError("处理步骤无效")
-    row = {"name": name.strip(), "icon": icon, "color": color, "policy": policy}
-    if stages:
-        row["stages"] = ",".join(stages)
-    return row
-
-
-@router.post("/api/configuration")
-def save_configuration(request: Request, body: dict[str, Any] = Body(default_factory=dict),
-                       _args=Depends(require_authenticated_client)):
-    """保存媒体库分组：具名媒体库的名称、图标、来源色与处理方式。
-
-    分组本身按存储根目录的持久身份走，这里只改这些随人改的属性；身份 id 由扫描那一侧
-    建立，页面拿到的也是它。
-    """
-    if not managed_configuration():
-        raise HTTPException(409, "此部署通过配置文件管理服务")
-    same_origin(request)
-    with _SAVE_LOCK:
-        config = settings_file.load_config()
-        if not config.present:
-            raise HTTPException(409, "请先完成首次设置")
-        if body.get("revision") != revision(config):
-            raise HTTPException(409, "配置已变更，请刷新后再保存")
-        groups = body.get("libraries")
-        if not isinstance(groups, list):
-            raise HTTPException(400, {"message": "有几项需要修改",
-                                      "errors": {"libraries": ["请提交媒体库分组"]}})
-        catalog = {key: dict(value) for key, value in (config.library_catalog or {}).items()}
-        errors = []
-        for value in groups:
-            key = str(value.get("id") or "") if isinstance(value, dict) else ""
-            if key not in catalog:
-                errors.append(f"媒体库 {key or '（缺少 id）'} 不存在")
-                continue
-            try:
-                catalog[key] = {**catalog[key], **_library_row(value)}
-            except ValueError as exc:
-                errors.append(str(exc))
-        if errors:
-            raise HTTPException(400, {"message": "有几项需要修改", "errors": {"libraries": errors}})
-        prepared = replace(config, library_catalog=catalog)
-        try:
-            settings_file.write(prepared, force=True)
-            config.directory("state").mkdir(parents=True, exist_ok=True)
-            (config.directory("state") / RELOAD_NAME).write_text("reload", encoding="utf-8")
-        except OSError as exc:
-            raise HTTPException(500, f"配置保存失败：{exc}") from exc
-    return {"saved": True, "revision": revision(prepared)}
-
 
 # --------------------------------------------------------------------------- 口令与登录方式
 
@@ -564,20 +484,9 @@ def _drive_key(drive, key: str) -> str:
     return key
 
 
-def _drive_failure(error: DriveError) -> HTTPException:
-    """网盘错误换成的状态码：授权失效 401、越权 403、找不到 404，其余可重试的报 409。"""
-    if isinstance(error, DriveAuthRequired):
-        return HTTPException(401, str(error))
-    if isinstance(error, DriveForbidden):
-        return HTTPException(403, str(error))
-    if isinstance(error, DriveNotFound):
-        return HTTPException(404, str(error))
-    return HTTPException(409, str(error))
-
-
 @router.get("/api/drive")
 def read_drives(request: Request, _args=Depends(require_auth)):
-    """两个网盘各自的账号、扫描起点与上次同步结果，外加授权回调要用的基址。"""
+    """两个网盘各自的账号、媒体库与上次同步结果，外加授权回调要用的基址。"""
     return _drive(request).snapshot()
 
 
@@ -588,7 +497,7 @@ def drive_authorize(request: Request, key: str, _args=Depends(require_auth)):
     try:
         return {"url": _drive(request).authorize(_drive_key(_drive(request), key))}
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
 
 
 @router.get("/oauth/{key}/callback")
@@ -611,23 +520,6 @@ def drive_callback(request: Request, key: str, code: str = "", state: str = "", 
     return response
 
 
-@router.post("/api/drive/{key}/roots")
-def save_drive_roots(request: Request, key: str, body: dict[str, Any] = Body(default_factory=dict),
-                     _args=Depends(require_auth)):
-    """选定扫描起点：整条列表替换，空列表表示回到账号根目录。"""
-    same_origin(request)
-    rows = body.get("roots")
-    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
-        raise HTTPException(400, "roots 要是对象数组")
-    try:
-        ids = _drive(request).set_roots(_drive_key(_drive(request), key), rows)
-    except DriveError as error:
-        raise _drive_failure(error) from error
-    # 换了扫描起点，旧游标不会把新根下的存量文件再报一遍：清掉它，下一轮整棵重扫。
-    _scan(request).restart(key)
-    return {"key": key, "roots": list(ids)}
-
-
 @router.post("/api/drive/public-url")
 def save_drive_public_url(request: Request, body: dict[str, Any] = Body(default_factory=dict),
                           _args=Depends(require_auth)):
@@ -639,7 +531,7 @@ def save_drive_public_url(request: Request, body: dict[str, Any] = Body(default_
     try:
         saved = _drive(request).set_public_url(value)
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
     return {"public_url": saved}
 
 
@@ -654,7 +546,7 @@ def save_drive_mode(request: Request, location: str, body: dict[str, Any] = Body
     try:
         saved = _drive(request).set_mode(_drive_location(location), mode.strip())
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
     return {"location": location, "mode": saved}
 
 
@@ -662,7 +554,7 @@ def save_drive_mode(request: Request, location: str, body: dict[str, Any] = Body
 def save_drive_credentials(request: Request, key: str,
                            body: dict[str, Any] = Body(default_factory=dict),
                            _args=Depends(require_auth)):
-    """直接填认证信息接上一个网盘账号：客户端 ID、密钥、refresh token，可带扫描起点目录。
+    """直接填认证信息接上一个网盘账号：客户端 ID、密钥、refresh token，可带媒体库目录。
 
     新账号还没接上，所以 `key` 允许是没登记过的名字——那样必须在 `location` 里说清它是
     哪个网盘；已接上的账号只改凭据时 `location` 可省。
@@ -686,7 +578,7 @@ def save_drive_credentials(request: Request, key: str,
                               refresh_token=fields["refresh_token"], root=fields["root"],
                               location=source)
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
     # 凭证换了可能就是换了账号：旧游标指的是别人的盘。
     _scan(request).restart(key)
     return drive.connection(source)
@@ -695,14 +587,15 @@ def save_drive_credentials(request: Request, key: str,
 @router.get("/api/drive/{key}/folders")
 def drive_folders(request: Request, key: str, parent_id: str = "",
                   _args=Depends(require_auth)):
-    """挑扫描起点用的目录列表，只列文件夹；不给 `parent_id` 就从扫描起点那一层开始。"""
+    """挑媒体库目录用的列表，只列文件夹；不给 `parent_id` 就从账号根目录开始。"""
     drive = _drive(request)
     _drive_key(drive, key)
-    parent = parent_id or next(iter(drive.roots(key)), "")
+    account = drive.account(key)
+    parent = parent_id or (account.root_id if account else "")
     try:
         entries, _cursor = drive.provider(key).list_folder(parent)
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
     return {"parent_id": parent,
             "folders": [{"remote_id": entry.remote_id, "name": entry.name}
                         for entry in entries if entry.folder]}
@@ -710,12 +603,12 @@ def drive_folders(request: Request, key: str, parent_id: str = "",
 
 @router.delete("/api/drive/{key}")
 def forget_drive(request: Request, key: str, _args=Depends(require_auth)):
-    """断开一个网盘账号：删掉账号、清空它的扫描起点，账本里的行不动。"""
+    """断开一个网盘账号：删掉账号，它底下的媒体库跟着消失，账本里的行不动。"""
     same_origin(request)
     try:
         _drive(request).forget(_drive_key(_drive(request), key))
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
     return {"forgotten": key}
 
 
@@ -728,7 +621,7 @@ def refresh_drive(request: Request, key: str, _args=Depends(require_auth)):
     try:
         drive.refresh(key)
     except DriveError as error:
-        raise _drive_failure(error) from error
+        raise drive_failure(error) from error
     return drive.connection(drive.location_of(key))
 
 

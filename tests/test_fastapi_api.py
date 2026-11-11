@@ -716,41 +716,41 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_libraries_lists_one_library_per_scan_root(self) -> None:
         answer = await self.client.get("/api/libraries", params={"t": "secret"})
         self.assertEqual(answer.status_code, 200, answer.text)
-        libraries = answer.json()["libraries"]
+        body = answer.json()
+        libraries = body["libraries"]
         self.assertEqual([row["id"] for row in libraries], ["gdrive:root-1"])
         self.assertEqual(libraries[0]["folders"], 1)
-        self.assertEqual(libraries[0]["roots"], [{"root_id": "root-1", "location": "gdrive"}])
+        self.assertEqual((libraries[0]["account"], libraries[0]["location"], libraries[0]["root_id"]),
+                         ("gdrive", "gdrive", "root-1"))
+        self.assertEqual(libraries[0]["name"], "Google Drive")
+        self.assertEqual(body["options"]["policies"], ["auto", "custom"])
+        self.assertIn("database", body["options"]["icons"])
 
-    async def test_configuration_refuses_a_stale_revision(self) -> None:
-        with patch("peach.routes_configuration.managed_configuration", lambda: True):
-            answer = await self.client.post(
-                "/api/configuration", params={"t": "secret"},
-                json={"revision": "stale", "libraries": [self._library_row()]})
-        self.assertEqual(answer.status_code, 409, answer.text)
-
-    async def test_configuration_saves_library_names(self) -> None:
-        with patch("peach.routes_configuration.managed_configuration", lambda: True):
-            current = await self.client.get("/api/configuration", params={"t": "secret"})
-            self.assertEqual(current.status_code, 200, current.text)
-            answer = await self.client.post(
-                "/api/configuration", params={"t": "secret"},
-                json={"revision": current.json()["revision"],
-                      "libraries": [self._library_row(name="主库")]})
+    async def test_saving_one_library_writes_only_that_row(self) -> None:
+        answer = await self.client.post(
+            "/api/libraries/gdrive%3Aroot-1", params={"t": "secret"},
+            json=self._library_row(name="主库"))
         self.assertEqual(answer.status_code, 200, answer.text)
-        self.assertTrue(answer.json()["saved"])
-        self.assertIn("主库", self.config_path.read_text(encoding="utf-8"))
+        self.assertEqual(answer.json()["name"], "主库")
+        text = self.config_path.read_text(encoding="utf-8")
+        self.assertIn("[media.library_catalog.'gdrive:root-1']", text)
+        self.assertIn('name = \'主库\'', text)
 
-    async def test_configuration_refuses_an_unknown_library(self) -> None:
-        with patch("peach.routes_configuration.managed_configuration", lambda: True):
-            current = await self.client.get("/api/configuration", params={"t": "secret"})
-            answer = await self.client.post(
-                "/api/configuration", params={"t": "secret"},
-                json={"revision": current.json()["revision"],
-                      "libraries": [self._library_row(key="gdrive:missing")]})
+    async def test_a_bad_library_row_is_refused(self) -> None:
+        answer = await self.client.post(
+            "/api/libraries/gdrive%3Aroot-1", params={"t": "secret"},
+            json=self._library_row(icon="<script>"))
         self.assertEqual(answer.status_code, 400, answer.text)
+        self.assertEqual(answer.json()["error"], "请选择列表中的媒体库图标")
 
-    def _library_row(self, name: str = "主库", key: str = "gdrive:root-1") -> dict:
-        return {"id": key, "name": name, "icon": "database", "color": "blue",
+    async def test_an_unknown_library_is_missing(self) -> None:
+        answer = await self.client.post(
+            "/api/libraries/gdrive%3Amissing", params={"t": "secret"},
+            json=self._library_row())
+        self.assertEqual(answer.status_code, 404, answer.text)
+
+    def _library_row(self, name: str = "主库", key: str = "gdrive:root-1", icon: str = "database") -> dict:
+        return {"id": key, "name": name, "icon": icon, "color": "blue",
                 "policy": "auto", "stages": ""}
 
     # -- 网盘设置面 ---------------------------------------------------------
@@ -795,12 +795,6 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         answer = await self.client.get("/oauth/gdrive/callback", params={"error": "access_denied"})
         self.assertEqual(answer.status_code, 400, answer.text)
         self.assertIn("access_denied", answer.json()["error"])
-
-    async def test_scan_roots_must_be_a_list(self) -> None:
-        answer = await self.client.post("/api/drive/gdrive/roots", params={"t": "secret"},
-                                        json={"roots": "root-1"})
-        self.assertEqual(answer.status_code, 400, answer.text)
-        self.assertIn("roots", answer.json()["error"])
 
     async def test_forgetting_a_drive_clears_the_configured_roots(self) -> None:
         answer = await self.client.delete("/api/drive/gdrive", params={"t": "secret"})

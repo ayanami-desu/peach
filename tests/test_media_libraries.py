@@ -17,7 +17,8 @@ class LibraryListTests(unittest.TestCase):
     def test_one_library_per_scan_root(self):
         rows = media_libraries.libraries(config())
         self.assertEqual([row['id'] for row in rows], ['gdrive:root-1', 'gdrive:root-2', 'onedrive:root-3'])
-        self.assertEqual(rows[0]['roots'], [{'location': 'gdrive', 'root': 'root-1', 'root_id': 'root-1'}])
+        self.assertEqual(rows[0]['roots'],
+                         [{'account': 'gdrive', 'location': 'gdrive', 'root': 'root-1', 'root_id': 'root-1'}])
 
     def test_unknown_source_is_ignored(self):
         rows = media_libraries.libraries(config(drive_roots={'115': ('b1',), 'gdrive': ('root-1',)}))
@@ -79,6 +80,41 @@ class PredicateTests(unittest.TestCase):
                          {'root_id': 'gdrive:root-1', 'library_id': 'gdrive:root-1'})
         self.assertEqual(media_libraries.ownership(settings, 'gdrive', 'gone'), {})
         self.assertEqual(media_libraries.ownership(settings, None, None), {})
+
+
+class RowTests(unittest.TestCase):
+    """设置页交上来的那几个字段：合法值原样落库，越界的一律报出来。"""
+
+    def test_a_valid_row_is_trimmed_and_kept(self):
+        self.assertEqual(
+            media_libraries.row({'name': ' 电影 ', 'icon': 'heart', 'color': 'red',
+                                 'policy': 'custom', 'stages': 'probe,preview'}),
+            {'name': '电影', 'icon': 'heart', 'color': 'red', 'policy': 'custom',
+             'stages': 'probe,preview'})
+
+    def test_stages_are_dropped_when_the_policy_is_not_custom(self):
+        self.assertEqual(media_libraries.row({'name': 'AV', 'policy': 'auto', 'stages': ''}),
+                         {'name': 'AV', 'icon': '', 'color': '', 'policy': 'auto'})
+
+    def test_each_bad_field_is_refused_by_name(self):
+        cases = (
+            ({}, '媒体库名称请使用 1 到 80 个可见字符'),
+            ({'name': 'x' * 81}, '媒体库名称请使用 1 到 80 个可见字符'),
+            ({'name': 'AV', 'icon': '<script>'}, '请选择列表中的媒体库图标'),
+            ({'name': 'AV', 'color': '#123456'}, '请选择列表中的来源色'),
+            ({'name': 'AV', 'policy': 'local'}, '请选择列表中的处理方式'),
+            ({'name': 'AV', 'policy': 'auto', 'stages': 'probe'}, '处理步骤无效'),
+            ({'name': 'AV', 'policy': 'custom', 'stages': 'nope'}, '处理步骤无效'),
+        )
+        for value, message in cases:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as caught:
+                    media_libraries.row(value)
+                self.assertEqual(str(caught.exception), message)
+
+    def test_a_non_mapping_is_refused(self):
+        with self.assertRaises(ValueError):
+            media_libraries.row(['AV'])
 
 
 if __name__ == '__main__':

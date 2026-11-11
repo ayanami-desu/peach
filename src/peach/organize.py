@@ -375,7 +375,7 @@ def _listing(drive, location: str, root: str = "") -> _Listing:
     except DriveError as error:
         raise OrganizeError(str(error)) from error
     if not roots:
-        raise OrganizeError("这个来源还没有指定扫描起点，先到设置页选一个网盘目录")
+        raise OrganizeError("这个来源还没有建媒体库，先到设置页加一个")
     return _Listing(provider, roots)
 
 

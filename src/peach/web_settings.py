@@ -20,10 +20,20 @@ from typing import Protocol
 from .catalog_rules import compile_code_patterns
 from .feeds import DEFAULT_HIDDEN_COMPILATIONS, EXCERPT, GROUP_COMPILATION, SOLO_COMPILATION
 from .media_sources import SCANNABLE_LOCATIONS
+from .onboarding import RELOAD_NAME
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, FAVICON_REFRESH_SECONDS
 from .system_language import system_language
 
+from . import settings_file
 from .profiles import DEFAULT_PROFILE_ID
+
+
+def persist_config(config) -> None:
+    """写回配置并请进程重载：设置文件是运行期的真相，改完得让它当场生效。"""
+    settings_file.write(config, force=True)
+    config.directory("state").mkdir(parents=True, exist_ok=True)
+    (config.directory("state") / RELOAD_NAME).write_text("reload", encoding="utf-8")
+
 
 #: 默认就在侧栏里的入口，顺序即默认顺序。首页之后是关注（每天有新东西的那一屏），
 #: 再是主库最常用的浏览模式 JAV，然后三个索引，回头找的已标记，管理垫底。
@@ -81,7 +91,7 @@ DEFAULT_MANAGE_ORDER = ('stats', 'cleanup', 'follow', 'activity', 'configuration
 NAVIGATION_ORDERS = {
     'review': ('metadata_fields', 'creator_tags', 'code_creators', 'western_identity', 'performer_avatars',
                'studio_logos', 'fc2_markings', 'fc2_similarity', 'video_endcards'),
-    'configuration': ('drives', 'access', 'token', 'devices', 'speed', 'diagnostics'),
+    'configuration': ('drives', 'libraries', 'access', 'token', 'devices', 'speed', 'diagnostics'),
     'favorites': ('all', 'filters', 'performer', 'creator', 'tag', 'series', 'studio', 'agency'),
     'jav': ('library', 'wants', 'releases', 'discover'),
     'follow': ('list', 'add', 'tags'),

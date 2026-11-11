@@ -27,7 +27,7 @@ FROZEN_ROUTES = frozenset({
     "/sources", "/follow", "/subscriptions", "/tasks", "/immerse", "/wall",
     "/settings/diagnostics", "/jav", "/works/:code", "/settings", "/settings/appearance",
     "/settings/browsing", "/settings/jav", "/settings/search", "/settings/content",
-    "/settings/drives", "/settings/access", "/settings/token", "/settings/devices",
+    "/settings/drives", "/settings/libraries", "/settings/access", "/settings/token", "/settings/devices",
     "/settings/speed",
 })
 #: 路由树按模式登记的资料页，一个实体种类一条。
@@ -104,8 +104,10 @@ class LegacyShellRouteTests(unittest.TestCase):
     def setUp(self):
         self.overlay = quoted_list(OVERLAY.read_text(encoding="utf-8"), "OVERLAY_PATHS")
         settings = without_comments(SETTINGS.read_text(encoding="utf-8"))
-        start = settings.index('{', settings.index('export const PREFERENCE_SECTIONS'))
-        self.preferences = {'/settings'} | {f'/settings/{key}' for key in re.findall(r'(\w+)\s*:', braced(settings, start))}
+        self.preferences = {'/settings'}
+        for name in ('PREFERENCE_SECTIONS', 'CONFIGURATION_SECTIONS'):
+            start = settings.index('{', settings.index(f'export const {name}'))
+            self.preferences |= {f'/settings/{key}' for key in re.findall(r'(\w+)\s*:', braced(settings, start))}
         tree = tree_routes(ROUTE_TABLES.read_text(encoding="utf-8"))
         self.patterns = {path for path in tree if path.endswith("/*")}
         state_routes = CORE.read_text(encoding="utf-8").split("const STATE_ROUTES", 1)[1].split("};", 1)[0]

@@ -162,7 +162,7 @@ class ScanService:
     def _roots(self, key: str, provider: DriveProvider) -> tuple[str, ...]:
         roots = tuple(self.drive.roots_map().get(key) or ())
         if not roots:
-            raise ScanTargetError(f"✗ 账号 {key!r} 没有配置扫描目录")
+            raise ScanTargetError(f"✗ 账号 {key!r} 还没有媒体库")
         return roots
 
     def full_sync(self, key: str) -> ScanResult:

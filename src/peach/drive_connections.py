@@ -158,12 +158,8 @@ class DriveConnections:
             return None
 
     def roots(self, key: str) -> tuple[str, ...]:
-        """扫描起点：设置里选过就用选的，没选过扫账号根目录。"""
-        configured = self.settings.drive_roots.get(key) or ()
-        if configured:
-            return configured
-        account = self.account(key)
-        return (account.root_id,) if account and account.root_id else ()
+        """这个账号下的媒体库目录；一个都没建时就什么都不扫。"""
+        return tuple(self.settings.drive_roots.get(key) or ())
 
     def roots_map(self) -> dict[str, tuple[str, ...]]:
         """每个账号的扫描起点，给扫描服务用。没有起点的账号不进表。"""
@@ -319,8 +315,8 @@ class DriveConnections:
                         location: str = "") -> StoredAccount:
         """直接填认证信息接上一个账号，不必走浏览器授权。
 
-        先拿这三样换一次票确认它们配套，再落设置与账号文件；`root` 给了就当扫描起点
-        （目录路径或远端 id），解析不出来只报错，已有起点不动。
+        先拿这三样换一次票确认它们配套，再落设置与账号文件；`root` 给了就把这个目录
+        当成它唯一的媒体库（目录路径或远端 id），解析不出来只报错，已有目录不动。
         """
         source = (location or self.location_of(key) or key).strip()
         if source not in LOCATIONS:
@@ -357,7 +353,7 @@ class DriveConnections:
         else:
             self.accounts.store.save(stored)
         if root.strip():
-            self.set_roots(key, [{"remote_id": self._root_id(provider, stored.root_id, root)}])
+            self._save_roots(key, (self._root_id(provider, stored.root_id, root),))
         self._root_names = {}
         return stored
 
@@ -411,10 +407,57 @@ class DriveConnections:
 
     # -- 扫描根 -------------------------------------------------------------
 
-    def set_roots(self, key: str, rows: list[dict]) -> tuple[str, ...]:
-        self.provider(key)
-        ids = tuple(str(row.get("remote_id") or "").strip() for row in rows)
-        ids = tuple(remote_id for remote_id in ids if remote_id)
+    def add_root(self, key: str, remote_id: str) -> tuple[str, ...]:
+        """把一个远端目录加成媒体库：它同时就是这台账号的扫描根之一。
+
+        重复添加是空操作——媒体库只是一层映射，加两遍和加一遍的下场必须一样。
+        """
+        remote_id = str(remote_id or "").strip()
+        if not remote_id:
+            raise DriveUnavailable("请选择要作为媒体库的目录")
+        current = self.roots(key)
+        if remote_id in current:
+            return current
+        provider = self.provider(key)
+        entry = provider.entry(remote_id)
+        if not entry.folder:
+            raise DriveUnavailable(f"{entry.name or remote_id} 不是目录")
+        return self._save_roots(key, (*current, remote_id))
+
+    def remove_root(self, key: str, remote_id: str) -> tuple[str, ...]:
+        """把一个目录从这台账号的媒体库里去掉：只改配置，账本里的行原样留着。
+
+        已经不在里面时同样是空操作。
+        """
+        current = self.roots(key)
+        if remote_id not in current:
+            return current
+        return self._save_roots(key, tuple(item for item in current if item != remote_id))
+
+    def move_root(self, key: str, remote_id: str, target: str) -> tuple[str, ...]:
+        """把一个扫描根换成另一个目录：一次写入完成替换，账本里的行原样留着。
+
+        换成自己时是空操作；目标目录已经在这台账号的媒体库里时也空操作——同一个目录只挂一个库，
+        免得两条库指向同一批行。目标必须是目录。
+        """
+        remote_id, target = str(remote_id or "").strip(), str(target or "").strip()
+        if not target:
+            raise DriveUnavailable("请选择要作为媒体库的目录")
+        current = self.roots(key)
+        if remote_id == target:
+            return current
+        provider = self.provider(key)
+        entry = provider.entry(target)
+        if not entry.folder:
+            raise DriveUnavailable(f"{entry.name or target} 不是目录")
+        if target in current:
+            return current
+        replaced = tuple(target if item == remote_id else item for item in current)
+        if remote_id not in current:
+            replaced = (*current, target)
+        return self._save_roots(key, replaced)
+
+    def _save_roots(self, key: str, ids: tuple[str, ...]) -> tuple[str, ...]:
         self.settings = dataclasses.replace(
             self.settings,
             drive_roots={**self.settings.drive_roots, key: ids})

@@ -1,5 +1,6 @@
-/* 配置页（`/settings`，六格页签各自有 `/settings/<键>`）：这台运行 Peach 的电脑上的这几格表单。
- * 媒体不放在 Peach 上（ADR-0157），所以第一格是网盘：授权、扫描起点与同步状态都由 `GET /api/drive` 给。
+/* 配置页（`/settings`，七格页签各自有 `/settings/<键>`）：这台运行 Peach 的电脑上的这几格表单。
+ * 媒体不放在 Peach 上（ADR-0157），所以前两格是网盘与媒体库：网盘管账号、凭据与取流方式（`GET /api/drive`），
+ * 媒体库管「扫哪些远端目录」（`GET /api/libraries`）；一个媒体库只是一层映射，加删都不碰已扫进来的行。
  * 每个分区各占一格页签，一次只摆一组；本机配置权限与写入条件由服务端判定。
  *
  * `.ui-configpage` 的第一层：最前面是页签条（`.ui-board-local-nav`），后面每组一个 `h2.ui-configgroup` 小标题
@@ -12,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 
 import { errorMessage } from '../../api';
+import { t } from '../../i18n';
 import { Button } from '@/components/base/buttons/button';
 import type { ConfigurationData, ConfigurationPanel, ConfigurationProps } from '../bundle';
 import { Note } from '../components/note';
@@ -22,12 +24,14 @@ import { CONFIGURATION_KEY, fetchConfiguration } from './configuration';
 import { groupRoot } from './configuration-panel';
 import { DeviceSessions } from './device-sessions';
 import { DriveSettings } from './drive-settings';
+import { LibrarySettings } from './library-settings';
 import { TaskSpeedSettings } from './service-preferences';
 import { busyProps } from './use-action';
 
 /* 页签的次序、锚点与标题：锚点进地址，标题与 `section` 参数（壳按标题要求打开某一格）对得上。 */
 const SECTIONS = [
   { id: 'drives', title: '网盘' },
+  { id: 'libraries', title: '媒体库' },
   { id: 'access', title: '访问与安全' },
   { id: 'token', title: 'API 令牌' },
   { id: 'devices', title: '设备会话' },
@@ -46,8 +50,8 @@ export function ConfigurationPage({ receipt, section = '', diagnostics }: Config
   if (!data) {
     return (
       <div className="ui-configpage">
-        <Note tone="error" title="配置读取失败">
-          {config.error ? errorMessage(config.error) : '未取得配置，请刷新页面重试。'}
+        <Note tone="error" title={t('settings:configuration.loadFailedTitle')}>
+          {config.error ? errorMessage(config.error) : t('settings:configuration.loadFailedBody')}
         </Note>
       </div>
     );
@@ -124,6 +128,9 @@ function ConfigurationGroups({ data, receipt, section, diagnostics, reload, refr
   const groups: Group[] = [
     { id: 'drives', title: '网盘', body: (panel) => <div {...groupRoot(panel)} data-guide-target="drives">
       <DriveSettings receipt={receipt} />
+    </div> },
+    { id: 'libraries', title: '媒体库', body: (panel) => <div {...groupRoot(panel)} data-guide-target="libraries">
+      <LibrarySettings receipt={receipt} />
     </div> },
     ...(access ? [{
       id: 'access', title: '访问与安全',

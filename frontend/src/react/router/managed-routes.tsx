@@ -217,6 +217,7 @@ export const MANAGED_ROUTES: ManagedRouteTable = {
      `/settings#drives`，落在这一页上之后由页面按锚点选格。 */
   '/settings': configurationRoute('/settings'),
   '/settings/drives': configurationRoute('/settings/drives'),
+  '/settings/libraries': configurationRoute('/settings/libraries'),
   '/settings/access': configurationRoute('/settings/access'),
   '/settings/token': configurationRoute('/settings/token'),
   '/settings/devices': configurationRoute('/settings/devices'),

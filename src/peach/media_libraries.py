@@ -3,6 +3,8 @@
 库里显示的属性（名称、图标、来源色、处理方式）存设置文件的 `[media.library_catalog.<id>]`，
 id 形如 `gdrive:1AbCdEf`。分组不再另建一层：选了哪些扫描根，就有哪些媒体库。
 """
+import re
+
 from .drive_provider import LOCATIONS
 
 LIBRARY_ICONS = frozenset({"hard-drive", "database", "heart", "star", "tags", "heart-hand", "flame", "cherry", "gem", "crown", "shirt", "footprints",
@@ -12,8 +14,35 @@ LIBRARY_ICONS = frozenset({"hard-drive", "database", "heart", "star", "tags", "h
                          "bath", "key-round", "wine", "cigarette", "film", "image", "gamepad-2"})
 
 #: 处理方式与处理步骤的取值；设置页从这里取列表，`library_processing` 按它筛阶段。
-POLICIES = ("auto", "local", "custom")
+POLICIES = ("auto", "custom")
 STAGES = ("probe", "metadata", "cover", "people", "preview")
+
+_COLOR = re.compile(r"[a-z]{2,16}")
+
+
+def row(value: object) -> dict[str, str]:
+    """一条媒体库的可改属性：名称 1–80 个可见字符，图标、来源色与处理方式取自内置列表。"""
+    if not isinstance(value, dict):
+        raise ValueError("媒体库格式无效")
+    name = value.get("name", "")
+    if not isinstance(name, str) or not name.strip() or len(name) > 80 or any(ord(char) < 32 for char in name):
+        raise ValueError("媒体库名称请使用 1 到 80 个可见字符")
+    icon = value.get("icon", "")
+    if icon not in ("", *LIBRARY_ICONS):
+        raise ValueError("请选择列表中的媒体库图标")
+    color = value.get("color", "")
+    if color and not _COLOR.fullmatch(str(color)):
+        raise ValueError("请选择列表中的来源色")
+    policy = value.get("policy", "")
+    if policy not in ("", *POLICIES):
+        raise ValueError("请选择列表中的处理方式")
+    stages = [stage for stage in str(value.get("stages", "") or "").split(",") if stage]
+    if any(stage not in STAGES for stage in stages) or (stages and policy != "custom"):
+        raise ValueError("处理步骤无效")
+    result = {"name": name.strip(), "icon": icon, "color": color, "policy": policy}
+    if stages:
+        result["stages"] = ",".join(stages)
+    return result
 
 
 def key(location: str, root_id: str) -> str:
@@ -50,7 +79,9 @@ def libraries(config, live_names: dict[str, str] | None = None):
                 "color": stored.get("color", ""),
                 "policy": stored.get("policy", "") or "auto",
                 "stages": stages or list(STAGES),
-                "roots": [{"location": location, "root": root_id, "root_id": root_id}],
+                "account": account,
+                "root_name": (live_names or {}).get(identifier) or root_id,
+                "roots": [{"account": account, "location": location, "root": root_id, "root_id": root_id}],
             })
     return rows
 

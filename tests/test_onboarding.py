@@ -769,22 +769,23 @@ class ConfigurationSurfaceTests(_Case):
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["revision"], revision(self.config))
 
-    def test_settings_reject_unauthenticated_cross_origin_and_stale_forms(self):
+    def test_settings_writes_reject_unauthenticated_cross_origin_and_unknown_libraries(self):
         before = self.config.path.read_bytes()
         with self.client() as client:
             self.assertEqual(client.get("/configuration", follow_redirects=False).status_code, 303)
             self.assertEqual(client.get("/api/configuration").status_code, 401)
-            crossed = client.post("/api/configuration", json={"revision": "stale"},
+            crossed = client.post("/api/libraries/gdrive%3Amissing", json={"name": "改名"},
                                   headers={"X-Token": "test-token",
                                            "Origin": "https://example.org"})
             self.assertEqual(crossed.status_code, 403)
-            stale = client.post("/api/configuration", json={"revision": "stale"},
-                                headers={"X-Token": "test-token"})
-            self.assertEqual(stale.status_code, 409)
-            self.assertEqual(stale.json()["error"], "配置已变更，请刷新后再保存")
+            missing = client.post("/api/libraries/gdrive%3Amissing", json={"name": "改名"},
+                                  headers={"X-Token": "test-token"})
+            self.assertEqual(missing.status_code, 404)
+            self.assertEqual(missing.json()["error"], "没有这个媒体库")
         with self.client(address="192.0.2.1") as client:
             self.assertEqual(client.get("/api/configuration").status_code, 401)
-            self.assertEqual(client.post("/api/configuration", json={"revision": "stale"}).status_code, 401)
+            self.assertEqual(client.post("/api/libraries/gdrive%3Amissing",
+                                         json={"name": "改名"}).status_code, 401)
         self.assertEqual(before, self.config.path.read_bytes())
 
     def test_browser_navigations_get_an_error_page_instead_of_raw_json(self):

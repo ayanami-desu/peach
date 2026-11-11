@@ -1,4 +1,6 @@
 /** 导航保存稳定 ID；显示名称、默认次序与固定首项集中维护。 */
+import { t } from './i18n';
+
 export const NAVIGATION_GROUPS = {
   review: { label: '复核分类', items: [
     ['metadata_fields', '元数据字段'], ['creator_tags', '创作者标签'], ['code_creators', '番号目录存疑'],
@@ -6,7 +8,7 @@ export const NAVIGATION_GROUPS = {
     ['fc2_markings', 'FC2 评论标记'], ['fc2_similarity', 'FC2 跨号相似'], ['video_endcards', '片尾/出处证据'],
   ] },
   configuration: { label: 'Peach 配置', items: [
-    ['drives', '网盘'], ['access', '访问与安全'], ['token', 'API 令牌'],
+    ['drives', '网盘'], ['libraries', t('settings:library.title')], ['access', '访问与安全'], ['token', 'API 令牌'],
     ['devices', '设备会话'], ['speed', '任务速度'], ['diagnostics', '系统诊断'],
   ] },
   favorites: { label: '我的收藏', items: [

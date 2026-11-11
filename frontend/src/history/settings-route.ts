@@ -1,7 +1,7 @@
 /* 设置页的两类分区。
  *
  * 个人设置是浮在页面上的那一叠表单，地址 `/settings/<键>`，`PREFERENCE_SECTIONS` 的五节。
- * Peach 配置是运行这一台机器的人改的那几格，一页六个页签；地址 `/settings` 就是这一页（默认开网盘那一格），
+ * Peach 配置是运行这一台机器的人改的那几格，一页七个页签；地址 `/settings` 就是这一页（默认开网盘那一格），
  * `/settings/<键>` 指名开哪一格。网盘授权回跳落在 `/settings#drives`，锚点与页签一一对应，别处也照这个写法链过来。
  *
  * 两套键没有重名，`settingsPath(title)` 按标题在两套里一起找。 */
@@ -9,11 +9,11 @@ export const PREFERENCE_SECTIONS = {
   appearance: '外观与导航', browsing: '浏览与播放', jav: 'JAV 与新作', search: '搜索与推荐', content: '内容显示',
 } as const;
 export const CONFIGURATION_SECTIONS = {
-  drives: '网盘', access: '访问与安全', token: 'API 令牌', devices: '设备会话', speed: '任务速度',
-  diagnostics: '系统诊断',
+  drives: '网盘', libraries: '媒体库', access: '访问与安全', token: 'API 令牌', devices: '设备会话',
+  speed: '任务速度', diagnostics: '系统诊断',
 } as const;
 export type ConfigurationSectionKey = keyof typeof CONFIGURATION_SECTIONS;
-/** 配置页的地址：`/settings` 与它下面这六格。 */
+/** 配置页的地址：`/settings` 与它下面这七格。 */
 export type ConfigurationPath = '/settings' | `/settings/${ConfigurationSectionKey}`;
 
 const CONFIGURATION_PATHS: readonly string[] = ['/settings', ...Object.keys(CONFIGURATION_SECTIONS).map(key => `/settings/${key}`)];
