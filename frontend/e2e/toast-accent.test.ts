@@ -9,7 +9,7 @@ describe('Toast 操作强调色',()=>{
  after(async()=>{await browser.close()});
  for(const viewport of VIEWPORTS)for(const theme of ['light','dark'])for(const accent of ['blue','emerald','rose']){
   it(`${viewport.name} ${theme} ${accent} 撤销操作`,{timeout:60000},async()=>{
-   const opened=await visit(browser,'/follow',viewport);
+   const opened=await visit(browser,'/',viewport);
    try{
     const page=opened.page;
     await page.route(url=>url.pathname==='/api/library-processing',route=>route.fulfill({json:{status:'idle'}}));

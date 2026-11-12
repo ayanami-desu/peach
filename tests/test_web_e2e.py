@@ -55,7 +55,6 @@ TIMING_SENSITIVE = frozenset({
     "e2e/sidebar-motion.test.ts",
     "e2e/sidebar.test.ts",
     "e2e/design-cards.test.ts",
-    "e2e/design-follow-alignment.test.ts",
 })
 
 sys.path.insert(0, str(ROOT / "src"))

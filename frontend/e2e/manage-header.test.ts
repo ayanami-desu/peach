@@ -11,7 +11,6 @@ import { after, before, describe, it } from 'node:test';
 
 import type { Browser, Locator, Page } from 'playwright-core';
 
-import { openFollowFeed } from './follow-fixture.ts';
 import { launch, settle, visit, VIEWPORTS, type Viewport } from './harness.ts';
 
 /** 1280 的桌面视口里窄列被侧栏挤得铺满，量不出「按 --board-content 居中」。 */
@@ -31,7 +30,6 @@ const HEADS = [
   ['/quality-goals', '高清版', '高清版', false],
   ['/sources', '来源和凭证', '来源和凭证', true],
   ['/trash', '回收站', '回收站', false],
-  ['/subscriptions', '关注管理', '', false],
   ['/tasks', '任务中心', '', false],
   ['/settings/drives', 'Peach 配置', '', true],
 ] as const;
@@ -225,15 +223,5 @@ describe('批量条', () => {
       }
     });
 
-    it(`关注页的键和计数（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await openFollowFeed(browser, '/follow', viewport);
-      try {
-        await pickTwo(opened.page.locator('[data-follow-list] > [data-follow-item]'));
-        assert.deepEqual(await readDock(opened.page), { count: '已选 2 项', buttons: ['保存到数据库', '标记已看', '忽略', '取消'] });
-        assert.deepEqual(opened.stub.writes.filter((write) => write.url !== '/api/follow/check'), []);
-      } finally {
-        await opened.close();
-      }
-    });
   }
 });

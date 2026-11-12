@@ -1,22 +1,20 @@
-/* 舞台岛（`frontend/src/react/stage/`）在真浏览器里的行为：两种详情走同一个舞台、关掉回来处、深链、
+/* 舞台岛（`frontend/src/react/stage/`）在真浏览器里的行为：目录卡打开详情、关掉回来处、深链、
  * 骨架揭示、Video.js 与它的控件（清晰度、剧场、提示、窄屏折叠、统计角标、右键菜单）、小窗（进出、
  * 展开不重建、拖动吸附）、队列换条时播放器的交接、Escape 先关最里层，以及手机 390。
  *
- * 桩数据见 `item-fixture.ts` 与 `follow-fixture.ts`；读写接口全部由桩接住，演示库数据库一次都不写。
+ * 桩数据见 `item-fixture.ts`；读写接口全部由桩接住，演示库数据库一次都不写。
  * 片源不给正片：小窗一律经 i 键或右键菜单请求进入（越过播放态判定），不靠真在放。 */
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 
 import type { Browser, Page } from 'playwright-core';
 
-import { DETAIL, openFollowFeed } from './follow-fixture.ts';
 import { layout, launch, stubTimelineSheets, VIEWPORTS } from './harness.ts';
 import { ITEM, openItemPage } from './item-fixture.ts';
 
 const DESKTOP = VIEWPORTS.find((viewport) => !viewport.mobile)!;
 const MOBILE = VIEWPORTS.find((viewport) => viewport.mobile)!;
 const ITEM_READY = '#stage[open] [data-item-side]';
-const FOLLOW_READY = '#stage[open] [data-follow-detail-side]';
 const PLAYER = '#stage .video-js .vjs-control-bar';
 /** 桩里的片源没有正片，播放器拿到空响应会报一条 VIDEOJS 错误；量的不是它。 */
 const withoutPlayer = (problems: string[]) => problems.filter((line) => !line.includes('VIDEOJS'));
@@ -60,7 +58,7 @@ describe('舞台岛', () => {
     await browser.close();
   });
 
-  it('目录卡与关注卡走同一个舞台：宿主常驻 body，关掉回来处，列表不重取', { timeout: 90_000 }, async () => {
+  it('目录卡：宿主常驻 body，关掉回来处，列表不重取', { timeout: 90_000 }, async () => {
     const catalog = await openItemPage(browser, '/', DESKTOP, { ready: card(ITEM.plain) });
     try {
       const page = catalog.page;
@@ -82,27 +80,6 @@ describe('舞台岛', () => {
       assert.deepEqual(withoutPlayer(catalog.problems), []);
     } finally {
       await catalog.close();
-    }
-    const follow = await openFollowFeed(browser, '/follow', DESKTOP);
-    try {
-      const page = follow.page;
-      let listed = 0;
-      page.on('request', (request) => {
-        const url = new URL(request.url());
-        if (url.pathname === '/api/follow' && !url.searchParams.has('item')) listed += 1;
-      });
-      await page.locator('[data-follow-item="1002"] [data-follow-open]').click();
-      await page.locator(FOLLOW_READY).waitFor();
-      assert.deepEqual(await stageShape(page), { host: true, modal: true, stages: 1, hosts: 1 });
-      await page.locator('[data-follow-related] [data-follow-item]').first().waitFor();
-      const listedBeforeClose = listed;
-      await page.locator('#closeStage').click();
-      await pathIs(page, '/follow');
-      await page.locator('[data-follow-list] > [data-follow-item]').first().waitFor();
-      assert.equal(listed, listedBeforeClose, '关掉详情回关注列表重取了一遍');
-      assert.deepEqual(withoutPlayer(follow.problems), []);
-    } finally {
-      await follow.close();
     }
   });
 
@@ -127,7 +104,7 @@ describe('舞台岛', () => {
     }
   });
 
-  it('深链直接进两种详情：先画骨架再揭示，内容到了焦点给关闭键', { timeout: 60_000 }, async () => {
+  it('深链直接进作品详情：先画骨架再揭示，内容到了焦点给关闭键', { timeout: 60_000 }, async () => {
     const item = await openItemPage(browser, `/assets/${ITEM.plain}`, DESKTOP);
     try {
       assert.deepEqual(await stageShape(item.page), { host: true, modal: true, stages: 1, hosts: 1 });
@@ -136,14 +113,6 @@ describe('舞台岛', () => {
       assert.deepEqual(withoutPlayer(item.problems), []);
     } finally {
       await item.close();
-    }
-    const follow = await openFollowFeed(browser, `/posts/${DETAIL.collection}`, DESKTOP, { ready: FOLLOW_READY });
-    try {
-      assert.deepEqual(await stageShape(follow.page), { host: true, modal: true, stages: 1, hosts: 1 });
-      assert.equal(await follow.page.evaluate(() => document.activeElement?.id), 'closeStage');
-      assert.deepEqual(withoutPlayer(follow.problems), []);
-    } finally {
-      await follow.close();
     }
   });
 
@@ -425,28 +394,6 @@ describe('舞台岛', () => {
       assert.equal(await page.evaluate(() => location.pathname), `/assets/${ITEM.plain}`);
       await page.keyboard.press('Escape');
       await pathIs(page, '/');
-      assert.deepEqual(withoutPlayer(opened.problems), []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  it('关注详情：/follow-qualities 挂住时视频照挂，海报挂载前后是同一张，统计键在同一个媒体框里', { timeout: 60_000 }, async () => {
-    const opened = await openFollowFeed(browser, `/posts/${DETAIL.collection}`, DESKTOP, { ready: FOLLOW_READY });
-    try {
-      const page = opened.page;
-      const frame = page.locator('#stage [data-follow-detail-media="video"]');
-      await frame.locator('.video-js .vjs-control-bar').waitFor({ state: 'attached' });
-      await frame.locator(':scope > #playerStatsBtn').waitFor();
-      const poster = () => frame.locator('video.vjs-tech').getAttribute('poster');
-      assert.match(await poster() || '', /\/stub-thumb\/5101$/, 'Video.js 挂上之后海报丢了');
-
-      await page.route('**/follow-qualities**', () => {});
-      await page.locator('[data-follow-queue-item="5102"]').click();
-      await pathIs(page, '/posts/5102');
-      await frame.locator('.video-js .vjs-control-bar').waitFor({ state: 'attached', timeout: 10_000 });
-      assert.equal(await page.locator('#stage .video-js').count(), 1);
-      assert.match(await poster() || '', /\/stub-thumb\/5102$/);
       assert.deepEqual(withoutPlayer(opened.problems), []);
     } finally {
       await opened.close();

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { Browser, Locator, Page } from 'playwright-core';
-import { openFollowManage } from './design-fixture.ts';
 import { launch, settle, visit, VIEWPORTS } from './harness.ts';
 
 async function motion(page: Page, trigger: Locator) {
@@ -64,23 +63,6 @@ describe('折叠正文与箭头共用动画', () => {
   before(async () => { browser = await launch() });
   after(async () => { await browser.close() });
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name}：关注卡片高度过渡、反向点击，勾选框在行首、站标贴着名称`, async () => {
-      const opened = await openFollowManage(browser, viewport);
-      try {
-        const section = opened.page.getByRole('region', { name: 'kou 的关注来源', exact: true });
-        const leading = section.locator('[data-follow-source-row]').first();
-        const boxes = await leading.evaluate(node => {
-          const icon = node.querySelector('[data-follow-source-site] img')!.getBoundingClientRect();
-          const checkbox = node.querySelector('input')!.parentElement!.getBoundingClientRect();
-          const line = node.querySelector('a')!.getClientRects()[0]!;
-          return { checkbox: checkbox.left, icon: icon.left, iconRight: icon.right, name: line.left,
-            middle: Math.abs(icon.top + icon.height / 2 - line.top - line.height / 2) };
-        });
-        assert.ok(boxes.checkbox < boxes.icon && boxes.iconRight < boxes.name && boxes.middle <= 1, JSON.stringify(boxes));
-        await motion(opened.page, section.locator('button[aria-controls]'));
-        assert.deepEqual(opened.problems, []);
-      } finally { await opened.close() }
-    });
     it(`${viewport.name}：任务通知与教程可动画折叠`, async () => {
       const opened = await visit(browser, '/', viewport, async page => {
         await page.route('**/api/library-processing', route => route.fulfill({ json: {

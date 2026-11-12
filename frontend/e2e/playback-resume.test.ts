@@ -4,7 +4,6 @@ import { after, before, describe, it } from 'node:test';
 
 import type { Browser, Page } from 'playwright-core';
 
-import { DETAIL, openFollowFeed } from './follow-fixture.ts';
 import { launch, VIEWPORTS } from './harness.ts';
 import { ITEM, openItemPage } from './item-fixture.ts';
 
@@ -29,24 +28,23 @@ describe('视频退出续播', () => {
   });
   after(async () => { await browser.close() });
 
-  for (const viewport of VIEWPORTS) for (const kind of ['item', 'follow'] as const) {
-    it(`${viewport.name} ${kind}：关闭、重开和刷新恢复秒数，时间深链优先`, { timeout: 90_000 }, async () => {
-      const path = kind === 'item' ? `/assets/${ITEM.plain}` : `/posts/${DETAIL.collection}`;
-      const opened = kind === 'item' ? await openItemPage(browser, path, viewport)
-        : await openFollowFeed(browser, path, viewport, { ready: '#stage [data-follow-detail-side]' });
+  for (const viewport of VIEWPORTS) {
+    it(`${viewport.name}：关闭、重开和刷新恢复秒数，时间深链优先`, { timeout: 90_000 }, async () => {
+      const path = `/assets/${ITEM.plain}`;
+      const opened = await openItemPage(browser, path, viewport);
       try {
         const page = opened.page;
         // 用例里的刷新与跳转会取消还在转发的片源请求，那一趟落空不算失败；其余错误照常抛出。
         const settled = (error: unknown) => {
           if (!/already handled|disposed|closed/i.test(String(error))) throw error;
         };
-        await page.route((url) => ['/stream', '/follow-stream'].includes(url.pathname),
+        await page.route((url) => url.pathname === '/stream',
           async (route) => {
             try { await route.fulfill({ response: await route.fetch({ url: clip }) }) } catch (error) { settled(error) }
           });
-        await page.route((url) => ['/api/activity', '/api/follow/activity', '/api/follow/play'].includes(url.pathname),
+        await page.route((url) => url.pathname === '/api/activity',
           (route) => route.fulfill({ json: { ok: true } }));
-        const key = kind === 'item' ? `item:${ITEM.plain}` : `follow:${DETAIL.collection}:main`;
+        const key = `item:${ITEM.plain}`;
         await page.evaluate((key) => localStorage.setItem(`peach.playback-position.v1:${key}`, '0'), key);
         await page.reload({ waitUntil: 'load' });
         await metadata(page);

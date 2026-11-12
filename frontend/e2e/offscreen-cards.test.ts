@@ -8,15 +8,14 @@ import { after, before, describe, it } from 'node:test';
 
 import type { Browser, Page } from 'playwright-core';
 
-import { launch, layout, settle, visit, VIEWPORTS, type Visit } from './harness.ts';
+import { launch, settle, visit, VIEWPORTS, type Visit } from './harness.ts';
 
 const DESKTOP = VIEWPORTS.find((viewport) => !viewport.mobile)!;
 const CLONES = 150;
 const CLONE_BASE = 900_000;
 const PROBE_TAG = '屏外探针';
 
-/** 卡片里各块的选择器。作品卡归目录网格，关注卡归关注页，钩子都是
- * `data-media-*`；关注卡的封面格多包一层 `[data-follow-visual]`，头像和标签是 `<span>`。 */
+/** 卡片里各块的选择器。作品卡归目录网格，钩子都是 `data-media-*`。 */
 interface CardShape {
   card: string; pic: string; meta: string; avatar: string; text: string; tags: string;
   avatarButton: string; tagButton: string;
@@ -26,10 +25,8 @@ const MEDIA: CardShape = {
   text: '[data-media-text]', tags: '[data-media-tags]',
   avatarButton: '[data-media-meta]>button[data-media-avatar]', tagButton: '[data-media-tags]>button[data-media-tag]',
 };
-const FOLLOW = MEDIA;
 const CATALOG_CARDS = '#grid [data-media-grid]>[data-media-card]';
 const ENTITY_CARDS = '#index [data-entity-grid] [data-media-grid]>[data-media-card]';
-const FOLLOW_CARDS = '[data-follow-list]>[data-follow-item]';
 
 interface CatalogPayload {
   total: number;
@@ -100,49 +97,12 @@ async function openLongEntity(browser: Browser): Promise<Visit> {
     id: 90_001, kind: 'performer', canonical_name: name, aliases: [], display_aliases: [],
     user_aliases: [], asset_count: CLONES, tags: [], related_performers: [], links: [],
     metadata: {}, has_image: false, has_avatar: false, avatar_focus: null,
-    representative_asset_id: null, entry_links: [], feed: { following: false },
+    representative_asset_id: null, entry_links: [],
   } }));
   await serveLongItems(page);
   await page.goto(new URL(`/performers/${encodeURIComponent(name)}`, page.url()).href, { waitUntil: 'load' });
   await page.waitForFunction(([selector, count]) => document.querySelectorAll(selector).length >= count,
     [ENTITY_CARDS, CLONES] as const, { timeout: 15_000 });
-  await settle(page);
-  return opened;
-}
-
-/** 关注页换成 `CLONES` 条合成的更新：演示库没有关注来源。字段照 `/api/follow` 的形状，
- * 不带缩略图，不发外站请求；每三条有一条带标签，屏外卡因此有高矮两种元信息区。 */
-async function openLongFollow(browser: Browser): Promise<Visit> {
-  const opened = await visit(browser, '/', DESKTOP);
-  const { page } = opened;
-  const source = { id: 1, provider: 'rule34xxx', provider_label: 'Rule34.xxx', ref: 'demo', label: '演示来源',
-    author_name: '演示作者', author_key: 'name:演示作者', official_avatar_url: null, avatar_url: null,
-    url: 'https://example.invalid/', semantics: 'work', enabled: true, entity_id: null, entity_name: null,
-    can_backfill: false, backfill_page: 0, created_at: '2026-09-01T00:00:00Z', last_checked_at: null,
-    last_status: 'ok', last_error: null, history_exhausted: true };
-  const groups = Array.from({ length: CLONES }, (_, index) => ({
-    release_key: `demo-${index}`, variants: [], duplicates: [], providers: ['rule34xxx'], has_wip: false,
-    is_release: false, newest_at: '2026-09-01T00:00:00Z',
-    primary: {
-      id: CLONE_BASE + index, provider: 'rule34xxx', provider_label: 'Rule34.xxx', resource_provider: 'rule34xxx',
-      source_id: 1, source_label: '演示来源', external_id: String(index), title: `演示更新 ${index}`,
-      author: '演示作者', summary: null, url: `https://example.invalid/${index}`, thumb_url: null,
-      published_at: '2026-09-01T00:00:00Z', published_precision: 'exact', version: null, duration: 60,
-      variant_kind: 'main', variant_label: null, status: 'new', asset_id: null, media_needs_credential: false,
-      media_error: null, has_media: false, media_kind: 'video', width: 1280, height: 720, media_type: null,
-      playable: false, media_items: [], hidden_media: [], resource_urls: [],
-      tags: index % 3 === 0 ? ['演示'] : [], detail_tags: [], tag_types: {},
-    },
-  }));
-  const body = { ok: true, sources: [source], author_aliases: [], alias_suggestions: [], suggestions: [], groups,
-    counts: { new: CLONES, seen: 0, saved: 0, ignored: 0 }, sort: 'new', dir: 'desc', seed: 1,
-    facets: { authors: [], providers: [], tags: [], works: [] }, offset: 0, limit: CLONES, has_more: false,
-    providers: ['rule34xxx'] };
-  await page.route(/\/api\/follow(\?|$)/, (route) => route.fulfill({ status: 200, contentType: 'application/json',
-    body: JSON.stringify(body) }));
-  await page.goto(new URL('/follow', page.url()).toString(), { waitUntil: 'load' });
-  await page.waitForFunction(([selector, count]) => document.querySelectorAll(selector).length >= count,
-    [FOLLOW_CARDS, CLONES] as const, { timeout: 15_000 });
   await settle(page);
   return opened;
 }
@@ -172,25 +132,6 @@ describe('视口外的卡片', () => {
 
   after(async () => {
     await browser.close();
-  });
-
-  it('手机关注卡片按文字和标签定高，空标签区不占行', { timeout: 60_000 }, async () => {
-    const opened = await openLongFollow(browser);
-    try {
-      await opened.page.setViewportSize({ width: 390, height: 844 });
-      for (const density of ['roomy', 'dense']) {
-        await opened.page.evaluate(value => { document.body.dataset.density = value }, density);
-        const cards = await opened.page.locator(FOLLOW_CARDS).evaluateAll(nodes => nodes.slice(0, 3).map(node => {
-          const meta = node.querySelector('[data-media-meta]')!;
-          const children = [...meta.children].filter(child => getComputedStyle(child).display !== 'none')
-            .map(child => child.getBoundingClientRect());
-          const content = Math.max(...children.map(child => child.bottom)) - Math.min(...children.map(child => child.top));
-          return { height: meta.getBoundingClientRect().height, content };
-        }));
-        for (const card of cards) assert.ok(card.height <= card.content + 17, JSON.stringify({ density, ...card }));
-      }
-      assert.deepEqual((await layout(opened.page)).offenders, []);
-    } finally { await opened.close() }
   });
 
   for (const [where, open, selector] of [
@@ -237,7 +178,6 @@ describe('视口外的卡片', () => {
     ['馆藏', openLongCatalog, CATALOG_CARDS, MEDIA],
     ['馆藏密集一档', (b: Browser) => openLongCatalog(b, 'dense'), CATALOG_CARDS, MEDIA],
     ['女优资料页', openLongEntity, ENTITY_CARDS, MEDIA],
-    ['关注', openLongFollow, FOLLOW_CARDS, FOLLOW],
   ] as const) {
     it(`${where}：长距离往返之后整页高度和深处那张卡的位置不跳，屏外量到的几何与渲染后一致`, { timeout: 90_000 }, async () => {
       const opened = await open(browser);
@@ -285,12 +225,10 @@ describe('视口外的卡片', () => {
     });
   }
 
-  /* 关注卡的头像和标签是 `<span>`，不可聚焦，焦点环那一半只在作品卡上查。 */
-  for (const [where, open, selector, shape, focusable] of [
-    ['馆藏', openLongCatalog, CATALOG_CARDS, MEDIA, true],
-    ['馆藏密集一档', (b: Browser) => openLongCatalog(b, 'dense'), CATALOG_CARDS, MEDIA, true],
-    ['女优资料页', openLongEntity, ENTITY_CARDS, MEDIA, true],
-    ['关注', openLongFollow, FOLLOW_CARDS, FOLLOW, false],
+  for (const [where, open, selector, shape] of [
+    ['馆藏', openLongCatalog, CATALOG_CARDS, MEDIA],
+    ['馆藏密集一档', (b: Browser) => openLongCatalog(b, 'dense'), CATALOG_CARDS, MEDIA],
+    ['女优资料页', openLongEntity, ENTITY_CARDS, MEDIA],
   ] as const) {
     it(`${where}：元信息区垫出的裁切余量不改排版、不接指针，头像和标签的焦点环整圈可见`, { timeout: 60_000 }, async () => {
       const opened = await open(browser);
@@ -388,7 +326,7 @@ describe('视口外的卡片', () => {
           }
           return { focused: element.matches(':focus-visible'), ring, least, clips };
         }, shape.card);
-        for (const target of focusable ? [shape.avatarButton, shape.tagButton] : []) {
+        for (const target of [shape.avatarButton, shape.tagButton]) {
           await page.keyboard.press('Tab');
           await page.locator(`${selector} ${target}`).first().focus();
           const edge = await room(target);

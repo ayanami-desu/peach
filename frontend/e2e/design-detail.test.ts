@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Browser, Page } from 'playwright-core';
-import { DETAIL, openFollowFeed } from './follow-fixture.ts';
 import { settle, visit, VIEWPORTS, type Viewport, type Visit } from './harness.ts';
 import { muteVideos, openImmerse, pickClips, pinQueue, settledClip } from './immerse-fixture.ts';
 import { ITEM, openItemPage } from './item-fixture.ts';
@@ -11,119 +10,6 @@ import { DESKTOP, MOBILE, tokenColor, installDesignBrowser } from './design-fixt
 describe('设计决定：关注详情、作品详情、播放器与侧栏', () => {
   let browser: Browser;
   installDesignBrowser((next) => { browser = next; });
-
-  it('关注详情翻页圆钮固定两侧 11px；桌面 48px、手机 44px，导航条位于画面下方', { timeout: 90_000 }, async () => {
-    const read = (page: Page) => page.evaluate(() => {
-      const frame = document.querySelector<HTMLElement>('#stage [data-follow-detail-media="image"]')!;
-      const next = frame.querySelector('[data-follow-image-arrow="next"]')!, style = getComputedStyle(next);
-      const outer = frame.getBoundingClientRect(), box = next.getBoundingClientRect();
-      const indicator = frame.querySelector('[data-media-indicator]')!.getBoundingClientRect();
-      return {
-        size: [box.width, box.height], background: style.backgroundColor, blur: style.backdropFilter,
-        inset: outer.right - box.right, indicatorBottom: outer.bottom - indicator.bottom,
-        framed: frame.hasAttribute('data-framed'),
-        ratio: getComputedStyle(frame.querySelector('[data-follow-detail-poster]')!).aspectRatio,
-      };
-    });
-    const settlePoster = async (page: Page) => {
-      await page.waitForFunction(() => {
-        const image = document.querySelector<HTMLImageElement>('#stage [data-follow-detail-poster]');
-        return image?.complete && image.naturalWidth > 0;
-      });
-      // 图像解码与布局就绪后读取几何。
-      await page.evaluate(() => new Promise<void>(resolve => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }));
-    };
-    const wide = await openFollowFeed(browser, `/posts/${DETAIL.gallery}`, DESKTOP,
-      { ready: '#stage [data-follow-image-arrow="next"]' });
-    try {
-      await settlePoster(wide.page);
-      const shown = await read(wide.page);
-      assert.deepEqual(shown.size, [48, 48]);
-      assert.equal(shown.background, 'rgba(0, 0, 0, 0.6)');
-      assert.equal(shown.blur, 'blur(16px)');
-      assert.ok(Math.abs(shown.inset - 11) <= 1, `箭头内距：${JSON.stringify(shown)}`);
-      assert.ok(Math.abs(shown.indicatorBottom - 8) <= .5, `导航条底部留白 ${shown.indicatorBottom}px`);
-      // 画框比例跟整组图走：换图时详情不忽高忽低。
-      assert.equal(shown.framed, true);
-      assert.match(shown.ratio, /^0\.75\b/);
-      assert.deepEqual(wide.problems, []);
-    } finally {
-      await wide.close();
-    }
-    const narrow = await openFollowFeed(browser, `/posts/${DETAIL.gallery}`, MOBILE,
-      { ready: '#stage [data-follow-image-arrow="next"]' });
-    try {
-      await settlePoster(narrow.page);
-      const shown = await read(narrow.page);
-      assert.deepEqual(shown.size, [44, 44]);
-      assert.ok(Math.abs(shown.inset - 11) <= 1, `窄屏箭头内距：${JSON.stringify(shown)}`);
-      assert.ok(Math.abs(shown.indicatorBottom - 8) <= .5, `窄屏导航条底部留白 ${shown.indicatorBottom}px`);
-      assert.deepEqual(narrow.problems, []);
-    } finally {
-      await narrow.close();
-    }
-  });
-
-  it('关注详情：无预览媒体占 16:9；标签保留来源分类并复用详情标签外观', { timeout: 60_000 }, async () => {
-    const opened = await openFollowFeed(browser, `/posts/${DETAIL.bare}`, DESKTOP,
-      { ready: '#stage [data-follow-detail-tags]' });
-    try {
-      const page = opened.page;
-      const shown = await page.evaluate(() => ({
-        placeholder: getComputedStyle(document.querySelector('#stage [data-follow-detail-placeholder]')!).aspectRatio,
-        tags: Object.fromEntries([...document.querySelectorAll<HTMLElement>('#stage [data-follow-detail-tags] [data-follow-tag]')].map((tag) =>
-          [tag.dataset.followTag, getComputedStyle(tag).getPropertyValue('--tag-color').trim()])),
-      }));
-      assert.equal(shown.placeholder, '16 / 9');
-      const chip = await page.locator('#stage [data-detail-tag]').first().evaluate(node => {
-        const style = getComputedStyle(node), probe = document.createElement('span');
-        probe.style.backgroundColor = 'color-mix(in srgb,var(--tag-color) 10%,var(--surface))'; node.append(probe);
-        const expected = getComputedStyle(probe).backgroundColor; probe.remove();
-        return { fill: style.backgroundColor, expected, height: node.getBoundingClientRect().height };
-      });
-      assert.equal(chip.fill, chip.expected);
-      assert.ok(chip.height >= 20 && chip.height <= 32);
-      const muted = await tokenColor(page, '#stage [data-follow-detail]', '--muted');
-      const unknown = await page.evaluate(() => {
-        const tag = document.querySelector<HTMLElement>('#stage [data-follow-detail-tags] [data-follow-tag="odd"]')!;
-        const probe = document.createElement('div');
-        probe.style.backgroundColor = 'var(--tag-color)';
-        tag.append(probe);
-        const value = getComputedStyle(probe).backgroundColor;
-        probe.remove();
-        return value;
-      });
-      assert.deepEqual({ ...shown.tags, odd: unknown }, {
-        ow: '#d675d6', tracer: '#68c76f', kou: '#e36c6c', solo: '#55a7ff', animated: '#f5a24a', odd: muted,
-      });
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  it('关注详情标题：来源外链标与标题第一行同心，标题折行时仍贴第一行', { timeout: 60_000 }, async () => {
-    const opened = await openFollowFeed(browser, `/posts/${DETAIL.gallery}`, DESKTOP,
-      { ready: '#stage [data-follow-origin]' });
-    try {
-      const page = opened.page;
-      const measure = () => page.evaluate(() => {
-        const name = document.querySelector('#stage [data-follow-detail-name]')!;
-        const mark = document.querySelector('#stage [data-follow-origin] svg')!.getBoundingClientRect();
-        return { line: name.getBoundingClientRect().top + parseFloat(getComputedStyle(name).lineHeight) / 2,
-          mark: (mark.top + mark.bottom) / 2 };
-      });
-      const single = await measure();
-      assert.ok(Math.abs(single.mark - single.line) <= 0.5, `外链标与标题第一行不同心：${JSON.stringify(single)}`);
-      await page.evaluate(() => { document.querySelector('#stage [data-follow-detail-name]')!.textContent = '很长的标题'.repeat(12) });
-      const wrapped = await measure();
-      assert.ok(Math.abs(wrapped.mark - wrapped.line) <= 0.5, `标题折行后外链标离开了第一行：${JSON.stringify(wrapped)}`);
-    } finally {
-      await opened.close();
-    }
-  });
 
   /* 作品详情（`item-detail` 岛）。桩数据见 `item-fixture.ts`：普通那一条评了 3 星、两位出演、
      一个厂牌一个系列，都带实体 id。桩里的片源没有正片，播放器那一条 VIDEOJS 错误不算。 */

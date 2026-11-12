@@ -120,64 +120,6 @@ describe('任务页云下载布局', () => {
       assert.deepEqual(opened.problems, []);
     } finally { await opened.close() }
   });
-  for (const viewport of VIEWPORTS) it(`${viewport.name} 追更问题展示来源原因和管理入口`, async () => {
-    const opened = await visit(browser, '/tasks', viewport, async page => {
-      await page.route('**/api/tasks*', route => route.fulfill({ json: {
-        available: true, running: [], skipped: [], finished: [{ id: 4038, task_key: 'follow-check',
-          task_label: '追更检查', trigger: 'scheduled', status: 'succeeded',
-          finished_at: '2026-10-20T00:00:00Z', result_summary: { source_failed: 51,
-            issues: Array.from({ length: 51 }, (_, index) => ({ source: 12 + index, label: `示例作者 ${index + 1}`,
-              provider: '示例站点', kind: '检查失败', error: 'HTTP 403：站点拒绝访问' })) },
-          error: '', parent_run_id: null, followup_key: '',
-        }],
-      } }));
-    });
-    try {
-      const card = opened.page.locator('[data-run-id="4038"]');
-      await card.getByText('发现问题', { exact: true }).waitFor();
-      const disclosure = card.locator('summary').filter({ hasText: '问题详情 · 51 项' });
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false');
-      assert.equal(await card.locator('[data-task-issues]').isVisible(), false);
-      // 问题详情与技术详情同为卡片底部的一行：同一层级、同一左边，问题详情在前。
-      const rows = await card.locator('details').evaluateAll((nodes) => nodes.map((node) => ({
-        footer: node.parentElement!.parentElement === node.closest('li'), left: Math.round(node.getBoundingClientRect().left),
-        issues: Boolean(node.querySelector('[data-task-issues]')) })));
-      assert.equal(rows.length, 2);
-      assert.deepEqual(rows.map((row) => [row.footer, row.issues]), [[true, true], [true, false]]);
-      assert.equal(rows[0].left, rows[1].left);
-      await disclosure.click();
-      const errors = card.getByRole('region', { name: '任务问题详情' });
-      await errors.waitFor();
-      const geometry = await errors.evaluate((node) => ({ height: node.getBoundingClientRect().height,
-        scrollable: node.scrollHeight > node.clientHeight, overlay: node.getAttribute('data-overlay-scrollbar') }));
-      assert.ok(geometry.height > 0 && geometry.height <= 320, JSON.stringify(geometry));
-      assert.equal(geometry.scrollable, true);
-      assert.equal(geometry.overlay, 'true');
-      await card.locator('summary').filter({ hasText: '技术详情' }).click();
-      const background = await card.locator('[data-code-block]').first().evaluate((node) => getComputedStyle(node).backgroundColor);
-      assert.equal(await errors.evaluate((node) => getComputedStyle(node.parentElement!).backgroundColor), background);
-      assert.match(await card.locator('[data-task-issues]').innerText(), /示例作者.*示例站点.*检查失败/s);
-      assert.match(await card.locator('[data-task-issues]').innerText(), /HTTP 403：站点拒绝访问/);
-      // 分层：名字是中等字重，来源与类别次级色，原因比名字小一档且用次级色。
-      const layers = await card.locator('[data-task-issues] > li').first().evaluate((item) => {
-        const name = item.firstElementChild!, meta = name.querySelector('span')!, reason = item.querySelector('[data-error-excerpt]')!;
-        const style = (node: Element) => getComputedStyle(node);
-        return { name: style(name).fontWeight, metaColor: style(meta).color, nameColor: style(name).color,
-          reasonColor: style(reason).color, smaller: parseFloat(style(reason).fontSize) < parseFloat(style(name).fontSize) };
-      });
-      assert.equal(layers.name, '500');
-      assert.equal(layers.smaller, true);
-      assert.notEqual(layers.metaColor, layers.nameColor);
-      assert.equal(layers.reasonColor, layers.metaColor);
-      const link = card.getByRole('link', { name: '查看关注来源', exact: true });
-      assert.equal(await link.getAttribute('href'), '/subscriptions');
-      await link.click();
-      await opened.page.waitForURL('**/subscriptions');
-      await opened.page.locator('[data-empty-state]').filter({ hasText: '还没有关注来源' }).waitFor();
-      await settle(opened.page);
-      assert.deepEqual(opened.problems, []);
-    } finally { await opened.close() }
-  });
   for (const viewport of VIEWPORTS) it(`${viewport.name} 检查结果和技术代码块完整可读`, async () => {
     const result = { checked: 1218, total: 1218, gone_count: 5, unclear_count: 54,
       diagnostic: 'technical-detail-'.repeat(80) };

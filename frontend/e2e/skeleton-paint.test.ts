@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { Browser } from 'playwright-core';
 import { launch, layout, requiredEnv, VIEWPORTS } from './harness.ts';
 
-const routes = ['/', '/?browse=folders', '/jav', '/jav?tab=discover', '/jav?tab=wants', '/follow', '/performers', '/creators', '/studios', '/agencies', '/series', '/tags',
+const routes = ['/', '/?browse=folders', '/jav', '/jav?tab=discover', '/jav?tab=wants', '/performers', '/creators', '/studios', '/agencies', '/series', '/tags',
   '/performers/演示艺人', '/creators/演示创作者', '/studios/演示厂牌', '/series/演示系列', '/agencies/演示事务所', '/tags/演示标签',
   '/stats', '/data-cleanup', '/tasks', '/duplicates', '/quality-goals', '/playlists', '/review', '/sources',
   '/settings/drives', '/settings/access', '/settings/token', '/settings/devices', '/settings/speed', '/settings/diagnostics',

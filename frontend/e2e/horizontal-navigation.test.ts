@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { Browser, Locator } from 'playwright-core';
 import { launch, settle, visit, VIEWPORTS } from './harness.ts';
-import { openFollowFeed } from './follow-fixture.ts';
 
 const MOBILE = VIEWPORTS.find(viewport => viewport.mobile)!;
 
@@ -94,11 +93,4 @@ describe('横向导航提示', () => {
     } finally { await opened.close() }
   });
 
-  it('关注图片视图的下排操作支持横滚和边缘提示', { timeout: 60_000 }, async () => {
-    const opened = await openFollowFeed(browser, '/follow?media=images', MOBILE);
-    try {
-      await scrollPositions(opened.page.locator('[data-follow-filter-glass] > [data-filter-row="bottom"]'));
-      assert.deepEqual(opened.problems, []);
-    } finally { await opened.close() }
-  });
 });

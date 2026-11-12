@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { Browser } from 'playwright-core';
-import { openFollowManage } from './design-fixture.ts';
 import { launch, settle, visit, VIEWPORTS } from './harness.ts';
 import { mockJavDetail } from './jav-detail-fixture.ts';
 
@@ -36,38 +35,6 @@ describe('已设计动效的实际触发', () => {
         assert.equal(await button.evaluate((node, original) => node.querySelector('svg') === original, icon), true);
         assert.deepEqual(opened.problems, []);
       } finally { release(); await opened.close() }
-    });
-
-    it(`${viewport.name}：排序立即改变方向且两枚箭头原位交接`, async () => {
-      const opened = await openFollowManage(browser, viewport);
-      try {
-        const { page } = opened;
-        await page.emulateMedia({ reducedMotion: 'no-preference' });
-        const button = page.getByRole('button', { name: /^按.+排序$/ });
-        const icon = button.locator('[data-icon-swap]');
-        assert.equal(await icon.count(), 1);
-        const handle = await icon.elementHandle();
-        const initial = await button.getAttribute('data-icon-state');
-        const label = await button.getAttribute('aria-label');
-        await button.click();
-        assert.notEqual(await button.getAttribute('aria-label'), label);
-        assert.notEqual(await button.getAttribute('data-icon-state'), initial);
-        const state = await icon.evaluate((node, original) => ({ stable: node === original,
-          duration: getComputedStyle(node.querySelector('[data-icon]')!).transitionDuration }), handle);
-        assert.equal(state.stable, true); assert.notEqual(state.duration, '0s');
-        await button.click(); await button.click();
-        await page.waitForFunction(marker => {
-          if (!marker) return false;
-          const opacity = [...marker.querySelectorAll('[data-icon]')].map(node => getComputedStyle(node).opacity);
-          return opacity.filter(value => value === '1').length === 1
-            && opacity.every(value => value === '0' || value === '1')
-            && marker.getAnimations({ subtree: true }).length === 0;
-        }, handle, { timeout: 5000 });
-        assert.equal(await icon.locator('[data-icon]').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node).opacity === '1').length), 1);
-        await page.emulateMedia({ reducedMotion: 'reduce' });
-        assert.equal(await icon.locator('[data-icon]').first().evaluate(node => getComputedStyle(node).transitionDuration), '0s');
-        assert.deepEqual(opened.problems, []);
-      } finally { await opened.close() }
     });
 
     it(`${viewport.name}：JAV 详情标题与元信息实际播放揭示并清理`, async () => {

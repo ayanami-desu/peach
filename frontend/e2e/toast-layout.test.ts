@@ -19,7 +19,7 @@ const cases = [
 
 for (const viewport of [...VIEWPORTS, { name: 'narrow', width: 320, height: 844, mobile: true }]) {
   it(`${viewport.name} 的短回执、长内容与操作按钮都留在视口内`, { timeout: 60_000 }, async () => {
-    const opened = await visit(browser, '/follow', viewport);
+    const opened = await visit(browser, '/', viewport);
     try {
       await opened.page.locator('#toasts').waitFor({ state: 'attached' });
       await mkdir(resolve('../build/toast-preview'), { recursive: true });

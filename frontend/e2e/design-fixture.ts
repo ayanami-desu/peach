@@ -406,68 +406,6 @@ export const FAILED_JOB = {
   })),
 };
 
-/** 一条关注来源。字段以 `_source_payload`（`src/peach/web_follow.py`）为准。 */
-export const followSource = (id: number, author: string, provider: string, label: string, status = 'ok') => ({
-  id, provider: provider.toLowerCase(), provider_label: provider, ref: `ref/${id}`, label,
-  url: `https://example.com/${id}`, enabled: true, last_status: status,
-  last_checked_at: '2026-09-01T00:00:00Z', created_at: '2026-08-01T00:00:00Z',
-  author_key: `name:${author}`, author_name: author,
-});
-
-/** 一个站的凭据状态。字段以 `/api/follow/credentials` 为准。 */
-export const followCredential = (provider: string, requirement: string, present: boolean, missing: string[]) => ({
-  provider: provider.toLowerCase(), provider_label: provider, followable: true, requirement,
-  needs: missing, fields: present ? ['cookie'] : [], missing, present,
-});
-
-/** 关注管理页按一份造好的来源与凭据打开：演示库没有关注来源，也凑不齐四种凭据处境。
- *  站标同 `openScraping`：造出来的来源取不到图标，给一张能加载完的图。 */
-export async function openFollowManage(browser: Browser, viewport = DESKTOP, data: FollowManageData = {}): Promise<Visit> {
-  const opened = await visit(browser, '/subscriptions', viewport);
-  await stubFollowManage(opened.page, data);
-  await opened.page.reload({ waitUntil: 'load' });
-  await opened.page.locator('section[aria-label="kou 的关注来源"]').waitFor({ timeout: 15_000 });
-  await settle(opened.page);
-  return opened;
-}
-
-/** 换掉计数、在三条来源之后再加几条：量极端内容时用。 */
-interface FollowManageData {
-  counts?: Record<string, number>;
-  extra?: Record<string, unknown>[];
-}
-
-export async function stubFollowManage(page: Page, { counts, extra = [] }: FollowManageData = {}): Promise<void> {
-  const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-  await page.route('**/api/follow?summary=1', (route) => route.fulfill(json({
-    sources: [
-      followSource(1, 'kou', 'Kemono', 'kou · Kemono'),
-      followSource(2, 'kou', 'Pawchive', 'kou · Pawchive'),
-      followSource(3, 'mira', 'Kemono', 'mira · Kemono', 'error'),
-      ...extra,
-    ],
-    counts: counts || { new: 0, seen: 0, saved: 0, ignored: 0 },
-    author_aliases: [{ canonical_key: 'kou', canonical_name: 'kou', aliases: [{ key: 'kou_art', name: 'kou_art' }] }],
-    alias_suggestions: [],
-    suggestions: [],
-  })));
-  await page.route('**/api/follow/credentials', (route) => route.fulfill(json({
-    root: 'C:\\peach\\creds',
-    providers: [
-      followCredential('Fanbox', 'required', false, ['FANBOXSESSID']),
-      followCredential('Patreon', 'optional', true, []),
-      followCredential('OnlyFans', 'blocked', false, []),
-      followCredential('Kemono', 'none', false, []),
-    ],
-  })));
-  await page.route('**/source-icon**', (route) => route.fulfill({
-    status: 200, contentType: 'image/png', body: Buffer.from(PIXEL, 'base64'),
-  }));
-  /* 服务端的定时检查可能正在跑，那一趟会让每颗检查键挂着 aria-busy，settle 等不到头。 */
-  await page.route('**/api/follow/check', (route) => (route.request().method() === 'GET'
-    ? route.fulfill(json({ status: 'idle' })) : route.fallback()));
-}
-
 /** 把 `/api/` 请求挂住，直到调用返回的 `release()`：首屏骨架停在屏幕上，量完再放行。
  *  先注册的桩照常生效：放行走 `fallback()`，交给它们或真实服务端。 */
 export async function holdApi(page: Page): Promise<() => void> {

@@ -1,12 +1,11 @@
 /* 设计决定：作品卡、管理页与复核。读 `getComputedStyle` 断言用户定过的外观；共用的桩与浏览器生命周期在 `design-fixture.ts`。 */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { Browser, Locator, Page } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
 import { expectBody, settle, visit } from './harness.ts';
 import {
   DESKTOP, MOBILE, tokenColor, openReview, REVIEW_ROW, lightness, WIDE, JUNK_COUNT, openJunk, junkItem, openJunkWith,
-  openCatalog, openCatalogFixture, openFollowManage, stubFollowManage, holdApi, controlFaces, disabledTokens,
-  waitingActionFaces, assertDisabledFace, installDesignBrowser, PIXEL,
+  openCatalog, openCatalogFixture, holdApi, installDesignBrowser, PIXEL,
 } from './design-fixture.ts';
 
 /** 每个视口从未阅读的进度开始；账本跨设备持久化由 API 回归验证。 */
@@ -1264,121 +1263,4 @@ describe('设计决定：作品卡、管理页与复核', () => {
     }
   });
 
-  it('关注列表工具行里的主动作、版式开关、排序框和方向键同高', { timeout: 60_000 }, async () => {
-    const opened = await openFollowManage(browser);
-    try {
-      const page = opened.page;
-      const controls = {
-        检查全部: page.locator('button[aria-label="检查全部"]'),
-        // 两枚图标键拼成一组，对齐的是整组的外框，不是组里单个键。
-        版式开关: page.locator('[aria-label="关注列表版式"]'),
-        排序框: page.locator('button[aria-label="关注列表排序"]'),
-        方向键: page.locator('button[aria-label^="按检查时间"]'),
-      };
-      const heights: Record<string, number> = {};
-      for (const [name, control] of Object.entries(controls)) {
-        heights[name] = (await control.boundingBox())!.height;
-      }
-      assert.equal(new Set(Object.values(heights)).size, 1, `同一排控件高度不一：${JSON.stringify(heights)}`);
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  for (const viewport of [DESKTOP, MOBILE]) {
-    it(`关注列表骨架的偏好控件和接管后同一副长相，等数据的操作键是禁用态（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      /* 骨架与真页面各量一遍。版式、排序和方向是这台浏览器的偏好，骨架里就是最终那一档；
-         检查全部、全部收起和行尾的移除键要等名单，骨架里是禁用态，只有尺寸与接管后一致。
-         窄屏上工具行收成纯图标，两边按同一条线收，尺寸也要对得上。 */
-      const opened = await visit(browser, '/subscriptions', viewport);
-      try {
-        const page = opened.page;
-        await stubFollowManage(page);
-        const release = await holdApi(page);
-        await page.reload({ waitUntil: 'load' });
-        await page.locator('[data-skeleton="board/subscriptions"] .ui-follow-skeleton-toolbar').waitFor({ timeout: 15_000 });
-        const toolbar = '[data-skeleton] .ui-follow-skeleton-toolbar';
-        const skeleton = await controlFaces(page, {
-          检查全部: `${toolbar} [data-follow-toolbar-actions] > button:nth-of-type(1)`,
-          默认视图: `${toolbar} [data-button-group] > button:first-child`,
-          表格视图: `${toolbar} [data-button-group] > button:last-child`,
-          排序框: `${toolbar} button[aria-haspopup="listbox"]`,
-          方向键: `${toolbar} [data-follow-toolbar-controls] > span:last-of-type > button:last-child`,
-          全部收起: `${toolbar} [data-follow-toolbar-controls] > button`,
-          移除来源: '[data-skeleton] .follow-skeleton-source [data-follow-source-controls] > span:last-child > button:last-child',
-        });
-        const expected = await disabledTokens(page);
-        const waiting = await waitingActionFaces(page, '[data-skeleton] [data-skeleton-action]');
-        assert.ok(waiting.length >= 3, '关注列表骨架里没有标出等数据的操作键');
-        for (const face of waiting) assertDisabledFace(face, expected);
-        release();
-        await page.locator('section[aria-label="kou 的关注来源"]').waitFor({ timeout: 15_000 });
-        await settle(page);
-        const final = await controlFaces(page, {
-          检查全部: 'button[aria-label="检查全部"]',
-          默认视图: '[aria-label="关注列表版式"] > button:first-child',
-          表格视图: '[aria-label="关注列表版式"] > button:last-child',
-          排序框: 'button[aria-label="关注列表排序"]',
-          方向键: 'button[aria-label^="按检查时间"]',
-          全部收起: 'button[aria-label="全部收起"]',
-          移除来源: '[data-source-divider] [data-follow-source-controls] > span:last-child > button:last-child',
-        });
-        const waitsForData = new Set(['检查全部', '全部收起', '移除来源']);
-        for (const name of Object.keys(final)) {
-          assert.ok(final[name], `接管后找不到 ${name}`);
-          if (waitsForData.has(name)) {
-            assert.equal(skeleton[name]!.size, final[name]!.size, `${name} 接管时尺寸跳了`);
-            continue;
-          }
-          assert.deepEqual(skeleton[name], final[name], `${name} 在骨架里和接管后长得不一样`);
-        }
-        assert.equal(final['默认视图']!.pressed, 'true', '默认版式下选中的不是网格那颗');
-      } finally {
-        await opened.close();
-      }
-    });
-  }
-
-  /* 整行都能点选之后，指着哪一行得看得出来。卡片视图的来源行和表格行走同一条规则；选中行
-     有自己的底色，指着它时不换。 */
-  it('关注列表指着哪一行哪一行换底色，两种视图都是，选中行的底色不被 hover 盖掉', { timeout: 60_000 }, async () => {
-    const opened = await openFollowManage(browser);
-    try {
-      const page = opened.page;
-      const background = (locator: Locator) => locator.evaluate((element) => {
-        for (const animation of element.getAnimations()) animation.finish();
-        return getComputedStyle(element).backgroundColor;
-      });
-      /* 勾选框的 input 视觉隐藏在画出来的方框底下，点它要 force，和上面选中底色那条用例一样。 */
-      const select = () => page.getByRole('checkbox', { name: '选择 kou · Kemono' })
-        .check({ force: true, timeout: 5_000 });
-      const card = page.locator('[data-source-divider] > div').first();
-      const cardRested = await background(card);
-      await card.hover();
-      assert.notEqual(await background(card), cardRested, '指着卡片视图的来源行时底色没换');
-      await select();
-      const cardSelectedHovered = await background(card);
-      await page.mouse.move(0, 0);
-      const cardSelectedRested = await background(card);
-      assert.equal(cardSelectedHovered, cardSelectedRested, '卡片视图选中行指着时换了底色，盖掉了选中态');
-      assert.notEqual(cardSelectedRested, cardRested, '卡片视图选中行没有自己的底色');
-
-      await page.locator('button[aria-label="表格视图"]').click({ timeout: 5_000 });
-      const row = page.locator('[data-board-data-table] tbody tr').first();
-      await row.waitFor({ timeout: 15_000 });
-      await page.mouse.move(0, 0);
-      const selectedRested = await background(row);
-      await row.hover();
-      assert.equal(await background(row), selectedRested, '表格视图选中行指着时换了底色，盖掉了选中态');
-      await page.getByRole('checkbox', { name: '选择 kou · Kemono' }).uncheck({ force: true, timeout: 5_000 });
-      await page.mouse.move(0, 0);
-      const rested = await background(row);
-      assert.notEqual(selectedRested, rested, '表格视图选中行没有自己的底色');
-      await row.hover();
-      assert.notEqual(await background(row), rested, '指着表格行时底色没换');
-    } finally {
-      await opened.close();
-    }
-  });
 });

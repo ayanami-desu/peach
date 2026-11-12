@@ -3,7 +3,6 @@ import { after, before, describe, it } from 'node:test';
 import type { Browser } from 'playwright-core';
 import { launch, settle, visit, VIEWPORTS, requiredEnv } from './harness.ts';
 import { ITEM, openItemPage } from './item-fixture.ts';
-import { DETAIL, openFollowFeed } from './follow-fixture.ts';
 import { openPanel } from './settings-fixture.ts';
 import { JAV_DETAIL, mockJavDetail } from './jav-detail-fixture.ts';
 
@@ -12,50 +11,6 @@ describe('规范路由与设置历史', () => {
   before(async () => { browser = await launch() });
   after(async () => { await browser.close() });
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name} 关注添加页签与空状态站内链接保留当前文档`, { timeout: 60000 }, async () => {
-      const opened = await visit(browser, '/subscriptions', viewport, async page => {
-        await page.route('**/api/follow?summary=1', route => route.fulfill({ json: {
-          sources: [], counts: {}, author_aliases: [], alias_suggestions: [], suggestions: [],
-        } }));
-        await page.route('**/api/follow/credentials', route => route.fulfill({ json: { providers: [] } }));
-        await page.route('**/api/feeds', route => route.fulfill({ json: { sources: [], unread: 0 } }));
-        await page.route('**/api/stats', async route => {
-          const report = await (await route.fetch()).json();
-          await route.fulfill({ json: { ...report, by_loc: [] } });
-        });
-      });
-      const { page } = opened;
-      try {
-        const add = page.getByRole('button', { name: '添加关注', exact: true });
-        await add.waitFor();
-        const timeOrigin = await page.evaluate(() => performance.timeOrigin);
-        const documents: string[] = [];
-        page.on('request', request => { if (request.isNavigationRequest()) documents.push(request.url()) });
-        await page.evaluate(() => Object.assign(window, { followOverview: document.querySelector('[aria-label="关注概览"]') }));
-        await add.click();
-        await page.getByRole('textbox', { name: '来源链接、名字或 id', exact: true }).waitFor();
-        assert.equal(new URL(page.url()).searchParams.get('tab'), 'add');
-        assert.equal(await page.evaluate(() => (window as unknown as { followOverview: Element }).followOverview
-          === document.querySelector('[aria-label="关注概览"]')), true, '页签切换保留页面宿主');
-        await page.getByRole('tab', { name: '关注列表', exact: true }).click();
-        await add.waitFor();
-        if (viewport.mobile) await page.locator('#filterBtn').click();
-        await page.locator('[data-sidebar-nav] [data-nav="follow"]').click();
-        const followLink = page.getByRole('link', { name: '添加关注', exact: true });
-        await followLink.waitFor();
-        await followLink.click();
-        await page.getByRole('textbox', { name: '来源链接、名字或 id', exact: true }).waitFor();
-        await page.goBack();
-        await page.getByRole('link', { name: '添加关注', exact: true }).waitFor();
-        assert.equal(new URL(page.url()).pathname, '/follow');
-        await page.goForward();
-        await page.getByRole('textbox', { name: '来源链接、名字或 id', exact: true }).waitFor();
-        assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin);
-        assert.deepEqual(documents, [], '页签、站内链接与历史切换均不请求新文档');
-        assert.deepEqual(opened.problems, []);
-      } finally { await opened.close() }
-    });
-
     it(`${viewport.name} SPA 作品导航采用接口规范番号并保留历史上下文`, { timeout: 60000 }, async () => {
       const opened = await visit(browser, '/', viewport);
       const { page } = opened;
@@ -103,26 +58,6 @@ describe('规范路由与设置历史', () => {
         assert.equal(await title.innerText(), tag.k);
         assert.equal(new URL(page.url()).pathname, `/tags/${tag.entity_id}`);
         assert.deepEqual(opened.problems, []);
-      } finally { await opened.close() }
-    });
-    it(`${viewport.name} 保存的来源记录使用关注条目的规范地址`, { timeout: 60000 }, async () => {
-      const opened = await openFollowFeed(browser, '/follow', viewport);
-      const { page } = opened;
-      try {
-        await page.route(url => url.pathname === '/api/item', route => route.fulfill({ json: {
-          id: 70010, location: 'online', medium: 'video', follow_item_id: DETAIL.media,
-        } }));
-        const depth = await page.evaluate(() => history.length);
-        await page.evaluate(async () => {
-          const entry = '/dist/peach-app.js';
-          (await import(entry)).peachHistory.push('/assets/70010');
-        });
-        await page.waitForURL(`**/posts/${DETAIL.media}`);
-        await page.locator('#stage [data-follow-detail]').waitFor();
-        assert.equal(await page.evaluate(() => history.length), depth + 1);
-        await page.goBack();
-        await page.waitForURL(url => url.pathname === '/follow');
-        await page.locator('[data-follow-list] > [data-follow-item]').first().waitFor();
       } finally { await opened.close() }
     });
     it(`${viewport.name} 设置分区返回同一份列表`, { timeout: 60000 }, async () => {

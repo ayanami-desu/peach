@@ -136,31 +136,5 @@ describe('链接检查身份与断链动效', () => {
       } finally { await opened.close() }
     });
 
-    it(`关注列表空状态有背景边框且添加入口位于框内（${viewport.name}）`, async () => {
-      const opened = await visit(browser, '/subscriptions', viewport, async page => {
-        await page.route('**/api/follow?summary=1', route => route.fulfill({ json: { sources: [] } }));
-      });
-      try {
-        const { page } = opened;
-        const empty = page.locator('[data-empty-state]').filter({ hasText: '还没有关注来源' });
-        await empty.waitFor();
-        const face = await empty.evaluate(node => {
-          const style = getComputedStyle(node);
-          return { background: style.backgroundColor, border: style.borderTopWidth,
-            action: node.querySelector('button')?.textContent };
-        });
-        assert.notEqual(face.background, 'rgba(0, 0, 0, 0)');
-        assert.equal(face.border, '1px'); assert.equal(face.action, '添加关注');
-        await settle(page);
-        const geometry = await layout(page);
-        assert.ok(geometry.scrollWidth <= geometry.viewportWidth);
-        assert.deepEqual(geometry.offenders, []); assert.deepEqual(opened.problems, []);
-        const timeOrigin = await page.evaluate(() => performance.timeOrigin);
-        await empty.getByRole('button', { name: '添加关注', exact: true }).click();
-        await page.getByRole('textbox', { name: '来源链接、名字或 id', exact: true }).waitFor();
-        assert.equal(new URL(page.url()).searchParams.get('tab'), 'add');
-        assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin);
-      } finally { await opened.close(); }
-    });
   }
 });

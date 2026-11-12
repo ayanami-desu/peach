@@ -1,4 +1,4 @@
-/* 图片灯箱在真浏览器里走一遍：真 Swiper、真键鼠，从资料页照片墙和关注详情两处打开。
+/* 图片灯箱在真浏览器里走一遍：真 Swiper、真键鼠，从资料页照片墙打开。
  *
  * 取图口全部由这里回桩图，`/photo` 原图会读来源，用例绝不碰真的。大图是 4000×3000 的 SVG：
  * 缩放条的百分比相对原图像素，图得真有尺寸，「适应窗口」和 1:1 才分得开。关灯箱走关闭键或
@@ -19,8 +19,8 @@ const svg = (width: number, height: number) => ({
 });
 
 async function stubImages(page: Page): Promise<void> {
-  await page.route(/\/(?:photo|sample-image|follow-stream)\?/, (route) => route.fulfill(svg(ORIGINAL.width, ORIGINAL.height)));
-  await page.route(/\/(?:photo-thumb|sample-thumb)\?|\/follow-thumb-stub\//, (route) => route.fulfill(svg(160, 120)));
+  await page.route(/\/(?:photo|sample-image)\?/, (route) => route.fulfill(svg(ORIGINAL.width, ORIGINAL.height)));
+  await page.route(/\/(?:photo-thumb|sample-thumb)\?/, (route) => route.fulfill(svg(160, 120)));
 }
 
 /** 资料页照片档：一部作品两张样张加 `locals` 张本地图（默认三张，墙上五格）。 */
@@ -44,36 +44,6 @@ async function openWall(browser: Browser, viewport = DESKTOP, locals = 3): Promi
   await stubImages(page);
   await page.goto(new URL(`/performers/${encodeURIComponent(NAME)}?media=photos`, page.url()).href, { waitUntil: 'load' });
   await page.locator('[data-photo-cell] img').first().waitFor({ timeout: 15_000 });
-  await settle(page);
-  return opened;
-}
-
-/** 关注详情：一条三张图的帖子，详情大图点开就是这一组。 */
-async function openFollowItem(browser: Browser): Promise<Visit> {
-  const opened = await visit(browser, '/', DESKTOP);
-  const { page } = opened;
-  await stubImages(page);
-  await page.route('**/follow-qualities**', (route) => route.fulfill({ json: {} }));
-  await page.route('**/source-icon**', (route) => route.fulfill(svg(16, 16)));
-  await page.route('**/api/follow/credentials', (route) => route.fulfill({ json: { providers: [] } }));
-  await page.route('**/api/follow/check', (route) => (route.request().method() === 'GET'
-    ? route.fulfill({ json: { status: 'idle' } }) : route.fallback()));
-  const media = [0, 1, 2].map((index) => ({ index, media_kind: 'image', name: `帖子图 ${index + 1}.png`,
-    size: 123_456, thumb_url: `/follow-thumb-stub/${index}`, width: ORIGINAL.width, height: ORIGINAL.height }));
-  const item = { id: 501, provider: 'fanbox', provider_label: 'pixivFANBOX', resource_provider: 'fanbox', source_id: 1,
-    source_label: '演示 · pixivFANBOX', external_id: '501', title: '演示图集', author: null, summary: null,
-    url: 'https://example.com/501', thumb_url: '/follow-thumb-stub/0', published_at: '2026-09-16T00:20:00Z',
-    published_precision: 'exact', version: null, duration: null, variant_kind: null, variant_label: null, status: 'new',
-    asset_id: null, media_needs_credential: false, media_error: null, has_media: true, media_kind: 'image',
-    width: ORIGINAL.width, height: ORIGINAL.height, playable: true, media_type: 'image/svg+xml', media_items: media,
-    hidden_media: [], resource_urls: [], tags: [], detail_tags: [], tag_types: {} };
-  await page.route((url) => url.pathname === '/api/follow', (route) => route.fulfill({ json: {
-    groups: [{ release_key: 'r501', primary: item, variants: [], duplicates: [], providers: ['fanbox'], has_wip: false,
-      is_release: false, newest_at: item.published_at, stack: null }],
-    sources: [], counts: { new: 1, seen: 0, saved: 0, ignored: 0 }, facets: { authors: [], providers: ['fanbox'] },
-    has_more: false } }));
-  await page.goto(new URL('/posts/501', page.url()).href, { waitUntil: 'load' });
-  await page.locator('[data-follow-detail-poster]').waitFor({ timeout: 15_000 });
   await settle(page);
   return opened;
 }
@@ -209,32 +179,6 @@ describe('图片灯箱', () => {
       await page.mouse.click(DESKTOP.width / 2, 10);
       await box.waitFor({ state: 'detached' });
       assert.equal(await page.locator('[data-photo-main]').count(), 0);
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  it('关注详情的大图打开同一个灯箱：整组三张，在线图写来源与分辨率，没有定位键', { timeout: 60_000 }, async () => {
-    const opened = await openFollowItem(browser);
-    const { page } = opened;
-    try {
-      await page.locator('[data-follow-detail-poster]').click();
-      const box = lightbox(page);
-      await box.waitFor();
-      assert.equal((await box.locator('[data-photo-count]').innerText()).trim(), '1 / 3');
-      assert.equal(await box.locator('[data-photo-main] .swiper-slide-active img').getAttribute('src'),
-        '/follow-stream?id=501&media=0');
-      await labelled(box, '图片详情').click();
-      const panel = box.locator('[data-photo-detail]');
-      await panel.waitFor({ state: 'visible' });
-      assert.equal((await panel.locator('h2').innerText()).trim(), '帖子图 1.png');
-      const meta = await panel.locator('[data-photo-detail-meta]').innerText();
-      assert.match(meta, /^pixivFANBOX · 4000 × 3000 · 121\sKB$/u);
-      assert.doesNotMatch(meta, /第/, '第几张只看底栏的页码，面板不另编一个号');
-      assert.equal(await panel.locator('[data-photo-reveal]').isVisible(), false, '在线图不该有定位键');
-      await labelled(box, '关闭').click();
-      await box.waitFor({ state: 'detached' });
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();
