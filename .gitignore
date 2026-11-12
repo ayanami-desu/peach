@@ -1,6 +1,7 @@
 .venv*/
 node_modules/
 .npm/
+.DS_Store
 .uv-cache/
 __pycache__/
 *.py[cod]
