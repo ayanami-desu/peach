@@ -91,12 +91,11 @@ def w_performer_delete(contract, body):
         return rows
     try:
         with bind(contract.task_runs, handle.run_id):
-            # 清单先核一次再动文件；网盘上的隔离在写事务外做，事务里再核一次清单才删行，
-            # 这期间清单变了就整批放弃、文件放回原处。
+            # 清单先核一次再动文件；网盘文件在写事务外逐个删，事务里再核一次清单才删行。
+            # 这期间清单变了就整批放弃：已删掉的文件所对应的行留着，下次扫描会标成已消失。
             with contract.read_connection() as connection:
                 rows = reviewed(connection)
-            outcome = _purge_outside_lock(
-                contract, rows, verify=lambda connection: (connection.execute('BEGIN IMMEDIATE'), reviewed(connection)))
+            outcome = _purge_outside_lock(contract, rows, verify=reviewed)
             contract.cache_bust()
             result = _purge_receipt(contract, outcome, entity_ids=ids)
     except Cancelled:

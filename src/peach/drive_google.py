@@ -207,6 +207,11 @@ class GoogleDrive:
         response = self._request_with_body("PATCH", f"/files/{remote_id}", params, body)
         return _entry(response.json(), parent_id)
 
+    def delete(self, remote_id: str) -> None:
+        """`PATCH /files/{id}` 带 `trashed: true`，把文件移进回收站而不是直接销毁。"""
+        self._request_with_body("PATCH", f"/files/{remote_id}", {"fields": "id"},
+                                {"trashed": True})
+
     def _request_with_body(self, method: str, path: str, params: dict, body: dict) -> httpx.Response:
         token, _ = self.accounts.token(self.key)
         response = self._client().request(

@@ -216,6 +216,10 @@ class OneDrive:
         response = self._request("PATCH", _item(remote_id), body=body)
         return _entry(response.json(), parent_id)
 
+    def delete(self, remote_id: str) -> None:
+        """`DELETE` 把项目放进网盘回收站，个人版与商业版一致；成功回 204。"""
+        self._request("DELETE", _item(remote_id))
+
     def changes(self, cursor: str | None) -> tuple[Sequence[Change], str]:
         """增量变更。游标为 None 时从根开始，返回的 `deltaLink` 就是下一轮的游标。"""
         if cursor is None:

@@ -25,7 +25,7 @@ from contextvars import ContextVar
 from collections import OrderedDict
 from collections.abc import Mapping
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from .catalog_rules import normalise_code_key
 from .config import (
@@ -45,6 +45,9 @@ from .jobs import BackgroundJob
 from .previews import ENTITY_IMAGE_KINDS, LOGO_VARIANTS, entity_image_key, logo_key
 from .repository import LedgerDatabase, writing_in_background
 from .task_runs import TaskRunStore
+
+if TYPE_CHECKING:
+    from .drive_connections import DriveConnections
 
 LOGGER = logging.getLogger(__name__)
 
@@ -126,7 +129,8 @@ class WebContract:
                  state_root: Path | None = None,
                  entry_links_root: Path | None = None,
                  tools_root: Path | None = None,
-                 database: LedgerDatabase | None = None):
+                 database: LedgerDatabase | None = None,
+                 drives: DriveConnections | None = None):
         # 候选 CSV 的目录做成实例属性而不是模块常量，复核层才能在临时目录里被测试。
         self.candidate_root = Path(candidate_root) if candidate_root is not None else GENERATED_DIR
         self.cover_root = Path(cover_root) if cover_root is not None else COVER_DIR
@@ -162,6 +166,8 @@ class WebContract:
         self.tools_root = Path(tools_root) if tools_root is not None else TOOLS_DIR
         self.database = database or LedgerDatabase(db_path)
         self.db_path = self.database.db_path
+        #: 永久删除要删网盘上的文件；只读端与单元测试没有驱动，远端阶段按「未接入」拒绝。
+        self.drives = drives
         self.snapshot_root = Path(snapshot_root) if snapshot_root is not None else None
         #: 键 → (算出时刻, 输入版本, 结果)，见 `cached()`。
         self.cache: OrderedDict[str, tuple[float, object, object]] = OrderedDict()

@@ -111,10 +111,7 @@ export function PerformerDeleteCard({ toast }: { toast(message: string): void })
     }
   };
 
-  const failures = result ? [
-    ...result.blocked, ...result.cleanup_pending,
-    ...result.cache_blocked.map(item => ({ path: item.name, reason: item.reason })),
-  ] : [];
+  const failures = result ? [...result.blocked] : [];
   return <section id="batch-delete" className="flex min-w-0 scroll-mt-20 flex-col gap-3" aria-label={t('cleanup:tools.bulkDelete')}>
     {query.isPending || query.isError ? <Fieldset layout="stack" labelledBy="batch-delete-title">
       <FieldsetTitle id="batch-delete-title">{t('cleanup:tools.bulkDelete')}</FieldsetTitle>
@@ -134,7 +131,7 @@ export function PerformerDeleteCard({ toast }: { toast(message: string): void })
         {failures.slice(0, 5).map((item, index) => <p key={index}>{item.path}（{item.reason}）</p>)}
       </div> : null}>
       {failures.length
-        ? t('cleanup:performerDelete.partialFailure', { count: result.blocked.length, quarantined: result.cleanup_pending.length, cacheFiles: result.cache_blocked.length })
+        ? t('cleanup:performerDelete.partialFailure', { count: result.blocked.length })
         : t('cleanup:performerDelete.done')}
     </Note> : null}
   </section>;

@@ -227,6 +227,9 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     """测试直接建 app 时也走这条路径：不传设置就用默认设置。"""
     settings = settings or PeachSettings()
     database = LedgerDatabase(settings.db_path)
+    http_transport = HttpxTransport()
+    # 网盘连接、取流与媒体装配：资产不再落到本地，播放要么 302 要么由这里转发 Range。
+    drive = DriveConnections(settings, lambda: http_transport.client)
     contract = web_contract.WebContract(
         settings.db_path, settings.snapshot_root,
         candidate_root=settings.candidate_root,
@@ -239,14 +242,10 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         state_root=settings.state_root,
         entry_links_root=settings.entry_links_root,
         database=database,
+        drives=drive,
     )
     repository = LedgerRepository(database)
     resolver = FFmpegResolver(settings.ffmpeg_root)
-    http_transport = HttpxTransport()
-    # 网盘连接、取流与媒体装配：资产不再落到本地，播放要么 302 要么由这里转发 Range。
-    drive = DriveConnections(settings, lambda: http_transport.client)
-    # 整理那一片按来源问「接没接上」，走的是契约而不是请求对象。
-    contract.drive = drive
     # 取流按需问一句当前驱动：来源与扫描起点一起问，同来源多个账号才不会串。
     streamer = build_streamer(drive.provider_for, lambda: http_transport.client)
     media_engine = MediaEngine(repository, streamer, cache_root=settings.photo_root.parent / "media-cache")

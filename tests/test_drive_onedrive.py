@@ -145,6 +145,11 @@ class OneDriveTests(unittest.TestCase):
         self.assertEqual(DELTA, cursor)
         self.assertEqual(DELTA, str(self.seen[1].url))
 
+    def test_delete_moves_the_item_to_the_recycle_bin(self):
+        self.drive(lambda request: httpx.Response(204)).delete("f1")
+        self.assertEqual([("DELETE", "/v1.0/me/drive/items/f1")],
+                         [(request.method, request.url.path) for request in self.seen])
+
     def test_status_codes_map_to_drive_errors(self):
         cases = ((401, DriveAuthRequired), (403, DriveForbidden), (404, DriveNotFound),
                  (429, DriveUnavailable), (503, DriveUnavailable))

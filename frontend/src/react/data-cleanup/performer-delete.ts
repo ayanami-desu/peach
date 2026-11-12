@@ -23,8 +23,6 @@ export interface PerformerDeletePlan {
 export interface PerformerDeleteResult {
   purged: number;
   blocked: { id: number; path: string; reason: string }[];
-  cleanup_pending: { path: string; reason: string }[];
-  cache_blocked: { name: string; reason: string }[];
 }
 
 export const fetchDeletePerformers = (signal: AbortSignal) =>

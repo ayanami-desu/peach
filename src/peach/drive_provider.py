@@ -135,5 +135,8 @@ class DriveProvider(Protocol):
     def move(self, remote_id: str, parent_id: str, name: str | None = None) -> DriveEntry:
         """移动到 `parent_id` 下，`name` 为 None 时保留原名。"""
 
+    def delete(self, remote_id: str) -> None:
+        """把文件移到网盘自己的回收站；文件已经不在时抛 `DriveNotFound`。"""
+
     def changes(self, cursor: str | None) -> tuple[Sequence[Change], str]:
         """增量变更与新的游标。`cursor` 为 None 时取「从现在起」的起点。"""

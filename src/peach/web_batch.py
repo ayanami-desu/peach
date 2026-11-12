@@ -3,8 +3,10 @@
 `junk` 提供各流程共用的证据规则；本模块将评分转成页面数据，并执行用户的批量决定。
 自动判定只把资产送进回收站，永久删除需要独立的确认与取证流程。
 
-媒体只在网盘上，删除只动账本行：不核对本机文件是否存在，也不删任何文件。物理删除要清的
-引用表只写在 `personal_records.ASSET_REFERENCE_TABLES` 一处。
+媒体只在网盘上，永久删除先把网盘上的文件移进该盘的回收站，再删账本行。移不成的行留在库里并进
+`blocked`：文件还在，下次扫描会用新编号把它插回来，而它身上的标签与观看记录接不上。
+旧来源与本机文件没有远端 id，只删账本行。物理删除要清的引用表只写在
+`personal_records.ASSET_REFERENCE_TABLES` 一处。
 """
 from __future__ import annotations
 
@@ -16,10 +18,12 @@ from pathlib import Path, PureWindowsPath
 
 from . import junk
 from .catalog_rules import duration_clusters, is_jav_code, normalise_code_key
+from .drive_provider import DriveError, DriveNotFound
 from .field_owners import USER_MANUAL, write_owned_fields
 from .media_sources import SCANNABLE_LOCATIONS
 from .personal_records import ASSET_REFERENCE_TABLES, VANISHED
 from .regions import normalize_region
+from .task_control import checkpoint
 from .task_runs import TaskRunHandle
 from .web_activity import DEFAULT_PROFILE_ID
 from .web_catalog import attach_card_performers
@@ -139,16 +143,77 @@ def _scored_junk(contract: WebContract) -> tuple[list[dict], frozenset[int]]:
     return out, dismissed
 
 
-def _purge_outside_lock(contract: WebContract, rows, *, eligible=None, verify=None) -> dict:
-    """行在事务外读好，开写事务复核后删账本行。
+def _live_rows(connection, rows, eligible):
+    """把事务外读出的行与现在比对：行还在、路径没变、仍满足调用方的删除条件。
 
-    `verify(connection)` 在同一事务里先跑，用来核对调用方的前提（删除清单的口令）；抛错就整批
-    放弃。返回尚未 `_finish_purge` 的回执。
+    远端阶段与删账本行都用这一份判据：被还原出回收站、换了路径或已被别处删掉的行不动文件，
+    也不删行，统一进 `blocked`。
     """
+    current = {}
+    if rows:
+        marks = ",".join("?" * len(rows))
+        current = {row["id"]: row for row in connection.execute(
+            f"SELECT id,path,disposal FROM asset WHERE id IN ({marks})",
+            [row["id"] for row in rows])}
+    kept, returned = [], []
+    for row in rows:
+        live = current.get(row["id"])
+        if live is not None and live["path"] == row["path"] and (eligible is None or eligible(live)):
+            kept.append(row)
+        else:
+            returned.append(row)
+    return kept, returned
+
+
+def _delete_remote(contract: WebContract, rows) -> tuple[list, list[dict]]:
+    """把清单上仍在网盘里的文件移进回收站，返回可删账本行的行与没移成的行。
+
+    没有 `remote_id` 的行（旧来源、本机文件）和已消失的行只删账本行。远端说文件本来就不在
+    （`DriveNotFound`）也算删掉了：上一次可能删了文件却没删成行。其余失败进 `blocked`，
+    账本行留着——文件还在，下次扫描会把它当新资产插回来，标签与观看记录接不上。
+    """
+    kept, blocked = [], []
+    for row in rows:
+        remote_id = row["remote_id"]
+        if not remote_id or row["disposal"] == VANISHED:
+            kept.append(row)
+            continue
+        checkpoint()
+        try:
+            if contract.drives is None:
+                raise DriveError("网盘连接未接入")
+            contract.drives.provider_for(row["location"], row["drive_root"] or "").delete(remote_id)
+        except DriveNotFound:
+            kept.append(row)
+        except DriveError as error:
+            blocked.append({"id": row["id"], "path": row["path"],
+                            "reason": f"网盘文件没能移进回收站：{error}"})
+        else:
+            kept.append(row)
+    return kept, blocked
+
+
+def _purge_outside_lock(contract: WebContract, rows, *, eligible=None, verify=None) -> dict:
+    """先把网盘文件移进回收站，再开写事务复核后删账本行。
+
+    远端往返不进写事务：几十个文件的网络时间不占着 SQLite 的写锁。动文件之前先看一遍账本：
+    `verify(connection)` 核对调用方的前提（删除清单的口令），`_live_rows` 丢掉这期间被还原、
+    换了路径或已不满足删除条件的行——它们连文件都不动。进写事务后再核一次才删行。返回尚未
+    `_finish_purge` 的回执。
+    """
+    with contract.read_connection() as connection:
+        if verify is not None:
+            verify(connection)
+        rows, stale = _live_rows(connection, rows, eligible)
+    kept, blocked = _delete_remote(contract, rows)
+    blocked = [{"id": row["id"], "path": row["path"], "reason": "删除期间这一条已经变了"}
+               for row in stale] + blocked
     with contract.write_transaction() as connection:
         if verify is not None:
             verify(connection)
-        return purge_assets(connection, rows, eligible=eligible)
+        outcome = purge_assets(connection, kept, eligible=eligible)
+    outcome["blocked"] = blocked + outcome["blocked"]
+    return outcome
 
 
 def _own_data_root(contract, root) -> bool:
@@ -189,29 +254,17 @@ def _finish_purge(outcome, contract=None):
     return outcome
 
 
-def purge_assets(connection, rows, *, missing_only: bool = False, eligible=None) -> dict:
+def purge_assets(connection, rows, *, eligible=None) -> dict:
     """在写事务里删这些账本行；先逐行复核。
 
-    媒体只在网盘上，删除只动账本行：不核对本机文件是否存在，也不删任何文件。孤儿记录那边
-    的 `missing_only` 到这里是同一种口径——两种调用都只删账本行。
+    这里只删账本行：网盘文件由 `_purge_outside_lock` 在开写事务之前删掉。已消失的行没有
+    远端 id，远端阶段直接跳过。
 
     行是调用方在事务外读出来的，这段时间里行可能被改：还原出回收站、换了路径、已被别处删掉。
     `eligible(row)` 是调用方的删除条件（`row` 带 `id,path,disposal`），路径必须和读出来时一致。
     复核不过的行不删，进 `blocked`。返回 `purged`、`blocked` 与删掉的 id。
     """
-    current = {}
-    if rows:
-        marks = ",".join("?" * len(rows))
-        current = {row["id"]: row for row in connection.execute(
-            f"SELECT id,path,disposal FROM asset WHERE id IN ({marks})",
-            [row["id"] for row in rows])}
-    kept, returned = [], []
-    for row in rows:
-        live = current.get(row["id"])
-        if live is not None and live["path"] == row["path"] and (eligible is None or eligible(live)):
-            kept.append(row)
-        else:
-            returned.append(row)
+    kept, returned = _live_rows(connection, rows, eligible)
     purged = [row["id"] for row in kept]
     if purged:
         marks = ",".join("?" * len(purged))
@@ -243,7 +296,7 @@ def w_empty_trash(contract: WebContract):
     contract.cache_bust()
     with contract.read_connection() as connection:
         rows = connection.execute(
-            "SELECT id,location,path FROM asset WHERE disposal='trash'",
+            "SELECT id,location,path,disposal,remote_id,drive_root FROM asset WHERE disposal='trash'",
         ).fetchall()
     # 这期间被还原出回收站的，事务里复核时留下。
     outcome = _purge_outside_lock(contract, rows, eligible=lambda row: row["disposal"] == "trash")
@@ -422,7 +475,8 @@ def _batch_purge(contract: WebContract, ids: list[int]):
     marks = ",".join("?" * len(ids))
     with contract.read_connection() as connection:
         found = connection.execute(
-            f"SELECT id,path,disposal,disposal_reason,location FROM asset WHERE id IN ({marks})", ids,
+            f"SELECT id,path,disposal,disposal_reason,location,remote_id,drive_root "
+            f"FROM asset WHERE id IN ({marks})", ids,
         ).fetchall()
     valid_ids = [row["id"] for row in found]
     if not valid_ids:

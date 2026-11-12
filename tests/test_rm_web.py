@@ -1630,7 +1630,7 @@ class WebDataTests(unittest.TestCase):
         result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
 
         self.assertEqual((result["purged"], result["blocked"]), (1, []))
-        self.assertTrue(path.is_file(), "媒体在网盘上，删除只动账本行")
+        self.assertTrue(path.is_file(), "没有远端 id 的行只删账本行，本机文件不碰")
         self.assertIsNone(self.row(1), "数据库行也要一起消失")
         con = sqlite3.connect(self.db_path)
         for table in rm_web.ASSET_REFERENCE_TABLES:
@@ -1693,7 +1693,7 @@ class WebDataTests(unittest.TestCase):
         self.assertEqual(result["purged"], 1)
         self.assertIsNone(self.row(1))
         self.assertIsNotNone(self.row(2), "不在回收站的资产一个都不能碰")
-        self.assertTrue(binned.is_file() and kept.is_file(), "清空回收站不删网盘上的媒体")
+        self.assertTrue(binned.is_file() and kept.is_file(), "没有远端 id 的行只删账本行")
 
     def test_empty_trash_spares_rows_restored_meanwhile(self):
         """读出行之后、删之前被还原出回收站的，事务里复核时留下并进 `blocked`。"""
@@ -1715,6 +1715,30 @@ class WebDataTests(unittest.TestCase):
         self.assertIsNone(self.row(1))
         self.assertIsNone(self.row(2)["disposal"], "复核没过的行留在库里")
         self.assertTrue(restored.is_file())
+
+    def test_a_restored_row_keeps_its_drive_file(self):
+        """还原发生在删文件之前：远端阶段也要先看账本，不能把刚放回在库的作品删掉。"""
+        self.stage_media(2, "restored.mp4")
+        rm_web.w_feedback(self.contract, {"id": 2, "kind": "dispose"})
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            connection.execute(
+                "UPDATE asset SET location='gdrive',remote_id='D2',drive_root='ROOT' WHERE id=2")
+            connection.commit()
+        drive = mock.Mock()
+        drive.provider_for.return_value = drive
+        self.contract.drives = drive
+        purge = web_batch._purge_outside_lock
+
+        def restore_first(contract, rows, **kwargs):
+            rm_web.w_batch(self.contract, {"ids": [2], "operation": "restore"})
+            return purge(contract, rows, **kwargs)
+
+        with mock.patch.object(web_batch, "_purge_outside_lock", side_effect=restore_first):
+            result = rm_web.w_empty_trash(self.contract)
+
+        self.assertEqual([item["id"] for item in result["blocked"]], [2])
+        self.assertIsNotNone(self.row(2), "还原出回收站的行不该被删掉")
+        drive.delete.assert_not_called()
 
     def test_empty_trash_withdraws_candidates_and_decisions_pinned_to_purged_assets(self):
         # #486：删掉的资产留下的候选与决定，之后同一路径重新登记拿到新编号时就悬空了。

@@ -2,7 +2,7 @@
 
 列表列出全部 `disposal='vanished'` 的行、它们在六张表里各有几条记录与行上的评分和次数，
 人从里面挑一条彻底删除。彻底删除不在这里：页面走 `/api/batch` 的 `delete`，那一支对已消失的行
-只删账本行（`purge_assets(missing_only=True)`）。
+只删账本行（`purge_assets`）。
 """
 from __future__ import annotations
 

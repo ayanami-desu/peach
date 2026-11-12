@@ -5,9 +5,27 @@ from pathlib import Path
 from unittest import mock
 
 from support.ledger import fresh_ledger
+from peach.drive_provider import DriveNotFound, DriveUnavailable
 from peach.web_performer_delete import q_performer_delete_candidates, q_performer_delete_plan, w_performer_delete
 from peach.web_state import WebContract
 from peach import task_control
+
+
+class FakeDrive:
+    """永久删除只用得到两个入口：按扫描根取驱动、删一个文件。"""
+
+    def __init__(self, failures=None):
+        self.failures = dict(failures or {})
+        self.deleted = []
+
+    def provider_for(self, location, drive_root):
+        return self
+
+    def delete(self, remote_id):
+        self.deleted.append(remote_id)
+        error = self.failures.pop(remote_id, None)
+        if error is not None:
+            raise error
 
 
 class PerformerDeleteTests(unittest.TestCase):
@@ -31,6 +49,11 @@ class PerformerDeleteTests(unittest.TestCase):
             c.execute("INSERT INTO asset_entity(asset_id,entity_id,role,source) VALUES(?,?,'performer','user:manual')",
                       (asset_id, entity_id))
         return path
+
+    def on_drive(self, asset_id, remote_id):
+        with self.contract.write_transaction() as c:
+            c.execute("UPDATE asset SET location='gdrive',remote_id=?,drive_root='ROOT' WHERE id=?",
+                      (remote_id, asset_id))
 
     def plan(self, ids='1'):
         return q_performer_delete_plan(self.contract, {'ids': ids})
@@ -84,7 +107,7 @@ class PerformerDeleteTests(unittest.TestCase):
         result = self.delete(self.plan())
         self.assertEqual(result['purged'], 201)
         self.assertEqual(result['blocked'], [])
-        self.assertTrue((self.root / '1.mp4').is_file(), "删除只动账本行，网盘上的媒体不碰")
+        self.assertTrue((self.root / '1.mp4').is_file(), "没有远端 id 的行只删账本行，本机文件不碰")
         self.assertTrue(photo.exists())
         self.assertTrue(other.exists())
         with self.contract.read_connection() as c:
@@ -100,6 +123,40 @@ class PerformerDeleteTests(unittest.TestCase):
             self.delete(self.plan())
         self.assertTrue(path.exists())
         self.assertEqual(self.plan()['total'], 1)
+
+    def test_drive_files_go_first_and_the_rows_after(self):
+        drive = FakeDrive()
+        self.contract.drives = drive
+        self.add(1)
+        self.on_drive(1, 'R1')
+        result = self.delete(self.plan())
+        self.assertEqual(drive.deleted, ['R1'])
+        self.assertEqual((result['purged'], result['blocked']), (1, []))
+        with self.contract.read_connection() as c:
+            self.assertIsNone(c.execute('SELECT id FROM asset WHERE id=1').fetchone())
+
+    def test_file_already_gone_on_the_drive_lets_the_row_go(self):
+        self.contract.drives = FakeDrive({'R1': DriveNotFound('gone')})
+        self.add(1)
+        self.on_drive(1, 'R1')
+        self.assertEqual(self.delete(self.plan())['purged'], 1)
+
+    def test_drive_failure_keeps_the_row_and_reports_the_error(self):
+        self.contract.drives = FakeDrive({'R1': DriveUnavailable('503 busy')})
+        self.add(1)
+        self.on_drive(1, 'R1')
+        result = self.delete(self.plan())
+        self.assertEqual(result['purged'], 0)
+        self.assertEqual([item['reason'] for item in result['blocked']], ['网盘文件没能移进回收站：503 busy'])
+        with self.contract.read_connection() as c:
+            self.assertIsNotNone(c.execute('SELECT id FROM asset WHERE id=1').fetchone())
+
+    def test_remote_row_without_a_drive_stays_in_the_ledger(self):
+        self.add(1)
+        self.on_drive(1, 'R1')
+        result = self.delete(self.plan())
+        self.assertEqual(result['purged'], 0)
+        self.assertIn('未接入', result['blocked'][0]['reason'])
 
     def test_wrong_kind_invalid_id_and_missing_plan_are_rejected(self):
         for value in ('', '0', '-1', '1 OR 1=1', True, '3'):

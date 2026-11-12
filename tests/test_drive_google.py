@@ -140,6 +140,18 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(entry.parent_id, "NEW")
         self.assertEqual(entry.name, "renamed.mp4")
 
+    def test_delete_moves_the_file_to_the_recycle_bin(self):
+        drive = self.drive(lambda request: httpx.Response(200, json={"id": "V1"}))
+        drive.delete("V1")
+        request = self.requests[-1]
+        self.assertEqual(("PATCH", "/drive/v3/files/V1"), (request.method, request.url.path))
+        self.assertEqual({"trashed": True}, json.loads(request.content))
+
+    def test_delete_of_a_file_already_gone_is_not_found(self):
+        drive = self.drive(lambda request: httpx.Response(404, json={"error": {}}))
+        with self.assertRaises(DriveNotFound):
+            drive.delete("V1")
+
     def test_status_codes_map_to_drive_errors(self):
         drive = self.drive(lambda request: httpx.Response(404, json={"error": {}}))
         with self.assertRaises(DriveNotFound):
