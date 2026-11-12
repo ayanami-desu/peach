@@ -120,7 +120,8 @@ describe('设计决定：人物与厂牌资料页', () => {
         assert.ok(kinds.includes('performer'), '选了一类没有按这一类去拉满');
         assert.equal(await menu.getByRole('tab', { name: /^女优/ }).getAttribute('aria-selected'), 'true');
 
-        // 人名那一行点开的是资料页，不是按名字再搜一遍。
+        // 人名那一行点开的是资料页，不是按名字再搜一遍。键盘事件挂在输入框上，点过页签后要把焦点还回去。
+        await page.locator('#q').focus();
         await page.keyboard.press('ArrowDown');
         await page.keyboard.press('Enter');
         await page.waitForURL('**/performers/90301');
@@ -708,7 +709,7 @@ describe('设计决定：人物与厂牌资料页', () => {
     }
   });
 
-  it('卡片悬停面不顶到邻卡，三处卡片网格同一副列距', { timeout: 60_000 }, async () => {
+  it('卡片悬停面不顶到邻卡，两处卡片网格同一副列距', { timeout: 60_000 }, async () => {
     const opened = await openCatalog(browser);
     try {
       const card = opened.page.locator('#grid [data-media-grid] > [data-media-card]').first();
@@ -718,7 +719,7 @@ describe('设计决定：人物与厂牌资料页', () => {
         const neighbor = [...element.parentElement!.children].find((other) => other !== element
           && Math.abs(other.getBoundingClientRect().top - box.top) < 1)!;
         const spread = Number(/0px 0px 0px (\d+(?:\.\d+)?)px/.exec(getComputedStyle(element).boxShadow)?.[1]);
-        // 壳画的骨架网格和关注页岛的视频列表不在首页这叠卡里：各挂一个同形的空壳读列距。
+        // 壳画的骨架网格不在首页这叠卡里：挂一个同形的空壳读列距。
         const columnGap = (build: (probe: HTMLElement) => HTMLElement) => {
           const probe = document.createElement('div');
           const host = build(probe);
@@ -731,20 +732,12 @@ describe('设计决定：人物与厂牌资料页', () => {
           spread, clearance: neighbor.getBoundingClientRect().left - (box.right + spread),
           home: parseFloat(getComputedStyle(element.parentElement!).columnGap),
           skeleton: columnGap((probe) => { probe.className = 'grid'; return probe }),
-          follow: columnGap((probe) => {
-            const island = document.createElement('div');
-            island.className = 'peach-react';
-            probe.setAttribute('data-follow-list', '');
-            island.append(probe);
-            return island;
-          }),
         };
       });
       assert.ok(geometry.spread > 0, '卡片悬停面没有往盒外铺');
       assert.ok(geometry.clearance >= geometry.spread,
         `悬停面离邻卡只剩 ${geometry.clearance}px，比它自己往外铺的 ${geometry.spread}px 还窄`);
       assert.equal(geometry.skeleton, geometry.home, '壳画的骨架网格的列距和首页不一样，真卡换上来时整排挪位');
-      assert.equal(geometry.follow, geometry.home, '关注页视频列表的列距和首页不一样');
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();

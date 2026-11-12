@@ -7,7 +7,7 @@ import type { Browser, Page, Request } from 'playwright-core';
 import { settle, visit, VIEWPORTS, type Viewport, type Visit } from './harness.ts';
 
 export const PANEL = '#settingsPanel';
-export const ORDER = ['', 'follow', 'jav', 'performers', 'tags', 'studios', 'flagged', 'manage'];
+export const ORDER = ['', 'jav', 'performers', 'tags', 'studios', 'flagged', 'manage'];
 const DESKTOP = VIEWPORTS.find((viewport) => !viewport.mobile)!;
 
 export interface Server {

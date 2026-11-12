@@ -360,24 +360,23 @@ export async function openCatalogFixture(
   { completeFirstPage = false }: { completeFirstPage?: boolean } = {},
 ): Promise<Visit> {
   const opened = await visit(browser, '/', DESKTOP);
-  const baselines = new Map<string, CatalogFixture>();
+  let baseline: CatalogFixture | undefined;
   await opened.page.route(/\/api\/items\?/, async (route) => {
     const url = new URL(route.request().url());
     /* `visit()` 返回时，首屏还可能在后台续取下一页。路由接管之后若先撞上 offset>0，
        那份响应本来就可能没有卡片，不能拿它当首屏基线；让旧请求原样完成，reload 后
-       再以 offset=0 的响应建立夹具。 */
-    if (url.searchParams.get('offset') !== '0') {
+       再以 offset=0 的响应建立夹具。
+       同一页还挂着一条竖屏货架（带 `orient`），演示库没有竖屏作品，那份响应本来就是空的，
+       没有可改的卡片；原样放过，不把空响应交给 `change`。 */
+    if (url.searchParams.get('offset') !== '0' || url.searchParams.has('orient')) {
       await route.continue();
       return;
     }
-    const key = url.searchParams.get('orient') || '';
-    let baseline = baselines.get(key);
     if (!baseline) {
       const fixtureUrl = new URL(url);
-      if (completeFirstPage && !fixtureUrl.searchParams.has('orient')) fixtureUrl.searchParams.set('limit', '60');
+      if (completeFirstPage) fixtureUrl.searchParams.set('limit', '60');
       const response = await route.fetch({ url: fixtureUrl.href });
       baseline = await response.json() as CatalogFixture;
-      baselines.set(key, baseline);
     }
     const payload = structuredClone(baseline);
     change(payload, url);
