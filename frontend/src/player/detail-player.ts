@@ -82,16 +82,28 @@ export async function mountDetailPlayer(
   try { videojs = await ensureVideojs() } catch {
     video.controls = true;
     if (options.guidePreview) return null;
-    detailStreamSource(item).then((next) => {
-      video.addEventListener('loadedmetadata', () => {
-        if (resume && resume.time > 0) video.currentTime = Math.min(resume.time, realDuration(video.duration) || resume.time);
-      }, { once: true });
-      video.src = next.src; if (autoplay) video.play().catch(() => {});
-    }).catch(() => {});
+    video.preload = 'none';
+    let fallbackStarted = false;
+    const startFallback = () => {
+      if (fallbackStarted) return;
+      fallbackStarted = true;
+      detailStreamSource(item).then((next) => {
+        video.addEventListener('loadedmetadata', () => {
+          if (resume && resume.time > 0) video.currentTime = Math.min(resume.time, realDuration(video.duration) || resume.time);
+        }, { once: true });
+        video.src = next.src;
+        void video.play().catch(() => {});
+      }).catch(() => { fallbackStarted = false });
+    };
+    if (autoplay) startFallback();
+    else {
+      video.addEventListener('click', startFallback);
+      video.addEventListener('play', startFallback);
+    }
     return null;
   }
   const player = videojs(video, {
-    controls: true, preload: 'metadata', language: 'zh-CN', responsive: true,
+    controls: true, preload: autoplay ? 'metadata' : 'none', language: 'zh-CN', responsive: true,
     /* 海报与作品当前封面偏好一致，交给原生视频显示。 */
     poster: options.poster || detailPosterUrl(item, host.settings().javImage),
     controlBar: {
@@ -224,18 +236,54 @@ export async function mountDetailPlayer(
     session.ready = true;
     if (session.chrome?.statsButton) session.chrome.statsButton.hidden = false;
   });
-  if (!options.guidePreview) detailStreamSource(item).then((next) => {
-    if (!live()) return;
-    segmentedSource = String(next.type || '').includes('mpegurl');
-    if (resume && resume.time > 0) player.one('loadedmetadata', () => {
-      if (player.isDisposed()) return;
-      const duration = realDuration(player.el().querySelector('video')?.duration) || realDuration(player.duration());
-      player.currentTime(Math.min(resume.time, duration || resume.time));
-    });
-    player.src(next);
-    enforceDuration(); setTimeout(enforceDuration, 0); setTimeout(enforceDuration, 250);
-    if (autoplay) player.play()?.catch(() => {});
-  }).catch(() => {});
+  let sourceStarted = false, sourceStarting = false;
+  const startSource = () => {
+    if (sourceStarted || sourceStarting || !live()) return;
+    sourceStarting = true;
+    detailStreamSource(item).then((next) => {
+      sourceStarting = false;
+      if (!live()) return;
+      sourceStarted = true;
+      segmentedSource = String(next.type || '').includes('mpegurl');
+      if (resume && resume.time > 0) player.one('loadedmetadata', () => {
+        if (player.isDisposed()) return;
+        const duration = realDuration(player.el().querySelector('video')?.duration) || realDuration(player.duration());
+        player.currentTime(Math.min(resume.time, duration || resume.time));
+      });
+      player.src(next);
+      enforceDuration(); setTimeout(enforceDuration, 0); setTimeout(enforceDuration, 250);
+      player.play()?.catch(() => {});
+    }).catch(() => { sourceStarting = false });
+  };
+  if (!options.guidePreview) {
+    if (autoplay) startSource();
+    else {
+      /* 不自动播时不碰片源：连 `/api/stream-plan` 也不发。首次播放意图来自播放按钮、点画面
+       * 或键盘；捕获阶段拦住它们，等片源挂好后再真正播放。 */
+      const root = player.el();
+      const onClick = (event: Event) => {
+        if (sourceStarted || sourceStarting) return;
+        const target = event.target as Element | null;
+        if (!target?.closest('.vjs-play-control, .vjs-big-play-button, video, .vjs-tech, .vjs-poster')) return;
+        event.preventDefault(); event.stopPropagation();
+        startSource();
+      };
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (sourceStarted || sourceStarting || (event.key !== ' ' && event.key !== 'Enter')) return;
+        const target = event.target as Element | null;
+        if (!target?.closest('.vjs-play-control, .vjs-big-play-button, video, .vjs-tech')) return;
+        event.preventDefault(); event.stopPropagation();
+        startSource();
+      };
+      root.addEventListener('click', onClick, true);
+      root.addEventListener('keydown', onKeyDown, true);
+      player.on('dispose', () => {
+        root.removeEventListener('click', onClick, true);
+        root.removeEventListener('keydown', onKeyDown, true);
+      });
+      player.on('play', startSource);
+    }
+  }
   return player;
 }
 

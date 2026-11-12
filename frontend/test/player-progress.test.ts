@@ -7,6 +7,7 @@ import type { VjsPlayer } from '../src/player/types';
 import { mountDetailPlayer } from '../src/player/detail-player';
 import { configurePlayer } from '../src/player/host';
 import { setDetailPlayer } from '../src/player/registry';
+import * as stream from '../src/player/stream';
 import * as videojsLoader from '../src/player/videojs';
 
 const item = { id: 12, duration: 300, leave_ratio: .4 };
@@ -17,7 +18,7 @@ beforeEach(() => { localStorage.clear(); video = document.createElement('video')
 afterEach(() => { stopPlaybackPosition(video); stopTelemetry(video); vi.useRealTimers(); vi.unstubAllGlobals() });
 
 describe('视频续播位置', () => {
-  it('深链带进来的时刻先于本地记录，挂上播放器就定位过去', async () => {
+  it('不自动播时先不取片源，点播放才定位过去', async () => {
     configurePlayer({ settings: () => ({ ambientMode: false, theaterMode: false, seekSeconds: 10,
       miniplayer: true, detailAutoplay: false, javImage: 'cover' }), saveSettings: () => {}, toast: () => {},
       loadSourceStatus: async () => ({}), offlineReason: () => '', stage: () => null });
@@ -26,8 +27,9 @@ describe('视频续播位置', () => {
     Object.defineProperty(video, 'duration', { value: 108 });
     let time = 0, duration = 108, disposed = false;
     const listeners = new Map<string, (() => void)[]>();
+    const play = vi.fn(() => Promise.resolve());
     const player = {
-      el: () => root, isDisposed: () => disposed, ready: () => {}, off: () => {},
+      el: () => root, isDisposed: () => disposed, ready: () => {}, off: () => {}, play,
       on: (events: string | string[], callback: () => void) => {
         for (const event of [events].flat()) listeners.set(event, [...listeners.get(event) || [], callback]);
       },
@@ -37,11 +39,48 @@ describe('视频续播位置', () => {
       src: () => listeners.get('loadedmetadata')?.forEach((callback) => callback()),
     } as unknown as VjsPlayer;
     vi.spyOn(videojsLoader, 'ensureVideojs').mockResolvedValue(() => player);
+    const source = vi.spyOn(stream, 'detailStreamSource').mockResolvedValue({ src: '/test.mp4', type: 'video/mp4' });
     try {
       await mountDetailPlayer({ id: 12, duration: 30 }, video, false,
         { resume: { time: 97, autoplay: false } });
+      expect(source).not.toHaveBeenCalled();
+      expect(play).not.toHaveBeenCalled();
+      video.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await vi.waitFor(() => expect(time).toBe(97));
-    } finally { disposed = true; setDetailPlayer(null) }
+      expect(source).toHaveBeenCalledTimes(1);
+      expect(play).toHaveBeenCalled();
+    } finally { source.mockRestore(); disposed = true; setDetailPlayer(null) }
+  });
+
+  it('自动播放仍会立即取源并播放', async () => {
+    configurePlayer({ settings: () => ({ ambientMode: false, theaterMode: false, seekSeconds: 10,
+      miniplayer: true, detailAutoplay: true, javImage: 'cover' }), saveSettings: () => {}, toast: () => {},
+      loadSourceStatus: async () => ({}), offlineReason: () => '', stage: () => null });
+    setDetailPlayer(null);
+    const root = document.createElement('div'); root.append(video);
+    Object.defineProperty(video, 'duration', { value: 108 });
+    let time = 0, duration = 108, disposed = false;
+    const listeners = new Map<string, (() => void)[]>();
+    const play = vi.fn(() => Promise.resolve());
+    const player = {
+      el: () => root, isDisposed: () => disposed, ready: () => {}, off: () => {}, play,
+      on: (events: string | string[], callback: () => void) => {
+        for (const event of [events].flat()) listeners.set(event, [...listeners.get(event) || [], callback]);
+      },
+      one: (event: string, callback: () => void) => listeners.set(event, [...listeners.get(event) || [], callback]),
+      duration: (seconds?: number) => { if (seconds !== undefined) duration = seconds; return duration },
+      currentTime: (seconds?: number) => { if (seconds !== undefined) time = seconds; return time },
+      src: () => listeners.get('loadedmetadata')?.forEach((callback) => callback()),
+    } as unknown as VjsPlayer;
+    vi.spyOn(videojsLoader, 'ensureVideojs').mockResolvedValue(() => player);
+    const source = vi.spyOn(stream, 'detailStreamSource').mockResolvedValue({ src: '/test.mp4', type: 'video/mp4' });
+    try {
+      await mountDetailPlayer({ id: 12, duration: 30 }, video, true,
+        { resume: { time: 97, autoplay: false } });
+      await vi.waitFor(() => expect(time).toBe(97));
+      expect(source).toHaveBeenCalledTimes(1);
+      expect(play).toHaveBeenCalled();
+    } finally { source.mockRestore(); disposed = true; setDetailPlayer(null) }
   });
 
   it('暂停、关闭和页面退出保留当前秒数，存储读取独立于条目的旧比例', () => {
