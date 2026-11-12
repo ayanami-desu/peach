@@ -88,7 +88,7 @@ ZIP 结构：
 
 - `created_at`、`system`：与日志同一份系统事实。
 - `configuration`：能读取配置时为 `available`，带 `present` 与端口；读不出来时为 `unavailable` 并附异常链。
-- `runtime`：分发方式、依赖包版本、SQLite 版本、逻辑核数与活动线程、内存档位、检出或构建提交号、Windows 版本类型、监听地址类别与端口、代理环境变量是否存在、媒体处理偏好、各存储目录是否存在、数据盘总量与余量。
+- `runtime`：分发方式、依赖包版本、SQLite 版本、逻辑核数与活动线程、内存档位、检出或构建提交号、监听地址类别与端口、代理环境变量是否存在、媒体处理偏好、各存储目录是否存在、数据盘总量与余量。
 - `media_tools`：FFmpeg 与 ffprobe 的来源、路径与解码器。
 - `browser`：浏览器快照白名单字段，没有快照时 `status` 为 `unavailable`。
 - `checks`：去掉 `drives`（网盘明细只留本机页面），每项只保留 `status`、`reason`、`action`；`details` 只保留 `database.state`、迁移五项、`security.exposed`／`protected`、`port.port`／`state`、`tasks.id`／`finished_at`。

@@ -6,7 +6,6 @@ import ipaddress
 import json
 import math
 import os
-import platform
 import re
 import shutil
 import sqlite3
@@ -114,7 +113,6 @@ def runtime(config):
             packages[name] = None
     result = {'status': 'available', 'packages': packages, 'sqlite': sqlite3.sqlite_version,
               'logical_processors': os.cpu_count(), 'active_threads': threading.active_count(),
-              'windows_edition': platform.win32_edition() if os.name == 'nt' else None,
               'server': {'host_kind': host_kind(config.server.host), 'port': config.server.port},
               'proxy_environment': {name.lower(): bool(os.environ.get(name) or os.environ.get(name.lower()))
                                     for name in ('HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY')},
