@@ -5,15 +5,28 @@ import assert from 'node:assert/strict';
 
 import type { Page } from 'playwright-core';
 
-export type Clip = { id: number; width: number; height: number; duration: number; [field: string]: unknown };
+export type Clip = { id: number; width: number; height: number; ctx_orient?: string | null; duration: number; [field: string]: unknown };
 
 /** 演示库里能直接放的一条横屏与一条竖屏（整条卡片，原样交给抽样）。 */
 export async function pickClips(page: Page): Promise<{ wide: Clip; tall: Clip; all: Clip[] }> {
   const items: Clip[] = await page.evaluate(async () =>
     (await (await fetch('/api/items?limit=60&offset=0&thumb=')).json()).items);
-  const all = items.filter((item) => item.duration);
-  const wide = all.find((item) => item.width > item.height);
-  const tall = all.find((item) => item.height > item.width);
+  const source = items.filter((item) => item.duration);
+  /* 这套临时演示库的假片有时还没跑媒体探测：全条目的 ctx_orient、尺寸会一起为空或落成同一张占位图。
+     沉浸布局需要两种形状，夹具只在整批缺屏向时给前两条补登记值，不改真实 API 的目录行为。 */
+  const hasOrientations = source.some((item) => item.ctx_orient === '横屏')
+    && source.some((item) => item.ctx_orient === '竖屏');
+  const hasShapes = source.some((item) => item.width > item.height)
+    && source.some((item) => item.height > item.width);
+  const all = hasOrientations || hasShapes
+    ? source
+    : source.map((item, index) => index === 0
+      ? { ...item, width: 1920, height: 1080, ctx_orient: '横屏' }
+      : index === 1
+        ? { ...item, width: 1080, height: 1920, ctx_orient: '竖屏' }
+        : item);
+  const wide = all.find((item) => item.ctx_orient === '横屏') || all.find((item) => item.width > item.height);
+  const tall = all.find((item) => item.ctx_orient === '竖屏') || all.find((item) => item.height > item.width);
   assert.ok(wide && tall, '演示库里横屏、竖屏各要有一条');
   return { wide, tall, all };
 }

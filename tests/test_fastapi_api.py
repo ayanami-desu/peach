@@ -1010,7 +1010,6 @@ class UnconfiguredMachineTests(unittest.IsolatedAsyncioTestCase):
                         for path in ('/', '/settings/drives'):
                             page = await client.get(path)
                             self.assertEqual(page.status_code, 200)
-                            self.assertIn('id="tutorialBtn"', page.text)
                 self.assertEqual([record.levelname for record in captured.records], ["WARNING"])
                 self.assertIn("数据库准备完成后重启服务", captured.output[0])
                 self.assertNotIn(str(database), captured.output[0])

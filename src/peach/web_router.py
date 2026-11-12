@@ -25,7 +25,6 @@ from .web_performer_delete import q_performer_delete_candidates, q_performer_del
 from .web_tags import q_tag_management, w_tag_management, w_tag_preview
 from .web_catalog import (
     FACETS_TABLES,
-    catalog_filter,
     q_editions,
     q_facets,
     q_item,
@@ -64,7 +63,6 @@ from .web_custom_metadata import q_custom_metadata, w_custom_metadata
 from .web_review import REVIEW_TABLES, q_review, q_review_counts, w_review_decision, w_review_genre
 from .web_settings import q_settings, w_settings
 from .web_library_shortcuts import q_library_shortcuts, w_library_shortcuts
-from .web_tutorial import q_tutorial_progress, w_tutorial_progress
 from .web_folders import q_folders, w_folder_preview, w_folder_rule
 from .web_scraping import (
     q_scraping, q_scraping_amane_bridge, w_scraping_amane_check, w_scraping_amane_rebuild,
@@ -230,40 +228,6 @@ def _get_entity_shapes(contract, args):
     return entity_shapes(rest)
 
 
-#: 安装教程每一项只读这几个字段。载荷形状由 `test_post_setup_tutorial_only_carries_progress_counts`
-#: 钉住：多带一个字段就是又把明细搬回来了。
-POST_SETUP_SCRAPING_FIELDS = ("source", "accepts_cookie", "cookie_saved")
-
-
-def _post_setup_tutorial_progress(contract):
-    """各项进度各自只算一个读数，不带明细。
-
-    首页右下角那张卡要的是「导入了几项、哪几个来源存了凭证、有没有历史、还剩几条复核」。
-    整份口味分析与完整列表都与它无关，实测那一套在真实馆藏上要二十多秒、三百多 KB，
-    而这里几条 COUNT 与几列投影不到半秒。
-    复核条数仍取自复核页的同一份缓存：那一栏的数字必须和 `/review` 页上的一致，口径只能有一份。
-    """
-    where, params = catalog_filter(contract, {})
-    with contract.read_connection() as connection:
-        total = connection.execute(
-            "SELECT count(*) FROM asset a WHERE " + " AND ".join(where), params).fetchone()[0]
-    return {
-        "library": {"total": int(total)},
-        "scraping": {"sources": [{key: source[key] for key in POST_SETUP_SCRAPING_FIELDS}
-                                 for source in q_scraping(contract, {})["sources"]]},
-        "review": {"counts": _get_review(contract, {"counts": "1"})["counts"]},
-    }
-
-
-def _get_post_setup_tutorial(contract, _args):
-    """一次给安装教程六项进度读数，避免遗留首页重新接管 React 口味页的契约。
-
-    教程卡跟着每次路由切换重新取数；走聚合缓存之后，连着点几页只算一次，账本一提交
-    就失效，所以读到的仍然是当下的进度。
-    """
-    return contract.cached("post-setup-tutorial", lambda: _post_setup_tutorial_progress(contract))
-
-
 def _post_empty_trash(contract, _body):
     return w_empty_trash(contract)
 
@@ -292,7 +256,6 @@ GET_HANDLERS = {
     "/api/scraping/check-all": lambda contract, args: contract.source_check_job.snapshot() or {"status": "idle"},
     "/api/settings": q_settings,
     "/api/library-shortcuts": q_library_shortcuts,
-    "/api/tutorial-progress": q_tutorial_progress,
     "/api/links/prune": lambda contract, args: contract.link_prune_job.snapshot() or {"status": "idle"},
     "/api/orphan-records": q_orphan_records,
     "/api/organize": q_organize,
@@ -324,7 +287,6 @@ GET_HANDLERS = {
     "/api/search-history": _get_search_history,
     "/api/search/recommendations": q_search_recommendations,
     "/api/review": _get_review,
-    "/api/post-setup-tutorial": _get_post_setup_tutorial,
 }
 
 POST_HANDLERS = {
@@ -364,7 +326,6 @@ POST_HANDLERS = {
     "/api/review/genre": w_review_genre,
     "/api/settings": w_settings,
     "/api/library-shortcuts": w_library_shortcuts,
-    "/api/tutorial-progress": w_tutorial_progress,
     "/api/entity-name": w_entity_name,
     "/api/performer/delete": w_performer_delete,
     "/api/entity-alias": w_entity_alias,

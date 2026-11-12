@@ -214,6 +214,7 @@ preferencesState.placeSidebarHead = ()=>{};
 preferencesState.SRCICON = {
   ...Object.fromEntries(Object.entries(MEDIA_SOURCE_ICONS).map(([location,mark])=>
     [location,mark.startsWith('data:')?`<img class="source-icon" src="${mark}" alt="">`:icon(mark)])),
+  local:icon('hard-drive'),
   online:icon('rss'),
 };
 preferencesState.srcBadge = (loc,cls)=>{const label=LOC[loc]||loc;

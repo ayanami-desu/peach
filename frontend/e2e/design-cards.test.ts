@@ -1,37 +1,12 @@
 /* 设计决定：作品卡、管理页与复核。读 `getComputedStyle` 断言用户定过的外观；共用的桩与浏览器生命周期在 `design-fixture.ts`。 */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { Browser, Page } from 'playwright-core';
-import { expectBody, settle, visit } from './harness.ts';
+import type { Browser } from 'playwright-core';
+import { settle, visit } from './harness.ts';
 import {
   DESKTOP, MOBILE, tokenColor, openReview, REVIEW_ROW, lightness, WIDE, JUNK_COUNT, openJunk, junkItem, openJunkWith,
   openCatalog, openCatalogFixture, holdApi, installDesignBrowser, PIXEL,
 } from './design-fixture.ts';
-
-/** 每个视口从未阅读的进度开始；账本跨设备持久化由 API 回归验证。 */
-async function freshTutorial(page: Page) {
-  const state = { version: 1, campaign: 'browser-tutorial', invited: false, completed: false,
-    chapters: {} as Record<string, { next: number; read: string[]; skipped: string[] }> };
-  await page.route('**/api/tutorial-progress', async route => {
-    if (route.request().method() === 'POST') {
-      const action = route.request().postDataJSON();
-      if (action.action === 'dismiss') state.invited = true;
-      else if (action.action === 'complete' || action.action === 'reopen') {
-        state.invited = true;
-        state.completed = action.action === 'complete';
-      } else {
-        const row = state.chapters[action.chapter] ??= { next: 0, read: [], skipped: [] };
-        row.next = action.next;
-        if (action.action === 'step') {
-          row.read = row.read.filter(step => step !== action.step);
-          row.skipped = row.skipped.filter(step => step !== action.step);
-          row[action.skipped ? 'skipped' : 'read'].push(action.step);
-        }
-      }
-    }
-    await route.fulfill({ json: state });
-  });
-}
 
 // 监视器只保留框架异步收尾异常的调用栈，错误仍由 Node 判为失败。
 process.on('uncaughtExceptionMonitor', error => console.error(error.stack));
@@ -137,7 +112,7 @@ describe('设计决定：作品卡、管理页与复核', () => {
       if (!item) throw new Error('演示目录不够两条');
       Object.assign(item, { medium: 'archive', name: '演示资料.zip', disposal: 'trash' });
       Object.assign(payload.items[0], { disposal: 'trash', is_jav: false, has_cover: false, has_thumb: true });
-    }, { completeFirstPage: true });
+    }, { completeFirstPage: true, includeShorts: true });
     const { page } = opened;
     await page.route('**/poster**', (route) => route.fulfill({
       status: 200, contentType: 'image/png', body: Buffer.from(PIXEL, 'base64'),
@@ -416,7 +391,7 @@ describe('设计决定：作品卡、管理页与复核', () => {
       const cards = page.locator('#grid [data-media-card][data-id]');
       await cards.nth(1).waitFor({ timeout: 15_000 });
       await page.locator('[data-manage-lede] [data-empty-trash]').waitFor({ timeout: 15_000 });
-      for (const at of [0, 1]) await cards.nth(at).click({ modifiers: ['Control'], position: { x: 20, y: 20 } });
+      for (const at of [0, 1]) await cards.nth(at).click({ modifiers: ['ControlOrMeta'], position: { x: 20, y: 20 } });
       await page.locator('[data-batch-dock] [data-selection-dock]').waitFor({ timeout: 10_000 });
       await settle(page);
       const read = await page.evaluate(() => {
@@ -625,151 +600,6 @@ describe('设计决定：作品卡、管理页与复核', () => {
       await opened.close();
     }
   });
-
-  for (const [label, viewport] of [['390px', MOBILE], ['宽屏', DESKTOP]] as const) {
-    it(`${label} 下教程中心可阅读、关闭与重开，不提交业务写入`, { timeout: 60_000 }, async () => {
-      const opened = await visit(browser, '/', viewport, freshTutorial);
-      try {
-        const page = opened.page;
-        await expectBody(page, '/', [page.locator('#grid')]);
-        await settle(page);
-        const writes: string[] = [];
-        const streams: string[] = [];
-        page.on('request', request => {
-          if (/^\/(?:stream|api\/stream-plan)/.test(new URL(request.url()).pathname)) streams.push(request.url());
-          if (new URL(request.url()).pathname === '/api/diagnostics/client-error' && request.postDataJSON()?.kind === 'context') return;
-          if (new URL(request.url()).pathname.startsWith('/api/') && new URL(request.url()).pathname !== '/api/tutorial-progress' && !['GET', 'HEAD'].includes(request.method())) {
-            writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
-          }
-        });
-        const opener = page.locator('#tutorialBtn');
-        await page.locator('.peach-guide-popover').getByRole('heading', { name: '从这里打开新手教程' }).waitFor();
-        assert.ok(await opener.evaluate(node => node.classList.contains('driver-active-element')));
-        await opener.click();
-        const dialog = page.getByRole('dialog', { name: '新手教程', exact: true });
-        await dialog.waitFor();
-        for (const name of ['开始使用', '界面导览', '设置导览']) {
-          await dialog.locator('label').filter({ has: page.getByRole('radio', { name, exact: true }) }).click();
-          assert.equal(await dialog.locator('[data-guide-banner]').count(), 1, `${name} 缺少共用引导区`);
-          assert.equal(await dialog.locator('[data-guide-banner] .peach-guide-topic-icon svg').count(), 1, `${name} 缺少图标`);
-        }
-        const box = await dialog.boundingBox();
-        assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height,
-          '教程中心越出视口');
-        await dialog.locator('label').filter({ has: page.getByRole('radio', { name: '设置导览', exact: true }) }).click();
-        const segments = await dialog.getByRole('radiogroup', { name: '教程路径' }).evaluate(node => {
-          const surface = node.querySelector('[data-moving-surface]')!;
-          const first = node.querySelector('label')!;
-          return { position: getComputedStyle(surface).position, inset: first.getBoundingClientRect().left - node.getBoundingClientRect().left };
-        });
-        assert.equal(segments.position, 'absolute', '选中底板不应占据分段器的排列空间');
-        assert.ok(segments.inset <= 8, `首个选项前出现 ${segments.inset}px 空白`);
-        const scroller = dialog.locator('.peach-guide-body');
-        assert.equal(await scroller.evaluate(node => getComputedStyle(node).scrollbarWidth), 'none', '正文应使用共享覆盖式滚动条');
-        const headerTop = (await dialog.locator('header').boundingBox())!.y;
-        await scroller.evaluate(node => { node.scrollTop = node.scrollHeight });
-        assert.equal((await dialog.locator('header').boundingBox())!.y, headerTop, '标题栏随正文滚走了');
-        await dialog.getByRole('searchbox', { name: '搜索教程' }).fill('不存在的功能xyz');
-        await dialog.getByRole('heading', { name: '没有匹配的教程', exact: true }).waitFor();
-        await dialog.getByRole('button', { name: '关闭新手教程', exact: true }).click();
-        await dialog.waitFor({ state: 'hidden' });
-        await page.waitForFunction(() => document.activeElement === document.getElementById('tutorialBtn'));
-        await opener.click();
-        await dialog.waitFor();
-        const inside = (await dialog.locator('header').boundingBox())!;
-        await page.mouse.move(inside.x + 40, inside.y + 20);
-        await page.mouse.down();
-        await page.mouse.move(2, 2);
-        await page.mouse.up();
-        assert.ok(await dialog.isVisible(), '从正文拖到遮罩不应关闭教程');
-        await page.mouse.click(2, 2);
-        await dialog.waitFor({ state: 'hidden' });
-        await page.waitForFunction(() => document.activeElement === document.getElementById('tutorialBtn'));
-        await opener.click();
-        await dialog.waitFor();
-        await dialog.locator('label').filter({ has: page.getByRole('radio', { name: '界面导览', exact: true }) }).click();
-        assert.equal(await dialog.locator('[data-guide-topic]').count(), 4);
-        await dialog.locator('[data-guide-topic="browse"] > details > summary').click();
-        await dialog.getByRole('button', { name: /找到并播放/ }).click();
-        await page.locator('.peach-guide-popover').waitFor();
-        assert.equal(await dialog.isVisible(), false, '章节点击后仍停留在中间介绍页');
-        const playbackGuide = page.locator('.peach-guide-popover');
-        for (let step = 0; step < 4; step += 1) await playbackGuide.getByRole('button', { name: '下一步', exact: true }).click();
-        await page.locator('#stage .vjs-control-bar.driver-active-element').waitFor();
-        assert.deepEqual(await page.locator('#stage video.vjs-tech').evaluate(video => ({ paused: (video as HTMLVideoElement).paused, src: (video as HTMLVideoElement).currentSrc })), { paused: true, src: '' });
-        await page.waitForFunction(() => {
-          const panel = document.querySelector('.peach-guide-popover')?.getBoundingClientRect();
-          return document.querySelector('.driver-overlay')?.parentElement?.id === 'stage'
-            && panel && panel.left >= 0 && panel.right <= innerWidth && panel.top >= 0 && panel.bottom <= innerHeight;
-        });
-        await playbackGuide.getByRole('button', { name: '下一步', exact: true }).click();
-        await page.locator('#stage [data-local-playback-row].driver-active-element').waitFor();
-        await playbackGuide.getByRole('button', { name: '完成本章', exact: true }).click();
-        await page.locator('#stage[open]').waitFor({ state: 'hidden' });
-        assert.deepEqual(streams, [], '导览请求了视频正片');
-        await dialog.waitFor();
-        await dialog.getByRole('button', { name: '开始快速导览', exact: true }).click();
-        const guide = page.locator('.peach-guide-popover');
-        await guide.waitFor();
-        await settle(page, '.peach-guide-popover');
-        const guideBox = (await guide.boundingBox())!;
-        assert.ok(guideBox.x >= 8 && guideBox.x + guideBox.width <= viewport.width - 8, '导览说明卡贴住了视口边缘');
-        assert.ok(await guide.evaluate(node => node.contains(document.activeElement)), '导览焦点未停留在说明卡内');
-        const resized = viewport.width === 390 ? { width: 1280, height: 800 } : { width: 390, height: 844 };
-        await page.setViewportSize(resized);
-        await page.waitForFunction(() => {
-          const box = document.querySelector('.peach-guide-popover')?.getBoundingClientRect();
-          const target = document.querySelector('.driver-active-element')?.getBoundingClientRect();
-          return box && target && box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
-            && target.width > 0 && target.right > 0 && target.left < innerWidth;
-        });
-        await page.setViewportSize({ width: viewport.width, height: viewport.height });
-        await page.mouse.click(2, viewport.height - 2);
-        await guide.waitFor({ state: 'hidden' });
-        await dialog.waitFor();
-        await dialog.getByRole('button', { name: '继续快速导览', exact: true }).click();
-        await guide.waitFor();
-        await page.keyboard.press('Escape');
-        await guide.waitFor({ state: 'hidden' });
-        await dialog.waitFor();
-        await dialog.getByRole('button', { name: '继续快速导览', exact: true }).click();
-        await guide.getByRole('button', { name: '跳过本章', exact: true }).click();
-        await dialog.waitFor();
-        assert.equal(await guide.isVisible(), false, '跳过本章后仍停在步骤中');
-        assert.equal(await dialog.locator('[data-guide-banner][data-guide-completed]').count(), 0, '跳过误记为完成');
-        await dialog.locator('label').filter({ has: page.getByRole('radio', { name: '设置导览', exact: true }) }).click();
-        await dialog.getByRole('button', { name: '了解常用设置', exact: true }).click();
-        await guide.waitFor();
-        for (let step = 0; step < 4; step += 1) await guide.getByRole('button', { name: '下一步', exact: true }).click();
-        await guide.getByRole('button', { name: '完成本章', exact: true }).click();
-        await dialog.waitFor();
-        await page.locator('#settingsPanel').waitFor({ state: 'hidden' });
-        assert.equal(new URL(page.url()).pathname, '/', '设置导览完成后未返回开始前的页面');
-        assert.ok(await dialog.getByRole('radio', { name: '设置导览', exact: true }).isChecked());
-        await dialog.getByRole('searchbox', { name: '搜索教程' }).fill('媒体库');
-        await dialog.getByRole('button', { name: /媒体库与入库 媒体库/ }).click();
-        await guide.waitFor();
-        for (let step = 0; step < 8; step += 1) await guide.getByRole('button', { name: '下一步', exact: true }).click();
-        await guide.getByRole('button', { name: '完成本章', exact: true }).click();
-        await dialog.waitFor();
-        assert.equal(new URL(page.url()).pathname, '/', '页面导览完成后未返回开始前的页面');
-        assert.ok(await dialog.getByRole('searchbox', { name: '搜索教程' }).isVisible());
-        await dialog.locator('label').filter({ has: page.getByRole('radio', { name: '界面导览', exact: true }) }).click();
-        await dialog.getByRole('button', { name: '继续快速导览', exact: true }).click();
-        for (let step = 0; step < 3; step += 1) await guide.getByRole('button', { name: '下一步', exact: true }).click();
-        await guide.getByRole('button', { name: '完成本章', exact: true }).click();
-        await dialog.waitFor();
-        await opener.waitFor({ state: 'hidden' });
-        assert.ok(await dialog.getByRole('button', { name: '再看一遍', exact: true }).isVisible());
-        assert.equal(await dialog.locator('[data-guide-banner][data-guide-completed]').count(), 1);
-        await page.reload();
-        await page.locator('#grid').waitFor();
-        assert.equal(await opener.isVisible(), false, '完成快速导览后刷新又显示了教程按钮');
-        assert.deepEqual(writes, [], '只读教程触发了业务写入');
-        assert.deepEqual(opened.problems, []);
-      } finally { await opened.close() }
-    });
-  }
 
   it('复核筛选条上的下拉和按钮一样高', { timeout: 60_000 }, async () => {
     const opened = await openReview(browser);

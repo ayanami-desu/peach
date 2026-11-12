@@ -139,7 +139,6 @@ class SettingsRoundTripTests(unittest.TestCase):
         self.assertEqual(q_settings(self.contract),
                          {"sidebarOrder": list(DEFAULT_SIDEBAR_ORDER),
                           "avatarRefreshDays": 90, "faviconRefreshDays": 365,
-                          "postSetupTutorialDone": False,
                           "organizeTemplates": {}, "codePatterns": [],
                           "searchHistoryLimit": None, "performerNameLanguage": "zh-CN", "taskSpeedMode": "standard",
                           "interfaceLanguage": "auto", "systemLanguage": None})
@@ -235,25 +234,11 @@ class SettingsRoundTripTests(unittest.TestCase):
         self.assertEqual(w_settings(self.contract, {"sidebarOrder": order}),
                          {"ok": True, "sidebarOrder": order,
                           "avatarRefreshDays": 90, "faviconRefreshDays": 365,
-                          "postSetupTutorialDone": False,
                           "organizeTemplates": {}, "codePatterns": [],
                           "searchHistoryLimit": None, "performerNameLanguage": "zh-CN", "taskSpeedMode": "standard",
                           "interfaceLanguage": "auto", "systemLanguage": None})
         self.assertEqual(q_settings(self.contract)["sidebarOrder"], order)
         self.assertEqual(self._stored_json()["sidebarOrder"], order)
-
-    def test_the_tutorial_marker_is_a_boolean_that_survives_a_reread(self):
-        """装完就是装完：换台设备打开不该再被教一遍，所以它也跟着账本走。"""
-        self.assertFalse(q_settings(self.contract)["postSetupTutorialDone"])
-        self.assertTrue(w_settings(self.contract, {"postSetupTutorialDone": True})
-                        ["postSetupTutorialDone"])
-        self.assertIs(self._stored_json()["postSetupTutorialDone"], True)
-        for truthy in ("yes", 1, [1]):
-            self.assertFalse(w_settings(self.contract, {"postSetupTutorialDone": truthy})
-                             ["postSetupTutorialDone"], truthy)
-        w_settings(self.contract, {"postSetupTutorialDone": True})
-        self.assertEqual(w_settings(self.contract, {"sidebarOrder": ["", "tags"]})
-                         ["postSetupTutorialDone"], True)
 
     def test_a_write_normalises_before_it_lands(self):
         """坏载荷不能进账本——存进去之后每次读都要再挡一遍。"""

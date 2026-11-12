@@ -58,13 +58,11 @@ INTERFACE_LANGUAGE_CHOICES = ("auto", *INTERFACE_LANGUAGES)
 
 #: 只有这些键跟着账本走。白名单而不是黑名单：将来往设置里加字段的人必须显式表态
 #: 它该不该跨机同步，而不是默认就同步过去。
-#: `postSetupTutorialDone` 说的是「这套馆藏已经装完了」，不是「这台设备看过教程」——
-#: 装完就是装完，换台设备打开不该再被教一遍，所以它也跟着账本走。
 #: 整理模板（ADR-0039）同理：它是「我要我的库长什么样」，不是这台设备上的顺手。
 #: 番号识别规则描述的是这套馆藏的命名，处理任务按它往账本里写番号，同样跟着账本走。
 #: 界面语言（ADR-0156）是用这套馆藏的那个人读的语言，每个部署只有一人，换台设备不该再选一遍。
 SYNCED_SETTING_KEYS = frozenset({
-    "sidebarOrder", "manageOrder", "navigationOrders", "libraryOrder", "postSetupTutorialDone",
+    "sidebarOrder", "manageOrder", "navigationOrders", "libraryOrder",
     "organizeTemplates", "searchHistoryLimit", "codePatterns", "performerNameLanguage", "taskSpeedMode",
     "interfaceLanguage",
 })
@@ -223,7 +221,6 @@ def q_settings(contract: SettingsContract, _args=None) -> dict:
         **({"libraryOrder": payload["libraryOrder"]} if isinstance(payload.get("libraryOrder"), list) else {}),
         "avatarRefreshDays": AVATAR_REFRESH_SECONDS // 86400,
         "faviconRefreshDays": FAVICON_REFRESH_SECONDS // 86400,
-        "postSetupTutorialDone": payload.get("postSetupTutorialDone") is True,
         "organizeTemplates": normalise_organize_templates(payload.get("organizeTemplates")),
         "codePatterns": _stored_code_patterns(payload),
         "searchHistoryLimit": normalise_search_history_limit(payload.get("searchHistoryLimit")),
@@ -280,8 +277,6 @@ def w_settings(contract: SettingsContract, body) -> dict:
         merged["manageOrder"] = normalise_manage_order(body["manageOrder"])
     if "sidebarOrder" in body:
         merged["sidebarOrder"] = normalise_sidebar_order(body["sidebarOrder"])
-    if "postSetupTutorialDone" in body:
-        merged["postSetupTutorialDone"] = body["postSetupTutorialDone"] is True
     if "organizeTemplates" in body:
         merged["organizeTemplates"] = normalise_organize_templates(body["organizeTemplates"])
     if "codePatterns" in body:

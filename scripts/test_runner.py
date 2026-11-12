@@ -136,7 +136,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
             "test_web_perf.py", "test_copy_final_state.py",
             "test_agency_entity.py", "test_label_maker.py", "test_dependency_policy.py",
             "test_fastapi_api.py",
-            "test_metadata_library.py", "test_processing_control.py",  "test_studio_icon_variants.py", "test_web_settings.py", "test_web_library_shortcuts.py", "test_web_tutorial.py", "test_company_profiles.py"),
+            "test_metadata_library.py", "test_processing_control.py",  "test_studio_icon_variants.py", "test_web_settings.py", "test_web_library_shortcuts.py", "test_company_profiles.py"),
     "core": ("test_access.py", "test_auth.py", "test_config.py", "test_field_owners.py",
              "test_entity_classification.py",
              "test_migrations.py", "test_ledger_revision.py",
@@ -241,7 +241,6 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     "src/peach/record_rehome.py": ("catalog", "tooling"),
     "src/peach/web_orphan_records.py": ("catalog", "web"),
     "src/peach/web_library_shortcuts.py": ("catalog", "web"),
-    "src/peach/web_tutorial.py": ("catalog", "web"),
     # 入口页共用件的测试住在首启与配置来源那两份 tooling 测试里。
     "src/peach/web_entry.py": ("catalog", "tooling", "web"),
     # 这几份文档有测试在读它们的正文：改文档也要跑到那条测试。

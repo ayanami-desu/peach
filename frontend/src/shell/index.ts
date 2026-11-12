@@ -68,8 +68,6 @@ export let pendingQueueRoute: string | null = null;
 export let presentedItem: PresentedItem | null = null;
 /** 配置页下一次打开要选中的那一组页签名，选中之后清空。 */
 export let configurationRequestedSection = '';
-/** 这一次是不是从设置完成页（或教程卡）进来的：口味页打开时取走，取一次就清。 */
-export let cameFromSetup = false;
 
 /** 壳要路由树按地址打开页面的次数。壳开始路由那一次记 1：在那之前来源、设置与形状名单还没读完，路由树里按匹配
  *  挂上的页面元素只挂着、不打开。之后壳每要求一次「按当前地址把这一页从头重开」（批量写回之后、设置变了要重取、
@@ -102,7 +100,6 @@ export interface ShellFields {
   queueOpens: number;
   entityJavLayout: boolean;
   playlistsRevision: number;
-  cameFromSetup: boolean;
 }
 
 type Listener = () => void;
@@ -130,7 +127,6 @@ export function writeShell(patch: Partial<ShellFields>): void {
   if (has('queueOpens')) queueOpens = patch.queueOpens!;
   if (has('entityJavLayout')) entityJavLayout = patch.entityJavLayout!;
   if (has('playlistsRevision')) playlistsRevision = patch.playlistsRevision!;
-  if (has('cameFromSetup')) cameFromSetup = patch.cameFromSetup!;
   notifyShell();
 }
 

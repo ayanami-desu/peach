@@ -1368,10 +1368,10 @@ class WebDataTests(unittest.TestCase):
             "/api/library-shortcuts", "/api/links", "/api/links/prune", "/api/media-processing", "/api/organize",
             "/api/organize/example", "/api/orphan-records", "/api/parts", "/api/performer/delete-candidates",
             "/api/performer/delete-plan", "/api/photo-set", "/api/photos", "/api/playlist", "/api/playlists",
-            "/api/post-setup-tutorial", "/api/quality-goals", "/api/related", "/api/result-updates", "/api/review",
+            "/api/quality-goals", "/api/related", "/api/result-updates", "/api/review",
             "/api/scraping", "/api/scraping/amane-bridge", "/api/scraping/check-all", "/api/scraping/cover",
             "/api/search-history", "/api/search/recommendations", "/api/settings", "/api/stats", "/api/suggest",
-            "/api/tag-management", "/api/tasks", "/api/thumbnail-jobs", "/api/timeline", "/api/tops", "/api/tutorial-progress",
+            "/api/tag-management", "/api/tasks", "/api/thumbnail-jobs", "/api/timeline", "/api/tops",
         })
         self.assertEqual(set(rm_web.POST_HANDLERS), {
             "/api/activity", "/api/batch", "/api/custom-metadata", "/api/entity-alias", "/api/entity-name",
@@ -1382,7 +1382,7 @@ class WebDataTests(unittest.TestCase):
             "/api/quality-goal", "/api/review/decision", "/api/review/genre", "/api/scraping/amane-bridge/check",
             "/api/scraping/amane-bridge/rebuild", "/api/scraping/check", "/api/scraping/check-all", "/api/scraping/cover",
             "/api/scraping/settings", "/api/search-history", "/api/settings", "/api/tag-management", "/api/tag-management/preview",
-            "/api/thumbnail-jobs", "/api/trash/empty", "/api/tutorial-progress", "/api/watch-later",
+            "/api/thumbnail-jobs", "/api/trash/empty", "/api/watch-later",
         })
         with self.assertRaises(rm_web.ContractRouteNotFound):
             rm_web.dispatch_api_get(self.contract, "/api/typo", {})
@@ -2410,32 +2410,6 @@ class WebDataTests(unittest.TestCase):
             "SELECT count(*) FROM playlist_item WHERE playlist_id=?", (playlist_id,),
         ).fetchone()[0], 0)
         con.close()
-
-    def test_post_setup_tutorial_only_carries_progress_counts(self):
-        """安装教程的聚合只带三个读数，不带馆藏明细与来源明细。
-
-        首页右下角那张卡每次切路由都取一次；所有页面的完整载荷拼在一起，真实馆藏上要二十多秒、
-        三百多 KB。这里钉住每一段的键集合，多出一个键就是明细搬进来了。
-        """
-        root = Path(self.tmp.name).resolve()
-        (root / "candidates").mkdir()
-        (root / "secrets").mkdir()
-        contract = rm_web.WebContract(
-            Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-            candidate_root=root / "candidates", secrets_root=root / "secrets")
-        payload = rm_web.dispatch_api_get(contract, "/api/post-setup-tutorial", {})
-        self.assertEqual(set(payload), {"library", "scraping", "review"})
-        # 馆藏读数与首页列表同一条 WHERE：图片与回收站不算。
-        self.assertEqual(payload["library"], {"total": 2})
-        self.assertTrue(payload["scraping"]["sources"])
-        for source in payload["scraping"]["sources"]:
-            self.assertEqual(set(source), {"source", "accepts_cookie", "cookie_saved"})
-        self.assertEqual(set(payload["review"]), {"counts"})
-        self.assertTrue(all(isinstance(value, int) for value in payload["review"]["counts"].values()))
-        self.assertLess(len(json.dumps(payload, ensure_ascii=False)), 8_000)
-
-
-
 
 
 class ChineseSearchTermTests(unittest.TestCase):

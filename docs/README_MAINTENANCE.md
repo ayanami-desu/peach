@@ -62,7 +62,7 @@ README 的四张截图（馆藏、人物、统计、播放器）取官网已发�
 
 ### 本地生成器
 
-`scripts/demo_dataset.py` 生成一套 SFW 演示库，供教程、截图与性能基准使用，只写目标目录、不碰账本：
+`scripts/demo_dataset.py` 生成一套 SFW 演示库，供截图与性能基准使用，只写目标目录、不碰账本：
 
 ```bash
 .venv/bin/python -X utf8 scripts/demo_dataset.py --output <目录> --count 24

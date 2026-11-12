@@ -35,7 +35,6 @@ import {
 
 import { Providers } from '../providers';
 import { LibraryProcessingDock } from '../library-processing/library-processing-dock';
-import { TutorialCenter } from '../onboarding/tutorial-center';
 import { SettingsMatch } from './pages/settings';
 import { CatalogChrome } from './pages/catalog';
 import {
@@ -226,7 +225,6 @@ export function RouterRoot({ children, actions = null, background, processing = 
           <CatalogChrome />
           <QueueRequests />
           {processing && actions ? <LibraryProcessingDock toast={actions.toast} /> : null}
-          {processing && actions ? <TutorialCenter actions={actions} /> : null}
           <RouteGroups>{children}</RouteGroups>
         </PeachRouter>
       </ShellActionsContext.Provider>

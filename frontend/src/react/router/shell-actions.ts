@@ -94,7 +94,7 @@ export interface CatalogShell {
   defaultLoc(): string;
   /** 按刚写好的 `state` 打开这一页：从别处回到首页（`entering`）先作废顶部三层的缓存；回收站清空搜索框并铺开首页
    *  那一侧，其余页把搜索框对齐 `state.q`；再同步侧栏与顶栏、重画顶部三层、取目录。`retitle`：地址刚由元素改写，
-   *  标题与教程状态跟着重读。 */
+   *  标题跟着重读。 */
   open(path: string, options?: { entering?: boolean; retitle?: boolean }): void | Promise<void>;
   /** 筛选与地址已经由壳写好：按它们重取目录。 */
   load(): void | Promise<void>;

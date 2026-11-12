@@ -19,7 +19,7 @@ it('初值与壳启动之前一致：口径还没写入，来处指向首页', (
   expect(shell.detailReturnPath).toBe('/');
   expect([shell.detailOriginAnchor, shell.detailOriginAbove, shell.detailReturnNeedsRestore]).toEqual([null, false, false]);
   expect([shell.activeQueue, shell.pendingQueueRoute, shell.presentedItem]).toEqual([null, null, null]);
-  expect([shell.configurationRequestedSection, shell.cameFromSetup]).toEqual(['', false]);
+  expect(shell.configurationRequestedSection).toBe('');
   expect(shell.selected.size).toBe(0);
   expect(shell.shellVersion()).toBe(0);
 });

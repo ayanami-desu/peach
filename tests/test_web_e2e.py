@@ -68,8 +68,6 @@ unittest.addModuleCleanup(shutil.rmtree, DATA_ROOT, True)
 
 from peach import api, drive_connections  # noqa: E402
 from peach.config import PeachSettings  # noqa: E402
-from peach.web_contract import WebContract  # noqa: E402
-from peach.web_tutorial import CAMPAIGN, w_tutorial_progress  # noqa: E402
 from peach.drive_provider import (  # noqa: E402
     GOOGLE,
     Change,
@@ -374,9 +372,7 @@ class WebE2ETests(unittest.TestCase):
                        check=True, capture_output=True, cwd=ROOT,
                        env={**os.environ, "PYTHONPATH": os.pathsep.join(
                            [str(ROOT / "src"), os.environ.get("PYTHONPATH", "")])})
-        # 首启导览会盖一层全屏遮罩，点哪儿都落到遮罩上；这几千个断言验的是页面本身，
-        # 邀请与关闭各有自己的用例。
-        w_tutorial_progress(WebContract(cls.db), {"campaign": CAMPAIGN, "action": "dismiss"})
+        # 首启导览已移除，页面本身不再需要遮罩处理。
         # 生成的根目录用 `PeachSettings` 的默认值（数据根下的 `generated/*`）：处理链按
         # `config.directory('generated')` 写预览图，接口只认落在 `snapshot_root` 之下的路径，
         # 两边不一致时卡片恒显示「预览未取得」。

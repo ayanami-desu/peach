@@ -145,7 +145,7 @@ describe('管理区页头', () => {
 const DOCK = '[data-batch-dock] [data-selection-dock]';
 
 async function pickTwo(cards: Locator) {
-  for (const at of [0, 1]) await cards.nth(at).click({ modifiers: ['Control'], position: { x: 20, y: 20 } });
+  for (const at of [0, 1]) await cards.nth(at).click({ modifiers: ['ControlOrMeta'], position: { x: 20, y: 20 } });
 }
 
 async function readDock(page: Page) {

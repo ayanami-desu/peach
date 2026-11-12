@@ -1084,14 +1084,6 @@
 <langSet xml:lang="zh-CN"><tig><term>识别</term></tig></langSet>
 <langSet xml:lang="en"><tig><term>Recognize</term><note from="translator">未识别 = Unrecognized。</note></tig></langSet>
 </termEntry>
-<termEntry id="ref.39.0">
-<langSet xml:lang="zh-CN"><tig><term>新手教程</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Tour</term><note from="translator">新手教程 = Guided tour，界面导览 = Interface tour。</note></tig></langSet>
-</termEntry>
-<termEntry id="ref.39.1">
-<langSet xml:lang="zh-CN"><tig><term>导览</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Tour</term><note from="translator">新手教程 = Guided tour，界面导览 = Interface tour。</note></tig></langSet>
-</termEntry>
 <termEntry id="ref.40">
 <langSet xml:lang="zh-CN"><tig><term>合并</term></tig></langSet>
 <langSet xml:lang="en"><tig><term>Merge</term></tig></langSet>

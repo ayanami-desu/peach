@@ -41,7 +41,6 @@ export interface SyncedSettings {
   manageOrder?: string[];
   navigationOrders?: NavigationOrders;
   libraryOrder?: string[];
-  postSetupTutorialDone?: boolean;
   /** 数据库里还没存过时是 null：这台设备本地那个数替所有访问端先定下来。 */
   searchHistoryLimit?: number | null;
   /** 番号识别规则，一条一个正则。 */

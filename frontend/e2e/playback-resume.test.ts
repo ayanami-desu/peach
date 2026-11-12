@@ -4,7 +4,7 @@ import { after, before, describe, it } from 'node:test';
 
 import type { Browser, Page } from 'playwright-core';
 
-import { launch, VIEWPORTS } from './harness.ts';
+import { launch, requiredEnv, VIEWPORTS } from './harness.ts';
 import { ITEM, openItemPage } from './item-fixture.ts';
 
 const VIDEO = '#stage video.vjs-tech';
@@ -23,15 +23,14 @@ describe('视频退出续播', () => {
   before(async () => {
     browser = await launch();
     const origin = process.env.PEACH_E2E_ORIGIN!;
-    const result = await (await fetch(new URL('/api/items?medium=video&limit=1', origin))).json();
-    clip = new URL(`/stream?id=${result.items[0].id}`, origin).toString();
+    clip = new URL(`/stream?id=${requiredEnv('PEACH_E2E_ITEM')}`, origin).toString();
   });
   after(async () => { await browser.close() });
 
   for (const viewport of VIEWPORTS) {
     it(`${viewport.name}：关闭、重开和刷新恢复秒数，时间深链优先`, { timeout: 90_000 }, async () => {
       const path = `/assets/${ITEM.plain}`;
-      const opened = await openItemPage(browser, path, viewport);
+      const opened = await openItemPage(browser, path, viewport, { settings: { detailAutoplay: true } });
       try {
         const page = opened.page;
         // 用例里的刷新与跳转会取消还在转发的片源请求，那一趟落空不算失败；其余错误照常抛出。
@@ -40,7 +39,10 @@ describe('视频退出续播', () => {
         };
         await page.route((url) => url.pathname === '/stream',
           async (route) => {
-            try { await route.fulfill({ response: await route.fetch({ url: clip }) }) } catch (error) { settled(error) }
+            try {
+              const response = await route.fetch({ url: clip, maxRedirects: 20 });
+              await route.fulfill({ status: response.status(), headers: response.headers(), body: await response.body() });
+            } catch (error) { settled(error) }
           });
         await page.route((url) => url.pathname === '/api/activity',
           (route) => route.fulfill({ json: { ok: true } }));
@@ -49,7 +51,7 @@ describe('视频退出续播', () => {
         await page.reload({ waitUntil: 'load' });
         await metadata(page);
         await page.locator(VIDEO).evaluate((video: HTMLVideoElement) => new Promise<void>((resolve) => {
-          video.addEventListener('seeked', () => resolve(), { once: true });
+          video.addEventListener('seeked', () => { video.pause(); resolve() }, { once: true });
           video.currentTime = .7;
         }));
         await metadata(page);
@@ -63,13 +65,20 @@ describe('视频退出续播', () => {
         assert.ok(Math.abs(Number(await saved()) - .7) < .1, `关闭后位置异常：${await saved()}`);
         await page.goto(new URL(path, page.url()).toString(), { waitUntil: 'load' });
         await metadata(page);
+        await page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.pause());
         const current = () => page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.currentTime);
         assert.ok(Math.abs(await current() - .7) < .1, `重新进入秒数 ${await current()}，存储 ${await saved()}`);
         await page.reload({ waitUntil: 'load' });
         await metadata(page);
+        await page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.pause());
         assert.ok(Math.abs(await current() - .7) < .1, '刷新没有恢复秒数');
         await page.goto(new URL(`${path}?t=1`, page.url()).toString(), { waitUntil: 'load' });
         await metadata(page);
+        await page.waitForFunction(() => {
+          const video = document.querySelector<HTMLVideoElement>('#stage video');
+          return !!video && video.currentTime >= .9;
+        }, undefined, { timeout: 15_000 });
+        await page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.pause());
         assert.ok(await current() >= .9, '指定时间深链没有覆盖保存位置');
         assert.deepEqual(opened.problems.filter((line) => !line.includes('VIDEOJS')), []);
       } finally {

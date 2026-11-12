@@ -7,7 +7,6 @@ import { cancelQueueRequest, installNavigation2, installNavigation4 } from './na
 import { installLoading3 } from './loading.js';
 import { installPreferences5, installPreferences23 } from './preferences.js';
 import { installReceipts6 } from './receipts.js';
-import { installTutorial8 } from './tutorial.js';
 import { installEntity9, installEntity17 } from './entity.js';
 import { installMedia10, installMedia21 } from './media.js';
 import { installSelection11 } from './selection.js';
@@ -28,7 +27,6 @@ export function initializeApplication() {
   installPreferences5();
   installReceipts6();
   installCatalog7();
-  installTutorial8();
   installEntity9();
   installMedia10();
   installSelection11();

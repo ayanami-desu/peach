@@ -18,7 +18,6 @@ const WIDTH = {
   'cover-crop': 'max-w-cover-crop',
   form: 'max-w-form-modal',
   collections: 'max-w-4xl',
-  tutorial: 'max-w-2xl',
 } as const;
 
 export function ModalFrame({ isOpen, onOpenChange, width, label, children, surfaceClassName = '' }: {

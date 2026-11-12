@@ -104,6 +104,10 @@ export function sidebarHost(){
         const i=cur.indexOf(value);if(i>=0)cur.splice(i,1);else cur.push(value);filters[key]=cur.join(',')}
       else filters[key]=filters[key]===value?'':value
     }),
+    setDuration:(min,max)=>commitContextFilter(filters=>{
+      filters.dur_min=min>0?String(Math.round(min*60)):'';
+      filters.dur_max=max<180?String(Math.round(max*60)):'';
+    }),
     attached:()=>{preferencesState.placeSidebarHead();preferencesState.syncGlassOptics()},
   };
 }

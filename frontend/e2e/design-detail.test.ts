@@ -1,8 +1,12 @@
 /* 设计决定：关注详情、作品详情、播放器与侧栏。读 `getComputedStyle` 断言用户定过的外观；共用的桩与浏览器生命周期在 `design-fixture.ts`。 */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import type { Browser, Page } from 'playwright-core';
-import { settle, visit, VIEWPORTS, type Viewport, type Visit } from './harness.ts';
+import { requiredEnv, settle, visit, VIEWPORTS, type Viewport, type Visit } from './harness.ts';
 import { muteVideos, openImmerse, pickClips, pinQueue, settledClip } from './immerse-fixture.ts';
 import { ITEM, openItemPage } from './item-fixture.ts';
 import { DESKTOP, MOBILE, tokenColor, installDesignBrowser } from './design-fixture.ts';
@@ -478,6 +482,9 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
         return shown;
       });
       assert.deepEqual(gauge, { fill: 'none', stroke: 'rgb(255, 255, 255)' });
+      /* 204 没有实体响应体，浏览器不会把自定义 hlsjs-video 推进 error；用成功响应里的空 MP4 触发解码错误且不制造 HTTP 控制台噪声。 */
+      await page.route((url) => url.pathname === '/stream', (route) => route.fulfill({ status: 200, contentType: 'video/mp4', body: '' }));
+      await page.locator(`${PLAYER_BAR} > .vjs-play-control`).click();
       await page.locator('#stage .video-js.vjs-error').waitFor({ timeout: 10_000 });
       const error = (await styleOf(page, '#stage .vjs-error-display .vjs-modal-dialog-content', ['background-color', 'z-index']))!;
       const stats = (await styleOf(page, '#stage #playerStats', ['z-index']))!;
@@ -575,9 +582,20 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
 
   it('沉浸模式桌面照 Shorts 三段：9:16 舞台居中、动作列贴舞台右侧 12px、作者标题在左下；横片换成 16:9，动作列收进框里；浅色主题下仍是深色层', { timeout: 90_000 }, async () => {
     const opened = await visit(browser, '/', DESKTOP);
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'peach-immerse-'));
     try {
       const { page } = opened;
       const { wide, tall } = await pickClips(page);
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        (route) => route.fulfill({ json: { ok: true } }));
+      const tallPath = join(fixtureDir, 'tall.mp4');
+      execFileSync(requiredEnv('PEACH_E2E_FFMPEG'), [
+        '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=#31506b:s=240x426:r=24',
+        '-t', '1', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', tallPath,
+      ], { stdio: 'ignore' });
+      await page.route((url) => url.pathname === '/stream'
+        && Number(url.searchParams.get('id')) === tall.id,
+      (route) => route.fulfill({ path: tallPath, contentType: 'video/mp4' }));
       await pinQueue(page, [tall, wide]);
       await muteVideos(page);
       await openImmerse(page, tall.id);
@@ -666,6 +684,7 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
       assert.deepEqual(opened.problems.filter((line) => !line.includes('VIDEOJS')), []);
     } finally {
       await opened.close();
+      rmSync(fixtureDir, { recursive: true, force: true });
     }
   });
 
@@ -753,6 +772,9 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
     const opened = await openSidebar(DESKTOP);
     try {
       const { page } = opened;
+      const firstGroup = page.locator('#drawer [data-sidebar-group]').first();
+      await firstGroup.locator(':scope > [data-sidebar-toggle]').click();
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLDetailsElement>('#drawer [data-sidebar-group]')].some((group) => group.open));
       const head = await page.evaluate(() => {
         const drawer = document.querySelector('#drawer')!;
         const rect = (selector: string) => drawer.querySelector(selector)!.getBoundingClientRect();

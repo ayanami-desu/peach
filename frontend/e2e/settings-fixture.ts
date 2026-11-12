@@ -23,7 +23,7 @@ const body = (request: Request) => JSON.parse(request.postData() || '{}') as Rec
 export async function stubServer(page: Page): Promise<Server> {
   const server: Server = {
     settings: {
-      sidebarOrder: [...ORDER], metadataRefreshDays: 30, followInitialDays: 30, postSetupTutorialDone: true,
+      sidebarOrder: [...ORDER], metadataRefreshDays: 30, followInitialDays: 30,
       organizeTemplates: {}, feedHideGroupCompilations: true, feedHideSoloCompilations: false, feedHideExcerpts: true,
       searchHistoryLimit: 10,
     },

@@ -144,7 +144,7 @@ compositionState.shellActions = {
     /* 地址上没写来源时不设默认范围，按实际配置的来源展示。 */
     defaultLoc:()=>'',
     /* 整页打开：筛选已由目录元素照地址写进 `state`。`retitle` 是首页 `?state=ads` 改写成垃圾文件地址的那一下：
-       改写认领了，标题、侧栏与教程状态在这里补；`entering` 是从别处回到首页，顶部三层的缓存作废。
+       改写认领了，标题、侧栏在这里补；`entering` 是从别处回到首页，顶部三层的缓存作废。
        回收站清掉搜索框，别的页把地址上的搜索词摆回框里。 */
     open:(path,{entering=false,retitle=false}={})=>{
       if(retitle){syncRouteChrome();syncHeaderActions();paintListTitle()}

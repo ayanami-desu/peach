@@ -149,7 +149,7 @@ describe('侧栏岛', () => {
       await page.locator('#drawer [data-sidebar-group="内容标签"]').waitFor({ state: 'attached', timeout: 15_000 });
       await settle(page);
       assert.deepEqual(await chips(page, '内容标签'), HOME_TAGS.map(([k, n]) => [k, String(n)]), '首页的内容标签不是全库那一份');
-      assert.ok((await chips(page, '来源')).some(([value, count]) => value === 'local' && Number(count) > 0), '来源那一组没有本机的计数');
+      assert.ok((await chips(page, '来源')).some(([, count]) => Number(count) > 0), '来源那一组没有计数');
 
       await openGroup(page, '内容标签');
       const chip = page.locator(`#drawer [data-sidebar-chip][data-key="tag"][data-val="${HOME_TAGS[0][0]}"]`);

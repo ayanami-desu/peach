@@ -27,13 +27,11 @@ import { detailStreamSession, detailStreamSource, directDetailSource } from './s
 import { stopTelemetry, wireTelemetry } from './telemetry';
 import type { PlayerItem, VjsPlayer } from './types';
 import { ensureVideojs } from './videojs';
-import { isPlayerGuidePreview } from './guide-preview';
 
 /** 从小窗展开回来或带 `?t=` 深链进来时接着放的那一刻。 */
 export interface PlayerResume { time: number; autoplay: boolean }
 
 export interface DetailPlayerOptions {
-  guidePreview?: boolean;
   playbackKey?: string;
   poster?: string | undefined;
   resume?: PlayerResume | null;
@@ -76,12 +74,10 @@ export async function mountDetailPlayer(
   const host = playerHost();
   const resume = options.resume ?? null;
   if (resume?.autoplay) autoplay = true;
-  if (options.guidePreview) autoplay = false;
   /* 拉不到就退回原生 video，和「页面里没有 videojs」是同一个兜底出口。 */
   let videojs;
   try { videojs = await ensureVideojs() } catch {
     video.controls = true;
-    if (options.guidePreview) return null;
     video.preload = 'none';
     let fallbackStarted = false;
     const startFallback = () => {
@@ -231,7 +227,7 @@ export async function mountDetailPlayer(
     enforceDuration();
     mountPlayerQualityControl(player, video, item.height, null);
     mountPlayerSeekPreview(player, item, { thumbnail: true });
-    if (!options.guidePreview) mountPlayerMediaSession(player, item);
+    mountPlayerMediaSession(player, item);
     mountPlayerSpinner(player);
     session.ready = true;
     if (session.chrome?.statsButton) session.chrome.statsButton.hidden = false;
@@ -255,34 +251,32 @@ export async function mountDetailPlayer(
       player.play()?.catch(() => {});
     }).catch(() => { sourceStarting = false });
   };
-  if (!options.guidePreview) {
-    if (autoplay) startSource();
-    else {
-      /* 不自动播时不碰片源：连 `/api/stream-plan` 也不发。首次播放意图来自播放按钮、点画面
-       * 或键盘；捕获阶段拦住它们，等片源挂好后再真正播放。 */
-      const root = player.el();
-      const onClick = (event: Event) => {
-        if (sourceStarted || sourceStarting) return;
-        const target = event.target as Element | null;
-        if (!target?.closest('.vjs-play-control, .vjs-big-play-button, video, .vjs-tech, .vjs-poster')) return;
-        event.preventDefault(); event.stopPropagation();
-        startSource();
-      };
-      const onKeyDown = (event: KeyboardEvent) => {
-        if (sourceStarted || sourceStarting || (event.key !== ' ' && event.key !== 'Enter')) return;
-        const target = event.target as Element | null;
-        if (!target?.closest('.vjs-play-control, .vjs-big-play-button, video, .vjs-tech')) return;
-        event.preventDefault(); event.stopPropagation();
-        startSource();
-      };
-      root.addEventListener('click', onClick, true);
-      root.addEventListener('keydown', onKeyDown, true);
-      player.on('dispose', () => {
-        root.removeEventListener('click', onClick, true);
-        root.removeEventListener('keydown', onKeyDown, true);
-      });
-      player.on('play', startSource);
-    }
+  if (autoplay) startSource();
+  else {
+    /* 不自动播时不碰片源：连 `/api/stream-plan` 也不发。首次播放意图来自播放按钮、点画面
+     * 或键盘；捕获阶段拦住它们，等片源挂好后再真正播放。 */
+    const root = player.el();
+    const onClick = (event: Event) => {
+      if (sourceStarted || sourceStarting) return;
+      const target = event.target as Element | null;
+      if (!target?.closest('.vjs-play-control, .vjs-big-play-button, video, .vjs-tech, .vjs-poster')) return;
+      event.preventDefault(); event.stopPropagation();
+      startSource();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (sourceStarted || sourceStarting || (event.key !== ' ' && event.key !== 'Enter')) return;
+      const target = event.target as Element | null;
+      if (!target?.closest('.vjs-play-control, .vjs-big-play-button, video, .vjs-tech')) return;
+      event.preventDefault(); event.stopPropagation();
+      startSource();
+    };
+    root.addEventListener('click', onClick, true);
+    root.addEventListener('keydown', onKeyDown, true);
+    player.on('dispose', () => {
+      root.removeEventListener('click', onClick, true);
+      root.removeEventListener('keydown', onKeyDown, true);
+    });
+    player.on('play', startSource);
   }
   return player;
 }
@@ -371,12 +365,11 @@ export interface MountPlayerOptions {
 export function mountPlayer(video: HTMLVideoElement, options: MountPlayerOptions | ImmersePlayerOptions): () => void {
   if (options.kind === 'immerse') return mountImmersePlayer(video, options);
   const { item, handedOff, onPlayer } = options;
-  const guidePreview = isPlayerGuidePreview();
   const host = playerHost();
   const frame = options.chrome === false ? null : video.parentElement;
   if (frame) preparePlayerFrame(frame, video);
   const key = playbackKey(item);
-  const detail: DetailPlayerOptions = { guidePreview, playbackKey: key, resume: guidePreview ? null : options.resume ?? { time: playbackPosition(key, item), autoplay: false } };
+  const detail: DetailPlayerOptions = { playbackKey: key, resume: options.resume ?? { time: playbackPosition(key, item), autoplay: false } };
   const poster = detailPosterUrl(item, host.settings().javImage);
   if (poster) video.poster = poster;
   let player: VjsPlayer | null = null, released = false, detachChrome = () => {}, trackedVideo = video;
@@ -388,15 +381,11 @@ export function mountPlayer(video: HTMLVideoElement, options: MountPlayerOptions
     if (detailPlayer() === player) { setDetailPlayer(null); stopPlayerPanels() }
     disposePlayer(player);
   };
-  void mountDetailPlayer(item, video, guidePreview ? false : options.autoplay ?? host.settings().detailAutoplay, detail).then((mounted) => {
+  void mountDetailPlayer(item, video, options.autoplay ?? host.settings().detailAutoplay, detail).then((mounted) => {
     player = mounted;
     // 挂载还没回来媒体区就换了：这一个一出来就拆掉。
     if (released) { release(); return }
     trackedVideo = mounted?.el().querySelector('video') ?? video;
-    if (guidePreview) {
-      mounted?.el().setAttribute('data-player-guide', '');
-      onPlayer?.(mounted); return;
-    }
     trackPlaybackPosition(key, trackedVideo);
     trackedVideo.addEventListener('play', () => {
       void (api('/api/play', { method: 'POST', body: JSON.stringify({ id: item.id }) }) as Promise<unknown>).catch(() => {});

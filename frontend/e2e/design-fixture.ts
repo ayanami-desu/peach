@@ -357,7 +357,7 @@ export interface CatalogFixture {
 export async function openCatalogFixture(
   browser: Browser,
   change: (payload: CatalogFixture, url: URL) => void,
-  { completeFirstPage = false }: { completeFirstPage?: boolean } = {},
+  { completeFirstPage = false, includeShorts = false }: { completeFirstPage?: boolean; includeShorts?: boolean } = {},
 ): Promise<Visit> {
   const opened = await visit(browser, '/', DESKTOP);
   let baseline: CatalogFixture | undefined;
@@ -366,19 +366,38 @@ export async function openCatalogFixture(
     /* `visit()` 返回时，首屏还可能在后台续取下一页。路由接管之后若先撞上 offset>0，
        那份响应本来就可能没有卡片，不能拿它当首屏基线；让旧请求原样完成，reload 后
        再以 offset=0 的响应建立夹具。
-       同一页还挂着一条竖屏货架（带 `orient`），演示库没有竖屏作品，那份响应本来就是空的，
-       没有可改的卡片；原样放过，不把空响应交给 `change`。 */
-    if (url.searchParams.get('offset') !== '0' || url.searchParams.has('orient')) {
+       同一页还挂着一条竖屏货架（带 `orient`）。需要测竖屏带的用例打开
+       `includeShorts`，从同一份基线复制一条竖屏作品；其它用例仍让真实响应原样通过。 */
+    if (url.searchParams.get('offset') !== '0' || (url.searchParams.has('orient') && !includeShorts)) {
       await route.continue();
       return;
     }
     if (!baseline) {
       const fixtureUrl = new URL(url);
+      fixtureUrl.searchParams.delete('orient');
       if (completeFirstPage) fixtureUrl.searchParams.set('limit', '60');
       const response = await route.fetch({ url: fixtureUrl.href });
       baseline = await response.json() as CatalogFixture;
     }
     const payload = structuredClone(baseline);
+    if (url.searchParams.has('orient')) {
+      const source = payload.items[0];
+      if (source) {
+        const id = Number(source.id);
+        payload.items = [{
+          ...source,
+          id: Number.isFinite(id) ? id + 900_000 : 900_001,
+          name: '演示竖屏.mp4',
+          ctx_orient: '竖屏',
+          medium: 'video',
+          width: Number(source.height) || 1080,
+          height: Number(source.width) || 1920,
+          is_jav: false,
+        }];
+        payload.total = 1;
+        payload.has_more = false;
+      }
+    }
     change(payload, url);
     await route.fulfill({
       status: 200,

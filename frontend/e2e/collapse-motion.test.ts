@@ -63,7 +63,7 @@ describe('折叠正文与箭头共用动画', () => {
   before(async () => { browser = await launch() });
   after(async () => { await browser.close() });
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name}：任务通知与教程可动画折叠`, async () => {
+    it(`${viewport.name}：任务通知可动画折叠`, async () => {
       const opened = await visit(browser, '/', viewport, async page => {
         await page.route('**/api/library-processing', route => route.fulfill({ json: {
           status: 'running', job_id: 'motion', total: 100, checked: 12, speed_mode: 'standard',
@@ -76,9 +76,6 @@ describe('折叠正文与箭头共用动画', () => {
         const taskButtons = '[data-library-completion] [data-split-button] > button[aria-busy="true"]';
         await settle(opened.page, 'body', { except: taskButtons });
         await motion(opened.page, opened.page.locator('#toasts [data-processing-dock] button[aria-controls]'));
-        await opened.page.locator('#tutorialBtn').click();
-        await opened.page.locator('label').filter({ has: opened.page.getByRole('radio', { name: '界面导览', exact: true }) }).click();
-        await motion(opened.page, opened.page.locator('[data-guide-topic="browse"] > details > summary'));
         assert.deepEqual(opened.problems, []);
       } finally { await opened.close() }
     });

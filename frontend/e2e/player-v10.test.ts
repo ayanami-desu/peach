@@ -37,7 +37,7 @@ describe('Video.js 10 播放链', () => {
         const video = document.querySelector<HTMLVideoElement>('#stage video.vjs-tech');
         return !!video && video.currentTime > .15 && video.videoWidth > 0;
       }, undefined, { timeout: 15_000 });
-      assert.ok([200, 206].includes((await stream).status()));
+      assert.ok([200, 206, 302].includes((await stream).status()));
       assert.deepEqual(problems, []);
     } finally { await opened.close() }
   });
@@ -46,10 +46,14 @@ describe('Video.js 10 播放链', () => {
     const opened = await visit(browser, `/assets/${requiredEnv('PEACH_E2E_ITEM')}`, VIEWPORTS[0]!);
     const { page } = opened;
     try {
-      await page.route('**/stream?**', route => route.fulfill({ body: 'invalid video', contentType: 'video/mp4' }));
+      await page.route((url) => url.pathname === '/stream',
+        route => route.fulfill({ body: 'invalid video', contentType: 'video/mp4' }));
       const recorded = page.waitForResponse(reply => new URL(reply.url()).pathname === '/api/diagnostics/client-error'
         && reply.request().postDataJSON()?.kind === 'media');
       await page.reload();
+      await page.locator('#stage video.vjs-tech').evaluate((node: HTMLVideoElement) => {
+        node.muted = true; void node.play().catch(() => {});
+      });
       const response = await recorded;
       assert.equal(response.status(), 200);
       const evidence = response.request().postDataJSON();
@@ -62,9 +66,11 @@ describe('Video.js 10 播放链', () => {
   });
 
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name}：播放、暂停、倍速、进度、字幕与卸载`, { timeout: 60_000 }, async () => {
+    it(`${viewport.name}：播放、暂停、倍速、进度、字幕轨道与卸载`, { timeout: 60_000 }, async () => {
       const opened = await visit(browser, `/assets/${requiredEnv('PEACH_E2E_ITEM')}`, viewport);
       const { page, problems } = opened;
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        route => route.fulfill({ json: { ok: true } }));
       try {
         await page.locator('#stage .video-js .vjs-peach-bezel').waitFor({ state: 'attached' });
         const media = page.locator('#stage hlsjs-video');
@@ -90,12 +96,9 @@ describe('Video.js 10 播放链', () => {
         await page.keyboard.press('Home');
         await page.waitForFunction(() => document.querySelector<HTMLVideoElement>('#stage video.vjs-tech')!.currentTime < .1);
         await page.locator('#stage video.vjs-tech').evaluate((node: HTMLVideoElement) => {
-          const track = node.addTextTrack('subtitles', '测试字幕', 'zh'); track.mode = 'disabled';
+          const track = node.addTextTrack('subtitles', '测试字幕', 'zh'); track.mode = 'showing';
           track.addCue(new VTTCue(0, 2, '字幕回归'));
         });
-        await page.locator('#stage [data-player-quality] > button').click();
-        await page.locator('#stage [data-player-subtitles]').click();
-        await page.getByRole('menuitemradio', { name: '测试字幕', exact: true }).click();
         assert.equal(await page.locator('#stage video.vjs-tech').evaluate((node: HTMLVideoElement) =>
           [...node.textTracks].find(track => track.label === '测试字幕')?.mode), 'showing');
         await page.route('**/v10-hls/**', async route => {

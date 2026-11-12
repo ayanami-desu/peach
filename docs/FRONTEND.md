@@ -13,7 +13,7 @@
 
 | 路径 | 内容 |
 | --- | --- |
-| `frontend/src/application/` | 控制器安装顺序与各功能模块：初始化、目录、筛选、媒体、导航、偏好、回执、搜索、教程 |
+| `frontend/src/application/` | 控制器安装顺序与各功能模块：初始化、目录、筛选、媒体、导航、偏好、回执、搜索 |
 | `frontend/src/core/` | 不依赖 DOM 的共用函数：接口地址、实体地址、站点名与站点标识、语言判定、随机 id、请求错误文案 |
 | `frontend/src/react/` | React 子树：`boardui/` 是逐字复制的 BoardUI 源码，`components/` 是 Peach 组合出来的控件，其余按功能分目录 |
 | `frontend/src/history/` | 全站唯一浏览器历史，以及地址规范化、页面标题、路由元信息 |
