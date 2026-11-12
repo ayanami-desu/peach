@@ -7,7 +7,7 @@
 
 入口是 `web/index.html` 里的一个 `<script type="module" src="/dist/peach-app.js">`，挂在 `#appRoot`。首启、登录与错误三张独立页由 `web_entry.page_shell()` 画薄壳，脚本是 `/dist/peach-pages.js`。
 
-运行时不需要 Node。`web/dist/` 下的产物提交进 Git，服务端直接发文件；Node 只用于构建、类型检查、lint、文案检查与前端测试。这样运行时服务、PyInstaller 包和 macOS 检出都不必装 Node（决策见 [ADR-0022](adr/0022-frontend-vite-preact-strangler.md)）。
+运行时不需要 Node。`web/dist/` 下的产物提交进 Git，服务端直接发文件；Node 只用于构建、类型检查、lint、文案检查与前端测试。这样运行时服务与源码运行都不必装 Node（决策见 [ADR-0022](adr/0022-frontend-vite-preact-strangler.md)）。
 
 ## 目录
 
