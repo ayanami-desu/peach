@@ -237,7 +237,7 @@ describe('扫描与采集控制', () => {
         await resume.waitFor();
         await occupied.dispatchEvent('click');
         await page.locator('#toasts [data-sonner-toast]')
-          .filter({ hasText: '当前的扫描与采集任务（由命令行或托盘发起）还没结束' }).waitFor();
+          .filter({ hasText: '当前的扫描与采集任务（由命令行发起）还没结束' }).waitFor();
         const lowSpeed = dock.getByRole('button', { name: '处理速度：低占用' });
         assert.equal(await lowSpeed.innerText(), '低占用');
         assert.equal(await lowSpeed.locator('use[href="#i-snail"]').count(), 1);

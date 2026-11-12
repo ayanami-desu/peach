@@ -3,7 +3,7 @@
 <martifHeader><fileDesc><sourceDesc><p>Peach 界面术语表，见 docs/adr/0156-interface-translation.md</p></sourceDesc></fileDesc></martifHeader>
 <text><body>
 <termEntry id="concept.library">
-<descrip>用户配置的一组媒体目录，有自己的名字，侧栏可以切换，一个实例可以有多个。目录各自存放在哪种位置（本地磁盘、115、PikPak）是下面的“媒体来源”。</descrip>
+<descrip>用户配置的一组媒体目录，有自己的名字，侧栏可以切换，一个实例可以有多个。目录各自存放在哪个网盘（Google Drive、OneDrive）是下面的“媒体来源”。</descrip>
 <langSet xml:lang="zh-CN"><tig><term>媒体库</term></tig></langSet>
 <langSet xml:lang="en"><tig><term>Library</term><note from="translator">Plex、Jellyfin 都把这一层叫 Library；可数，复数 libraries 自然。#443 用 Media library，比 Library 长 6 个字符，而侧栏选择器和下拉框都很窄。 以后增加网络共享、SMB 等类型，都还是 library 的一种，名称不变。</note></tig></langSet>
 </termEntry>
@@ -103,9 +103,9 @@
 <langSet xml:lang="en"><tig><term>Magnet link</term><note from="translator">Magnet 单独写不成含义，Link 在 Peach 里已指外链和链接检查。按钮和筛选全写：Copy magnet link、Has magnet link／No magnet link；卡片上窄的徽标改成磁铁图标，悬停显示 Magnet link。“磁力”“磁链”两个写法统一。</note></tig></langSet>
 </termEntry>
 <termEntry id="concept.storage">
-<descrip>一个目录存放在哪种位置：本地磁盘、115、PikPak。媒体库设置里每个目录旁边那个“来源”下拉选的就是它；资源同步结果按它分卡。</descrip>
+<descrip>一个目录存放在哪个网盘：Google Drive、OneDrive。媒体库设置里每个目录旁边那个“来源”下拉选的就是它；资源同步结果按它分卡。</descrip>
 <langSet xml:lang="zh-CN"><tig><term>媒体来源</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Storage</term><note from="translator">列出来的是存储位置，Storage 一眼就懂，也避开 source 这个已被资料来源、关注来源占用的词。媒体库设置里目录旁边那个可见字段“来源”含义相同，也译 Storage。 以后加 SMB、OneDrive 时还是 storage 的一种。</note></tig></langSet>
+<langSet xml:lang="en"><tig><term>Storage</term><note from="translator">列出来的是存储位置，Storage 一眼就懂，也避开 source 这个已被资料来源、关注来源占用的词。媒体库设置里目录旁边那个可见字段“来源”含义相同，也译 Storage。 以后加 SMB 等来源时还是 storage 的一种。</note></tig></langSet>
 </termEntry>
 <termEntry id="concept.storage.forbidden.0">
 <langSet xml:lang="zh-CN"><tig><term>媒体来源</term></tig></langSet>
@@ -300,15 +300,6 @@
 <termEntry id="concept.viewOnSite.forbidden.1">
 <langSet xml:lang="zh-CN"><tig><term>作品来源</term></tig></langSet>
 <langSet xml:lang="en"><tig><term>Video sources</term><termNote type="administrativeStatus">forbidden</termNote></tig></langSet>
-</termEntry>
-<termEntry id="concept.cloudDownload">
-<descrip>提交到 115、PikPak 等网盘的离线下载。</descrip>
-<langSet xml:lang="zh-CN"><tig><term>云下载</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Cloud download</term><note from="translator">Offline download 是网盘自己的叫法，但英文用户更容易把它理解成“离线时下载”。</note></tig></langSet>
-</termEntry>
-<termEntry id="concept.cloudDownload.forbidden.0">
-<langSet xml:lang="zh-CN"><tig><term>云下载</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Offline download</term><termNote type="administrativeStatus">forbidden</termNote></tig></langSet>
 </termEntry>
 <termEntry id="concept.want">
 <descrip>标记想获取的外部作品，之后可以找资源下载。</descrip>
@@ -753,7 +744,7 @@
 <termEntry id="concept.accessToken">
 <descrip>没设访问密码时系统生成的登录口令，也是脚本和 API 放在 X-Token 请求头里的那串值。和用户自己设的「访问密码」是两样东西。</descrip>
 <langSet xml:lang="zh-CN"><tig><term>访问口令</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Access token</term><note from="translator">「访问密码」= Access password 没有争议；口令要和它分开，又要和 CloudDrive2 的「API 令牌」(API token) 分得清。Access token 与请求头 X-Token 对得上。 更换口令 = Rotate token。</note></tig></langSet>
+<langSet xml:lang="en"><tig><term>Access token</term><note from="translator">「访问密码」= Access password 没有争议；口令要和它分开，又要和网盘的「API 令牌」(API token) 分得清。Access token 与请求头 X-Token 对得上。 更换口令 = Rotate token。</note></tig></langSet>
 </termEntry>
 <termEntry id="concept.accessToken.forbidden.0">
 <langSet xml:lang="zh-CN"><tig><term>访问口令</term></tig></langSet>
@@ -907,7 +898,7 @@
 <langSet xml:lang="en"><tig><term>Record</term><termNote type="administrativeStatus">forbidden</termNote></tig></langSet>
 </termEntry>
 <termEntry id="concept.cloudDrive">
-<descrip>115、PikPak 这类云存储，通常经 CloudDrive2 挂载成本地盘。</descrip>
+<descrip>Google Drive、OneDrive 这类云存储，Peach 直接调它们的 API 读写。</descrip>
 <langSet xml:lang="zh-CN"><tig><term>网盘</term></tig></langSet>
 <langSet xml:lang="en"><tig><term>Cloud drive</term><note from="translator">草稿里「网盘与本地」写成 Storage，和已定稿的「媒体来源」(Storage) 撞了。网盘本身固定写 Cloud drive，Storage 只留给媒体来源。 网盘与本地 = Cloud and local。</note></tig></langSet>
 </termEntry>
@@ -964,10 +955,6 @@
 <termEntry id="ref.07">
 <langSet xml:lang="zh-CN"><tig><term>代理</term></tig></langSet>
 <langSet xml:lang="en"><tig><term>Proxy</term></tig></langSet>
-</termEntry>
-<termEntry id="ref.08">
-<langSet xml:lang="zh-CN"><tig><term>托盘</term></tig></langSet>
-<langSet xml:lang="en"><tig><term>Tray</term><note from="translator">Windows 托盘与 macOS 菜单栏统称 tray。</note></tig></langSet>
 </termEntry>
 <termEntry id="ref.09">
 <langSet xml:lang="zh-CN"><tig><term>挂载</term></tig></langSet>

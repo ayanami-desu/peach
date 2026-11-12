@@ -169,14 +169,14 @@ export const DISCONNECTED_TEXT = '连接中断，正在重新读取处理进度'
 
 /** 任务的发起方式写进句子里用的说法；`TRIGGER_LABELS` 是任务中心列表的短标签，放进句子读不通。 */
 const TRIGGER_PHRASES: Record<string, string> = {
-  manual: '在网页发起', scheduled: '定时发起', startup: '服务启动时自动发起', cli: '由命令行或托盘发起',
+  manual: '在网页发起', scheduled: '定时发起', startup: '服务启动时自动发起', cli: '由命令行发起',
 };
 
 /** 保存媒体库设置会重启 Peach：在跑的这一轮会怎样，按它跑在哪个进程、是否已暂停分开说。
- * 命令行与托盘起的是独立的 `peach process` 进程，重载只停服务；服务内的任务由启动恢复接着跑，
+ * 命令行起的是独立的 `peach process` 进程，重载只停服务；服务内的任务由启动恢复接着跑，
  * 用户暂停的那一轮恢复时跳过。勾了「保存后扫描」的那一趟要等全库处理锁，排在后面。 */
 export function restartEffectText(state: LibraryProcessingData, scanAfterSave: boolean): string {
-  const effect = state.trigger === 'cli' ? '这个任务由命令行或托盘发起，在独立进程里运行，不受重启影响。'
+  const effect = state.trigger === 'cli' ? '这个任务由命令行发起，在独立进程里运行，不受重启影响。'
     : state.status === 'paused' ? '已暂停的任务会保持暂停，重启后点继续即可接着处理。'
     : '正在进行的任务会随重启中断，重启后从中断处继续。';
   return `保存后 Peach 会重新启动。${effect}${scanAfterSave ? '勾选的「保存后扫描并补全资料」会排在当前任务之后。' : ''}`;

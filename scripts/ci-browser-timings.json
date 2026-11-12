@@ -72,7 +72,6 @@
     "frontend/e2e/management-layout.test.ts": 43.1,
     "frontend/e2e/media-byline.test.ts": 12.7,
     "frontend/e2e/media-navigation.test.ts": 7.6,
-    "frontend/e2e/media-paths.test.ts": 12.2,
     "frontend/e2e/media-processing-settings.test.ts": 36.9,
     "frontend/e2e/notification-shell.test.ts": 6.1,
     "frontend/e2e/offscreen-cards.test.ts": 57.5,

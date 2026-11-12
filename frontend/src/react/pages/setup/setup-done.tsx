@@ -1,7 +1,7 @@
 /* 设置完成：进入 Peach 的入口，运行信息默认折叠。口令不出现在页面上。
  *
  * 独立包的服务端在 `redirect` 里给入口地址，过 `RESTART_REDIRECT_MS` 自己跳过去，与配置页保存后
- * 等托盘换进程的时长是同一个数。 */
+ * 等服务重启的时长是同一个数。 */
 import { useEffect, useRef } from 'react';
 
 import { ButtonLink } from '@/components/base/buttons/button';
