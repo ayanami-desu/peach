@@ -15,7 +15,7 @@ Peach 随应用分发 `resources/seed/entities.json`，用已核对的公开文�
 1. 在隔离工作树完成资料采集与纠错。维护者真实账本仅作为只读导出来源，不把数据库文件放进仓库。
 2. 使用 `scripts/seed_pack.py export`，显式给出 `--db` 指向已维护的账本、`--version` 指定递增版本。默认输出为当前应用资源中的 `resources/seed/entities.json`；格式 2 的修订号自动递增，累计撤销从现有输出文件继承。需要指定基准时使用 `--previous`，已复核的精确撤销由 `--withdrawals` 提供。
 3. 使用 `scripts/seed_pack.py validate` 校验包；该入口不打开账本。复核 Git 差异中的事实、来源、关系、资料与累计撤销，确认没有凭据、本机路径或刮削残片。
-4. 将数据包与相关纠错一并测试、提交、集成，走既有 GitGud／GitHub 版本发布入口。Docker 镜像与源码树 `peach serve` 共用资源目录，发行构建必须包含种子（见 [ADR-0157](adr/0157-remote-drive-api-storage-and-playback.md)）。
+4. 将数据包与相关纠错一并测试、提交、集成，走既有 GitGud／GitHub 版本发布入口。wheel、Docker 共用资源目录，发行构建必须包含种子。
 
 版本示例为 `2026-10-23.1`；内容变更须使用比当前包更高的版本与修订号。同一版本和同一事实重复导出保持字节一致；同版本的不同内容被拒绝。普通用户的扫描和刮削不会向公共仓库自动上传资料，CI 也不读取维护者的本机账本。
 
