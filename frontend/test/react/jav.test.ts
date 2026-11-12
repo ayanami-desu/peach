@@ -38,7 +38,9 @@ it('发现封面优先本机缓存，远程封面经 Peach 代理并保留原地
   const item = { id: 1, code: 'ABC-001', has_cover: true, cover_url: 'https://pics.dmm.co.jp/digital/video/abc00001/abc00001pl.jpg' } as Discovery;
   const local = document.createElement('div');
   local.innerHTML = discoveryArtwork(item, 'big', 'cover');
-  expect(local.querySelector('img')?.getAttribute('src')).toContain('/cover?code=ABC-001');
+  const cover = local.querySelector('img')!;
+  expect(cover.getAttribute('src')).toBe('/cover?code=ABC-001');
+  expect(cover.dataset.javCover).toBe('/cover?code=ABC-001');
   local.innerHTML = discoveryArtwork({ ...item, has_cover: false }, 'small', 'cover');
   const image = local.querySelector('img')!;
   expect(image.getAttribute('src')).toBe('/cover-image?code=ABC-001');

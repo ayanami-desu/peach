@@ -244,6 +244,11 @@ describe('coverImage：官方封面', () => {
     expect(img.dataset.drop).toBe('self');
   });
 
+  it('探索页直接取原件，不带派生档，版本号保留', () => {
+    expect(parse(coverImage({ code: 'SSIS-001', cover_version: '18f3a' }, 'big', false, true))!.getAttribute('src'))
+      .toBe('/cover?code=SSIS-001&v=18f3a');
+  });
+
   it('补过高清、重探过的封面地址带上版本，派生档摘掉 thumb 后版本还在', () => {
     expect(parse(coverImage({ code: 'SSIS-001', cover_version: '18f3a' }, 'big'))!.getAttribute('src'))
       .toBe('/cover?code=SSIS-001&thumb=2&v=18f3a');

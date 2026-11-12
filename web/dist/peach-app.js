@@ -2,7 +2,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "4b155980-04f1-4c89-97b2-331fca34c017", e._sentryDebugIdIdentifier = "sentry-dbid-4b155980-04f1-4c89-97b2-331fca34c017");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "980d7de2-13ab-4ffd-8fdc-a44a9d0ceec1", e._sentryDebugIdIdentifier = "sentry-dbid-980d7de2-13ab-4ffd-8fdc-a44a9d0ceec1");
 	} catch {}
 })();
 var e = Object.create, t = Object.defineProperty, n = Object.getOwnPropertyDescriptor, r = Object.getOwnPropertyNames, i = Object.getPrototypeOf, a = Object.prototype.hasOwnProperty, o = (e, t) => () => (t || (e((t = { exports: {} }).exports, t, t.exports), e = null), t.exports), s = (e, n) => {
@@ -9805,29 +9805,29 @@ function en(e) {
 		t.imgH
 	].map(Number).join(" ")}"` : "";
 }
-function tn(e, t, n = !1) {
-	let r = Wt(e), i = /ブルーレイ|blu[\s-]?ray/i.test(String(e.title || e.display_title || e.name || "")), a = e.cover_frame || {}, o = e.poster_box?.method !== "manual" && (a.layout === "still" || /^(IENEE|IENFE|SDHS)-/i.test(String(e.code || "")) || /(?:【|\[|\(|（)\s*(?:[48]K\s*)?VR\s*(?:】|\]|\)|）)/i.test(String(e.title || e.display_title || e.name || ""))), s = a.cy == null ? null : o ? Math.min(1, Math.max(0, a.cy)) : Math.min(.6, Math.max(.05, a.cy)), c = [a.cx == null ? "" : ` data-cx="${a.cx}"`, s == null ? "" : ` data-cy="${s}"`].join(""), l = e.poster_box, u = l ? ` data-posterbox="${[
-		l.x0,
-		(l.px || [])[0],
-		(l.px || [])[1],
-		l.y0,
-		l.x1,
-		l.y1
+function tn(e, t, n = !1, r = !1) {
+	let i = r ? Ut(e) : Wt(e), a = /ブルーレイ|blu[\s-]?ray/i.test(String(e.title || e.display_title || e.name || "")), o = e.cover_frame || {}, s = e.poster_box?.method !== "manual" && (o.layout === "still" || /^(IENEE|IENFE|SDHS)-/i.test(String(e.code || "")) || /(?:【|\[|\(|（)\s*(?:[48]K\s*)?VR\s*(?:】|\]|\)|）)/i.test(String(e.title || e.display_title || e.name || ""))), c = o.cy == null ? null : s ? Math.min(1, Math.max(0, o.cy)) : Math.min(.6, Math.max(.05, o.cy)), l = [o.cx == null ? "" : ` data-cx="${o.cx}"`, c == null ? "" : ` data-cy="${c}"`].join(""), u = e.poster_box, d = u ? ` data-posterbox="${[
+		u.x0,
+		(u.px || [])[0],
+		(u.px || [])[1],
+		u.y0,
+		u.x1,
+		u.y1
 	].map(Number).join(" ")}"` : "";
-	return `<img class="poster cover ${t === "small" ? "whole" : "front"}" src="${r}"
-    width="640" height="360" alt="" loading="${n ? "eager" : "lazy"}" decoding="async" data-cover-code="${V(e.code || "")}"${i ? " data-wide-sleeve=\"1\"" : ""}${o ? " data-cover-layout=\"still\"" : ""}${c}${u} data-drop="self">`;
+	return `<img class="poster cover ${t === "small" ? "whole" : "front"}" src="${i}"
+    width="640" height="360" alt="" loading="${n ? "eager" : "lazy"}" decoding="async" data-cover-code="${V(e.code || "")}"${a ? " data-wide-sleeve=\"1\"" : ""}${s ? " data-cover-layout=\"still\"" : ""}${l}${d} data-drop="self">`;
 }
 var nn = {
 	kind: "",
 	html: ""
 };
-function rn(e, t, n, r) {
-	let i = Ft(e, r);
-	if (!i) return nn;
-	let a = e.has_cover && e.code ? Wt(e) : "", o = e.has_thumb || e.has_local_poster ? `/poster?id=${e.id}&c=4` : "", s = tn(e, t, n), c = (s.match(/ data-(?:c[xy]|posterbox)="[^"]*"/g) || []).join(""), l = i === "cover" ? s : `<img class="poster" src="${o}" width="640" height="360" alt="" loading="${n ? "eager" : "lazy"}" decoding="async"${c}>`;
+function rn(e, t, n, r, i = !1) {
+	let a = Ft(e, r);
+	if (!a) return nn;
+	let o = e.has_cover && e.code ? i ? Ut(e) : Wt(e) : "", s = e.has_thumb || e.has_local_poster ? `/poster?id=${e.id}&c=4` : "", c = tn(e, t, n, i), l = (c.match(/ data-(?:c[xy]|posterbox)="[^"]*"/g) || []).join(""), u = a === "cover" ? c : `<img class="poster" src="${s}" width="640" height="360" alt="" loading="${n ? "eager" : "lazy"}" decoding="async"${l}>`;
 	return {
-		kind: i === "cover" ? "cover" : "thumb",
-		html: l.replace("<img ", `<img data-jav-image="${e.id}" data-jav-cover="${V(a)}" data-jav-thumb="${V(o)}" data-jav-image-layout="${t}" `)
+		kind: a === "cover" ? "cover" : "thumb",
+		html: u.replace("<img ", `<img data-jav-image="${e.id}" data-jav-cover="${V(o)}" data-jav-thumb="${V(s)}" data-jav-image-layout="${t}" `)
 	};
 }
 function an(e, t, n, r) {
@@ -67297,10 +67297,10 @@ function QSe(e, t, n) {
 	let r = rn({
 		...e,
 		is_jav: !0
-	}, t, !1, n);
+	}, t, !1, n, !0);
 	if (r.html || !e.cover_url || !e.code) return r.html;
 	let i = V(Gt(e));
-	return tn(e, t).replace(/ src="[^"]*"/, ` src="${i}" data-jav-image="${e.id}" data-jav-cover="${i}" data-jav-thumb="" data-jav-image-layout="${t}"${t === "big" ? " data-panel-prior=\"1\"" : ""}`).replace("data-drop=\"self\"", "data-drop=\"initial\" data-initial=\"封面未取得\" data-drop-class=\"media-nopic\"");
+	return tn(e, t, !1, !0).replace(/ src="[^"]*"/, ` src="${i}" data-jav-image="${e.id}" data-jav-cover="${i}" data-jav-thumb="" data-jav-image-layout="${t}"${t === "big" ? " data-panel-prior=\"1\"" : ""}`).replace("data-drop=\"self\"", "data-drop=\"initial\" data-initial=\"封面未取得\" data-drop-class=\"media-nopic\"");
 }
 async function $Se(e) {
 	await q.ensureQueryData({
@@ -79178,4 +79178,4 @@ if (!$9) throw Error("主界面宿主缺失");
 nje($9);
 export { lL as $2ec61d1d4f780267$export$a8a3e93435678ff9, NR as $542a13ca2fa5b484$export$5b6b19405a83ff9d, Tz as $76d00c5a4edb230a$export$76ccd210b9029917, Sz as $76d00c5a4edb230a$export$816b5d811295e6bc, Oz as $76d00c5a4edb230a$export$b59bdbef9ce70de2, Az as $76d00c5a4edb230a$export$f6f0c3fe4ec306ea, xz as $76d00c5a4edb230a$export$f850895b287ef28e, fue as $b4f18e3395fe64d7$export$3d96ec278d3efce4, due as $b4f18e3395fe64d7$export$3e41faf802a29e71, cue as $b4f18e3395fe64d7$export$b2539bed5023c21c, Pz as $b4f18e3395fe64d7$export$e51a686c67fdaa2d, cS as $ea3928288112382f$export$439d29a4e110a164, $R as $fe21c36db05242bb$export$a98f0dcb43a68a25, ez as $fe21c36db05242bb$export$d7b12c4107be0d61, hA as ACCENT_CHOICES, BCe as AMANE_BRIDGE_CHECK_URL, c2 as AMANE_BRIDGE_KEY, VCe as AMANE_BRIDGE_REBUILD_URL, wj as ApiError, LY as ArtSlot, h6 as BATCH_DELETE_TEXT, Y as Button, Hz as ButtonLink, s2 as CHECK_ALL_KEY, I0 as CLEANUP_ENTRY, F0 as CLEANUP_ENTRY_GRID, RP as CLEANUP_HASH_REDIRECTS, zP as CLEANUP_TOOLS, E2 as CONFIGURATION_KEY, HCe as COOKIE_TEXT_LIMIT, o2 as COVER_JOB_KEY, t2 as CUSTOM_SOURCES_KEY, e2 as CUSTOM_SOURCES_URL, cG as Checkbox, sG as CheckboxGlyph, Uz as ChevronSortDown, D$ as Chip, lK as CollapseChevron, cK as CollapseRegion, C0 as CollectionSummary, Dye as DEFAULT_CATEGORY, n0 as DIAGNOSTICS_KEY, hbe as DIRECTORY_TEMPLATE_ERROR, b4 as DISCOVERY_SORTS, dse as DRIVE_KEY, IV as DRIVE_SETTINGS_PATH, BM as DRIVE_URL, zQ as DUPLICATES_KEY, xQ as DataTableFooter, vQ as DataTableFrame, bQ as DataTableSort, pq as Disclosure, sme as E3, Oye as ENTITY_REVIEW_KINDS, iW as Ea, kW as EmptyFocusButton, AW as EmptyState, cq as ErrorText, jme as Eu, uq as ExternalLink, N0 as FIELDSET_FOOT, fq as Fact, dq as FactList, lq as FieldLabel, G0 as Fieldset, W0 as FieldsetTitle, qpe as FilterGlass, LU as FilterGlassRows, RU as FilterPill, oq as Footer, cW as Gg, zU as GlassPill, fW as HN, sq as Help, a0 as IndexSearch, xW as Input, bW as InputBase, q0 as IssueRow, Hk as JAV_LAYOUTS, S4 as JAV_RECOMMENDATION_GRID, b$ as JUNK_KEY, Xq as JavHeader, Qpe as L1, a$ as LINKS_KEY, o$ as LINK_CHECK_KEY, Qye as LINK_KINDS, s$ as LINK_PRUNE_KEY, pt as LOC, X0 as LibraryProcessingCard, qW as LibraryShortcuts, zG as LinkButton, vme as Lo, eK as LoadingDots, Zn as MEDIA_SOURCE_ICONS, zz as MENU_ITEM, Bz as MENU_ITEM_INTERACTIVE, Rz as MENU_POPOVER_SURFACE, bme as Ma, dB as MenuDialog, rX as MixCard, SW as ModalFrame, Xg as MotionConfigContext, hW as NR, K0 as NameLink, wW as Note, Fme as OA, f$ as ORGANIZE_KEY, p6 as ORGANIZE_PARAMETER_HINT, f6 as ORGANIZE_SCOPE_HINT, d6 as ORGANIZE_TEXT, h$ as ORPHAN_RECORDS_KEY, m6 as ORPHAN_RECORDS_TEXT, oW as OV, DW as ObjectOrderDialog, _$ as PERFORMER_DELETE_KEY, R0 as PLAIN_STAT_STRIP, Q0 as PLAYLISTS_KEY, mW as Pf, aCe as PlainStat, ZG as ProcessingMode, rK as Progress, UQ as QUALITY_GOALS_KEY, pW as RB, dCe as RESULT_PANEL, fCe as RESULT_SECTION, Eye as REVIEW_CATEGORIES, y$ as REVIEW_COUNTS_KEY, kye as REVIEW_DECISION_LABELS, KQ as REVIEW_KEY, qQ as REVIEW_LABELS, YQ as REVIEW_QUEUES, XQ as REVIEW_QUEUE_LABELS, FY as RetryNote, Ime as Rk, rq as Rows, r2 as SCRAPING_CHECK_ALL_URL, RCe as SCRAPING_CHECK_URL, i2 as SCRAPING_COVER_URL, a2 as SCRAPING_KEY, LCe as SCRAPING_SETTINGS_URL, DK as SEGMENT, EK as SEGMENTED_TRACK, $P as SETTINGS_KEY, a6 as STATS_KEY, iCe as STAT_STRIP, nq as Section, pCe as SectionHeading, aq as SectionSkeleton, TK as SegmentedRadioGroup, wK as SegmentedTabList, OY as Segments, yQ as Select, Gz as Select$1, A2 as SelectField, Kz as SelectItem, OQ as SelectionActions, LD as SelectionDock, $K as SettingsCard, tq as SettingsRow, eq as SettingsSectionLabel, AY as SortKeys, wde as SortableBoardTabs, n3 as SourceAvatar, hq as SourceMark, iq as Stack, oCe as StatCard, O$ as StatusLabel, Mme as Su, _U as TASKS_KEY, S$ as TRASH_KEY, Tpe as TRIGGER_LABELS, lQ as Table, kQ as TableColumnControls, AQ as TableColumnResizer, MQ as TableSelectionHeader, iK as TaskProgress, vW as TextField, Pme as Uz, dl as WithPromise, QU as Wt, _me as Xc, eW as Xl, $U as Xt, XU as _8, o as __commonJSMin, s as __exportAll, l as __toESM, dW as _p, Dj as apiGet, Oj as apiSend, Ik as appSettingsStore, Bk as applyTheme, Lp as asNumber, Sbe as attachOrphan, ZX as autoResetPageIndex, Xt as avatarInner, u6 as bandRows, gbe as baseName, vye as batchOperate, sse as beginPlayerGuidePreview, hye as bulkCloudPreferences, TW as busyProps, nl as calcGeneratorVelocity, Iye as canApprove, mc as cancelFrame, Dbe as candidateText, Cq as cardClass, eA as cardRatio, gme as cc, rbe as checkLine, WCe as checkText, G5 as closeDrawerAfterNav, jy as clsx, Ed as collectMotionValues, _Z as columnVisibilityFeature, iQ as column_getCanSort, eQ as column_getSortFn, Pye as commonReviewSources, i0 as composingKey, FV as configurationSection, pse as configuredLocations, Pi as confirmModal, Spe as controlTask, NX as copyInstancePropertiesWithoutMemos, ZSe as coverArrived, YSe as coverFetching, cZ as createColumnHelper, kCe as createPlaylist, Gye as currentReviewRow, J as cx, lme as d6, Hye as decisionPayload, Uye as decisionReceipt, Vye as defaultChoice, kbe as deletePerformerVideos, jCe as deletePlaylist, y4 as devicesSkeleton, x as diagnosticHeaders, h4 as diagnosticsSkeleton, QSe as discoveryArtwork, A0 as discoveryKey, _7 as disposeStage, dye as distinctName, gye as duplicateVictims, TU as elapsedText, Se as entityDisplayName, Yt as entityFaceImg, qe as entityPath, Ej as errorMessage, V as esc, XX as expandRowModel, UU as f1, f2 as fetchAmaneBridge, d2 as fetchCheckAllJob, D2 as fetchConfiguration, u2 as fetchCoverJob, XSe as fetchCoverNow, n2 as fetchCustomSources, v$ as fetchDeletePerformers, Obe as fetchDeletePlan, r0 as fetchDiagnostics, j0 as fetchDiscoveries, fse as fetchDrives, VQ as fetchDuplicates, w$ as fetchJunkSummary, u$ as fetchLinkCheck, d$ as fetchLinkPrune, l$ as fetchLinkStats, p$ as fetchOrganize, lbe as fetchOrganizeExample, g$ as fetchOrphanRecords, MCe as fetchPlaylist, $0 as fetchPlaylists, WQ as fetchQualityGoals, n$ as fetchReview, C$ as fetchReviewCounts, eF as fetchSettings, l2 as fetchSources, o6 as fetchStats, bU as fetchTasks, T$ as fetchTrashSummary, Mye as filterReviewRows, ft as firstGrapheme, hX as flexRender, YEe as fmtCount, st as fmtDur, lt as fmtSize, vpe as foldByKind, Fpe as foldRoutine, Lpe as followupDetail, _pe as followupTally, pc as frame, br as gaugeHtml, bZ as getDefaultPaginationState, $k as gridLayout, Ppe as groupFollowups, $Q as groupReviewRows, SU as hasResultProblems, WU as i2, Jc as interpolate, wU as isActive, Zd as isMotionValue, JQ as isReviewCategory, Ipe as isRoutine, w4 as javContentSkeleton, Kk as javLayout, C4 as javTagSkeleton, Fbe as junkBreakdown, cye as keepGroup, PCe as keepPlaylist, pye as keepRuleLabel, s6 as known, Zpe as l1, ime as l7, Npe as latestOfKind, cDe as lengthRows, qU as m7, Eme as mM, oDe as mediumRows, Xye as mirrorText, HQ as mixedCloudPreferences, Hpe as momentText, q_ as motion, Od as motionValue, KA as notifyManager, ume as oe, vbe as organizeOutcome, sU as peachHistory, sU as peachHistory$1, Bye as pendingGenres, ZEe as percentText, L0 as plainStatClass, _be as planSummary, QEe as playedFor, eDe as playedItemUrl, ype as pollInterval, Ar as popCount, OCe as posterUrl, dbe as previewOrganize, xye as previewUrl, jpe as problemDestination, EU as progressText, nbe as pruneText, Cbe as purgeOrphan, q as queryClient, rDe as radialArc, iDe as radialBarSize, nDe as radialCeiling, tDe as radialSlices, l6 as reachedShare, DU as readableErrorHeadline, Kye as recordGenre, Tbe as recordsText, FCe as recreatePlaylist, ECe as refreshPlaylists, Zi as relayoutCovers, Yye as reloadReview, iTe as rememberShape, pbe as rememberTemplates, ACe as renamePlaylist, NCe as reorderPlaylist, MA as replaceEqualDeep, uDe as replayRows, no as require_jsx_runtime, A as require_react, P as require_react_dom, kX as require_with_selector, sl as resolveStartTime, DCe as resumeAssetId, jye as reviewGroupingOptions, QQ as reviewQueueData, ZQ as reviewQueueOf, Pbe as reviewSummary, Nye as reviewWindow, Rye as rowEvidence, t$ as rowFieldName, DZ as rowPaginationFeature, JZ as rowSelectionFeature, sQ as rowSortingFeature, e$ as rowSubject, zye as rowTags, Lye as rowTitle, rme as s5, Fye as selectReviewRange, Cpe as setTaskSpeed, Kfe as settingsTarget, Jye as settleReviewRows, uye as sharedNamePrefix, G8 as showToast, lB as showToast$1, $e as siteMarkUrl, VX as skipFirstRun, zI as sortCx, xr as spinnerHtml, Gc as spring, pB as spriteGlyph, $ye as startLinkCheck, ebe as startLinkPrune, fbe as startOrganize, rCe as statCardClass, Dpe as statusLabel, tA as storeJavLayout, Wye as submitDecision, kU as summaryItems, K as t, lZ as tableFeatures, HX as tableMemo, Ape as taskIssues, Mpe as taskSubject, dU as textLang, qo as time, pme as tl, wme as um, yme as uo, EW as useAction, io as useConstant, AU as useEntityNames, ao as useIsomorphicLayoutEffect, Sj as useMutation, AB as useNavigationOrder, lG as useOverlayScrollbar, xj as useQuery, bA as useQueryClient, F_ as useReducedMotion, nF as useSaveSettings, cQ as useTable, wQ as useTablePreferences, HU as useViewGlide, _ye as victimBytes, mme as vl, $Ee as watchNote, c6 as watchedShare, di as wireHorizontalScroller, mbe as withOrganizeJob, JSe as writeJavQuery, cme as z3 };
 
-//# debugId=4b155980-04f1-4c89-97b2-331fca34c017
+//# debugId=980d7de2-13ab-4ffd-8fdc-a44a9d0ceec1

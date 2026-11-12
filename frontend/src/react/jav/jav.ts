@@ -94,10 +94,12 @@ export function fetchDiscoveries(signal: AbortSignal, options: {
 }
 
 export function discoveryArtwork(item: Discovery, layout: 'big' | 'small', javImage: unknown): string {
-  const local = javArtwork({ ...item, is_jav: true }, layout, false, javImage);
+  /* 探索页的卡片尺寸大，缩略图几乎每张都够不着显示尺寸，随后 `upgradeCover` 换原件会
+     把已画出的图清掉约 0.35 秒。这里直接取原件，不给换源留空窗。 */
+  const local = javArtwork({ ...item, is_jav: true }, layout, false, javImage, true);
   if (local.html || !item.cover_url || !item.code) return local.html;
   const remote = esc(remoteCoverUrl(item));
-  return coverImage(item, layout).replace(/ src="[^"]*"/,
+  return coverImage(item, layout, false, true).replace(/ src="[^"]*"/,
     ` src="${remote}" data-jav-image="${item.id}" data-jav-cover="${remote}" data-jav-thumb="" data-jav-image-layout="${layout}"${layout === 'big' ? ' data-panel-prior="1"' : ''}`)
     .replace('data-drop="self"', 'data-drop="initial" data-initial="封面未取得" data-drop-class="media-nopic"');
 }

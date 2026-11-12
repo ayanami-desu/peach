@@ -232,9 +232,10 @@ export interface CoverItem {
 
 /* 官方封面那张 `<img>`。人脸位置原样交给页面，锚点由 `coverAnchor` 在加载后算：哪个轴被裁、
    要推多远，只有同时拿到图片和容器的比例才知道。人物在画面里的位置差别很大，写死的锚点会
-   把一部分作品裁掉下巴或整个切出画外；取不到人脸就退回固定取景。 */
-export function coverImage(item: CoverItem, layout: 'big' | 'small', eager = false): string {
-  const src = cardCoverUrl(item);
+   把一部分作品裁掉下巴或整个切出画外；取不到人脸就退回固定取景。`original` 跳过派生档，
+   直接取原件：探索页的卡片尺寸大，先拿缩略图再升级反而会清空已画出的那一帧。 */
+export function coverImage(item: CoverItem, layout: 'big' | 'small', eager = false, original = false): string {
+  const src = original ? coverUrl(item) : cardCoverUrl(item);
   const wide = /ブルーレイ|blu[\s-]?ray/i.test(String(item.title || item.display_title || item.name || ''));
   const f = item.cover_frame || {};
   const still = item.poster_box?.method !== 'manual' && (f.layout === 'still'
@@ -263,13 +264,15 @@ export interface Artwork {
 const NO_ARTWORK: Artwork = { kind: '', html: '' };
 
 /** 番号作品的封面：按「JAV 默认封面」取官方封套或预览图，两种来源都挂在元素上，
- *  设置一换 `syncJavImages` 原地换图。取景数据跟着元素走，从预览图切回封面时还找得到框。 */
-export function javArtwork(item: CoverItem, layout: 'big' | 'small', eager: boolean, javImage: unknown): Artwork {
+ *  设置一换 `syncJavImages` 原地换图。取景数据跟着元素走，从预览图切回封面时还找得到框。
+ *  `original` 给探索页这类大图位直接取原件，绕过 `upgradeCover` 的换源空窗。 */
+export function javArtwork(item: CoverItem, layout: 'big' | 'small', eager: boolean, javImage: unknown,
+  original = false): Artwork {
   const kind = javImageKind(item, javImage);
   if (!kind) return NO_ARTWORK;
-  const cover = item.has_cover && item.code ? cardCoverUrl(item) : '';
+  const cover = item.has_cover && item.code ? (original ? coverUrl(item) : cardCoverUrl(item)) : '';
   const thumb = item.has_thumb || item.has_local_poster ? `/poster?id=${item.id}&c=4` : '';
-  const coverMarkup = coverImage(item, layout, eager);
+  const coverMarkup = coverImage(item, layout, eager, original);
   const frame = (coverMarkup.match(/ data-(?:c[xy]|posterbox)="[^"]*"/g) || []).join('');
   const image = kind === 'cover'
     ? coverMarkup
