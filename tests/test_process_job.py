@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -10,19 +9,17 @@ from peach.process_job import assign_to_job, close_job, create_kill_on_close_job
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: 一个最小的「托盘」：用真的 ServiceManager 拉起一个睡着的子服务，报出它的 PID 后原地等着被杀。
-TRAY_STAND_IN = """
-import sys, time
-from pathlib import Path
-from unittest import mock
-from peach.tray import ServiceManager, ServiceSpec
+#: 一个最小的进程所有者：建一个随句柄关闭终止成员的 Job，拉一个睡着的子服务挂进去，
+#: 报出它的 PID 后原地等着被杀。
+JOB_OWNER_STAND_IN = """
+import subprocess, sys, time
+from peach.process_job import assign_to_job, create_kill_on_close_job
 
-spec = ServiceSpec("http", "http://127.0.0.1:9/healthz",
-                   (sys.executable, "-c", "import time; time.sleep(120)"), True)
-manager = ServiceManager((spec,), log_dir=Path(sys.argv[1]),
-                         health_get=mock.Mock(side_effect=OSError("down")))
-manager.start_missing()
-print(manager._owned["http"].pid, flush=True)
+job = create_kill_on_close_job()
+service = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"],
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+assign_to_job(job, service)
+print(service.pid, flush=True)
 time.sleep(120)
 """
 
@@ -109,34 +106,31 @@ class KillOnCloseJobTests(unittest.TestCase):
         close_job(job)
         self.assertIsNotNone(child.wait(timeout=10))
 
-    def test_a_force_killed_tray_takes_its_services_along(self):
-        """`Stop-Process -Force` 打托盘时收尾代码一行不跑，只有内核关 Job 句柄这一步还在。
+    def test_a_force_killed_owner_takes_its_services_along(self):
+        """`Stop-Process -Force` 打进程所有者时收尾代码一行不跑，只有内核关 Job 句柄这一步还在。
 
         2026-09-25 就是这样留下两棵孤儿服务，继续占着 80/443 跑旧代码。
         """
-        with tempfile.TemporaryDirectory() as directory:
-            environment = {**os.environ, "PYTHONPATH": str(ROOT / "src"),
-                           "PEACH_DATA_ROOT": directory}
-            tray = subprocess.Popen(
-                [sys.executable, "-c", TRAY_STAND_IN, directory], stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, text=True, encoding="utf-8", env=environment,
-                creationflags=subprocess.CREATE_NO_WINDOW)
-            self.addCleanup(lambda: tray.poll() is None and tray.kill())
-            service = int(tray.stdout.readline())
-            # venv 的 python.exe 是个转发器，真正的解释器是它再起的子进程。
-            wait_until(lambda: descendants(service))
-            owned = {tray.pid, service} | descendants(tray.pid) | descendants(service)
-            handles = {pid: open_for_wait(pid) for pid in owned}
-            for handle in handles.values():
-                if handle:
-                    self.addCleanup(close_handle, handle)
-            self.assertTrue(all(handles.values()), f"强杀前就开不到这些服务进程：{handles}")
-            tray.kill()
-            tray.wait(timeout=10)
-            tray.stdout.close()
-            # 托盘解释器和服务都持有日志句柄；整棵进程树 signaled 后才能删临时目录。
-            survivors = still_running(handles, seconds=10)
-            self.assertFalse(survivors, f"托盘被强杀后这些进程还活着：{sorted(survivors)}")
+        environment = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+        owner = subprocess.Popen(
+            [sys.executable, "-c", JOB_OWNER_STAND_IN], stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, encoding="utf-8", env=environment,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+        self.addCleanup(lambda: owner.poll() is None and owner.kill())
+        service = int(owner.stdout.readline())
+        # venv 的 python.exe 是个转发器，真正的解释器是它再起的子进程。
+        wait_until(lambda: descendants(service))
+        owned = {owner.pid, service} | descendants(owner.pid) | descendants(service)
+        handles = {pid: open_for_wait(pid) for pid in owned}
+        for handle in handles.values():
+            if handle:
+                self.addCleanup(close_handle, handle)
+        self.assertTrue(all(handles.values()), f"强杀前就开不到这些服务进程：{handles}")
+        owner.kill()
+        owner.wait(timeout=10)
+        owner.stdout.close()
+        survivors = still_running(handles, seconds=10)
+        self.assertFalse(survivors, f"进程所有者被强杀后这些服务还活着：{sorted(survivors)}")
 
 
 if __name__ == "__main__":

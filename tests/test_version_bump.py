@@ -26,28 +26,28 @@ class BumpPartTests(unittest.TestCase):
         self.assertEqual(bump_part_for(["refactor(config)!: 删掉盘符键"], []), "minor")
         self.assertEqual(bump_part_for(["fix: 补迁移"], ["migrations/0027_thing.sql"]), "minor")
         self.assertEqual(bump_part_for(["fix: 补迁移"], [r"migrations\0027_thing.sql"]), "minor")
-        self.assertEqual(bump_part_for(["fix: 改了迁移的注释"], ["src/peach/tray.py"]), "patch")
+        self.assertEqual(bump_part_for(["fix: 改了迁移的注释"], ["src/peach/cli.py"]), "patch")
         self.assertEqual(
             bump_part_for(["Merge branch 'master' into agent/claude/x", "feature: 新东西"], []),
             "minor")
         self.assertEqual(bump_part_for([], []), "patch")
 
     def test_runtime_inputs_are_told_apart_from_development_only_paths(self):
-        for path in ("src/peach/tray.py", "web/app.js", "frontend/src/main.ts",
+        for path in ("src/peach/cli.py", "web/app.js", "frontend/src/main.ts",
                      "migrations/0042_thing.sql", "resources/peach.ico",
-                     "pyproject.toml", "uv.lock", r"src\peach\tray.py"):
+                     "pyproject.toml", "uv.lock", r"src\peach\cli.py"):
             with self.subTest(path=path):
                 self.assertTrue(runtime_inputs_changed([path]))
 
         self.assertFalse(runtime_inputs_changed([]))
         self.assertFalse(runtime_inputs_changed(["docs/STATUS.md", "AGENTS.md"]))
-        self.assertFalse(runtime_inputs_changed(["tests/test_tray.py"]))
+        self.assertFalse(runtime_inputs_changed(["tests/test_process_job.py"]))
         self.assertFalse(runtime_inputs_changed(["scripts/build_windows.ps1"]))
         self.assertFalse(runtime_inputs_changed([".claude/skills/peach-worktree/SKILL.md"]))
 
         self.assertFalse(runtime_inputs_changed([]))
         self.assertFalse(runtime_inputs_changed(["docs/STATUS.md", "AGENTS.md"]))
-        self.assertFalse(runtime_inputs_changed(["tests/test_tray.py"]))
+        self.assertFalse(runtime_inputs_changed(["tests/test_process_job.py"]))
         self.assertFalse(runtime_inputs_changed([".claude/skills/peach-worktree/SKILL.md"]))
         self.assertFalse(runtime_inputs_changed(["scripts/agent_worktree.py"]))
 
@@ -100,13 +100,13 @@ class ReleasePlanTests(unittest.TestCase):
 
     def test_the_range_starts_at_the_last_version_tag(self):
         self.tag()
-        self.commit("fix: 托盘图标补回来", self.write("src/peach/tray.py"))
+        self.commit("fix: 命令行补上端口检查", self.write("src/peach/cli.py"))
         self.assertEqual(version_bump.last_tag(self.root), "v0.7.14")
         self.assertEqual(version_bump.release_range(self.root), "v0.7.14..HEAD")
         self.assertEqual(version_bump.subjects_in(self.root, "v0.7.14..HEAD"),
-                         ["fix: 托盘图标补回来"])
+                         ["fix: 命令行补上端口检查"])
         self.assertEqual(version_bump.changed_in(self.root, "v0.7.14..HEAD"),
-                         ["src/peach/tray.py"])
+                         ["src/peach/cli.py"])
 
     def test_without_any_tag_the_range_is_the_whole_history(self):
         self.assertIsNone(version_bump.last_tag(self.root))
@@ -129,7 +129,7 @@ class ReleasePlanTests(unittest.TestCase):
 
     def test_an_explicit_part_overrides_the_commit_types(self):
         self.tag()
-        self.commit("fix: 一处小修", self.write("src/peach/tray.py"))
+        self.commit("fix: 一处小修", self.write("src/peach/cli.py"))
         self.assertEqual(plan_bump(self.root, "major")["version"], "1.0.0")
         self.assertEqual(plan_bump(self.root, "minor")["version"], "0.8.0")
 

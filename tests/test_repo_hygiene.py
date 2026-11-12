@@ -12,7 +12,6 @@ import tomllib
 import unittest
 
 import peach
-from peach import appid
 from scripts import test_runner
 
 REPO = pathlib.Path(peach.__file__).resolve().parents[2]
@@ -338,12 +337,12 @@ def _live_strings(path: pathlib.Path) -> list[tuple[int, str]]:
 def _repository_identity(repo: pathlib.Path = REPO) -> frozenset[str]:
     """仓库自己的公开归属名，casefold 过。
 
-    三个来源都取，取不到的静默跳过：`git remote` 的 URL、`pyproject.toml` 的项目 URL、
-    `src/peach/appid.py` 的反向域名前缀。它们指的是同一个归属，多取一处是为了任一处
-    缺失时判据仍然成立，而不是把名字写进这里——门槛自己也进 Git，点名等于把维护者的
-    账号名印进公开代码，和形状判据不点名坐标是同一个理由。
+    两个来源都取，取不到的静默跳过：`git remote` 的 URL 与 `pyproject.toml` 的项目 URL。
+    它们指的是同一个归属，多取一处是为了任一处缺失时判据仍然成立，而不是把名字写进
+    这里——门槛自己也进 Git，点名等于把维护者的账号名印进公开代码，和形状判据不点名
+    坐标是同一个理由。
     """
-    names = set(appid.BUNDLE_PREFIX.split("."))
+    names: set[str] = set()
     urls: list[str] = []
     with (repo / "pyproject.toml").open("rb") as handle:
         urls += tomllib.load(handle)["project"].get("urls", {}).values()
@@ -568,7 +567,7 @@ class MachineCoordinateTests(unittest.TestCase):
         owner, other = "example-owner", "peach-two"
         guard = _this_machine_guard({owner, other}, frozenset({owner}))
         for allowed in (f"https://github.com/{owner}/peach",
-                        f"io.github.{owner}.peach.tray",
+                        f"io.github.{owner}",
                         f"Copyright (C) 2026 {owner}",
                         f"{owner}-peach", f"{owner}.Peach"):
             self.assertIsNone(guard.search(allowed), allowed)
