@@ -22,28 +22,34 @@ interface SectionProps {
   aside?: ReactNode;
   /** 给了就画成表单：回车提交，提交键放在 `Footer` 里。 */
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+  /** 外层已经是一张卡时只分区，不再套第二张卡。 */
+  nested?: boolean;
   children: ReactNode;
 }
 
 /* 分区里的说明、报错与读数常带长 URL、堆栈和无空格路径：整个分区按 `overflow-wrap:anywhere`
    就地折断（属性会继承，行内说明、Help 与读数都跟着走），不把卡片撑出横向滚动。 */
-export function Section({ title, guide, icon, id, aside, onSubmit, children }: SectionProps) {
+export function Section({ title, guide, icon, id, aside, onSubmit, nested = false, children }: SectionProps) {
   const label = icon ? <span className="inline-flex items-center gap-1.5">{icon}{title}</span> : title;
+  const heading = nested
+    ? <p className="w-full text-body-2-medium text-text-secondary">{label}</p>
+    : <SettingsSectionLabel>{label}</SettingsSectionLabel>;
   const body = (
     <>
       {aside
         /* 标题至少留 10rem：放不下时外链换到下一行，不把标题挤成一字一行。 */
         ? <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            <div className="min-w-40 flex-1"><SettingsSectionLabel>{label}</SettingsSectionLabel></div>
+            <div className="min-w-40 flex-1">{heading}</div>
             <div className="flex min-w-0 max-w-full">{aside}</div>
           </div>
-        : <SettingsSectionLabel>{label}</SettingsSectionLabel>}
-      <SettingsCard>{children}</SettingsCard>
+        : heading}
+      {nested ? children : <SettingsCard>{children}</SettingsCard>}
     </>
   );
+  const className = cx('flex w-full flex-col gap-2 wrap-anywhere', nested && 'border-t border-separator-border pt-4');
   return onSubmit
-    ? <form id={id} data-guide-target={guide} aria-label={title} noValidate onSubmit={onSubmit} className="flex w-full flex-col gap-2 wrap-anywhere">{body}</form>
-    : <section id={id} data-guide-target={guide} aria-label={title} className="flex w-full flex-col gap-2 wrap-anywhere">{body}</section>;
+    ? <form id={id} data-guide-target={guide} aria-label={title} noValidate onSubmit={onSubmit} className={className}>{body}</form>
+    : <section id={id} data-guide-target={guide} aria-label={title} className={className}>{body}</section>;
 }
 
 /** 设置行组：内部由行画线，相邻行组由共享样式补齐边界。 */
@@ -72,9 +78,11 @@ export function SectionSkeleton({ label, html }: { label: string; html: () => st
  *
  *  底色比卡面暗一点点，通到卡片左右两沿（旧 `.geist-fieldset-footer` 的 `--board-card-foot`）：
  *  卡片的左内边距在卡自己身上，所以这一条要把它抵掉再自己补回来。 */
-export function Footer({ status, children }: { status?: ReactNode; children?: ReactNode }) {
+export function Footer({ status, nested = false, children }: { status?: ReactNode; nested?: boolean; children?: ReactNode }) {
   return (
-    <div className="-ml-3 flex flex-wrap items-center justify-end gap-3 rounded-b-2xl border-t border-separator-border bg-card-footer px-3 py-3 empty:hidden">
+    <div className={nested
+      ? 'flex flex-wrap items-center justify-end gap-3 border-t border-separator-border py-3 pr-3 empty:hidden'
+      : '-ml-3 flex flex-wrap items-center justify-end gap-3 rounded-b-2xl border-t border-separator-border bg-card-footer px-3 py-3 empty:hidden'}>
       {status ? <div className="mr-auto min-w-0 text-body-2-regular text-text-secondary">{status}</div> : null}
       {children}
     </div>

@@ -238,7 +238,7 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
   });
 
   return (
-    <Section title={name}>
+    <Section title={name} nested>
       <Stack>
         <FactList>
           <Fact term={t('settings:drive.account.name')}>{account.key}</Fact>
@@ -257,7 +257,7 @@ function AccountBlock({ account, publicUrl, apply, receipt, reloaded }: {
         ) : null}
         {action.error ? <ErrorText>{action.error}</ErrorText> : null}
       </Stack>
-      <Footer status={account.connected ? null : t('settings:drive.account.callback', { url: callback || '未配置' })}>
+      <Footer nested status={account.connected ? null : t('settings:drive.account.callback', { url: callback || '未配置' })}>
         {account.connected
           ? <Button variant="secondary" onClick={refresh} {...busyProps(action.busy === 'refresh')}>
               {t('settings:drive.account.refresh')}
