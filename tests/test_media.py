@@ -136,6 +136,8 @@ class MediaEngineTests(unittest.TestCase):
         engine, _ = self.engine(asset)
         self.assertEqual(engine.ffmpeg_input(asset),
                          ("https://x.test/item-1", {"Authorization": "Bearer t"}))
+        self.assertEqual(engine.ffmpeg_input(asset.id),
+                         ("https://x.test/item-1", {"Authorization": "Bearer t"}))
 
     def test_response_forwards_download_flag(self):
         asset = MediaAsset(1, "gdrive:/a.mp4", None, location="gdrive", name="a.mp4",

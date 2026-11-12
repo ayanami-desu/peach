@@ -141,8 +141,9 @@ class MediaEngine:
         except (DriveNotFound, DriveAuthRequired, DriveUnavailable) as exc:
             raise MediaUnavailable(asset.id) from exc
 
-    def ffmpeg_input(self, asset: MediaAsset) -> tuple[str, dict[str, str]]:
+    def ffmpeg_input(self, asset: MediaAsset | int) -> tuple[str, dict[str, str]]:
         """FFmpeg 的输入地址与请求头；探测与抽帧都不落本地文件。"""
+        asset = self._coerce(asset)
         location, root, remote_id = self._drive(asset)
         try:
             return self.streamer.input_url(location, root, remote_id)
