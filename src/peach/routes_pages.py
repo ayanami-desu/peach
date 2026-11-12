@@ -408,11 +408,6 @@ async def setup_submit_json(request: Request):
         access.validate_password(password, confirmation)
     except ValueError as exc:
         errors["access_password"] = str(exc)
-    if distribution.standalone() and answers is not None:
-        try:
-            onboarding.check_available_port(answers.port, request.url.port or 80)
-        except ValueError as exc:
-            errors["port"] = str(exc)
     if not errors:
         # Peach 数据目录决定设置文件在哪，所以拿到它之后要按它重新解析一次，不能沿用进程启动
         # 那一刻按发现顺序算出来的这份。
@@ -436,10 +431,9 @@ def _setup_done(config, *, restored: bool = False):
     return JSONResponse({
         "url": destination,
         "restored": restored,
-        "standalone": distribution.standalone(),
-        # 独立包与 Docker 的完成页过一会儿自己跳到入口：服务要先换成正常模式。时长由前端定，
+        # Docker 部署的完成页过一会儿自己跳到入口：服务要先换成正常模式。时长由前端定，
         # 与配置页保存后的跳转同一个数。
-        "redirect": destination if distribution.standalone() or distribution.docker() else None,
+        "redirect": destination if distribution.docker() else None,
         "facts": runtime_fact_entries(config),
     })
 
@@ -465,8 +459,6 @@ async def setup_restore(request: Request):
             raise ValueError("此目录中没有有效的 config.toml")
         if not (config.directory("database") / "ledger.db").is_file():
             raise ValueError("此目录中没有数据库，请选择保存原配置和数据库的数据目录")
-        if distribution.standalone():
-            onboarding.check_available_port(config.server.port, request.url.port or 80)
         settings_file.remember_data_root(settings_file.active(), config)
     except (ValueError, OSError, RuntimeError) as exc:
         raise HTTPException(400, {"message": "无法使用此数据目录", "errors": {"data_root": str(exc)}}) from exc

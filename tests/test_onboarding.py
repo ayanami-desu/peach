@@ -9,7 +9,6 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
-import socket
 import sqlite3
 import tempfile
 import unittest
@@ -18,7 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from peach import distribution, onboarding, settings_file
+from peach import onboarding, settings_file
 from peach.web_entry import runtime_fact_entries
 
 HAS_HTTP_DEPS = all(importlib.util.find_spec(name) for name in ("fastapi", "httpx"))
@@ -122,16 +121,6 @@ class ValidatorTests(_Case):
             with self.assertRaises(ValueError) as raised:
                 onboarding.validate_public_url(raw)
             self.assertEqual(str(raised.exception), message)
-
-    def test_an_occupied_port_is_only_a_problem_when_it_is_a_different_port(self):
-        with socket.socket() as taken:
-            taken.bind(("127.0.0.1", 0))
-            taken.listen()
-            port = taken.getsockname()[1]
-            with self.assertRaises(ValueError) as raised:
-                onboarding.check_available_port(port, port + 1)
-            self.assertEqual(str(raised.exception), "这个端口已被占用，请换一个端口")
-            onboarding.check_available_port(port, port)
 
 
 class AskUntilValidTests(_Case):
@@ -544,8 +533,8 @@ class SetupJsonContractTests(_SetupHttpCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.headers["cache-control"], "no-store")
         data = response.json()
-        self.assertEqual((data["url"], data["restored"], data["standalone"], data["redirect"]),
-                         ("http://127.0.0.1:8900/?onboarding=1", False, False, None))
+        self.assertEqual((data["url"], data["restored"], data["redirect"]),
+                         ("http://127.0.0.1:8900/?onboarding=1", False, None))
         self.assertEqual([row["term"] for row in data["facts"]],
                          [row["term"] for row in runtime_fact_entries(self._loaded())])
         policy = access.load(self.data_root / "secrets" / "access.json")
@@ -554,21 +543,6 @@ class SetupJsonContractTests(_SetupHttpCase):
         self.assertNotIn("correct-password", response.text)
         self.assertFalse((self.data_root / "state" / onboarding.SCAN_REQUEST_NAME).exists(),
                          "首启不请求扫描：网盘还没接上，没有可扫的根目录")
-
-    def test_the_standalone_package_is_told_to_redirect(self):
-        with mock.patch.object(distribution, "standalone", return_value=True):
-            data = self._send("POST", self.SUBMIT, json=self._body()).json()
-        self.assertEqual((data["url"], data["standalone"], data["redirect"]),
-                         ("http://127.0.0.1:8900/?onboarding=1", True, data["url"]))
-
-    def test_an_occupied_port_on_the_standalone_package_is_a_port_error(self):
-        with socket.socket() as taken:
-            taken.bind(("127.0.0.1", 0))
-            taken.listen()
-            port = taken.getsockname()[1]
-            with mock.patch.object(distribution, "standalone", return_value=True):
-                errors = self._errors(port=str(port))
-        self.assertEqual(errors, {"port": "这个端口已被占用，请换一个端口"})
 
     def test_a_failed_apply_is_reported_on_the_data_root(self):
         with mock.patch.object(onboarding, "apply", side_effect=OSError("数据目录写不进去")):
@@ -729,9 +703,6 @@ class ConfigurationSurfaceTests(_Case):
         loaded = mock.patch.object(settings_file, "load_config", lambda **kwargs: self.config)
         loaded.start()
         self.addCleanup(loaded.stop)
-        standalone = mock.patch.object(distribution, "standalone", return_value=True)
-        standalone.start()
-        self.addCleanup(standalone.stop)
 
     @contextmanager
     def client(self, *, token="test-token", address="127.0.0.1", base_url="http://localhost",

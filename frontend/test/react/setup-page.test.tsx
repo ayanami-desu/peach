@@ -28,7 +28,7 @@ const questions = (over: Partial<SetupQuestions> = {}): SetupQuestions => ({
 });
 
 const done = (over: Partial<SetupDone> = {}): SetupDone => ({
-  url: 'http://127.0.0.1:8900/?onboarding=1', standalone: false, redirect: null,
+  url: 'http://127.0.0.1:8900/?onboarding=1', redirect: null,
   facts: [{ term: '版本', value: '0.9.0' }, { term: '数据目录', value: 'C:\\peach-data' }], ...over,
 });
 
@@ -254,11 +254,11 @@ describe('完成态', () => {
     expect(document.title).toBe('Peach · 设置完成');
   });
 
-  it('独立包给了跳转地址：等满与配置页同一个时长再跳', async () => {
+  it('Docker 部署给了跳转地址：等满与配置页同一个时长再跳', async () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     const { host } = await open({}, { [SETUP_URL]: { status: 200, body: done({
-      standalone: true, redirect: 'http://127.0.0.1:8900/?onboarding=1' }) } });
+      redirect: 'http://127.0.0.1:8900/?onboarding=1' }) } });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     await submitForm(host);
     await act(async () => { vi.advanceTimersByTime(RESTART_REDIRECT_MS - 1) });

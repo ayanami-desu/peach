@@ -46,12 +46,12 @@ def revision(config) -> str:
 
 
 def managed_configuration() -> bool:
-    """设置文件是不是由 Peach 自己写：打包发行（独立包、Docker 镜像）里是，页面因此可保存。
+    """设置文件是不是由 Peach 自己写：Docker 镜像里是，页面因此可保存。
 
     源码部署的设置文件由 `peach` 命令行与首次设置页生成，设置页只读。
     """
     from . import distribution
-    return distribution.standalone() or distribution.docker()
+    return distribution.docker()
 
 
 # --------------------------------------------------------------------------- 诊断

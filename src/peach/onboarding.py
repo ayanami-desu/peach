@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import os
-import socket
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -97,16 +96,6 @@ def validate_port(raw: str) -> int:
     if not text.isdigit() or not 1 <= int(text) <= 65535:
         raise ValueError("端口要是 1 到 65535 之间的整数")
     return int(text)
-
-
-def check_available_port(port: int, current: int) -> None:
-    if port == current:
-        return
-    try:
-        with socket.socket() as candidate:
-            candidate.bind(("127.0.0.1", port))
-    except OSError as exc:
-        raise ValueError("这个端口已被占用，请换一个端口") from exc
 
 
 def validate_public_url(raw: str) -> str:

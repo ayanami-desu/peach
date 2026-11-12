@@ -39,7 +39,6 @@ export interface SetupFact { term: string; value: string; download_url?: string;
 export interface SetupDone {
   restored?: boolean;
   url: string;
-  standalone: boolean;
   redirect: string | null;
   facts: SetupFact[];
 }
