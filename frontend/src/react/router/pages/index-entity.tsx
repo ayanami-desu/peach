@@ -198,7 +198,6 @@ async function openEntity(
   const hero = frame.content.querySelector('[data-entity-hero]')!;
   const hosts = {
     filter: frame.content.querySelector('[data-entity-filter]>.peach-react')!,
-    feed: frame.content.querySelector<HTMLElement>('[data-feed-new]')!,
     body: frame.content.querySelector('[data-entity-body]>.peach-react')!,
   };
   const open = { ...shell.props(kind, name, search), ...restoredPageState<Pick<EntityPageProps, 'seed' | 'revision' | 'jav'>>('entity') };

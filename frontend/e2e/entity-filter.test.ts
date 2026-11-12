@@ -55,8 +55,6 @@ async function serve(page: Page, entity: Entity = ENTITY) {
   });
   await page.route((url) => url.pathname === '/api/photos', (route) =>
     route.fulfill({ json: entity.kind === 'performer' ? PHOTOS : NO_PHOTOS }));
-  await page.route((url) => url.pathname === '/api/feeds/discoveries', (route) =>
-    route.fulfill({ json: { ok: true, more: false, items: [] } }));
   await page.route(/\/(?:thumb|poster|photo-thumb|cover)\?/, (route) =>
     route.fulfill({ contentType: 'image/svg+xml', body: THUMB }));
   return {

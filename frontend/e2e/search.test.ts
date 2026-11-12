@@ -182,25 +182,16 @@ describe('顶栏搜索', () => {
       } finally { await opened.close(); }
     });
 
-    it(`${viewport.name} 空搜索显示作品封面、作者头像和新作订阅入口`, { timeout: 60_000 }, async () => {
+    it(`${viewport.name} 空搜索显示艺人、作品与 JAV 推荐`, { timeout: 60_000 }, async () => {
       const opened = await openSearch(browser, { viewport, history: ['最近搜索'] });
       try {
         const { page } = opened;
-        // 推荐栏一个请求取齐：作品那份用演示库的真结果，其余几份换成能覆盖每一组的夹具。
+        // 推荐栏一个请求取齐；JAV 那份换成能覆盖封面与署名的夹具。
         await page.route(/\/api\/search\/recommendations/, async route => {
           const bundle = await (await route.fetch()).json();
           await route.fulfill({ json: { ...bundle,
             jav: { items: [{ id: 11, asset_id: 11, code: 'ABW-101', title: 'JAV 作品', is_jav: true, has_cover: true,
               performer_refs: [{ id: 90001, name: '七海ひな', has_image: true }] }] },
-            follow: {
-              sources: [{ id: 1, author_key: 'name:作者', label: '作者', ref: '作者', provider: 'pixiv', official_avatar_url: '/poster?id=11' }],
-              groups: [{ primary: { id: 901, source_id: 1, title: '关注作品', thumb_url: '/poster?id=11', media_kind: 'video', status: 'saved' },
-                variants: [{ id: 902, source_id: 1, title: '图片作品', thumb_url: '/poster?id=12', media_kind: 'image', status: 'seen',
-                  media_items: [{ index: 2, media_kind: 'image', thumb_url: '/poster?id=13' }] }], duplicates: [] }],
-            },
-            // 作者头像读名册那一行自己的地址（官方优先、归档兜底）。
-            authors: { items: [{ k: '作者', key: 'name:作者', entity_id: 90002, avatar: '/poster?id=11', avatar_fallback: '' }] },
-            feeds: { items: [{ id: 91, code: 'ABW-102', title: '订阅新作', has_cover: true }] },
           } });
         });
         // 推荐在页面空闲时就预取好了，那时夹具还没挂上；挂好之后重开一次页面，预取走夹具。
@@ -211,29 +202,18 @@ describe('顶栏搜索', () => {
         await page.locator(`${MENU} [data-search-recommendations]`).waitFor();
         // 推荐没到之前栏里先是按最终版式摆的占位，等占位都换成真行再数。
         await page.waitForFunction(() => !document.querySelector('#searchMenu [data-search-placeholder]'), undefined, { timeout: 10_000 });
-        assert.equal(await page.locator(`${MENU} [data-kind="author"] [data-search-face] img`).count(), 1);
-        for (const kind of ['asset', 'jav', 'post', 'photo', 'release']) {
-          const cover = page.locator(`${MENU} [data-kind="${kind}"] [data-search-pic] img`).first();
-          assert.ok(await cover.count(), `${kind} 没有图片`);
-          const box = await cover.boundingBox();
-          assert.ok(box && box.width >= 80, `${kind} 没有以封面展示`);
-        }
+        const kinds = await page.locator(`${MENU} [data-search-group]`).evaluateAll(
+          nodes => nodes.map(node => node.getAttribute('data-kind')));
+        assert.deepEqual(kinds, ['performer', 'asset', 'jav']);
+        const jav = page.locator(`${MENU} [data-kind="jav"] [data-search-pic] img`).first();
+        assert.ok(await jav.count(), 'JAV 推荐没有封面');
         const overflow = await page.locator(MENU).evaluate(el => ({
           width: el.clientWidth, scrollWidth: el.scrollWidth, right: el.getBoundingClientRect().right,
           viewport: innerWidth,
         }));
         assert.ok(overflow.scrollWidth <= overflow.width + 1);
         assert.ok(overflow.right <= overflow.viewport + 1);
-        assert.equal(await page.locator(`${MENU} [data-kind="photo"] h3 a`).getAttribute('href'), '/follow?media=images');
-        assert.ok((await page.locator(`${MENU} [data-kind="photo"] [data-search-pic] img`).getAttribute('src'))?.includes('id=13'));
         await page.screenshot({ path: `../build/agent-verification/browser/search-recommendations-${viewport.name}.png` });
-        const subscription = page.locator(`${MENU} [data-kind="performer"] h3 a`);
-        await subscription.focus();
-        await page.waitForTimeout(180);
-        assert.equal(await page.locator(MENU).isVisible(), true, '菜单内键盘焦点关闭了推荐');
-        await subscription.press('Enter');
-        await page.waitForURL('**/subscriptions?tab=add');
-        assert.ok(!new URL(page.url()).searchParams.has('q'));
       } finally { await opened.close(); }
     });
   }

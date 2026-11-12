@@ -39,8 +39,6 @@ async function serveEntity(page: Page): Promise<void> {
   } }));
   await page.route((url) => url.pathname === '/api/photos', (route) =>
     route.fulfill({ json: { total: 0, sample_total: 0, sets: [], items: [], has_more: false, seed: '' } }));
-  await page.route((url) => url.pathname === '/api/feeds/discoveries', (route) =>
-    route.fulfill({ json: { ok: true, more: false, items: [] } }));
   await page.route(/\/(?:thumb|poster|photo-thumb|cover)\?/, (route) =>
     route.fulfill({ contentType: 'image/svg+xml', body: THUMB }));
 }

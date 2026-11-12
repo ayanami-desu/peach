@@ -13,6 +13,3 @@ svg.ui-externalmark{width:var(--icon-inline,1.2em);height:var(--icon-inline,1.2e
 /* `jav-title.ts` 的番号行：番号与版次徽章连成一段不折行，标题跟在后面。徽章 `.javedition` 在 web/css/12-cards.css。 */
 .ui-javidentity{display:inline-flex;align-items:center;gap:5px;vertical-align:baseline;white-space:nowrap}
 .ui-javcode{font-weight:600;letter-spacing:.01em}.ui-javtitle{font-weight:400}
-/* 订阅新作卡的番号行由同一生成器输出，按条目宿主约束可用宽度。 */
-[data-feed-id] .ui-javidentity{max-width:100%;min-width:0}
-[data-feed-id] .ui-javcode{min-width:0;overflow:hidden;text-overflow:ellipsis}

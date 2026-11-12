@@ -1,8 +1,7 @@
 /* 设计决定：设置、统计与筛选玻璃。读 `getComputedStyle` 断言用户定过的外观；共用的桩与浏览器生命周期在 `design-fixture.ts`。 */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import type { Browser, Page } from 'playwright-core';
-import { openFollowFeed } from './follow-fixture.ts';
+import type { Browser } from 'playwright-core';
 import { requiredEnv, settle, visit, VIEWPORTS } from './harness.ts';
 import { openHome, openPanel, ORDER, PANEL, stubServer } from './settings-fixture.ts';
 import {
@@ -69,51 +68,6 @@ describe('设计决定：设置、统计与筛选玻璃', () => {
         }));
       assert.ok(Math.abs(body.trailing - body.padding) <= .5,
         `正文最后一行下面空出 ${body.trailing}px，底边距只有 ${body.padding}px`);
-      assert.deepEqual(opened.problems, []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  /* 首页「未入库的新作」那一排会自己横着走，每一帧都发一次 scroll。手机上侧栏是抽屉，
-     两枚弹层一打开就碰上它；演示库没有订阅，这一排由拦下的 `/api/feeds/discoveries`
-     画出来（字段以 `src/peach/web_feeds.py` 为准）。夹具关了动效，自动滚动不起步，
-     所以这里亲手滚它，发出的是同一种 scroll。 */
-  it('390px 下侧栏两枚弹层不随别处那一排横滚收起，整页滚动才收', { timeout: 60_000 }, async () => {
-    const opened = await visit(browser, '/', MOBILE);
-    try {
-      const items = Array.from({ length: 12 }, (_, index) => ({
-        id: index + 1, code: `DEMO-${String(index + 1).padStart(3, '0')}`, title: `演示新作 ${index + 1}`,
-        studio: '演示厂牌', release_date: '2026-09-01', has_cover: false, cover_url: '', link: '', read: false,
-      }));
-      await opened.page.route((url) => url.pathname === '/api/feeds/discoveries', (route) => route.fulfill({
-        status: 200, contentType: 'application/json', body: JSON.stringify({ items }),
-      }));
-      await opened.page.reload({ waitUntil: 'load' });
-      const row = opened.page.locator('#feedNew .feednewrow');
-      await row.waitFor({ state: 'visible', timeout: 15_000 });
-      await settle(opened.page);
-      assert.ok(await row.evaluate((element) => element.scrollWidth > element.clientWidth + 120),
-        '新作那一排在 390px 下没有可横滚的余量，这条用例量不到东西');
-      await opened.page.locator('#filterBtn').tap();
-      await opened.page.waitForFunction(() => document.querySelector('#drawer')?.classList.contains('open'));
-      for (const [trigger, menuId] of [['#brandHome', 'boardLibraryMenu'], ['#boardGlowBtn', 'boardGlowMenu']] as const) {
-        const menu = opened.page.locator(`#${menuId}`);
-        await opened.page.locator(trigger).tap();
-        await menu.waitFor({ state: 'visible', timeout: 5_000 });
-        for (let step = 0; step < 4; step += 1) {
-          await row.evaluate((element) => { element.scrollLeft += 30; });
-          await opened.page.waitForTimeout(100);
-        }
-        assert.ok(await menu.isVisible(), `${trigger} 打开的弹层随新作那一排横滚收起了`);
-        // 菜单装不下时本来就要在内部滚；捕获阶段的 scroll 连它自己的也收得到。
-        await menu.evaluate((element) => element.dispatchEvent(new Event('scroll')));
-        await opened.page.waitForTimeout(100);
-        assert.ok(await menu.isVisible(), `${trigger} 打开的弹层随它自己的内部滚动收起了`);
-        assert.equal(await opened.page.locator(trigger).getAttribute('aria-expanded'), 'true');
-        await opened.page.evaluate(() => document.dispatchEvent(new Event('scroll')));
-        await menu.waitFor({ state: 'hidden', timeout: 5_000 });
-      }
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();
@@ -389,9 +343,9 @@ describe('设计决定：设置、统计与筛选玻璃', () => {
       const opened = await openHome(browser, { ...(width > 760 ? DESKTOP : MOBILE), width });
       try {
         await openPanel(opened.page);
-        for (const section of ['外观与导航', '浏览与播放', 'JAV 与新作', '搜索与推荐', '内容显示']) {
+        for (const section of ['外观与导航', '浏览与播放', 'JAV', '搜索与推荐', '内容显示']) {
           await opened.page.locator(PANEL).getByRole('tab', { name: section, exact: true }).click();
-          const subheadings = ({ '浏览与播放': ['作品列表', '播放'], 'JAV 与新作': ['作品显示', '新作显示'] } as
+          const subheadings = ({ '浏览与播放': ['作品列表', '播放'], 'JAV': ['作品显示'] } as
             Record<string, string[] | undefined>)[section];
           if (subheadings) {
             const headings = await opened.page.locator(`${PANEL} [data-setting-group]:not([hidden]) [data-settings-subheading]`)
@@ -891,32 +845,4 @@ describe('设计决定：设置、统计与筛选玻璃', () => {
     }
   });
 
-  it('关注页：标题 24px、窄屏 20px，药丸间距同首页 7px，读数用等宽字', { timeout: 90_000 }, async () => {
-    const read = (page: Page) => page.evaluate(() => {
-      const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
-      return {
-        title: style('[data-follow-title]').fontSize,
-        gaps: ['[data-follow-filter-glass] [data-entity-states]', '[data-follow-filter-glass] [data-entity-tags]']
-          .map((selector) => style(selector).columnGap),
-        readout: style('[data-follow-readout]').fontFamily,
-      };
-    });
-    const wide = await openFollowFeed(browser, '/follow', DESKTOP);
-    try {
-      const shown = await read(wide.page);
-      assert.equal(shown.title, '32px');
-      assert.deepEqual(shown.gaps, ['7px', '7px'], '关注页的药丸间距和首页那条不一样');
-      assert.match(shown.readout, /Cascadia Mono|Consolas|monospace/, `读数不是等宽字：${shown.readout}`);
-      assert.deepEqual(wide.problems, []);
-    } finally {
-      await wide.close();
-    }
-    const narrow = await openFollowFeed(browser, '/follow', MOBILE);
-    try {
-      assert.equal((await read(narrow.page)).title, '24px', '窄屏标题使用统一的页面标题字号');
-      assert.deepEqual(narrow.problems, []);
-    } finally {
-      await narrow.close();
-    }
-  });
 });

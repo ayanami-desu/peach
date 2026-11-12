@@ -83,10 +83,10 @@ describe('设置面板', () => {
     try {
       await openPanel(page);
       assert.deepEqual(await page.locator(PANEL).getByRole('tab').allTextContents(),
-        ['外观与导航', '浏览与播放', 'JAV 与新作', '搜索与推荐', '内容显示']);
+        ['外观与导航', '浏览与播放', 'JAV', '搜索与推荐', '内容显示']);
       for (const [name, field] of [
         ['外观与导航', '#themeSetting'], ['浏览与播放', '#detailAutoplaySetting'],
-        ['JAV 与新作', '#javImageSetting'], ['搜索与推荐', '#relatedLimitSetting'], ['内容显示', '#censorSetting'],
+        ['JAV', '#javImageSetting'], ['搜索与推荐', '#relatedLimitSetting'], ['内容显示', '#censorSetting'],
       ]) {
         await page.locator(PANEL).getByRole('tab', { name, exact: true }).click();
         await page.locator(field!).waitFor({ state: 'visible' });
@@ -280,7 +280,7 @@ describe('设置面板', () => {
     const opened = await openHome(browser);
     const { page } = opened;
     try {
-      await openPanel(page, 'JAV 与新作');
+      await openPanel(page, 'JAV');
       await page.locator('#javImageSetting label:has(input[value="thumbnail"])').click();
       assert.equal((await stored(page)).javImage, 'thumbnail');
       assert.equal(await page.locator('#javImageSetting input[value="thumbnail"]').isChecked(), true);
@@ -349,7 +349,7 @@ describe('设置面板', () => {
       const tops = await page.locator(PANEL).getByRole('tab').evaluateAll((nodes) =>
         nodes.slice(0, 3).map((node) => Math.round(node.getBoundingClientRect().top)));
       assert.equal(new Set(tops).size, 1, '窄屏下分区没有横排');
-      await page.locator(PANEL).getByRole('tab', { name: 'JAV 与新作', exact: true }).click();
+      await page.locator(PANEL).getByRole('tab', { name: 'JAV', exact: true }).click();
       await page.locator('#javImageSetting').waitFor({ state: 'visible', timeout: 5_000 });
       assert.deepEqual((await layout(page)).offenders, []);
       assert.deepEqual(opened.problems, []);

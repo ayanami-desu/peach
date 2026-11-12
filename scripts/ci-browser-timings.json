@@ -39,15 +39,12 @@
     "frontend/e2e/entity-online.test.ts": 5.3,
     "frontend/e2e/external-playback.test.ts": 11.7,
     "frontend/e2e/fc2-artwork.test.ts": 23.7,
-    "frontend/e2e/feed-cover.test.ts": 26.4,
     "frontend/e2e/folder-layout.test.ts": 7.0,
     "frontend/e2e/follow-alias.test.ts": 5.7,
     "frontend/e2e/follow-detail.test.ts": 29.0,
     "frontend/e2e/follow-feed.test.ts": 46.5,
     "frontend/e2e/follow-manage-cache.test.ts": 3.8,
     "frontend/e2e/follow-source-icons.test.ts": 6.3,
-    "frontend/e2e/home-feed.test.ts": 12.2,
-    "frontend/e2e/home-loading.test.ts": 19.8,
     "frontend/e2e/horizontal-navigation.test.ts": 5.2,
     "frontend/e2e/http-configuration.test.ts": 26.5,
     "frontend/e2e/immerse.test.ts": 17.8,
@@ -105,7 +102,6 @@
     "frontend/e2e/trash-cards.test.ts": 8.0,
     "frontend/e2e/ui-feedback.test.ts": 65.8,
     "frontend/e2e/video-wall.test.ts": 66.9,
-    "frontend/e2e/want-resources.test.ts": 6.0,
-    "frontend/e2e/wide-cover.test.ts": 6.1
+    "frontend/e2e/want-resources.test.ts": 6.0
   }
 }

@@ -8,29 +8,6 @@ describe('页面等待态的结构', () => {
   before(async () => { browser = await launch() });
   after(async () => { await browser.close() });
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name} 新作封面抓取显示进度并在完成后换成图片`, { timeout: 60_000 }, async () => {
-      const context = await browser.newContext({ viewport });
-      try {
-        const page = await context.newPage();
-        let completed = false;
-        await page.route('**/api/entity/shapes', route => route.fulfill({ json: { ok: true, entities: [], home: { feed: true } } }));
-        await page.route(/\/api\/feeds\/discoveries\?/, route => route.fulfill({ json: { ok: true, items: [
-          { id: 1, code: 'EXM-001', title: '示例新作', has_cover: completed, cover_state: completed ? null : 'fetching' },
-        ] } }));
-        await page.route(/\/cover\?code=EXM-001/, route => route.fulfill({ contentType: 'image/svg+xml', body:
-          '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="480"><rect width="320" height="480" fill="#ddd"/></svg>' }));
-        await page.goto(requiredEnv('PEACH_E2E_ORIGIN') + '/', { waitUntil: 'load' });
-        const pending = page.locator('#feedNew [data-feed-cover-state="fetching"]');
-        await pending.waitFor();
-        assert.equal(await pending.innerText(), '抓取中');
-        const color = await pending.evaluate(node => getComputedStyle(node.closest('.pic')!).backgroundColor);
-        assert.notEqual(color, 'rgb(0, 0, 0)', '抓取中封面仍是黑底');
-        completed = true;
-        await page.locator('#feedNew img.cover').waitFor({ timeout: 10_000 });
-        assert.equal(await pending.count(), 0);
-      } finally { await context.close() }
-    });
-
     it(`${viewport.name} 首页筛选控件立即显示，浮层保留最终材质`, { timeout: 60_000 }, async () => {
       const context = await browser.newContext({ viewport });
       let release = () => {};
@@ -80,18 +57,16 @@ describe('页面等待态的结构', () => {
     });
   }
 
-  /* 形状名单在后台任务频繁写账本时要算好几秒：只有目录页在本机没记过新作结论时才等它，
-     其余页面和记过结论的目录页都不该被它挡住开页。 */
+  /* 形状名单在后台任务频繁写账本时要算好几秒：所有页面都不该被它挡住开页。 */
   it('形状名单迟迟不回时各页照常开页取数', { timeout: 90_000 }, async () => {
-    const pages: [string, string, string | null][] = [
-      ['/tasks', '/api/tasks', null], ['/performers', '/api/index', null], ['/', '/api/items', '0'],
+    const pages: [string, string][] = [
+      ['/tasks', '/api/tasks'], ['/performers', '/api/index'], ['/', '/api/items'],
     ];
-    for (const [path, content, recalled] of pages) {
+    for (const [path, content] of pages) {
       const context = await browser.newContext({ viewport: VIEWPORTS[0] });
       let release = () => {};
       const held = new Promise<void>(resolve => { release = resolve });
       try {
-        if (recalled !== null) await context.addInitScript(value => localStorage.setItem('peach.home-feed.v1', value), recalled);
         const page = await context.newPage();
         await page.route('**/api/entity/shapes', async route => { await held; await route.continue() });
         const requested = page.waitForRequest(request => new URL(request.url()).pathname === content, { timeout: 8_000 });

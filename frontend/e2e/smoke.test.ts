@@ -67,18 +67,13 @@ const stubSiteMarks = async (page: Page): Promise<void> => {
   }));
 };
 
-/** JAV 页的 React 根：页头、分区页签排、页面根。分区内容目前不跟 `?tab=` 走：
- *  `src/react/router/pages/managed.tsx` 的 `openProps` 没有 `/jav` 这一支，页面拿到的是空 tab，
- *  四个地址画出来都是同一屏，所以这里只认这层壳，不按分区断言主体。 */
-const javBody = (page: Page): Locator[] => [heading(page, '#main', 'JAV'),
-  page.locator('#main [data-board-tab-list]'), page.locator('#main [data-jav-selection]')];
+/** JAV 页现在只剩探索：页头写「探索」，主体是馆藏探索那一区。 */
+const javBody = (page: Page): Locator[] => [heading(page, '#main', '探索'),
+  page.locator('#main section[aria-label="馆藏探索"]')];
 
 const ROUTES: readonly Route[] = [
   { path: '/works/EXM-001', body: page => [page.locator('#stage [data-jav-detail] h1'), page.getByRole('img', { name: 'EXM-001 封面', exact: true })] },
   { path: '/jav', body: javBody },
-  /* 点分区页签给出的就是这些地址，现在落到同一屏上（见 `javBody` 的注释）；先把地址都走一遍，
-     等 `openProps` 补上 `/jav` 那一支再把断言收紧到各自的分区。 */
-  ...['/jav?tab=wants', '/jav?tab=discover', '/jav?tab=releases'].map(path => ({ path, body: javBody })),
   /* 演示库里的影片只有视频、没有封面图，首页卡片走的是缺封面的占位块（`[data-artwork-gap]`）：
      两样都只由 React 卡片画出来，认一样在就算首页画完了。 */
   { path: '/', body: (page) => [page.locator('#grid [data-media-card]').first(),
@@ -97,27 +92,6 @@ const ROUTES: readonly Route[] = [
   {
     path: '/playlists',
     body: (page) => [heading(page, '#stats', '播放列表'), heading(page, '#stats', '还没有播放列表')],
-  },
-  {
-    path: '/follow',
-    body: (page) => [heading(page, '#stats', '关注'), heading(page, '#stats', '还没有关注任何来源')],
-  },
-  {
-    // 骨架里也有「关注列表」那一排分段，可整块带 `aria-hidden`；按角色找得到页签的只有真页面。
-    path: '/subscriptions',
-    body: (page) => [heading(page, '#main', '关注管理'),
-      page.locator('#stats').getByRole('tab', { name: '添加关注', exact: true })],
-  },
-  {
-    // 订阅管理链接进入统一关注列表。
-    path: '/subscriptions?tab=feeds',
-    body: (page) => [page.locator('#stats').getByRole('tab', { name: '关注列表', exact: true, selected: true }),
-      page.locator('#stats').getByRole('button', { name: '立即拉取', exact: true })],
-  },
-  {
-    path: '/subscriptions?tab=add',
-    body: (page) => [page.locator('#stats').getByRole('region', { name: '添加创作者关注', exact: true }),
-      page.locator('#stats').getByRole('region', { name: '添加 JAV 订阅', exact: true })],
   },
   {
     // 骨架里那条指标带也写着「馆藏视频」，认不出画完没有；只有真页面把四张读数卡做成页签。
@@ -196,11 +170,6 @@ const LEGACY_ROUTES: readonly Route[] = [
   ...Object.entries(CLEANUP_HASH_REDIRECTS).map(([hash, path]) => ({
     path: '/data-cleanup' + hash, body: ROUTES.find(route => route.path === path)!.body,
   })),
-  /* 旧地址：`?tab=wants` 落到关注管理（关注列表那一格），`?tab=source` 换到来源页。 */
-  { path: '/subscriptions?tab=wants', body: page => [heading(page, '#main', '关注管理'),
-    page.locator('#stats').getByRole('tab', { name: '关注列表', exact: true, selected: true })] },
-  { path: '/subscriptions?tab=source', stub: stubSiteMarks,
-    body: page => [page.locator('#stats form[aria-label="资源搜索"]')] },
 ];
 
 async function assertHolds(page: Page, problems: string[], where: string): Promise<void> {
@@ -375,132 +344,6 @@ describe('路由冒烟', () => {
       await expectBody(opened.page, '/tasks', tasksBody(opened.page));
       await waitForPolls(beforeReturn + 2, '回到任务页之后真实任务轮询没有接上');
       await assertHolds(opened.page, opened.problems, '/tasks 换页往返');
-    } finally {
-      await opened.close();
-    }
-  });
-
-  /* 首页那一行新作只属于目录页：从首页进统计页要收起保留，取数还没回来就离开的那一轮
-     也不许回头把它画到管理区上。演示库没有订阅，新作由拦截的接口给一条。 */
-  it('离开首页之后新作那一行收起，晚到的取数也不画回来', { timeout: 60_000 }, async () => {
-    const opened = await visit(browser, '/stats', DESKTOP);
-    try {
-      let hold: Promise<void> | null = null;
-      let served = 0;
-      await opened.page.route(/\/api\/feeds\/discoveries\?/, async (route) => {
-        if (hold) await hold;
-        // 请求可能已随换页撤掉，那时回包会报错；要核对的只是回包之后页面长什么样。
-        await route.fulfill({ json: { ok: true, more: false, items: [{
-          id: 1, code: 'MCSR-191', title: 'MCSR-191 示例作品', link: null, cover_url: null,
-          has_cover: false, cover_frame: null, poster_box: null, release_date: '2025-07-19',
-          studio: null, performers: null, read: false, ignored: false, scrape_error: null,
-        }] } }).catch(() => undefined);
-        served += 1;
-      });
-      const go = (path: string) => opened.page.evaluate((target) => {
-        history.pushState({}, '', target);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      }, path);
-      const feedCards = opened.page.locator('#feedNew article.feednewcard');
-      await expectBody(opened.page, '/stats', [statsInventoryTab(opened.page)]);
-
-      await go('/');
-      await expectBody(opened.page, '/', [feedCards.first()]);
-      await go('/stats');
-      await expectBody(opened.page, '/stats', [statsInventoryTab(opened.page)]);
-      assert.equal(await opened.page.locator('#feedNew').isHidden(), true, '进统计页之后新作那一行还露着');
-      assert.equal(await feedCards.filter({ visible: true }).count(), 0, '进统计页之后新作卡片仍可见');
-
-      const beforeReturn = served;
-      await go('/');
-      await expectBody(opened.page, '/', [feedCards.first()]);
-      assert.equal(served, beforeReturn, '返回首页沿用新作缓存');
-      await go('/junk-files');
-      await opened.page.locator('#count [data-junk-filters]').waitFor();
-      assert.equal(await opened.page.locator('#feedNew').isHidden(), true, '垃圾文件页不展示订阅新作');
-      assert.equal(await feedCards.filter({ visible: true }).count(), 0);
-
-      for (const target of ['/stats', '/junk-files']) {
-        hold = null;
-        const reloadPath = new URL(opened.page.url()).pathname;
-        await opened.page.reload({ waitUntil: 'load' });
-        await expectBody(opened.page, reloadPath, [reloadPath === '/stats'
-          ? statsInventoryTab(opened.page) : opened.page.locator('#count [data-junk-filters]')]);
-        let release!: () => void;
-        hold = new Promise((resolve) => { release = resolve; });
-        const asked = opened.page.waitForRequest(/\/api\/feeds\/discoveries\?/);
-        await go('/');
-        await asked;
-        await go(target);
-        const body = target === '/stats' ? statsInventoryTab(opened.page) : opened.page.locator('#count [data-junk-filters]');
-        await expectBody(opened.page, target, [body]);
-        const before = served;
-        release();
-        for (let step = 0; step < 40 && served === before; step += 1) await opened.page.waitForTimeout(100);
-        assert.ok(served > before, '压住的那一次新作取数没有放行');
-        // 回包之后页面只剩一次同步重画；目录区的旧加载态不属于当前页面。
-        await opened.page.waitForTimeout(500);
-        assert.equal(await opened.page.locator('#feedNew').isHidden(), true);
-        assert.equal(await feedCards.filter({ visible: true }).count(), 0, `晚到的新作取数画到了 ${target} 上`);
-        await assertHolds(opened.page, opened.problems, `首页与 ${target} 往返`);
-      }
-    } finally {
-      await opened.close();
-    }
-  });
-
-  /* 还没装进本机的新作只有来源给的封套地址，没有边车。贴右缘的话 0.75 的卡片比正封宽，
-     左边带进一条书脊；按正封先验比例 0.704 从右缘量回去才只剩正封。 */
-  it('远程封套按正封先验比例切，不带进书脊', { timeout: 60_000 }, async () => {
-    const opened = await visit(browser, '/stats', DESKTOP);
-    try {
-      await expectBody(opened.page, '/stats', [statsInventoryTab(opened.page)]);
-      const remote = 'https://covers.example.test/sleeve.svg';
-      await opened.page.route('**/cover-image?code=ABF-348', (route) => route.fulfill({
-        contentType: 'image/svg+xml',
-        body: '<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000">'
-          + '<rect width="1500" height="1000" fill="#888"/></svg>',
-      }));
-      await opened.page.route(/\/api\/feeds\/discoveries\?/, (route) => route.fulfill({ json: {
-        ok: true, more: false, items: [{
-          id: 1, code: 'ABF-348', title: 'ABF-348 示例作品', link: null, cover_url: remote,
-          has_cover: false, cover_frame: null, poster_box: null, release_date: '2026-09-30',
-          studio: null, performers: null, read: false, ignored: false, scrape_error: null,
-        }] } }));
-      await opened.page.evaluate(() => {
-        history.pushState({}, '', '/');
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      });
-      const cover = opened.page.locator('#feedNew img.cover.panel');
-      await expectBody(opened.page, '/', [cover]);
-      // 1500×1000 的封套，正封宽 704，左缘在 796 列：切掉左边 53.07%，右缘不动。
-      assert.equal(await cover.evaluate((img) => img.style.getPropertyValue('--panel-clip')),
-        '0% 0% 0% 53.07%');
-    } finally {
-      await opened.close();
-    }
-  });
-
-  /* 最近一轮取封面断在连接上、这一行又还有没封面的卡时，行上方挂一条 Note 指去采集页。
-     一排「无封面」自己说不清是官方没出还是线路不通。 */
-  it('封面连不上图片主机时新作那一行上方指去配连接方式', { timeout: 60_000 }, async () => {
-    const opened = await visit(browser, '/stats', DESKTOP);
-    try {
-      await opened.page.route(/\/api\/feeds\/discoveries\?/, (route) => route.fulfill({ json: {
-        ok: true, more: false, cover_network: 3, items: [{
-          id: 1, code: 'MCSR-191', title: 'MCSR-191 示例作品', link: null, cover_url: null,
-          has_cover: false, cover_frame: null, poster_box: null, release_date: '2025-07-19',
-          studio: null, performers: null, read: false, ignored: false, scrape_error: null,
-        }] } }));
-      await opened.page.evaluate(() => {
-        history.pushState({}, '', '/');
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      });
-      const note = opened.page.locator('#feedNew .feednetwork');
-      await expectBody(opened.page, '/', [note]);
-      assert.match(await note.innerText(), /3 部新作的封面连不上 DMM 图片主机/);
-      assert.equal(await note.locator('a').getAttribute('href'), '/sources');
-      await assertHolds(opened.page, opened.problems, '新作连不上图片主机的提示');
     } finally {
       await opened.close();
     }

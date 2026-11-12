@@ -508,7 +508,7 @@ export async function controlFaces(page: Page, selectors: Record<string, string>
   })), selectors);
 }
 
-/** 打开一位订了新作、有一排同台艺人的人物页。演示库里没有人物实体，资料照服务端下发的形状写。 */
+/** 打开一位有一排同台艺人的人物页。演示库里没有人物实体，资料照服务端下发的形状写。 */
 export async function openPerformer(browser: Browser, viewport = DESKTOP): Promise<Visit> {
   const name = '七沢みあ';
   const opened = await visit(browser, '/', viewport);
@@ -522,10 +522,9 @@ export async function openPerformer(browser: Browser, viewport = DESKTOP): Promi
       { site: 'javdb', label: 'JavDB', ordinal: '', slot: 'mark', mark: 'mark-javdb', url: 'https://javdb.com/actors/NPD3' },
       { site: 'missav', label: 'MISSAV', ordinal: '', slot: 'mark', mark: '', url: 'https://missav.ai/actresses/x' },
     ],
-    feed: { following: true },
   } }));
   await opened.page.goto(new URL(`/performers/${encodeURIComponent(name)}`, opened.page.url()).href, { waitUntil: 'load' });
-  await opened.page.locator('[data-entry-feed]').waitFor({ timeout: 15_000 });
+  await opened.page.locator('[data-entry-marks] a[data-entry-mark]').first().waitFor({ timeout: 15_000 });
   await opened.page.locator('[data-entity-foot] [data-related-performer]').first().waitFor({ timeout: 15_000 });
   await settle(opened.page);
   await opened.page.evaluate(() => {

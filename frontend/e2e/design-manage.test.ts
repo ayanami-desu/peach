@@ -5,7 +5,7 @@ import type { Browser, Page } from 'playwright-core';
 import { layout, settle, visit } from './harness.ts';
 import {
   DESKTOP, MOBILE, tokenColor, openDuplicates, openIndexPage, openPlaylistsPage, openFollowManage, holdApi,
-  openPerformer, PROFILED, openProfiledPerformer, popmenuShadow, heroGeometry, disabledTokens,
+  PROFILED, openProfiledPerformer, popmenuShadow, heroGeometry, disabledTokens,
   waitingActionFaces, assertDisabledFace, followTab, followSource, installDesignBrowser, holdPageCode,
 } from './design-fixture.ts';
 
@@ -1018,8 +1018,8 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
     }
   });
 
-  it('浅色下看片那两枚标识悬停时有底，资料卡上带订阅新作开关', { timeout: 60_000 }, async () => {
-    // 演示库里没有人物实体：资料由这里给，入口与开关字段照服务端拼好下发的形状写。
+  it('浅色下看片那两枚标识悬停时有底', { timeout: 60_000 }, async () => {
+    // 演示库里没有人物实体：资料由这里给，入口字段照服务端拼好下发的形状写。
     const name = '七沢みあ';
     const opened = await visit(browser, '/', DESKTOP);
     try {
@@ -1030,7 +1030,6 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
         representative_asset_id: null,
         entry_links: [{ site: 'javdb', label: 'JavDB', ordinal: '', slot: 'mark',
           mark: 'mark-javdb', url: 'https://javdb.com/actors/NPD3' }],
-        feed: { following: false },
       } }));
       await opened.page.goto(new URL(`/performers/${encodeURIComponent(name)}`,
         opened.page.url()).href, { waitUntil: 'load' });
@@ -1049,76 +1048,10 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
       }));
       assert.notEqual(faces.mark, 'rgba(0, 0, 0, 0)', '悬停没有垫底');
       assert.notEqual(faces.mark, faces.card, '悬停底色和资料卡同色，看不出来');
-      const toggle = opened.page.getByRole('switch', { name: '订阅新作' });
-      assert.equal(await toggle.count(), 1, '资料卡上没有订阅新作开关');
-      assert.equal(await toggle.isChecked(), false);
-      const feed = opened.page.locator('[data-entry-feed]');
-      await opened.page.emulateMedia({ reducedMotion: 'no-preference' });
-      assert.equal(await feed.evaluate((element) => getComputedStyle(element).animationName),
-        'entryfeed-breathe', '没订的那枚图标不呼吸，一枚墨色小图标没人注意到');
-      const tip = opened.page.locator('#entityFeedTip');
-      assert.equal(await tip.isVisible(), false);
-      await feed.hover();
-      assert.equal(await tip.isVisible(), true, '悬停没有说明这枚图标是干嘛的');
-      assert.equal(await tip.innerText(), '订阅新作');
-      const placed = await tip.evaluate((element) => {
-        const box = element.getBoundingClientRect();
-        return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight;
-      });
-      assert.ok(placed, '说明浮层越出了视口');
-      await toggle.focus();
-      await opened.page.keyboard.press('Escape');
-      assert.equal(await tip.isVisible(), false, 'Escape 收不起说明浮层');
     } finally {
       await opened.close();
     }
   });
-
-  for (const viewport of [DESKTOP, MOBILE]) {
-    it(`订阅新作的说明浮层整块露在外面：不被资料卡裁掉，也不被同台艺人那条盖住（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await openPerformer(browser, viewport);
-      try {
-        const page = opened.page;
-        const feed = page.locator('[data-entry-feed]');
-        await feed.hover();
-        const tip = page.locator('#entityFeedTip');
-        await tip.waitFor({ state: 'visible', timeout: 5_000 });
-        const placement = await tip.evaluate((element) => {
-          const box = element.getBoundingClientRect();
-          const clippedBy: string[] = [];
-          // 顶层里的元素不受祖先 overflow 裁切，只有写在文档流里的浮层才要逐层量。
-          const topLayer = element.matches(':popover-open');
-          for (let node = topLayer ? null : element.parentElement; node; node = node.parentElement) {
-            const style = getComputedStyle(node);
-            if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
-            const clip = node.getBoundingClientRect();
-            if (box.left < clip.left - 0.5 || box.right > clip.right + 0.5
-              || box.top < clip.top - 0.5 || box.bottom > clip.bottom + 0.5) clippedBy.push(node.className || node.tagName);
-          }
-          // 浮层本身不接指针；临时放开再问四条边和正中最上面是谁，盖在它上面的东西就现形了。
-          // 取样点离角 16px：圆角外那一小块本来就不属于它。
-          element.style.pointerEvents = 'auto';
-          const [midX, midY] = [box.left + box.width / 2, box.top + box.height / 2];
-          const covered = [[box.left + 16, box.top + 2], [box.right - 16, box.top + 2], [box.left + 16, box.bottom - 2],
-            [box.right - 16, box.bottom - 2], [box.left + 2, midY], [box.right - 2, midY], [midX, midY]]
-            .map(([x, y]) => document.elementFromPoint(x!, y!))
-            .filter((hit) => !hit || !element.contains(hit)).map((hit) => hit?.className || 'null');
-          element.style.pointerEvents = '';
-          return { inView: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
-            clippedBy, covered, below: box.top >= document.querySelector('[data-entry-feed]')!.getBoundingClientRect().bottom };
-        });
-        assert.ok(placement.inView, '说明浮层越出了视口');
-        assert.deepEqual(placement.clippedBy, [], '说明浮层被外层容器裁掉了一截');
-        assert.deepEqual(placement.covered, [], '说明浮层被别的东西盖住了');
-        assert.ok(placement.below, '视口下方放得下时说明浮层应该在图标下面');
-        const page_ = await layout(page);
-        assert.ok(page_.scrollWidth <= page_.viewportWidth, '说明浮层把页面撑出了横向滚动');
-        assert.deepEqual(opened.problems, []);
-      } finally {
-        await opened.close();
-      }
-    });
-  }
 
   // 1000px 窗口侧栏展开时内容区只剩七百来像素：三栏的判据量的是内容区，这一档要排成两层，
   // 身份那一栏不能被资料表挤到只剩一个字宽。

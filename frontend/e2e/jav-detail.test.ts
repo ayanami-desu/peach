@@ -253,10 +253,10 @@ describe('库外 JAV 作品详情', () => {
           JSON.stringify({ ready, bounds }));
       } finally { release(); await context.close() }
     });
-    it(`${viewport.name} 新作在站内打开、预览切换、评论分页与关闭返回`, { timeout: 60000 }, async () => {
+    it(`${viewport.name} 作品详情预览切换、评论分页与关闭返回`, { timeout: 60000 }, async () => {
       const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, isMobile: viewport.mobile, hasTouch: viewport.mobile, reducedMotion: 'reduce' });
       try {
-        await context.addInitScript(() => localStorage.setItem('peach.settings.v1', JSON.stringify({ detailAutoplay: false, feedAutoScroll: false })));
+        await context.addInitScript(() => localStorage.setItem('peach.settings.v1', JSON.stringify({ detailAutoplay: false })));
         const page = await context.newPage();
         const errors: string[] = [];
         page.on('pageerror', error => errors.push(error.message));
@@ -268,18 +268,10 @@ describe('库外 JAV 作品详情', () => {
           await route.fulfill({ contentType: 'image/svg+xml',
             body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#777"/></svg>` });
         });
-        await page.route(/\/api\/entity\/shapes/, route => route.fulfill({ json: { home: { feed: true }, entities: [] } }));
-        await page.route(/\/api\/feeds\/discoveries\?/, route => route.fulfill({ json: { ok: true, items: [
-          { id: 1, code: 'EXM-001', title: '示例新作', performers: '示例人物', release_date: '2026-10-30' },
-        ] } }));
         await page.goto(requiredEnv('PEACH_E2E_ORIGIN') + '/');
-        const card = page.locator('#feedNew [data-feed-id="1"]');
-        await card.waitFor({ state: 'visible' });
-        await card.getByRole('link', { name: '打开 EXM-001 的作品详情' }).click();
-        await page.waitForURL('**/works/EXM-001');
+        await page.goto(requiredEnv('PEACH_E2E_ORIGIN') + '/works/EXM-001');
         await page.locator('#stage [data-jav-detail] h1').waitFor({ state: 'visible' });
         assert.ok(await page.locator('#stage').evaluate(el => (el as HTMLDialogElement).open));
-        assert.equal(await card.count(), 1, '原列表留在详情底下');
         await page.getByRole('img', { name: 'EXM-001 封面', exact: true }).waitFor({ state: 'visible' });
         const shared = await page.locator('[data-jav-info]').evaluate(el => {
           const faces = [...el.querySelectorAll('[data-identity-primary] [data-id-face]')].map(face => {
@@ -498,13 +490,13 @@ describe('库外 JAV 作品详情', () => {
         await page.screenshot({ path: `../build/jav-detail-${viewport.name}.png` });
         await page.locator('#closeStage').click();
         await page.waitForURL(requiredEnv('PEACH_E2E_ORIGIN') + '/');
-        await card.waitFor({ state: 'visible' });
         assert.equal(await page.locator('#stage').count(), 0);
         await page.goBack();
         await page.locator('#stage [data-jav-detail] h1').waitFor({ state: 'visible' });
         await page.keyboard.press('Escape');
         await page.waitForURL(requiredEnv('PEACH_E2E_ORIGIN') + '/');
-        await card.getByRole('link', { name: '打开 EXM-001 的作品详情' }).click();
+        await page.goto(requiredEnv('PEACH_E2E_ORIGIN') + '/works/EXM-001');
+        await page.locator('#stage [data-jav-detail] h1').waitFor({ state: 'visible' });
         const detailUrl = page.url();
         await page.locator('[data-id-cell="studio"]').click();
         assert.equal(page.url(), detailUrl);
