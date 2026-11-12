@@ -353,6 +353,18 @@ describe('交给壳的', () => {
     expect(host.querySelector('video')).toBeNull();
   });
 
+  it('正片视图不显示查看图片，切到预览后才给播放正片', async () => {
+    serve();
+    const { host } = await show(item(1, {
+      is_jav: true, code: 'ABC-001', has_cover: true, sample_images: [{ n: 1 }],
+    }));
+    expect(host.querySelector('[data-jav-preview-toggle]')).toBeNull();
+    await click(host.querySelector('[data-media-thumbnail="1"]')!);
+    expect(host.querySelector('[data-jav-preview-toggle]')?.textContent).toBe('播放正片');
+    await click(host.querySelector('[data-jav-preview-toggle]')!);
+    expect(host.querySelector('[data-jav-preview-toggle]')).toBeNull();
+  });
+
   it('没挂载与在线拦截不挂播放器', async () => {
     serve();
     const offline = await show(item(1), { helpers: helpers({ sourceOffline: () => true }) });

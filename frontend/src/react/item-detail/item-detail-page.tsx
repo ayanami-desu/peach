@@ -181,8 +181,8 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
       <CloseStage onClose={actions.close} />
       <div data-player-toolbar="">
         <span data-player-stats-slot="" />
-        {hasPictures ? <button type="button" data-jav-preview-toggle="" aria-pressed={image !== -2}
-          onClick={() => selectImage(image === -2 ? media[0]!.index : -2)}><Glyph name={image === -2 ? 'image' : 'play'} />{image === -2 ? '查看图片' : '播放正片'}</button>
+        {hasPictures && image !== -2 ? <button type="button" data-jav-preview-toggle="" aria-pressed="true"
+          onClick={() => selectImage(-2)}><Glyph name="play" />播放正片</button>
           : null}
         <span data-player-net-slot="" />
       </div>
