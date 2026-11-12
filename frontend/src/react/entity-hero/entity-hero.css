@@ -443,58 +443,6 @@
 }
 .peach-react [data-missav-mark] > span:last-child { color: #FE628E; }
 
-/* 「订阅新作」：一枚 RSS 图标，关着跟页面墨色并慢慢呼吸，订上了换成订阅橙。 */
-@keyframes entryfeed-breathe { 0%, 100% { color: var(--ink); } 50% { color: var(--feed-mark); } }
-.peach-react [data-entry-feed] {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  margin: -4px;
-  padding: 4px;
-  border-radius: var(--control-radius);
-  color: var(--ink);
-  cursor: pointer;
-}
-.peach-react [data-entry-feed]:hover { background: color-mix(in srgb, var(--ink) 8%, var(--ground)); }
-.peach-react [data-entry-feed]:has(:checked) { color: var(--feed-mark); }
-.peach-react [data-entry-feed]:has(:focus-visible) { outline: 2px solid var(--tungsten); outline-offset: 2px; }
-.peach-react [data-entry-feed]:has([aria-busy="true"]) { opacity: 0.6; cursor: progress; }
-.peach-react [data-entry-feed] > svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; }
-.peach-react [data-entry-feed]:not(:has(:checked)) { animation: entryfeed-breathe 2.4s ease-in-out infinite; }
-.peach-react [data-entry-feed]:not(:has(:checked)):is(:hover, :has(:focus-visible)) { animation: none; color: var(--feed-mark); }
-.peach-react [data-entity-feed] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  border: 0;
-  white-space: nowrap;
-}
-/* 说明走 Tooltip（Geist 实测：最宽 250px、内边距 8／6px、13px 字、1.3 行高），进顶层，
- * 位置由 `placePop` 按视口算。 */
-.peach-react [data-entry-feed-tip] {
-  position: fixed;
-  inset: auto;
-  z-index: var(--layer-tooltip);
-  width: max-content;
-  max-width: 250px;
-  margin: 0;
-  padding: 6px 8px;
-  overflow: visible;
-  border: 0;
-  border-radius: var(--surface-radius);
-  background: var(--ink);
-  color: var(--ground);
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  line-height: 1.3;
-  white-space: normal;
-  pointer-events: none;
-}
-
 /* ── 卡底：同台艺人 ──
  * 横滚的一条轨道，这一排是谁由 aria-label 说。每一枚就是首页那枚女优头像（`board.css`「首页顶部
  * 两排」）：76px 宽、6/4px 内边距、12px 圆角，悬停抬整格底色，48px 圆头像不另描圈。 */
