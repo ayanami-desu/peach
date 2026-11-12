@@ -1,7 +1,8 @@
 """JSON 契约的 HTTP 出口。
 
 绝大多数端点不在这里逐个声明：`/api/{route:path}` 把路径交给 `web_router` 的两张
-处理器表，加一个 API 只需要在那里注册。这里只留必须自己声明的一条：探测类（providers）。
+处理器表，加一个 API 只需要在那里注册。这边只放带路径参数、或者要自己处理查询参数的
+那几条。
 
 注册顺序有意义。`/api/{route:path}` 是 catch-all，`api.py` 必须最后 include 这个
 router；同理本模块内部的 catch-all 写在文件末尾，具名端点写在前面。
@@ -21,7 +22,6 @@ from . import web_contract, web_tasks
 from .field_owners import RevisionConflict
 from .folder_rules import FolderRuleConflict
 from .jobs import TaskRunConflict
-from .providers import ProviderUnavailable
 from .routes_auth import require_authenticated_client, require_auth, same_origin
 from .task_runs import task_label
 from .task_control import Cancelled as TaskCancelled
@@ -29,11 +29,6 @@ from .task_control import Cancelled as TaskCancelled
 router = APIRouter()
 
 LOGGER = logging.getLogger(__name__)
-
-
-@router.get("/api/providers")
-def provider_health(request: Request, args: dict[str, str] = Depends(require_auth)):
-    return request.app.state.providers.health()
 
 
 @router.get("/api/libraries")
@@ -211,15 +206,6 @@ def delete_media_library(request: Request, library_id: str,
     catalog.pop(library_id, None)
     persist_config(replace(config, library_catalog=catalog))
     return {"deleted": library_id}
-
-
-@router.get("/api/providers/opencode-go/models")
-def opencode_go_models(request: Request, args: dict[str, str] = Depends(require_auth)):
-    try:
-        models = request.app.state.opencode_go.list_models()
-    except ProviderUnavailable:
-        return JSONResponse({"error": "provider unavailable"}, status_code=502)
-    return {"ok": True, "provider": "opencode-go", "models": models}
 
 
 @router.get("/api/tasks/{run_id}")

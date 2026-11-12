@@ -53,7 +53,6 @@ from .previews import (
     cover_thumb_root,
     entity_thumb_root,
 )
-from .providers import OpenCodeGoClient, default_registry
 from .remote_media_cache import MEDIA_SECURITY_HEADERS
 from .repository import LedgerDatabase, LedgerRepository
 from .scan import ScanService
@@ -286,8 +285,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     cover_small_thumb_service = DerivedImageService(cover_thumb_root(settings.cover_root),
                                                     edge=COVER_SMALL_THUMB_EDGE,
                                                     quality=COVER_SMALL_THUMB_QUALITY)
-    providers = default_registry()
-    opencode_go = OpenCodeGoClient(transport=http_transport)
     from .web_job_recovery import RecoveryService
     recovery_service = RecoveryService(contract, available=True)
     contract.task_runs.enabled = contract.task_runs.available()
@@ -342,8 +339,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     app.state.entity_thumb_service = entity_thumb_service
     app.state.cover_thumb_service = cover_thumb_service
     app.state.cover_small_thumb_service = cover_small_thumb_service
-    app.state.providers = providers
-    app.state.opencode_go = opencode_go
     app.state.http_transport = http_transport
     from .background_issues import IssueLog
     app.state.background_issues = IssueLog()

@@ -822,20 +822,6 @@ class ErrorReportingTests(unittest.TestCase):
         self.assertEqual(media['browser']['user_agent'], 'Chrome/150')
         self.assertEqual(media['playback']['code'], 4)
         self.assertNotIn('private.example', str(media))
-        import base64
-        snapshot = base64.b64encode(json.dumps({'native_codecs': {'h264': 'probably'},
-            'client_hints': {'fullVersionList': [{'brand': 'Chrome', 'version': '150.0.1.2'}],
-                             'cookie': 'private-cookie'}}).encode()).decode()
-        with mock.patch("peach.diagnostics.report", side_effect=RuntimeError("diagnostics unavailable")):
-            response = client.get("/api/diagnostics/bundle", headers={'X-Peach-Browser-Diagnostics': snapshot})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["cache-control"], "no-store")
-        self.assertTrue(zipfile.is_zipfile(io.BytesIO(response.content)))
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            exported = json.loads(archive.read('report.json'))
-        self.assertEqual(exported['browser']['native_codecs']['h264'], 'probably')
-        self.assertEqual(exported['browser']['client_hints']['fullVersionList'][0]['version'], 'v150.0.1.2')
-        self.assertNotIn('private-cookie', str(exported))
         from peach import access
         remote = TestClient(app, base_url="http://127.0.0.1", client=("192.0.2.55", 1234))
         self.assertEqual(remote.post(path, json={"message": "example"}).status_code, 401)

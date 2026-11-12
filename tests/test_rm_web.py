@@ -180,12 +180,12 @@ class WebDataTests(unittest.TestCase):
             con.execute("UPDATE asset SET release_date='2025-01-02' WHERE id=1")
             con.executemany("INSERT INTO asset_entity(asset_id,entity_id,role,source,confidence) "
                             "VALUES(?,11,'performer','test',1.0)", [(21,), (22,), (23,)])
-        latest = rm_web.dispatch_api_get(self.contract, "/api/entity/latest", {"ids": "11,12,13,x"})["items"]
+        latest = web_entity.q_entity_latest(self.contract, {"ids": "11,12,13,x"})["items"]
         self.assertEqual(latest["11"], {"id": 21, "code": "ABC-009", "release_date": "2026-05-01"})
         # 厂牌 13 也挂在 1 号上；没问到的 10 号标签不在结果里。
         self.assertEqual(latest["13"], {"id": 1, "code": "ABC-001", "release_date": "2025-01-02"})
         self.assertEqual(sorted(latest), ["11", "12", "13"])
-        self.assertEqual(rm_web.dispatch_api_get(self.contract, "/api/entity/latest", {})["items"], {})
+        self.assertEqual(web_entity.q_entity_latest(self.contract, {})["items"], {})
 
     def test_search_recommendations_bundle_every_group_in_one_read(self):
         """搜索推荐一个请求取齐四份：作品照 `/api/items` 的口径，占位推荐词取自馆藏作品的番号与署名。"""
@@ -1362,7 +1362,7 @@ class WebDataTests(unittest.TestCase):
 
     def test_contract_handler_registries_are_complete_and_unknown_routes_fail(self):
         self.assertEqual(set(rm_web.GET_HANDLERS), {
-            "/api/ads", "/api/custom-metadata", "/api/duplicates", "/api/editions", "/api/entity", "/api/entity/latest",
+            "/api/ads", "/api/custom-metadata", "/api/duplicates", "/api/editions", "/api/entity",
             "/api/entity/shapes", "/api/facets", "/api/folders", "/api/index", "/api/item", "/api/items",
             "/api/jav/detail", "/api/jav/discoveries", "/api/library-processing", "/api/library-processing/issues",
             "/api/library-shortcuts", "/api/links", "/api/links/prune", "/api/media-processing", "/api/organize",

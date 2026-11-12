@@ -64,7 +64,6 @@ SCOPES: dict[str, tuple[str, ...]] = {
               "test_task_runs.py", "test_followups.py", "test_task_center_integration.py", "test_task_control.py", "test_task_resources.py", "test_resource_platform.py", "test_face_models.py",
               "test_frame_capture.py", "test_timeline_sheets.py", "test_preview_sheets.py", "test_processing_control.py", "test_web_timeline_thumbnails.py",
               "test_interaction.py", "test_media.py",
-              "test_providers.py",
               "test_previews.py",
               # 网盘这一组是播放链路的两端：拉清单、换直链、按 Range 转发。
               "test_drive_google.py", "test_drive_onedrive.py", "test_drive_stream.py",

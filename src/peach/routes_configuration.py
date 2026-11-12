@@ -17,7 +17,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from filelock import FileLock, Timeout
 
 from . import access, auth, data_storage, folder_picker, ledger_backups, settings_file
@@ -70,26 +70,6 @@ def _drive_status(request: Request) -> dict:
     """诊断用的网盘快照：只读账号文件与同步表，不联网。"""
     drive = getattr(request.app.state, "drive", None)
     return drive.status() if drive is not None else {}
-
-
-@router.get("/api/diagnostics/bundle")
-def diagnostic_bundle(request: Request, args: dict[str, str] = Depends(require_auth)):
-    from . import diagnostic_context, diagnostics, support_bundle
-    same_origin(request)
-    try:
-        report = diagnostics.report(request.app.state.settings, _drive_status(request))
-    except Exception as error:
-        from .error_reporting import event
-        event("diagnostics-report", error)
-        report = None
-    browser = diagnostic_context.browser_header(request.headers.get('x-peach-browser-diagnostics', ''),
-                                                 user_agent=request.headers.get('user-agent', ''))
-    from .error_reporting import local_event
-    local_event('browser-context', browser=browser, user_agent=browser.get('user_agent', ''))
-    return Response(support_bundle.bundle_bytes(report=report, browser=browser, include_scraping=False),
-                    media_type="application/zip",
-                    headers={"Content-Disposition": 'attachment; filename="peach-support.zip"',
-                             "Cache-Control": "no-store"})
 
 
 @router.get('/api/diagnostics/exports')
