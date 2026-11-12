@@ -72,7 +72,7 @@ Peach 的诊断证据只落在本机：错误事件写进 `logs/errors-<pid>.log
 
 ## 诊断包
 
-`GET /api/diagnostics/bundle` 需要登录并核对同源，直接返回 `application/zip`，文件名 `peach-support.zip`，`Cache-Control: no-store`。浏览器环境从请求头 `x-peach-browser-diagnostics` 解出（base64 后的 JSON，原始值超过 12000 字符则丢弃），同时记一条 `browser-context` 本机日志。这条接口只附刮削摘要，明细走后台导出。
+设置页的「系统诊断」把诊断包当后台导出（`POST /api/diagnostics/exports`，`kind: "support"`），完成后从 `GET /api/diagnostics/exports/{identity}/download` 下载 `peach-support.zip`，`Cache-Control: no-store`。浏览器环境从请求头 `x-peach-browser-diagnostics` 解出（base64 后的 JSON，原始值超过 12000 字符则丢弃），同时记一条 `browser-context` 本机日志。导出把系统事实与浏览器快照一并打进 ZIP，与下面「后台导出」一节是同一套状态。
 
 ZIP 结构：
 

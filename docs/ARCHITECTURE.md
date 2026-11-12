@@ -28,7 +28,7 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 3. `DriveConnections(settings, lambda: http_transport.client)` → `app.state.drive`，再 `build_streamer(drive.providers, ...)` → `MediaEngine(repository, streamer, cache_root=settings.photo_root.parent / "media-cache")` → `app.state.media_engine`。
 4. `ScanService(drive.providers, repository, drive.roots_map())` → `app.state.scan`；`DriveSync(scan_service, after=after_scan)` → `app.state.drive_sync`，并让 `drive.sync_state`、`drive.refresh_hook` 指到它。
 5. 图像服务：`PreviewService`、`PhotoThumbnailService`、`sample_cache` 与三个 `DerivedImageService`（实体头像、封面、封面缩略）。
-6. 采集：`default_registry()` 的资料源、`OpenCodeGoClient`、`RecoveryService`。
+6. 采集：`RecoveryService`。
 7. `lifespan`：`_LedgerActivation` 起调度，`_warm_ledger_aggregates` 预热 `WARM_AGGREGATES` 里的六个入口（`/api/entity/shapes`、`/api/items?limit=60`、`/api/stats`、`/api/search/recommendations`、`/api/review`、`/api/ads`），再 `asyncio.create_task(drive_sync.run(sync_stop))` 跑同步循环；退出时等这个 task 结束，然后停后台任务、摘掉人脸模型、关 HTTP。
 
 `app.state` 上的对象就是可注入的服务表：
@@ -42,7 +42,6 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 | `scan` | `ScanService` | 全量与增量扫描 |
 | `drive_sync` | `DriveSync` | 定时同步循环与「立即刷新」 |
 | `media_engine` | `MediaEngine` | 取流、按需落缓存、给 ffmpeg 的输入地址 |
-| `providers` | 资料源注册表 | 刮削与来源检查 |
 | `http_transport` | `HttpxTransport` | 共用连接池、限流、代理 |
 | `background_issues` | 后台问题清单 | 任务问题的统一出口 |
 | `external_playback_key` | 票据签名材料 | 外部播放器链接 |

@@ -227,7 +227,7 @@
   "src/react/settings-panel/sidebar-order.tsx": 11,
   "src/react/settings/access-settings.tsx": 19,
   "src/react/settings/api-token-settings.tsx": 23,
-  "src/react/settings/configuration-page.tsx": 16,
+  "src/react/settings/configuration-page.tsx": 17,
   "src/react/settings/device-sessions.tsx": 29,
   "src/react/settings/drive-settings.tsx": 52,
   "src/react/settings/library-icon-picker.tsx": 49,

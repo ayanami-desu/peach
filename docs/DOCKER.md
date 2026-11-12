@@ -77,7 +77,7 @@ docker compose logs -f peach
 两处，别混：
 
 - `docker compose logs peach`：容器的标准输出，含看护进程的启动行与 `peach serve` 的输出。切分由 `PEACH_LOG_DRIVER`、`PEACH_LOG_MAX_SIZE`、`PEACH_LOG_MAX_FILE` 控制。
-- `/data/logs/`：应用自己写的 `errors-<pid>.log`，每行一条 JSON，脱敏后保留 183 天，按月归档成 `<名字>.until-<日期>.log`。数据管理页可以清掉已归档的部分。格式与脱敏规则见[日志与诊断](DIAGNOSTICS.md)。
+- `/data/logs/`：应用自己写的 `errors-<pid>.log`，每行一条 JSON，脱敏后保留 183 天，按月归档成 `<名字>.until-<日期>.log`。「设置 → 存储与备份」可以清掉已归档的部分。格式与脱敏规则见[日志与诊断](DIAGNOSTICS.md)。
 
 ## 健康检查
 

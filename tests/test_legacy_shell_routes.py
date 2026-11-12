@@ -27,7 +27,7 @@ FROZEN_ROUTES = frozenset({
     "/sources", "/tasks", "/immerse", "/wall",
     "/settings/diagnostics", "/jav", "/works/:code", "/settings", "/settings/appearance",
     "/settings/browsing", "/settings/jav", "/settings/search", "/settings/content",
-    "/settings/drives", "/settings/libraries", "/settings/access", "/settings/token", "/settings/devices",
+    "/settings/drives", "/settings/libraries", "/settings/data", "/settings/access", "/settings/token", "/settings/devices",
     "/settings/speed",
 })
 #: 路由树按模式登记的资料页，一个实体种类一条。

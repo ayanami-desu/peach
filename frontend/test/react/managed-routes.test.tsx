@@ -324,10 +324,10 @@ it('配置页打开返回的那一刻，页签条已经在容器里，选中的�
     const open = { section: '任务速度' };
     expect(await r.openManagedRoute('/settings/speed', open, { container: stats, isCurrent: () => true })).toBe(true);
     const tabs = [...stats.querySelectorAll('.ui-configpage [role="tablist"] > [role="tab"]')];
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['网盘', '媒体库', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
-    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false', 'false', 'false', 'true', 'false']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['网盘', '媒体库', '存储与备份', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
+    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false', 'false', 'false', 'false', 'true', 'false']);
     const active = stats.querySelector('.ui-board-group-active');
-    expect(active?.id).toBe(tabs[5].getAttribute('aria-controls'));
+    expect(active?.id).toBe(tabs[6].getAttribute('aria-controls'));
     expect(stats.querySelector('.ui-configpage')?.parentElement?.classList.contains('peach-react')).toBe(true);
   });
 });

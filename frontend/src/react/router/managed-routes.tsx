@@ -212,6 +212,7 @@ export const MANAGED_ROUTES: ManagedRouteTable = {
   '/settings': configurationRoute('/settings'),
   '/settings/drives': configurationRoute('/settings/drives'),
   '/settings/libraries': configurationRoute('/settings/libraries'),
+  '/settings/data': configurationRoute('/settings/data'),
   '/settings/access': configurationRoute('/settings/access'),
   '/settings/token': configurationRoute('/settings/token'),
   '/settings/devices': configurationRoute('/settings/devices'),

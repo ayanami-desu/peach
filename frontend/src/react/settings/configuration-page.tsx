@@ -1,4 +1,4 @@
-/* 配置页（`/settings`，七格页签各自有 `/settings/<键>`）：这台运行 Peach 的电脑上的这几格表单。
+/* 配置页（`/settings`，八格页签各自有 `/settings/<键>`）：这台运行 Peach 的电脑上的这几格表单。
  * 媒体不放在 Peach 上（ADR-0157），所以前两格是网盘与媒体库：网盘管账号、凭据与取流方式（`GET /api/drive`），
  * 媒体库管「扫哪些远端目录」（`GET /api/libraries`）；一个媒体库只是一层映射，加删都不碰已扫进来的行。
  * 每个分区各占一格页签，一次只摆一组；本机配置权限与写入条件由服务端判定。
@@ -24,14 +24,19 @@ import { CONFIGURATION_KEY, fetchConfiguration } from './configuration';
 import { groupRoot } from './configuration-panel';
 import { DeviceSessions } from './device-sessions';
 import { DriveSettings } from './drive-settings';
+import { LedgerBackupSettings } from './ledger-backup-settings';
 import { LibrarySettings } from './library-settings';
 import { TaskSpeedSettings } from './service-preferences';
+import { StorageSettings } from './storage-settings';
 import { busyProps } from './use-action';
 
 /* 页签的次序、锚点与标题：锚点进地址，标题与 `section` 参数（壳按标题要求打开某一格）对得上。 */
+/* 深链按标题认格（`configurationSection` 给的是这一串汉字），标题必须与它逐字相同，不能换成 t()。 */
+const DATA_TITLE = '存储与备份';
 const SECTIONS = [
   { id: 'drives', title: '网盘' },
   { id: 'libraries', title: '媒体库' },
+  { id: 'data', title: DATA_TITLE },
   { id: 'access', title: '访问与安全' },
   { id: 'token', title: 'API 令牌' },
   { id: 'devices', title: '设备会话' },
@@ -131,6 +136,10 @@ function ConfigurationGroups({ data, receipt, section, diagnostics, reload, refr
     </div> },
     { id: 'libraries', title: '媒体库', body: (panel) => <div {...groupRoot(panel)} data-guide-target="libraries">
       <LibrarySettings receipt={receipt} />
+    </div> },
+    { id: 'data', title: DATA_TITLE, body: (panel) => <div {...groupRoot(panel)} data-guide-target="data">
+      <StorageSettings receipt={receipt} />
+      <LedgerBackupSettings receipt={receipt} />
     </div> },
     ...(access ? [{
       id: 'access', title: '访问与安全',

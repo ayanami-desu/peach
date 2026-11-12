@@ -56,7 +56,7 @@
 | `/stats`、`/review`、`/quality-goals`、`/duplicates` | 统计、人工复核、高清目标、重复文件 |
 | `/data-cleanup`、`/data-cleanup/organize`、`/data-cleanup/orphan-records`、`/data-cleanup/links`、`/data-cleanup/batch-delete` | 数据管理与清理入口 |
 | `/tasks`、`/sources` | 任务记录与采集来源 |
-| `/settings`、`/settings/{section}` | 设置分区；`section` 只认外观、播放、JAV、搜索、内容、网盘、媒体库、访问、令牌、设备、速度、诊断，其余 404 |
+| `/settings`、`/settings/{section}` | 设置分区；`section` 只认外观、播放、JAV、搜索、内容、网盘、媒体库、存储与备份、访问、令牌、设备、速度、诊断，其余 404 |
 | `/login` | 登录页 |
 
 旧地址与别名都是 307 跳转，查询参数与会话照原样带过去：
@@ -149,12 +149,12 @@
 | `POST /api/configuration/access`、`POST /api/configuration/access/first` | 保存访问策略；`first` 用于已配置但还没有策略的 Docker 部署，非 Docker 404、已有策略 409 |
 | `GET /api/configuration/access/sessions`、`POST /api/configuration/access/sessions/revoke` | 列出与撤销登录设备；接受 `id` 或 `scope: "others"`，版本不符 409，撤销本机 400 |
 | `POST /api/configuration/access/token/rotate` | 更换访问口令，运行中的服务当场改用新口令。只有口令来自口令文件时才可换：没有口令、或口令由 `--token`／`PEACH_TOKEN` 指定时回 409 并说明该去哪里换。新口令只在这一次回执里给出，`no-store`，同时回访问策略、被登出的设备数与是否需要重新登录 |
-| `GET /api/configuration/storage` | 数据目录各类占用 |
+| `GET /api/configuration/storage` | 数据目录各类占用；界面落点「设置 → 存储与备份」上半格 |
 | `POST /api/configuration/storage/measure` | 启动一次统计，已在跑 409 |
 | `POST /api/configuration/storage/policy` | 保存容量保护（`enabled` 总开关默认开启），返回同一状态 |
 | `POST /api/configuration/storage/clean` | 按类别清理；不在可清理清单里的分组回 400「这一类不能在这里清理」，任务在跑 409 |
-| `GET /api/configuration/ledger-backups`、`POST .../backup`、`POST .../restore` | 账本备份与恢复；恢复要求 `confirm: true`，否则 400「恢复会替换当前账本，请先确认」 |
-| `GET /api/diagnostics`、`GET /api/diagnostics/bundle` | 系统检查与诊断包 |
+| `GET /api/configuration/ledger-backups`、`POST .../backup`、`POST .../restore` | 账本备份与恢复；界面落点「设置 → 存储与备份」下半格；恢复要求 `confirm: true`，否则 400「恢复会替换当前账本，请先确认」 |
+| `GET /api/diagnostics` | 系统检查 |
 | `GET`/`POST /api/diagnostics/exports`、`POST .../{identity}/cancel`、`GET .../{identity}/download` | 诊断记录导出 |
 | `POST /api/diagnostics/client-error` | 页面侧异常上报，按来源限频 |
 | `POST /api/pick-folder` | 在服务器这台机器上弹系统文件夹对话框，返回 `{"path": ...}`；已在弹 409，无法弹 501 |
@@ -170,8 +170,6 @@
 
 | 地址 | 说明 |
 | --- | --- |
-| `GET /api/providers` | 各媒体来源的健康状态 |
-| `GET /api/providers/opencode-go/models` | 该来源的模型清单；不可用时 502 `{"error":"provider unavailable"}` |
 | `GET /api/libraries` | 媒体库分组：`id`、`name`、`icon`、`folders`、`color`、`policy`、`stages`、`roots[{root_id,location}]` |
 | `GET /api/tasks/{run_id}`、`POST /api/tasks/{run_id}/control` | 任务进度与暂停、继续、取消 |
 | `GET /api/background-issues` | 后台问题清单 |

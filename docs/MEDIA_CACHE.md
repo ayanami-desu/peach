@@ -37,7 +37,7 @@
 
 ## 清理
 
-数据管理页的清理只对三类开放（`data_storage.CLEANABLE`）：数据库备份、缩略图、日志。缩略图指 `generated/cover-thumbs` 与 `generated/avatar-thumbs`——清掉后浏览时从本机已有的封面重新缩小，不用联网；容量闸门真不够时也会先清最久没用过的那几张。日志只清已归档的部分。
+「设置 → 存储与备份」上半格的清理只对三类开放（`data_storage.CLEANABLE`）：`backups`（数据库备份）、`thumbnails`（缩略图）、`logs`（日志）。缩略图指 `generated/cover-thumbs` 与 `generated/avatar-thumbs`——清掉后浏览时从本机已有的封面重新缩小，不用联网；容量闸门真不够时也会先清最久没用过的那几张。日志只清已归档的部分。
 
 其余类别不提供清理入口，理由由 `data_storage.CATEGORIES` 写明：
 
@@ -47,4 +47,4 @@
 
 容量保护另按一组目录算缓存占用（`storage_budget.cache_roots`）：`generated/remote-media` 与两个派生缩略图目录，外加大盘上另指定的一个外部缓存目录。`media-cache`、`snapshots`、`posters`、`timeline`、`photo-thumbs` 不在这组里，按数据算。
 
-统计、清理与容量保护分别由 `POST /api/configuration/storage/measure`、`POST /api/configuration/storage/clean`、`POST /api/configuration/storage/policy` 承担，四类之外的分组名一律回 400「这一类不能在这里清理」。时间轴档位切到 `off` 只是不再按需生成，已经生成的图留在盘上。
+统计、清理与容量保护由「设置 → 存储与备份」上半格调用，分别落到 `POST /api/configuration/storage/measure`、`POST /api/configuration/storage/clean`、`POST /api/configuration/storage/policy`；不在可清理清单里的分组名一律回 400「这一类不能在这里清理」。时间轴档位切到 `off` 只是不再按需生成，已经生成的图留在盘上。

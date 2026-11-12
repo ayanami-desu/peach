@@ -8,7 +8,8 @@ export const NAVIGATION_GROUPS = {
     ['fc2_markings', 'FC2 评论标记'], ['fc2_similarity', 'FC2 跨号相似'], ['video_endcards', '片尾/出处证据'],
   ] },
   configuration: { label: 'Peach 配置', items: [
-    ['drives', '网盘'], ['libraries', t('settings:library.title')], ['access', '访问与安全'], ['token', 'API 令牌'],
+    ['drives', '网盘'], ['libraries', t('settings:library.title')], ['data', t('settings:configuration.dataTitle')],
+    ['access', '访问与安全'], ['token', 'API 令牌'],
     ['devices', '设备会话'], ['speed', '任务速度'], ['diagnostics', '系统诊断'],
   ] },
   favorites: { label: '我的收藏', items: [

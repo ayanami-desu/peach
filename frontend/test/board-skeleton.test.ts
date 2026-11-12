@@ -8,13 +8,13 @@ vi.mock('@peach/legacy/core', async importOriginal => ({
 
 describe('Board 页面骨架', () => {
   it.each([
-    ['drives', '网盘'], ['libraries', '媒体库'], ['access', '访问与安全'], ['token', 'API 令牌'],
+    ['drives', '网盘'], ['libraries', '媒体库'], ['data', '存储与备份'], ['access', '访问与安全'], ['token', 'API 令牌'],
     ['devices', '设备会话'], ['speed', '任务速度'], ['diagnostics', '系统诊断'],
   ])('配置深链 %s 使用对应分区', (key, label) => {
     const root = document.createElement('div');
     root.innerHTML = boardPageSkeleton(`/settings/${key}`);
     const tabs = [...root.querySelectorAll('.ui-board-local-nav button')];
-    expect(tabs).toHaveLength(7);
+    expect(tabs).toHaveLength(8);
     expect(tabs.filter(tab => tab.getAttribute('aria-selected') === 'true').map(tab => tab.textContent)).toEqual([label]);
   });
   it.each(['/stats', '/settings/diagnostics', '/tasks', '/duplicates', '/quality-goals', '/playlists'])('为 %s 提供单一等待语义', path => {

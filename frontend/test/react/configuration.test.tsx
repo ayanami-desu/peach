@@ -1,4 +1,4 @@
-/* Peach 配置页：七格页签一件一件事，头两格是网盘与媒体库（媒体只在网盘上，ADR-0157）。
+/* Peach 配置页：八格页签一件一件事，头两格是网盘与媒体库（媒体只在网盘上，ADR-0157）。
  * 网盘卡的状态全来自 `GET /api/drive`，媒体库卡来自 `GET /api/libraries`；这一页只负责把深链落到对应那一格。
  * 外观由预览与 e2e 量。 */
 import { notifyManager, QueryClientProvider } from '@tanstack/react-query';
@@ -70,6 +70,14 @@ function serve(config: ConfigurationData, drive: DriveSnapshot | Reply = snapsho
     '/api/configuration/access/sessions': { revision: 'access-1', sessions: [], manageable: false },
     [DRIVE_URL]: drive,
     '/api/libraries': { libraries: [], options: { icons: [], policies: ['auto', 'custom'], stages: [] } },
+    '/api/configuration/storage': {
+      data_root: '/data', free_bytes: 1, total_bytes: 2, system_drive: false,
+      budget: { policy: null, error: '', last_check: null }, usage: null,
+      job: { state: 'idle', message: '' },
+    },
+    '/api/configuration/ledger-backups': {
+      backups: [], backup: { status: 'idle' }, restore: { status: 'idle' }, last_restore: null,
+    },
     ...others,
   };
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -103,10 +111,10 @@ const press = (target: Element, key: string) => act(async () => {
   target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 });
 
-it('七格页签各管一件事，网盘默认打开，每格都是独立面板', async () => {
+it('八格页签各管一件事，网盘默认打开，每格都是独立面板', async () => {
   const { host } = await open();
   expect(tabs(host).map(tab => tab.textContent)).toEqual(
-    ['网盘', '媒体库', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
+    ['网盘', '媒体库', '存储与备份', '访问与安全', 'API 令牌', '设备会话', '任务速度', '系统诊断']);
   expect(chosen(host).textContent).toBe('网盘');
   for (const tab of tabs(host)) {
     const panel = host.querySelector(`#${tab.getAttribute('aria-controls')}`)!;
@@ -117,8 +125,9 @@ it('七格页签各管一件事，网盘默认打开，每格都是独立面板'
     host.querySelector(selector)?.closest('[role="tabpanel"]')?.getAttribute('aria-labelledby');
   expect(inPanel('[data-guide-target="drives"]')).toBe(tabs(host)[0]!.id);
   expect(inPanel('[data-guide-target="libraries"]')).toBe(tabs(host)[1]!.id);
-  expect(inPanel('[data-guide-target="token"]')).toBe(tabs(host)[3]!.id);
-  expect(inPanel('[data-guide-target="speed"]')).toBe(tabs(host)[5]!.id);
+  expect(inPanel('[data-guide-target="data"]')).toBe(tabs(host)[2]!.id);
+  expect(inPanel('[data-guide-target="token"]')).toBe(tabs(host)[4]!.id);
+  expect(inPanel('[data-guide-target="speed"]')).toBe(tabs(host)[6]!.id);
 });
 
 it('方向键在页签条里首尾循环，Home 与 End 到两头并同步焦点', async () => {
@@ -133,7 +142,7 @@ it('方向键在页签条里首尾循环，Home 与 End 到两头并同步焦点
   expect(chosen(host).textContent).toBe('系统诊断');
   await press(chosen(host), 'Home');
   expect(chosen(host).textContent).toBe('网盘');
-  expect(tabs(host).map(tab => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1]);
+  expect(tabs(host).map(tab => tab.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1, -1]);
 });
 
 it('分区深链按页签名与地址锚点打开对应那一格，重读配置不换格', async () => {
@@ -156,9 +165,9 @@ it('地址上带着网盘授权回跳的锚点时打开那一格', async () => {
   }
 });
 
-it('没有访问配置时只留网盘、媒体库、任务速度与系统诊断，认不出的页签名回到网盘', async () => {
+it('没有访问配置时只留网盘、媒体库、存储与备份、任务速度与系统诊断，认不出的页签名回到网盘', async () => {
   const { host } = await open(data({ editable: false, access: undefined, api_token: undefined }), snapshot(), {}, '不存在');
-  expect(tabs(host).map(tab => tab.textContent)).toEqual(['网盘', '媒体库', '任务速度', '系统诊断']);
+  expect(tabs(host).map(tab => tab.textContent)).toEqual(['网盘', '媒体库', '存储与备份', '任务速度', '系统诊断']);
   expect(chosen(host).textContent).toBe('网盘');
 });
 
