@@ -145,12 +145,26 @@ class PublicSourcePaused(PublicSourceUnavailable):
     """来源冷却期内不发请求。"""
 
 
+class PublicAuthRequired(PublicSourceUnavailable):
+    """接口回的是登录要求：限制期内不再发请求，由调用方记成来源要求登录。"""
+
+
 class PublicHostFailed(PublicSourceUnavailable):
     """这一个主机没有答复或答复不可用；同协议的下一个主机可以接替。"""
 
 
 class PublicBudgetExceeded(PublicSourceUnavailable):
     """本轮匿名资料请求预算已用完。"""
+
+
+#: 接口业务失败里表示「要登录」的写法：`action` 是签名校验失败，`message` 是站上的登录提示。
+_LOGIN_MARKERS = ("JWTVerificationError", "登錄", "登录")
+
+
+def login_required(payload: dict) -> bool:
+    """接口的业务失败是否在要登录；其余业务失败只是这一次没取到。"""
+    text = " ".join(str(payload.get(key) or "") for key in ("action", "message"))
+    return any(marker in text for marker in _LOGIN_MARKERS)
 
 
 @dataclass
@@ -207,6 +221,7 @@ class PublicAPI:
         self.host_paused: dict[str, float] = {}
         self.paused_until = 0.0
         self.image_paused_until = 0.0
+        self.auth_until = 0.0
         self.request_context = ContextVar("jav_public_request_budget", default=None)
 
     @contextmanager
@@ -295,6 +310,9 @@ class PublicAPI:
         return parts or None
 
     def _json(self, path: str, query=None) -> dict:
+        # 接口要过登录时，本轮接下来的请求连签名都不必再取。
+        if self.clock() < self.auth_until:
+            raise PublicAuthRequired("javdb 要求登录")
         # 签名材料取齐后再领取 API 主机间隔，首个签名请求不占用两次间隔。
         self._signature()
         if self.signature_app:
@@ -319,12 +337,15 @@ class PublicAPI:
             if attempted:
                 raise PublicSourceUnavailable("作品资料来源暂时不可用，请稍后重试")
             raise PublicSourcePaused("作品资料来源暂时不可用，请稍后重试")
-        if not isinstance(payload, dict) or payload.get("success") != 1:
-            self.paused_until = self.clock() + 60
+        if not isinstance(payload, dict):
+            raise PublicSourceUnavailable("作品资料未取得，请稍后重试")
+        if payload.get("success") != 1:
+            if login_required(payload):
+                self.auth_until = self.clock() + 60
+                raise PublicAuthRequired("javdb 要求登录")
             raise PublicSourceUnavailable("作品资料未取得，请稍后重试")
         data = payload.get("data")
         if not isinstance(data, dict):
-            self.paused_until = self.clock() + 60
             raise PublicSourceUnavailable("作品资料来源格式未识别")
         return data
 

@@ -22,10 +22,13 @@ const cardText = (title: string, text: string, layout: FieldsetLayout, controls 
           <h3 class="text-title-2-medium text-text-primary">${title}</h3>
           <p class="text-body-2-regular text-text-secondary">${text}</p>${controls}</div></div>`;
 
+/** 「扫描与采集」卡页脚里始终存在的两条路；骨架与 React 卡片共用同一份文案。 */
+export const SCAN_CARD_FOOTER_LINKS = [['/sources', '来源和凭证'], ['/settings/diagnostics', '诊断与日志']] as const;
+
 /** 「扫描与采集」卡：与 React `LibraryProcessingCard` 同一副容器、同一段正文、同一组键。
  *  「复核资料」只在有候选时出现，这里不预画。 */
 export function scanCardSkeletonHtml(): string {
-  const links = [['/sources', '来源和凭证'], ['/settings/diagnostics', '诊断与日志']]
+  const links = SCAN_CARD_FOOTER_LINKS
     .map(([href, label]) => `<a href="${href}" class="inline-flex items-center justify-center gap-1 whitespace-nowrap font-sans rounded-sm text-body-medium text-accent-600"><span>${label}</span>${islandGlyph('arrow-up', 'size-(--icon-inline) shrink-0 rotate-90')}</a>`).join('');
   return island(`<section aria-label="扫描与采集" class="${fieldsetClass('stack')}" data-cleanup-task data-cleanup-processing>
         ${cardText('扫描与采集', SCAN_CARD_TEXT, 'stack', `<div class="w-full max-w-80"><p class="mb-1 text-body-2-medium text-text-secondary">媒体库</p>${islandSelect(bar, { attrs: `${unavailable} aria-label="媒体库"` })}</div>`)}

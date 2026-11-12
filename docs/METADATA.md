@@ -13,7 +13,7 @@
 | `r18dev.py` | r18.dev 的作品 JSON，DMM 数字版目录的镜像，有码与素人链的第一档 |
 | `dmm.py` | DMM／FANZA 的 GraphQL 目录，答 r18.dev 漏收的部分 |
 | `avbase.py` | AVBase 作品搜索页 |
-| `javdb.py` | javdb 的作品资料：刮削走匿名接口（`JavDBPublicSource`），详情页解析只留给视频预览 |
+| `javdb.py` | javdb 的作品资料：刮削走 Cookie 详情页（`JavDBSource`）；匿名接口只留给馆藏探索与作品资料 |
 | `javbus.py` | JavBus 作品页 |
 | `fc2.py` | FC2 内容市场商品页，以及 FC2 链上五站共用的番号、时长与原件地址 |
 | `fc2cmadb.py` | fc2cmadb 作品页：下架 FC2 的镜像、评论区维护的演员与等价标记 |
@@ -32,7 +32,7 @@
 
 - `SOURCES` 是来源表，每项有 `label`、`domains`、`login`，需要登录或过年龄门的标 `cookie`/`session`，被 403 挡住时按 `blocked_pause` 停机（javdb 24 小时、其他 6 小时），停机时长从 `FIRST_BLOCKED_PAUSE` 起翻倍。
 - 回 200 的验证页由解析器认成 `cloudflare_challenge`，经 `SourceTransport.hold` 进同一份记录：封期里接着问，只会每条都再撞一次。
-- 需要登录墙或年龄门的站（javdb、javbus、fc2cmadb）靠用户在浏览器里自己过门后把 Cookie 贴进采集设置；Peach 不读浏览器的 Cookie 库，也不代替用户登录。
+- 需要登录墙或年龄门的站（javdb、javbus、fc2cmadb）靠用户在浏览器里自己过门后把 Cookie 贴进采集设置；Peach 不读浏览器的 Cookie 库，也不代替用户登录。JavDB 的匿名接口在 2026-11 起要求登录，刮削因此只走 Cookie 详情页；没配 Cookie 会记 `javdb 要求登录`，不回退匿名接口。
 - 主机间隔 `library_processing.SOURCE_INTERVALS`：`{'javdb.com': 3.0, 'jdbstatic.com': 3.0}`——javdb 按出口 IP 计配额。要走 Peach 代理的来源在设置里单独指定，`peach_proxy` 负责连接方式。
 
 ## 来源检查

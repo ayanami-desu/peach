@@ -6,7 +6,7 @@
  * `getComputedStyle` 断言；这里只看结构、文字与请求。 */
 import { act } from 'react';
 import { notifyManager, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { queryClient } from '../../src/react/query';
 import {
@@ -18,7 +18,7 @@ import { setProcessingNoticeVisible } from '../../src/react/library-processing/p
 import type { LibraryProcessingProps } from '../../src/react/bundle';
 import { publishLibraries } from '../../src/library-catalog';
 
-import { actionOrder, buttonNamed as textButtonNamed, click, mount, mountRoot, submit } from './render';
+import { actionOrder, buttonNamed as textButtonNamed, click, mount, mountRoot, settle, submit } from './render';
 
 // 取消要过真的确认框：桩里的 `confirmModal` 不画对话框。
 vi.mock('@peach/legacy/ui', async (original) => ({
@@ -32,12 +32,17 @@ const buttonNamed = (name: string, root: ParentNode = document) =>
 
 // 客户端是模块级的单例（所有 React 根共用一个），用例之间不清就互相喂数据。
 // 报过的任务号记在 `localStorage` 里，也要清，否则下一条用例的通知被当成重复的。
-afterEach(() => {
+// 前一用例的根还没卸载时 `clear()` 会触发重新读取，应答仍会把数据写回缓存；下一条
+// 用例开始前再清一次，才不会继承上一趟的快照。
+function reset() {
   queryClient.clear();
   publishLibraries([]);
   localStorage.clear();
   sessionStorage.clear();
-});
+}
+
+beforeEach(reset);
+afterEach(reset);
 
 /* Query 派发更新用的是它自己抓住的那个真 `setTimeout(0)`，假时钟推不动它：推完时钟
    断言到的还是上一帧的 DOM。用例里改成当场派发。 */
@@ -233,6 +238,32 @@ it('扫描与补全方式共用一颗主键加一个下拉，各自交自己的�
 
   expect(served.posts()).toEqual([{incremental:true}, {}, { stage: 'collect' }, { stage: 'metadata' }]);
   expect(host.querySelector('a[href="/sources"]')?.textContent).toContain('来源和凭证');
+});
+
+it('还没读到数据时页脚还在，来源与诊断能走，要数据的键不画', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+  const host = await mount(card({ toast: vi.fn() }));
+
+  // 卡片自己的页脚：骨架里也画了一条 footer，这里只认外面那一层。
+  const foot = host.querySelector(':scope > div > section > footer')!;
+  expect(foot.querySelector('a[href="/sources"]')?.textContent).toContain('来源和凭证');
+  expect(foot.querySelector('a[href="/settings/diagnostics"]')?.textContent).toContain('诊断与日志');
+  expect(foot.querySelector('a[href="/review"]')).toBeNull();
+  expect(foot.querySelector('[data-split-button]')).toBeNull();
+});
+
+it('读不回来时重试提示旁边仍留着来源与诊断入口', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })));
+  const host = await mount(card({ toast: vi.fn() }));
+  await settle();
+
+  expect(host.querySelector('[data-media-error]')).not.toBeNull();
+  // 卡片自己的页脚：骨架里也画了一条 footer，这里只认外面那一层。
+  const foot = host.querySelector(':scope > div > section > footer')!;
+  expect(foot.querySelector('a[href="/sources"]')?.textContent).toContain('来源和凭证');
+  expect(foot.querySelector('a[href="/settings/diagnostics"]')?.textContent).toContain('诊断与日志');
+  expect(foot.querySelector('a[href="/review"]')).toBeNull();
+  expect(foot.querySelector('[data-split-button]')).toBeNull();
 });
 
 it('启动只提交一次，进度用 GET 读回来，完成后给出回执与复核入口', async () => {

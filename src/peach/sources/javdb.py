@@ -9,8 +9,9 @@ MGS 的 5/23、标题带 MGS 附注、演员里有男优，各字段按 Peach �
 
 一部分页面要登录才给，回的是登入页而不是 401/403（`peach.javdb.LOGIN`），搜索页与详情页都要认。
 
-刮削不读详情页，走 `JavDBPublicSource` 的匿名接口（ADR-0144）：不带 Cookie，不占 javdb.com
-的出口配额，字段投影成与详情页同形的记录。详情页解析留给视频预览。
+刮削读详情页，走带 Cookie 的 `JavDBSource`：站上按出口 IP 计配额，登录墙回的是登入页。
+`JavDBPublicSource` 是同一站的匿名接口取法（ADR-0144），资料投影成与详情页同形的记录，
+仍用于公开资料接口与 `public_record`。
 """
 from __future__ import annotations
 
@@ -33,9 +34,9 @@ from .base import FailureReason, Page, Session, SiteConfig, SiteRecord, SiteSour
 JAVDB = SiteConfig(name="javdb", label="javdb", provider="javdb-page",
                    base_url="https://javdb.com", domains=("javdb.com", "jdbstatic.com", "jdbimgs.com"),
                    stage="community", interval=3.0, cookie=True)
-#: 刮削那一问的配置。来源名、域名与 Cookie 仍是 `javdb` 这一站的（视频预览照旧读详情页，
-#: 冷却按这个名字记）；解析器名另起，候选与账本证据分得清是哪一种取法。接口自己的间隔、冷却与
-#: 请求预算在 `peach.javdb_public`，这一问不经会话的传输。
+#: 匿名接口那一问的配置。来源名、域名与 Cookie 仍是 `javdb` 这一站的（冷却按这个名字记）；
+#: 解析器名另起，候选与账本证据分得清是哪一种取法。接口自己的间隔、冷却与请求预算在
+#: `peach.javdb_public`，这一问不经会话的传输。
 JAVDB_PUBLIC = dataclasses.replace(JAVDB, provider="javdb-api")
 #: 一问的请求上限：签名常量两次（一天一次）、搜索、最多两份发行详情，再留两次换接口主机。
 PUBLIC_REQUESTS = 7
@@ -167,17 +168,19 @@ def public_record(movie: dict) -> SiteRecord:
 
 
 class JavDBPublicSource(JavDBSource):
-    """刮削的 javdb 一问：匿名接口取资料，失败按缺失、歧义、冷却与未取得分档。
+    """javdb 的匿名接口取法：失败按缺失、歧义、要求登录、冷却与未取得分档。
 
-    接口的问题不写 `javdb` 的来源冷却：那份冷却管的是详情页那条路（视频预览），
-    接口自己按 `PUBLIC_API` 的冷却停下，这里翻成 `SourcePaused`，本趟记作没轮到。
+    刮削登记的是详情页那一路（带 Cookie 的 `JavDBSource`，见 `SITE_SOURCES`）；这一条留给
+    公开资料接口的同一份协议，`public_record` 仍按它投影。接口的问题不写 `javdb` 的来源冷却：
+    那份冷却管的是详情页那条路，接口自己按 `PUBLIC_API` 的冷却停下，这里翻成 `SourcePaused`，
+    本趟记作没轮到；要登录时连发请求都不必，记成 `AUTH_REQUIRED`。
     """
 
     DEFAULT = JAVDB_PUBLIC
 
     def query(self, code: str, *, session: Session) -> SiteRecord:
-        from ..javdb_public import (PUBLIC_API, PublicBudgetExceeded, PublicIdentityAmbiguous, PublicNotFound,
-                                    PublicRequestBudget, PublicSourcePaused, PublicSourceUnavailable)
+        from ..javdb_public import (PUBLIC_API, PublicAuthRequired, PublicBudgetExceeded, PublicIdentityAmbiguous,
+                                    PublicNotFound, PublicRequestBudget, PublicSourcePaused, PublicSourceUnavailable)
         from ..scraping_access import SourcePaused
         seconds = PUBLIC_SECONDS if session.deadline is None else session.deadline - time.monotonic()
         budget = PublicRequestBudget(max_requests=PUBLIC_REQUESTS, max_seconds=max(1.0, seconds))
@@ -193,6 +196,8 @@ class JavDBPublicSource(JavDBSource):
                 raise SourcePaused(f"javdb：{error}") from None
             except PublicBudgetExceeded:
                 raise SourceFailure(FailureReason.TIMEOUT, "javdb 作品资料在本次预算内未取得") from None
+            except PublicAuthRequired:
+                raise SourceFailure(FailureReason.AUTH_REQUIRED, "javdb 要求登录") from None
             except PublicSourceUnavailable as error:
                 raise SourceFailure(FailureReason.NETWORK, f"javdb：{error}") from None
             return public_record(movie)

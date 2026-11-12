@@ -16,7 +16,7 @@ import { Select, SelectItem } from '@/components/base/select/select';
 import { Chip } from '@/components/base/badges/chip';
 
 import { apiSend, errorMessage } from '../../api';
-import { SCAN_CARD_TEXT, scanCardSkeletonHtml } from '../../management';
+import { SCAN_CARD_FOOTER_LINKS, SCAN_CARD_TEXT, scanCardSkeletonHtml } from '../../management';
 import type { LibraryProcessingProps } from '../bundle';
 import { Fieldset, FieldsetTitle } from '../components/fieldset';
 import { IssueRow } from '../components/issue-row';
@@ -225,24 +225,35 @@ export function LibraryProcessingCard(props: LibraryProcessingProps) {
     void run({ job_id: state.job_id, retry: state.retryable_asset_ids }).catch(() => {});
   };
 
-  if (!job.data) return job.isError
-    ? <RetryNote message={errorMessage(job.error)} onRetry={() => { void job.refetch() }} />
-    : <SkeletonContent pending skeletonHtml={scanCardSkeletonHtml}>{null}</SkeletonContent>;
+  /* 页脚在三种状态里都在：还没读到数据的时候，来源和诊断这两条路照样是能走的；
+     要数据才成立的东西（复核、日常同步）等 `job.data` 到了再画。 */
+  const footer = (
+    <>
+      {SCAN_CARD_FOOTER_LINKS.map(([href, label]) => (
+        <LinkButton key={href} href={href} size="small" trailingIcon={RiArrowRightLine}>{label}</LinkButton>
+      ))}
+      {job.data && state.candidates
+        ? <LinkButton href="/review" size="small" trailingIcon={RiArrowRightLine}>复核资料</LinkButton>
+        : null}
+      {/* 日常同步保留独立入口，原任务的定向重试只处理该任务的失败项。 */}
+      {job.data ? <ProcessingActions scan libraryId={libraryId} libraryName={libraryId ? selectedLibrary.name : undefined} busy={start.isPending} occupied={processingActive(state)} metadataOnly={state?.metadata_only}
+        speedMode={state.speed_mode} pendingCount={state.new_asset_count} onRun={run} onOccupied={() => toast(busyText(state))} /> : null}
+    </>
+  );
+
+  if (!job.data) return (
+    <div className="flex flex-col gap-4">
+      <Fieldset layout="stack" label="扫描与采集" footer={footer}>
+        {job.isError
+          ? <RetryNote message={errorMessage(job.error)} onRetry={() => { void job.refetch() }} />
+          : <SkeletonContent pending skeletonHtml={scanCardSkeletonHtml}>{null}</SkeletonContent>}
+      </Fieldset>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-4">
-      <Fieldset layout="stack" label="扫描与采集" footer={
-        <>
-          <LinkButton href="/sources" size="small" trailingIcon={RiArrowRightLine}>来源和凭证</LinkButton>
-          <LinkButton href="/settings/diagnostics" size="small" trailingIcon={RiArrowRightLine}>诊断与日志</LinkButton>
-          {state.candidates
-            ? <LinkButton href="/review" size="small" trailingIcon={RiArrowRightLine}>复核资料</LinkButton>
-            : null}
-          {/* 日常同步保留独立入口，原任务的定向重试只处理该任务的失败项。 */}
-          <ProcessingActions scan libraryId={libraryId} libraryName={libraryId ? selectedLibrary.name : undefined} busy={start.isPending} occupied={processingActive(state)} metadataOnly={state?.metadata_only}
-            speedMode={state.speed_mode} pendingCount={state.new_asset_count} onRun={run} onOccupied={() => toast(busyText(state))} />
-        </>
-      }>
+      <Fieldset layout="stack" label="扫描与采集" footer={footer}>
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">

@@ -13,8 +13,8 @@ from peach.community_catalog import COMMUNITY_SOURCES, IMAGE_LIMIT, _download, c
 from peach.http import HttpResponse
 from peach.jav_cover_fetch import Candidate, NotFound, Unavailable, _fetch
 from peach.javdb_genres import page_genres
-from peach.javdb_public import (PUBLIC_API, PublicIdentityAmbiguous, PublicNotFound, PublicSourcePaused,
-                                PublicSourceUnavailable)
+from peach.javdb_public import (PUBLIC_API, PublicAuthRequired, PublicIdentityAmbiguous, PublicNotFound,
+                                PublicSourcePaused, PublicSourceUnavailable)
 from peach.library_processing import _previous_order
 from peach.scraping_access import SourcePaused
 from peach.sources import (SITE_SOURCES, AVBaseSource, FailureReason, JavBusSource, JavDBPublicSource, JavDBSource,
@@ -495,8 +495,7 @@ PUBLIC_MOVIE = {
 
 
 class PublicSourceTests(unittest.TestCase):
-    """刮削的 javdb 一问走匿名接口：记录与详情页同形，类别按 id 换回原词，失败按缺失、歧义、冷却分档。"""
-
+    """公开资料接口与详情页投影并存；元数据登记走详情页来源。"""
     def setUp(self):
         for patcher in (patch.dict("peach.javdb_genres.GENRES", PUBLIC_GENRES, clear=True),
                         patch("peach.javdb_genres.HIDDEN", frozenset({"0:299"}))):
@@ -529,7 +528,7 @@ class PublicSourceTests(unittest.TestCase):
         payload = public_record(movie).payload()
         self.assertEqual((payload["maker"], payload["label"], payload["genres"]), ("", "至高ぷれみあ！", ["私人攝影"]))
 
-    def test_query_maps_public_failures_without_holding_the_page_cooldown(self):
+    def test_public_query_maps_failures_without_holding_the_page_cooldown(self):
         session = Session(serve({}))
         cases = ((PublicNotFound("没有"), SourceFailure, FailureReason.NOT_FOUND),
                  (PublicIdentityAmbiguous("同番号对应多个作品"), SourceFailure, FailureReason.PARSE_ERROR),
@@ -546,7 +545,33 @@ class PublicSourceTests(unittest.TestCase):
             with self.assertRaises(SourceFailure) as caught:
                 JavDBPublicSource().query("ABW-358", session=session)
         self.assertEqual(caught.exception.detail, "identity_ambiguous")
-        self.assertIs(SITE_SOURCES["javdb"], JavDBPublicSource)
+        self.assertIs(SITE_SOURCES["javdb"], JavDBSource)
+
+    def test_public_api_auth_failure_stops_followup_and_generic_failure_does_not_pause(self):
+        requests = []
+        clock = [100.0]
+
+        def transport(request, *_):
+            requests.append(request)
+            return HttpResponse(200, {}, json.dumps(
+                {"success": 0, "action": "JWTVerificationError"}).encode(), request.url)
+
+        api = type(PUBLIC_API)(transport, clock=lambda: clock[0], sleeper=lambda _: None)
+        with patch.object(api, "_signature", return_value=("middle", "suffix")):
+            with self.assertRaises(PublicAuthRequired):
+                api._json("/v2/test")
+            count = len(requests)
+            with self.assertRaises(PublicAuthRequired):
+                api._json("/v2/test")
+        self.assertEqual(len(requests), count)
+        api.auth_until = 0
+        api.transport = lambda request, *_: (
+            requests.append(request) or HttpResponse(
+                200, {}, json.dumps({"success": 0, "message": "暂时失败"}).encode(), request.url))
+        with patch.object(api, "_signature", return_value=("middle", "suffix")):
+            with self.assertRaises(PublicSourceUnavailable):
+                api._json("/v2/test")
+        self.assertEqual(api.paused_until, 0.0)
 
     def test_query_returns_the_public_record(self):
         with patch.object(PUBLIC_API, "movie", return_value=PUBLIC_MOVIE) as movie:

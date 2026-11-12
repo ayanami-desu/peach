@@ -97,7 +97,7 @@ SOURCE_LABELS = {'r18dev': 'r18.dev', 'dmm': 'DMM / FANZA', 'avbase': 'AVBase', 
                  'sougouwiki': '素人系総合 Wiki', 'av_neme': 'このAV女優の名前教えてwiki',
                  'av_name': 'AV女優の名前特定wiki'}
 PROVIDER_NAMES = {'local_nfo': 'local-nfo', 'r18dev': 'r18-json', 'dmm': 'dmm-graphql', 'avbase': 'avbase-search',
-                  'javbus': 'javbus-page', 'javdb': 'javdb-api', 'fc2': 'fc2-article',
+                  'javbus': 'javbus-page', 'javdb': 'javdb-page', 'fc2': 'fc2-article',
                   'fc2cmadb': 'fc2cmadb-article', 'fc2ppvdb': 'fc2ppvdb-page', 'javten': 'javten-page',
                   'javarchive': 'javarchive-page',
                   '1pondo': '1pondo-json',
@@ -1821,19 +1821,33 @@ class _RemoteSession:
                                              absent=absent))
         except DeadlineExceeded:
             self.reset()
-            issue(row, '封面在预算时间内未取得，可稍后重试', action=action, retryable=True)
+            if not self._cover_failure_kept(code, cover_root, lineup):
+                issue(row, '封面在预算时间内未取得，可稍后重试', action=action, retryable=True)
         except CoverKept:
             self._record_miss('cover', code, lineup)
         except NotFound:
-            self._record_miss('cover', code, lineup)
-            issue(row, MISS_MESSAGES[action], action=action, retryable=True)
+            if not self._cover_failure_kept(code, cover_root, lineup):
+                self._record_miss('cover', code, lineup)
+                issue(row, MISS_MESSAGES[action], action=action, retryable=True)
         except Exception as error:
             _raise_task_failure(error)
             paused = source_paused(error)
-            issue(row, ('封面本趟没轮到：' if paused else '封面未取得：') + describe_failure(error),
-                  action=action, retryable=True, paused=paused,
-                  diagnostics=_source_failure_details(error, code, action))
+            if not self._cover_failure_kept(code, cover_root, lineup):
+                issue(row, ('封面本趟没轮到：' if paused else '封面未取得：') + describe_failure(error),
+                      action=action, retryable=True, paused=paused,
+                      diagnostics=_source_failure_details(error, code, action))
         return 0
+
+    def _cover_failure_kept(self, code, cover_root, lineup):
+        """本机已经装着一张能用的封面时，这一趟没取到不记问题项：卡片上有图，只是没换到更大的。
+
+        来源限流、超时、说没有、或者干脆出错，都归到这里：记「7 天内不再问」并交回去，
+        由调用处直接返回。没有本机封面时返回假，调用处照旧把失败写进问题清单。
+        """
+        if measure_image_file(cover_root / (code + '.jpg')) is None:
+            return False
+        self._record_miss('cover', code, lineup)
+        return True
 
 
 def _apply_finished_candidates(database, candidate_root, active, asset_ids=None, candidate_rows=None):

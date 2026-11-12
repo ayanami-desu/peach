@@ -331,6 +331,64 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(exported['issues.json']['records'][0]['diagnostics'], recorded['diagnostics'])
         self.assertEqual(exported['issues.json']['records'][0]['job_id'], 'cover-job')
 
+    def test_a_failed_cover_fetch_keeps_the_installed_one_without_a_retryable_issue(self):
+        """本机已有封面时，来源限流、说没有、报错都只记「7 天内不再问」，不记问题项。"""
+        from peach.jav_cover_fetch import DeadlineExceeded, NotFound
+        from peach.library_processing import _MissCache, _ProcessingIssues, _RemoteSession
+        from peach.scraping_access import SourcePaused
+
+        config = PeachConfig(self.root, self.root / 'config.toml', present=True)
+        covers = self.root / 'covers'
+        covers.mkdir()
+        buffer = io.BytesIO()
+        Image.new('RGB', (1600, 900), 'gray').save(buffer, format='JPEG')
+        installed = {}
+        for code in ('ABC-199', 'ABC-200', 'ABC-201', 'ABC-202'):
+            (covers / f'{code}.jpg').write_bytes(buffer.getvalue())
+            installed[code] = (covers / f'{code}.jpg').read_bytes()
+        failures = (SourcePaused('本趟采集次数已用完，再跑一次接着采'),
+                    NotFound('所有渠道都没有候选'),
+                    RuntimeError('模型读不出来'),
+                    DeadlineExceeded('封面在预算时间内未取得'))
+        provider = stub_provider()
+        misses = _MissCache(self.root / 'misses.json')
+        remote = _RemoteSession(config, lambda: provider, misses, retrying=False)
+        state = dict(job_id='cover-kept', notes={}, issue_count=0, paused_count=0,
+                     issue_preview=[], retryable_asset_ids=[], paused_asset_ids=[], issues_truncated=False)
+        issue = _ProcessingIssues(state, issues_path(config, 'cover-kept'), lambda: None, lambda values: None)
+        for index, (code, failure) in enumerate(zip(installed, failures), start=1):
+            with self.subTest(failure=type(failure).__name__):
+                provider.cover.side_effect = failure
+                row = {'id': index, 'name': f'{code}_AI.mp4', 'path': f'R:/Films/{code}_AI.mp4'}
+                self.assertEqual(remote._cover(row, code, covers, update=lambda **values: None, issue=issue), 0)
+                self.assertTrue(misses.fresh('cover', code), '记下 7 天内不再问')
+                self.assertEqual((covers / f'{code}.jpg').read_bytes(), installed[code], '本机封面留着')
+        self.assertEqual(provider.cover.call_count, 4)
+        self.assertEqual((state['issue_count'], state['paused_count']), (0, 0))
+        self.assertEqual(state['retryable_asset_ids'], [])
+        self.assertEqual(state['notes'], {})
+
+    def test_a_failed_cover_fetch_without_an_installed_cover_still_records_the_cover_miss(self):
+        """本机没有封面时，照旧记录「7 天内不再问」的封面告知项。"""
+        from peach.jav_cover_fetch import NotFound
+        from peach.library_processing import _MissCache, _ProcessingIssues, _RemoteSession
+        config = PeachConfig(self.root, self.root / 'config.toml', present=True)
+        covers = self.root / 'covers'
+        covers.mkdir()
+        path = issues_path(config, 'cover-none')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        provider = stub_provider()
+        provider.cover.side_effect = NotFound('所有渠道都没有候选')
+        remote = _RemoteSession(config, lambda: provider, _MissCache(self.root / 'misses.json'), retrying=False)
+        state = dict(job_id='cover-none', notes={}, issue_count=0, paused_count=0,
+                     issue_preview=[], retryable_asset_ids=[], issues_truncated=False)
+        issue = _ProcessingIssues(state, path, lambda: None, lambda values: None)
+        row = {'id': 1, 'name': 'ABC-300_AI.mp4', 'path': 'R:/Films/ABC-300_AI.mp4'}
+        self.assertEqual(remote._cover(row, 'ABC-300', covers, update=lambda **values: None,
+                                       issue=issue), 0)
+        self.assertEqual((state['issue_count'], state['notes']), (0, {'fetching_cover': 1}))
+        self.assertEqual(state['retryable_asset_ids'], [])
+
     def test_retry_assets_with_one_code_share_a_fresh_source_answer(self):
         db = fresh_ledger(self.root)
         config = drive_config(self.root)
@@ -1610,7 +1668,7 @@ class LibraryNfoTests(unittest.TestCase):
         self.assertEqual(sorted((c['source'], c['provider'], c['source_kind'], c['official'], c['provider_id'])
                                 for c in title),
                          [('avbase', 'avbase-search', 'community', False, 'ORETD-615'),
-                          ('javdb', 'javdb-api', 'community', False, 'ORETD-615')])
+                          ('javdb', 'javdb-page', 'community', False, 'ORETD-615')])
         self.assertEqual(rows['title']['source_profile'], 'library')
         self.assertEqual(len(json.loads(rows['release_date']['candidates_json'])), 2)
 
