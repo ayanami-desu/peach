@@ -66,7 +66,6 @@ const payload = (overrides: Partial<ActivityData> = {}): ActivityData => ({
 });
 const resources = (overrides: Partial<TaskResourcesPayload> = {}): TaskResourcesPayload => ({
   cpu: { state: 'ready', percent: 12.5, high: false },
-  gpu: { state: 'ready', percent: 0, high: false },
   sampled_at: '2026-10-31T08:00:00Z', ...overrides,
 });
 
@@ -222,7 +221,7 @@ it('总量未知时不画假进度条，只说正在做什么', async () => {
   expect(host.querySelector('[role=status]')?.textContent).toContain('正在查第三个来源');
 });
 
-it('活动主任务和后继持续显示各自的CPU与GPU', async () => {
+it('活动主任务和后继持续显示各自的CPU', async () => {
   const child = followup(1, { status: 'running', resources: resources({
     cpu: { state: 'ready', percent: 3, high: false },
   }) });
@@ -230,36 +229,40 @@ it('活动主任务和后继持续显示各自的CPU与GPU', async () => {
   const main = host.querySelector('[data-task-resources="1"]')!;
   const nested = host.querySelector('[data-task-resources="90"]')!;
   expect(main.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 12.5%');
-  expect(main.querySelector('[data-task-resource="gpu"]')?.textContent).toBe('GPU 未使用');
   expect(nested.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 3%');
   expect([...main.querySelectorAll('[data-task-resource]')].every(node => !node.hasAttribute('title'))).toBe(true);
 });
 
 it('资源采样中和未取得分别显示，原因优先说明，不把null填成零', async () => {
-  const { host } = await open(payload({ running: [run({ resources: resources({
-    cpu: { state: 'sampling', percent: null, high: false, reason: '正在建立采样基线' },
-    gpu: { state: 'unavailable', percent: null, high: false, reason: '当前系统无法归属GPU引擎' },
-  }) })] }));
-  const metrics = host.querySelector('[data-task-resources="1"]')!;
-  expect(metrics.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 采样中');
-  expect(metrics.querySelector('[data-task-resource="gpu"]')?.textContent).toBe('GPU 未取得');
-  expect(metrics.textContent).not.toContain('0%');
-  expect(metrics.querySelector('[data-task-resource="gpu"]')?.getAttribute('title')).toMatch(/^当前系统无法归属GPU引擎/);
+  const sampling = run({ id: 1, resources: resources({
+    cpu: { state: 'sampling', percent: null, high: false, reason: '正在建立采样基线' } }) });
+  const missing = run({ id: 2, resources: resources({
+    cpu: { state: 'unavailable', percent: null, high: false, reason: '执行端的资源读数未取得' } }) });
+  const { host } = await open(payload({ running: [sampling, missing] }));
+  const first = host.querySelector('[data-task-resources="1"]')!;
+  const second = host.querySelector('[data-task-resources="2"]')!;
+  expect(first.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 采样中');
+  expect(second.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 未取得');
+  expect(host.textContent).not.toContain('0%');
+  expect(first.querySelector('[data-task-resource="cpu"]')?.getAttribute('title')).toMatch(/^正在建立采样基线/);
 });
 
 it('真实零读数写成未使用，高占用由该指标的真实high状态强调', async () => {
-  const { host } = await open(payload({ running: [run({ resources: resources({
+  const idle = run({ id: 1, resources: resources({
     cpu: { state: 'ready', percent: 0, high: false },
-    gpu: { state: 'ready', percent: 70.1, high: true },
-  }) })] }));
-  const metrics = host.querySelector('[data-task-resources="1"]')!;
-  expect(metrics.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 未使用');
-  expect(metrics.querySelector('[data-task-resource="cpu"]')?.hasAttribute('data-resource-idle')).toBe(true);
-  const gpu = metrics.querySelector('[data-task-resource="gpu"]')!;
-  expect(gpu.textContent).toBe('GPU 70.1%');
-  expect(gpu.getAttribute('title')).toContain('当前为高占用');
-  expect(gpu.getAttribute('data-resource-high')).toBe('true');
-  expect(metrics.querySelector('[data-task-resource="cpu"]')?.hasAttribute('data-resource-high')).toBe(false);
+  }) });
+  const hot = run({ id: 2, resources: resources({
+    cpu: { state: 'ready', percent: 70.1, high: true },
+  }) });
+  const { host } = await open(payload({ running: [idle, hot] }));
+  const cold = host.querySelector('[data-task-resources="1"]')!;
+  expect(cold.querySelector('[data-task-resource="cpu"]')?.textContent).toBe('CPU 未使用');
+  expect(cold.querySelector('[data-task-resource="cpu"]')?.hasAttribute('data-resource-idle')).toBe(true);
+  expect(cold.querySelector('[data-task-resource="cpu"]')?.hasAttribute('data-resource-high')).toBe(false);
+  const chip = host.querySelector('[data-task-resources="2"] [data-task-resource="cpu"]')!;
+  expect(chip.textContent).toBe('CPU 70.1%');
+  expect(chip.getAttribute('title')).toContain('当前为高占用');
+  expect(chip.getAttribute('data-resource-high')).toBe('true');
 });
 
 it('父任务已结束而后继仍在活动时展示后端聚合读数，历史终态不展示旧采样', async () => {

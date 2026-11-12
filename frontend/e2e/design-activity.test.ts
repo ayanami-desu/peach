@@ -7,10 +7,9 @@ import { requiredEnv, settle, visit, VIEWPORTS } from './harness.ts';
 describe('任务页云下载布局', () => {
   let browser: Browser;
   installDesignBrowser((next) => { browser = next; });
-  for (const viewport of VIEWPORTS) it(`${viewport.name} 资源分色并在高占用时加深，已取消使用红色标签`, async () => {
+  for (const viewport of VIEWPORTS) it(`${viewport.name} 资源高占用时加深，已取消使用红色标签`, async () => {
     const reading = (high: boolean) => ({
       cpu: { state: 'ready', percent: high ? 75 : 5, high },
-      gpu: { state: 'ready', percent: high ? 80 : 4, high },
       sampled_at: '2026-10-31T08:00:00Z',
     });
     const row = (id: number, status: string) => ({
@@ -34,8 +33,7 @@ describe('任务页云下载布局', () => {
     try {
       const page = opened.page;
       await page.locator('[data-task-resources="1"]').waitFor();
-      const pairs = [['cpu', 'blue'], ['gpu', 'purple']] as const;
-      const backgrounds: string[] = [];
+      const pairs = [['cpu', 'blue']] as const;
       for (const [metric, color] of pairs) {
         const high = page.locator(`[data-task-resources="1"] [data-task-resource="${metric}"]`);
         const normal = page.locator(`[data-task-resources="90"] [data-task-resource="${metric}"]`);
@@ -44,9 +42,7 @@ describe('任务页云下载布局', () => {
         assert.equal(normalBackground, await tokenColor(page, 'body', `--color-status-${color}-background`));
         assert.equal(highBackground, await tokenColor(page, 'body', `--color-status-${color}-text`));
         assert.notEqual(highBackground, normalBackground);
-        backgrounds.push(highBackground);
       }
-      assert.equal(new Set(backgrounds).size, 2);
       const red = await tokenColor(page, 'body', '--color-status-rose-background');
       for (const [id, label] of [[3, '已取消'], [4, '后续任务已取消'], [5, '部分后续任务已取消']] as const) {
         const badge = page.locator(`#run-${id}`).getByText(label, { exact: true });
@@ -88,7 +84,6 @@ describe('任务页云下载布局', () => {
           control: { state: 'running', actions: ['pause', 'cancel'] },
           resources: {
             cpu: { state: 'ready', percent: 61.6, high: true },
-            gpu: { state: 'ready', percent: 0, high: false },
             sampled_at: '2026-11-03T08:02:20Z',
           },
         }],
@@ -100,7 +95,7 @@ describe('任务页云下载布局', () => {
       await chips.waitFor();
       const idle = await chips.locator('[data-task-resource]').evaluateAll(nodes =>
         Object.fromEntries(nodes.map(node => [(node as HTMLElement).dataset.taskResource, 'resourceIdle' in (node as HTMLElement).dataset])));
-      assert.deepEqual(idle, { cpu: false, gpu: true });
+      assert.deepEqual(idle, { cpu: false });
       const link = page.locator('[data-task-subject="7"]');
       assert.equal(await link.getAttribute('href'), '/assets/6297');
       assert.equal(await link.getAttribute('title'), name);

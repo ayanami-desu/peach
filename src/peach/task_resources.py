@@ -17,7 +17,6 @@ from .task_state import state_root
 _LIVE = {}
 _LOCK = threading.RLock()
 CPU_HIGH = 50.0
-GPU_HIGH = 50.0
 
 
 def _path(db, identity):
@@ -123,8 +122,7 @@ class Monitor:
         return value
 
     def _sample(self, run, now):
-        empty = {'cpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属'),
-                 'gpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属')}
+        empty = {'cpu': _metric('unavailable', 'percent', reason='这轮任务尚未登记资源归属')}
         try:
             owners = self._owners(run)
         except ValueError as error:
@@ -174,8 +172,7 @@ class Monitor:
                 parts = {key: 100 * max(0, value - previous[1].get(key, value)) / elapsed / capacity
                          for key, value in cpu.items()}
                 cpu_metric = _metric('ready', 'percent', round(min(100.0, sum(parts.values())), 1), threshold=CPU_HIGH)
-        gpu_metric = _metric('unavailable', 'percent', reason='Peach 不采集 GPU 占用')
-        return {'cpu': cpu_metric, 'gpu': gpu_metric, '_cpu_parts': parts}
+        return {'cpu': cpu_metric, '_cpu_parts': parts}
 
     def snapshot(self):
         with self.lock:
@@ -209,13 +206,10 @@ class Monitor:
         if not family:
             return None
         rows = self.snapshot()
-        waiting = {'cpu': _metric('ready', 'percent', 0.0, threshold=CPU_HIGH),
-                   'gpu': _metric('ready', 'percent', 0.0, threshold=GPU_HIGH)}
-        unknown = {'cpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得'),
-                   'gpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得')}
+        waiting = {'cpu': _metric('ready', 'percent', 0.0, threshold=CPU_HIGH)}
+        unknown = {'cpu': _metric('unavailable', 'percent', reason='执行端的资源读数未取得')}
         samples = [waiting if row['status'] == 'pending' else rows.get(row['id'], unknown) for row in family]
-        result = {'sampled_at': datetime.now(timezone.utc).isoformat(),
-                  'gpu': dict(samples[0]['gpu'])}
+        result = {'sampled_at': datetime.now(timezone.utc).isoformat()}
         values = [sample['cpu'] for sample in samples]
         unavailable = next((value for value in values if value['state'] == 'unavailable'), None)
         if unavailable is not None:

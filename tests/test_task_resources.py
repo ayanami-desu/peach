@@ -1,4 +1,4 @@
-"""任务资源只使用临时登记、伪进程计数器和注入式 GPU 读数。"""
+"""任务资源只使用临时登记和伪进程计数器计量。"""
 from __future__ import annotations
 
 import json
@@ -182,7 +182,7 @@ class TaskResourceTests(unittest.TestCase):
         self.assertIsNone(monitor.for_run(parent))
         self.assertIsNone(monitor.for_run(self.store.get(child_id)))
 
-    def test_pending_work_has_real_zero_and_running_work_does_not_collect_gpu(self):
+    def test_pending_work_has_real_zero(self):
         parent = self.new_run('parent')
         child_id = self.store.enqueue_followups(parent.id, [('child:1', 'child', '子任务')])['queued'][0]
         running = self.new_run('running')
@@ -191,10 +191,8 @@ class TaskResourceTests(unittest.TestCase):
         monitor = self.monitor()
         result = monitor.for_run(self.store.get(child_id))
         self.assertEqual((result['cpu']['state'], result['cpu']['percent']), ('ready', 0.0))
-        self.assertEqual((result['gpu']['state'], result['gpu']['percent']), ('ready', 0.0))
-        sampled = monitor.for_run(running)['gpu']
-        self.assertEqual((sampled['state'], sampled['percent']), ('unavailable', None))
-        self.assertIn('不采集', sampled['reason'])
+        sampled = monitor.for_run(running)['cpu']
+        self.assertEqual(sampled['state'], 'sampling')
         self.store.finish(child_id, 'cancelled')
         self.assertIsNone(monitor.for_run(self.store.get(parent.id)))
     def test_other_host_and_reused_service_pid_are_not_attributed_to_local_tasks(self):
@@ -209,7 +207,6 @@ class TaskResourceTests(unittest.TestCase):
             result = monitor.for_run(run)
             self.assertEqual(result['cpu']['state'], 'unavailable')
             self.assertIsNone(result['cpu']['percent'])
-            self.assertEqual(result['gpu']['state'], 'unavailable')
         self.assertNotIn(9001, [call.args[0] for call in self.process_reads.call_args_list if call.args])
 
     def test_reused_child_pid_does_not_transfer_cpu_ownership(self):

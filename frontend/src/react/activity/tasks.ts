@@ -19,7 +19,6 @@ export interface TaskResourceMetric { state: TaskResourceState; high: boolean; r
 export interface TaskPercentMetric extends TaskResourceMetric { percent: number | null }
 export interface TaskResourcesPayload {
   cpu: TaskPercentMetric;
-  gpu: TaskPercentMetric;
   sampled_at: string;
 }
 
