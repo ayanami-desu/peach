@@ -958,6 +958,13 @@ class UnconfiguredMachineTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(response.json()["configured"])
             self.assertFalse(self.settings.db_path.exists())
 
+    async def test_shutdown_tolerates_the_lazy_task_resource_monitor(self):
+        from peach.task_resources import Monitor
+        contract = self.app.state.web_contract
+        contract.task_resource_monitor = Monitor(contract.task_runs)
+        async with self.app.router.lifespan_context(self.app):
+            pass
+
     @asynccontextmanager
     async def ledger_client(self, database):
         from peach import settings_file

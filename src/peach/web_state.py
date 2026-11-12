@@ -450,8 +450,6 @@ class WebContract:
         self.amane_bridge_job.stop()
         self.source_check_job.stop()
         self.face_models_job.stop()
-        if hasattr(self, 'task_resource_monitor'):
-            self.task_resource_monitor.close()
         self.followups.stop()
         if self._stale_refresher is not None:
             self._stale_refresher.shutdown(wait=False, cancel_futures=True)
