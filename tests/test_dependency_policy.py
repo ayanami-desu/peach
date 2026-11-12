@@ -205,7 +205,6 @@ class DependencyPolicyTests(unittest.TestCase):
             "p115client": "p115client",
             "psutil": "psutil",
             "pydantic": "pydantic",
-            "qrcode": "qrcode",
             "resvg_py": "resvg-py",
             "sentry_sdk": "sentry-sdk",
             "starlette": "starlette",

@@ -1,7 +1,7 @@
-"""让运行 Peach 的这台电脑弹系统自带的文件夹对话框，把选中的绝对路径交回页面。
+"""让运行 Peach 的这台电脑弹系统自带的文件夹对话框，把选中的数据目录绝对路径交回页面。
 
 浏览器自己拿不到本机绝对路径：`webkitdirectory` 只给相对名，File System Access API 只给
-句柄。首启页和配置页要写的偏偏就是绝对路径。Peach 与浏览器在同一台机器上，所以由服务
+句柄。首启页和配置页要写的偏偏就是绝对路径。源码运行时 Peach 与浏览器通常在同一台机器上，所以由服务
 进程代为弹窗：Windows 走 Shell 的 `IFileOpenDialog`（带地址栏、能直接粘路径的那种
 选择框，`FOS_PICKFOLDERS`），macOS 走 AppleScript 的 `choose folder`。两者都是系统自带，
 不为一个对话框引入 tkinter 或 GUI 框架。
@@ -44,7 +44,7 @@ _LOCK = threading.Lock()
 #: 用户在对话框里翻多久都行，但进程不能被一个忘了关的窗口永久占住。
 DIALOG_TIMEOUT_SECONDS = 15 * 60
 
-PROMPT = "选择媒体目录"
+PROMPT = "选择数据目录"
 
 #: osascript 没法弹窗的错误码：-1713 当前会话不允许用户交互，-1743 未获自动化授权。
 _MACOS_NO_DIALOG = frozenset({"-1713", "-1743"})

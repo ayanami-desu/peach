@@ -39,8 +39,6 @@ dependencies = [
   "m3u8==6.0.0",
   "pillow==13.0.0",
   "psutil==7.2.2",
-  # 配置页让手机扫码下载本机 CA（`routes_configuration.certificate_payload`）；只取模块矩阵，不走 Pillow 出图。
-  "qrcode==8.2",
   "pydantic==2.14.3",
   "resvg-py==0.5.0",
   "sentry-sdk==2.74.0",

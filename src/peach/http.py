@@ -345,7 +345,7 @@ class CurlCffiTransport:
                     str(getattr(response, "url", "") or request.url),
                 )
         except CurlError as exc:
-            raise OSError("browser transport request failed") from exc
+            raise OSError("source request failed") from exc
 
     def close(self) -> None:
         if self._owns_session:

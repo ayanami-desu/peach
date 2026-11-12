@@ -2,8 +2,8 @@
 
 父进程被强杀时不会走自己的收尾代码，子进程于是成了孤儿，继续占着端口或留在公网上转发。
 把子进程挂进一个 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 Job，句柄随父进程退出由内核关闭，
-成员随之一并终止，不管父进程是怎么死的。托盘的 `peach serve` 子服务与服务里的
-cloudflared 都用这一份。非 Windows 上三个函数都是空操作。
+成员随之一并终止，不管父进程是怎么死的。源码运行时 `peach serve` 拉起的子进程
+都用这一份。非 Windows 上三个函数都是空操作。
 """
 from __future__ import annotations
 
