@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "ff516008-ee0a-4c43-be5b-60dd63141933", e._sentryDebugIdIdentifier = "sentry-dbid-ff516008-ee0a-4c43-be5b-60dd63141933");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "b62eb987-3fae-4b43-8128-2dab85aac00e", e._sentryDebugIdIdentifier = "sentry-dbid-b62eb987-3fae-4b43-8128-2dab85aac00e");
 	} catch {}
 })();
 import { Button as e, Chip as t, DataTableFooter as n, Disclosure as r, EmptyState as i, Gg as a, HN as o, IssueRow as s, LinkButton as c, Lo as l, LoadingDots as u, Ma as d, NameLink as f, Note as p, OV as m, Pf as h, ProcessingMode as g, Progress as _, RB as v, Rk as y, Su as b, TASKS_KEY as x, TRIGGER_LABELS as S, Xl as C, __toESM as w, apiGet as T, apiSend as E, busyProps as D, cardClass as O, confirmModal as k, controlTask as A, cx as ee, elapsedText as j, errorMessage as M, fetchTasks as te, foldByKind as ne, foldRoutine as re, followupDetail as ie, followupTally as N, groupFollowups as ae, hasResultProblems as P, i2 as oe, isActive as F, isRoutine as se, latestOfKind as ce, momentText as I, notifyManager as le, oe as ue, pollInterval as de, problemDestination as fe, progressText as L, readableErrorHeadline as R, replaceEqualDeep as pe, require_jsx_runtime as me, require_react as he, setTaskSpeed as ge, statusLabel as _e, summaryItems as ve, taskIssues as ye, taskSubject as z, um as be, uo as xe, useMutation as B, useQuery as V, useQueryClient as H, vl as Se } from "./peach-app.js";
@@ -279,58 +279,41 @@ function Ie({ color: e, high: n, ...r }) {
 	});
 }
 // src/react/activity/task-resources.tsx
-var Le = {
-	cpu: {
-		name: "CPU",
-		color: "blue"
-	},
-	gpu: {
-		name: "GPU",
-		color: "purple"
-	}
-};
-function Re(e) {
+function Le(e) {
 	return e.state === "sampling" ? "采样中" : "未取得";
 }
-function ze(e) {
+function Re(e) {
 	return e === 0 ? "未使用" : `${e.toLocaleString(void 0, { maximumFractionDigits: 1 })}%`;
 }
-function Be({ run: e, active: t = F(e) || !!e.control }) {
+function ze({ run: e, active: t = F(e) || !!e.control }) {
 	if (!t || !e.resources) return null;
-	let n = e.resources;
+	let { cpu: n } = e.resources, r = n.percent, i = n.state === "ready" && r !== null, a = i && n.high, o = i ? Re(r) : Le(n), s = [n.reason, a ? "当前为高占用。" : ""].filter(Boolean).join("\n");
 	return /* @__PURE__ */ (0, q.jsx)("div", {
 		"data-task-resources": e.id,
 		className: "flex min-w-0 flex-wrap items-center gap-2",
-		children: ["cpu", "gpu"].map((e) => {
-			let t = n[e], r = Le[e], i = t.percent, a = t.state === "ready" && i !== null, o = a && t.high, s = a ? ze(i) : Re(t), c = [t.reason, o ? "当前为高占用。" : ""].filter(Boolean).join("\n");
-			return /* @__PURE__ */ (0, q.jsxs)(Ie, {
-				color: r.color,
-				high: o,
-				tabIndex: c ? 0 : void 0,
-				title: c || void 0,
-				"data-task-resource": e,
-				"data-resource-state": t.state,
-				"data-resource-high": o || void 0,
-				"data-resource-idle": a && i === 0 || void 0,
-				"data-copy-ignore": "",
-				children: [
-					r.name,
-					" ",
-					s
-				]
-			}, e);
+		children: /* @__PURE__ */ (0, q.jsxs)(Ie, {
+			color: "blue",
+			high: a,
+			tabIndex: s ? 0 : void 0,
+			title: s || void 0,
+			"data-task-resource": "cpu",
+			"data-resource-state": n.state,
+			"data-resource-high": a || void 0,
+			"data-resource-idle": i && r === 0 || void 0,
+			"data-copy-ignore": "",
+			children: ["CPU ", o]
 		})
 	});
 }
 // src/react/activity/activity-page.tsx
-var Ve = /* @__PURE__ */ new Set(["upgrade-repairs"]), He = /* @__PURE__ */ new Set(["asset_id", "name"]), Ue = {
+var Be = /* @__PURE__ */ new Set(["upgrade-repairs"]), Ve = /* @__PURE__ */ new Set(["asset_id", "name"]), He = {
 	succeeded: "lime",
 	failed: "rose",
 	cancelled: "rose",
 	interrupted: "yellow",
 	running: "blue",
 	pending: "neutral"
-}, We = {
+}, Ue = {
 	running: "进行中",
 	pausing: "正在暂停",
 	paused: "已暂停",
@@ -342,16 +325,16 @@ function X({ run: e }) {
 		color: n === "running" ? "blue" : "neutral",
 		children: /* @__PURE__ */ (0, q.jsx)("span", {
 			"data-copy-key": `tasks.control.state.${n}`,
-			children: We[n]
+			children: Ue[n]
 		})
 	});
 	let r = e.status === "failed" && e.task_key === "library-processing" && e.result_summary?.outcome === "partial", i = r || e.status === "succeeded" && P(e);
 	return /* @__PURE__ */ (0, q.jsx)(t, {
-		color: i ? "yellow" : Ue[e.status] ?? "neutral",
+		color: i ? "yellow" : He[e.status] ?? "neutral",
 		children: r ? "部分项目需处理" : i ? "发现问题" : _e(e.status)
 	});
 }
-function Ge({ rows: e }) {
+function We({ rows: e }) {
 	let [t, i] = (0, K.useState)({
 		pageIndex: 0,
 		pageSize: 20
@@ -386,7 +369,7 @@ function Ge({ rows: e }) {
 							]
 						}), /* @__PURE__ */ (0, q.jsx)(Me, { run: e })]
 					}),
-					/* @__PURE__ */ (0, q.jsx)(Be, { run: e }),
+					/* @__PURE__ */ (0, q.jsx)(ze, { run: e }),
 					Object.keys(e.result_summary || {}).length ? /* @__PURE__ */ (0, q.jsx)("div", {
 						className: "w-full min-w-0",
 						children: /* @__PURE__ */ (0, q.jsx)(r, {
@@ -461,7 +444,7 @@ function Z({ run: e, meta: t, children: n, error: i, issues: a, followups: o, fo
 						className: "text-caption-1-regular text-text-secondary",
 						children: t
 					}),
-					/* @__PURE__ */ (0, q.jsx)(Be, {
+					/* @__PURE__ */ (0, q.jsx)(ze, {
 						run: e,
 						active: l
 					}),
@@ -517,11 +500,11 @@ function Z({ run: e, meta: t, children: n, error: i, issues: a, followups: o, fo
 								" 项"
 							]
 						}) : null,
-						/* @__PURE__ */ (0, q.jsx)(Ge, { rows: y })
+						/* @__PURE__ */ (0, q.jsx)(We, { rows: y })
 					]
 				})
 			}) : null,
-			Object.keys(e.result_summary || {}).some((e) => !(C && He.has(e))) ? /* @__PURE__ */ (0, q.jsx)("div", {
+			Object.keys(e.result_summary || {}).some((e) => !(C && Ve.has(e))) ? /* @__PURE__ */ (0, q.jsx)("div", {
 				className: "border-t border-separator-border",
 				children: /* @__PURE__ */ (0, q.jsx)(r, {
 					row: !0,
@@ -537,8 +520,8 @@ function Z({ run: e, meta: t, children: n, error: i, issues: a, followups: o, fo
 		]
 	});
 }
-function Ke({ run: e, followups: t, followupTotal: n }) {
-	let r = e.progress_total || 0, i = e.progress_current || 0, a = e.control?.state, o = a && a !== "running", s = o ? We[a] : e.progress_label || "正在进行", c = j(e.elapsed_seconds), l = [S[e.trigger] || e.trigger, c && `已跑 ${c}`].filter(Boolean).join(" · ");
+function Ge({ run: e, followups: t, followupTotal: n }) {
+	let r = e.progress_total || 0, i = e.progress_current || 0, a = e.control?.state, o = a && a !== "running", s = o ? Ue[a] : e.progress_label || "正在进行", c = j(e.elapsed_seconds), l = [S[e.trigger] || e.trigger, c && `已跑 ${c}`].filter(Boolean).join(" · ");
 	return /* @__PURE__ */ (0, q.jsx)(Z, {
 		run: e,
 		meta: l,
@@ -566,7 +549,7 @@ function Ke({ run: e, followups: t, followupTotal: n }) {
 		}) : /* @__PURE__ */ (0, q.jsx)(u, { label: s })
 	});
 }
-function qe({ run: e, followups: n, runs: i, latest: a, followupTotal: o, followupFailed: l = 0, followupCancelled: u = 0 }) {
+function Ke({ run: e, followups: n, runs: i, latest: a, followupTotal: o, followupFailed: l = 0, followupCancelled: u = 0 }) {
 	let d = !!(i && i.length > 1 && o), f = d ? [`共处理 ${o.toLocaleString()} 项`, l ? `其中 ${l.toLocaleString()} 项失败` : ""].filter(Boolean) : ve(z(e) ? {
 		...e.result_summary,
 		name: ""
@@ -644,7 +627,7 @@ function qe({ run: e, followups: n, runs: i, latest: a, followupTotal: o, follow
 		]
 	});
 }
-function Je({ runs: e, followups: n, counts: r }) {
+function qe({ runs: e, followups: n, counts: r }) {
 	let i = e[0], a = e[e.length - 1], o = N(r, e), s = Math.max(o.total, n.length), c = o.total ? o.settled : n.filter((e) => !F(e)).length, l = o.total ? o.failed : n.filter((e) => e.status === "failed" || e.status === "interrupted").length, u = [
 		S[i.trigger] || i.trigger,
 		e.length > 1 ? `${e.length} 批` : "",
@@ -710,7 +693,7 @@ function $({ live: e = !1, paginate: t = !0, children: r }) {
 		onChange: a
 	}) : null] });
 }
-function Ye() {
+function Je() {
 	let [e, t] = (0, K.useState)(1), [r, a] = (0, K.useState)(20), o = V({
 		queryKey: e === 1 && r === 20 ? x : [
 			...x,
@@ -733,7 +716,7 @@ function Ye() {
 		...l.skipped || [],
 		...d,
 		...f
-	], h = ae(m), g = new Set(m.map((e) => e.id)), _ = (e) => e.filter((e) => !(e.followup_key && e.parent_run_id != null && g.has(e.parent_run_id))), v = _(d), y = l.followup_counts || {}, b = (e) => e.flatMap((e) => h.get(e.id) || []), S = [...v, ..._(f)].filter((e) => N(y, [e]).active > 0 || h.get(e.id)?.some(F)).sort((e, t) => t.id - e.id), C = _(l.running || []), w = _(l.skipped || []), T = v.filter((e) => !S.includes(e) && !w.some((t) => t.id === e.id)), E = (e) => (h.get(e.id) || []).every((e) => e.status === "succeeded" && !P(e)) && N(y, [e]).failed === 0, D = re(T, (e) => se(e) && (E(e) || Ve.has(e.task_key))), O = ne(S, (e) => e.control?.state || "").sort((e, t) => t.run.id - e.run.id), k = ce(m), A = !C.length && !S.length && !w.length && !T.length;
+	], h = ae(m), g = new Set(m.map((e) => e.id)), _ = (e) => e.filter((e) => !(e.followup_key && e.parent_run_id != null && g.has(e.parent_run_id))), v = _(d), y = l.followup_counts || {}, b = (e) => e.flatMap((e) => h.get(e.id) || []), S = [...v, ..._(f)].filter((e) => N(y, [e]).active > 0 || h.get(e.id)?.some(F)).sort((e, t) => t.id - e.id), C = _(l.running || []), w = _(l.skipped || []), T = v.filter((e) => !S.includes(e) && !w.some((t) => t.id === e.id)), E = (e) => (h.get(e.id) || []).every((e) => e.status === "succeeded" && !P(e)) && N(y, [e]).failed === 0, D = re(T, (e) => se(e) && (E(e) || Be.has(e.task_key))), O = ne(S, (e) => e.control?.state || "").sort((e, t) => t.run.id - e.run.id), k = ce(m), A = !C.length && !S.length && !w.length && !T.length;
 	return /* @__PURE__ */ (0, q.jsxs)(W, { children: [
 		u ? /* @__PURE__ */ (0, q.jsx)(p, {
 			tone: "error",
@@ -754,11 +737,11 @@ function Ye() {
 				title: "正在进行",
 				children: C.length || S.length ? /* @__PURE__ */ (0, q.jsxs)($, {
 					live: !0,
-					children: [C.map((e) => /* @__PURE__ */ (0, q.jsx)(Ke, {
+					children: [C.map((e) => /* @__PURE__ */ (0, q.jsx)(Ge, {
 						run: e,
 						followups: h.get(e.id),
 						followupTotal: N(y, [e]).total
-					}, e.id)), O.map(({ run: e, runs: t }) => /* @__PURE__ */ (0, q.jsx)(Je, {
+					}, e.id)), O.map(({ run: e, runs: t }) => /* @__PURE__ */ (0, q.jsx)(qe, {
 						runs: t,
 						followups: b(t),
 						counts: y
@@ -770,7 +753,7 @@ function Ye() {
 			}),
 			w.length ? /* @__PURE__ */ (0, q.jsx)(Q, {
 				title: "本次未执行",
-				children: /* @__PURE__ */ (0, q.jsx)($, { children: w.map((e) => /* @__PURE__ */ (0, q.jsx)(qe, {
+				children: /* @__PURE__ */ (0, q.jsx)($, { children: w.map((e) => /* @__PURE__ */ (0, q.jsx)(Ke, {
 					run: e,
 					latest: k.has(e.id),
 					followups: h.get(e.id)
@@ -782,7 +765,7 @@ function Ye() {
 					paginate: !1,
 					children: D.map(({ run: e, runs: t }) => {
 						let n = N(y, t);
-						return /* @__PURE__ */ (0, q.jsx)(qe, {
+						return /* @__PURE__ */ (0, q.jsx)(Ke, {
 							run: e,
 							runs: t,
 							latest: k.has(e.id),
@@ -809,6 +792,6 @@ function Ye() {
 		] })
 	] });
 }
-export { Ye as ActivityPage };
+export { Je as ActivityPage };
 
-//# debugId=ff516008-ee0a-4c43-be5b-60dd63141933
+//# debugId=b62eb987-3fae-4b43-8128-2dab85aac00e

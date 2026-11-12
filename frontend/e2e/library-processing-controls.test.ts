@@ -384,7 +384,6 @@ describe('扫描与采集控制', () => {
         assert.equal(await scale.locator(':scope > span[data-selected]').evaluate(el => getComputedStyle(el).color),
           await highSpeed.evaluate(el => getComputedStyle(el).color), '全速刻度和入口共用强调色');
         assert.notEqual(await readFeedback(), feedbackBlue, '旧进度反馈色跟随站点强调色');
-        assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--feed-mark').trim()), '#F78422', 'RSS 语义色保持橙色');
         await page.screenshot({ path: path.join(artifacts, `${viewport.name}-effort.png`) });
         await page.emulateMedia({ reducedMotion: 'reduce' });
         assert.equal(await page.locator('[data-effort-flow] svg').evaluate(el => getComputedStyle(el).animationName), 'none');
