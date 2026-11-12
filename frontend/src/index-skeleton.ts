@@ -32,7 +32,6 @@ const PEOPLE_LAYOUTS =[['big', '大图 · 竖幅头像', 'maximize'], ['compact'
 const COMPANY_LAYOUTS = [['big', '大图 · 完整标识', 'maximize'], ['compact', '紧凑 · 圆形标识', 'layout-grid']] as const;
 const SERIES_LAYOUTS = [['big', '大图 · 系列图片', 'maximize'], ['compact', '紧凑 · 系列图片', 'layout-grid']] as const;
 const MAKER_INDEX_KINDS = [['studios', '厂牌', 'clapperboard'], ['series', '系列', 'file-stack'], ['agencies', '事务所', 'briefcase']] as const;
-const PEOPLE_INDEX_TABS = [['performers', '艺人', 'user-round'], ['creators', '卖家', 'user-round']] as const;
 const TAG_VIEWS = [['cloud', '标签云', 'tags'], ['alphabet', '字母表', 'text-aa']] as const;
 
 /** 存着的版式偏好，认不出的回到大图。 */
@@ -70,9 +69,7 @@ export function indexPlaceholderHtml({ kind, q, view, category }: IndexParams, l
       ${kind === 'tags' ? islandButton({variant: 'ghost', glyph: 'pencil', attrs: 'data-tag-mode data-skeleton-action disabled tabindex="-1" aria-label="管理标签"'}) : ''}
       <div data-index-search class="ml-auto min-w-0 max-w-80 flex-1">${islandSearchInput('', q, '过滤' + title)}</div>
     </div>
-    ${kind === 'performers' || kind === 'creators'
-      ? tabs(PEOPLE_INDEX_TABS, kind, '人物名册')
-      : company ? tabs(MAKER_INDEX_KINDS, kind, '资料类型') : ''}
+    ${company ? tabs(MAKER_INDEX_KINDS, kind, '资料类型') : ''}
     ${kind === 'tags' ? tagFilterSkeletonHtml(view) : ''}
     ${kind === 'performers' ? identityFilterSkeletonHtml(category) : ''}
     ${indexSkeletonHtml({ kind, layout, mode: view })}`;

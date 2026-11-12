@@ -78,7 +78,7 @@ export function renderInitialSurfaceLoading(){
     /* 详情的骨架归舞台岛：路由到位后 `openItem` 取回 React 包就画。下面那份列表由路由树的目录元素补发。 */
     hideDiscoveryBars();return;
   }
-  if(path==='/settings'||/^\/settings\/(appearance|playback|jav|search|content)$/.test(path)||path.startsWith('/posts/')||path.startsWith('/works/')){
+  if(path==='/settings'||/^\/settings\/(appearance|browsing|playback|jav|search|content)$/.test(path)||path.startsWith('/posts/')||path.startsWith('/works/')){
     /* 详情只等舞台浮窗里那份骨架，页面里不先铺一份；列表等关掉详情才画，不补发。 */
     hideDiscoveryBars();return;
   }

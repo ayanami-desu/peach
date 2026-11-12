@@ -1,7 +1,7 @@
 /* 索引五页的进页骨架。
  *
  * 骨架里的字形走壳 `index.html` 那张 sprite（`<use href="#i-…">`），写了表里没有的名字不会报错，
- * 只是那一格空着：页签上「艺人」「卖家」写成 `user` 时，骨架里只剩「在线」带图标。 */
+ * 只是那一格空着：图标名要和 sprite 里的 `id` 一一对上。 */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -15,8 +15,8 @@ const sprite = new Set(
     .map((match) => match[1]));
 
 const PAGES: [IndexPageKind, string][] = [
-  ['performers', ''], ['performers', '?scope=online'], ['creators', ''],
-  ['studios', ''], ['agencies', ''], ['series', ''], ['tags', ''], ['tags', '?scope=online&view=cloud'],
+  ['performers', ''], ['creators', ''],
+  ['studios', ''], ['agencies', ''], ['series', ''], ['tags', ''], ['tags', '?view=cloud'],
 ];
 
 it.each(['cloud', 'alphabet'])('%s 标签占位按页大小预留正文与分页', mode => {

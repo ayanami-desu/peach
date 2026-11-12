@@ -1,11 +1,11 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "0eacaf3f-990b-4eb9-a179-b2df8a484a7f", e._sentryDebugIdIdentifier = "sentry-dbid-0eacaf3f-990b-4eb9-a179-b2df8a484a7f");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "c71f7c98-cbbf-49ba-adc6-d3c4dbf9d13d", e._sentryDebugIdIdentifier = "sentry-dbid-c71f7c98-cbbf-49ba-adc6-d3c4dbf9d13d");
 	} catch {}
 })();
 import { beginPlayerGuidePreview as e, closeDrawerAfterNav as t, disposeStage as n, peachHistory$1 as r } from "./peach-app.js";
-// node_modules/driver.js/dist/driver.js.mjs
+// ../../../peach/frontend/node_modules/driver.js/dist/driver.js.mjs
 var i = [
 	"pointerdown",
 	"mousedown",
@@ -952,4 +952,4 @@ function we(i) {
 }
 export { we as createGuideSession };
 
-//# debugId=0eacaf3f-990b-4eb9-a179-b2df8a484a7f
+//# debugId=c71f7c98-cbbf-49ba-adc6-d3c4dbf9d13d

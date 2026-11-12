@@ -62,7 +62,7 @@
 [data-stage] [data-stage-scroll] :is([data-jav-video]>[class~="video-js"],[data-item-gallery]>[class~="video-js"]){width:min(100%,calc(var(--detail-gallery-height) * 16 / 9));height:auto;max-height:var(--detail-gallery-height);aspect-ratio:16/9}
 @media(max-width:1080px){
   [data-stage]{--detail-media-height:min(56dvh,calc(56.25vw + 116px))}
-  [data-stage]:not([data-theater]) [data-stage-grid]{height:auto}
+  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]):not([data-theater]) [data-stage-grid]{height:auto}
 }
 @media(max-width:760px){
   [data-stage]{height:calc(100dvh - env(safe-area-inset-top) - 16px)}
