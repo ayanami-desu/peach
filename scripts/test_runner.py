@@ -164,7 +164,6 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     "scripts/fetch_face_models.py": ("tooling", "packaging"),
     "src/peach/seed_corrections.py": ("metadata", "tooling"),
     "src/peach/seed_validation.py": ("metadata", "tooling"),
-    "src/peach/preview_cache.py": ("catalog", "media", "web"),
     "scripts/dev/copy-editor.js": ("web",),
     # 路由页面同时被目录、工具与前端三个域的测试读源码。
     "src/peach/routes_pages.py": ("catalog", "tooling", "web"),

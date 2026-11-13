@@ -22,44 +22,6 @@ describe('库外 JAV 作品详情', () => {
   after(async () => { await browser.close() });
 
   for (const viewport of VIEWPORTS) {
-    it(`${viewport.name}：预告失败提示保持横排，重试恢复播放，资料提示上下等距`, { timeout: 60000 }, async () => {
-      const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, reducedMotion: 'reduce' });
-      try {
-        const page = await context.newPage();
-        await mockJavDetail(page);
-        await page.route(/\/api\/jav\/detail\?/, route => route.fulfill({ json: { ...JAV_DETAIL,
-          message: '作品资料未取得，请稍后重试', preview_video_url: `/stream?id=${process.env.PEACH_E2E_ITEM}` } }));
-        let unavailable = true;
-        await page.route(/\/stream\?/, route => unavailable
-          ? route.fulfill({ status: 404, body: '' }) : route.continue());
-        await page.goto(requiredEnv('PEACH_E2E_ORIGIN') + '/works/EXM-001');
-        const infoNote = page.locator('[data-jav-info] > [role="note"]');
-        await infoNote.waitFor();
-        const spacing = await infoNote.evaluate(node => {
-          const box = node.getBoundingClientRect();
-          return { before: box.top - node.previousElementSibling!.getBoundingClientRect().bottom,
-            after: node.nextElementSibling!.getBoundingClientRect().top - box.bottom };
-        });
-        assert.ok(spacing.before >= 16 && Math.abs(spacing.before - spacing.after) < 1, JSON.stringify(spacing));
-        await page.locator('[data-jav-preview-toggle]').click();
-        const preview = page.locator('[data-jav-video]');
-        const failure = preview.getByRole('note');
-        await failure.waitFor();
-        assert.equal(await preview.locator('.video-js, video').count(), 0, '失败后移除播放器及其加载状态');
-        const bounds = await failure.evaluate(node => {
-          const box = node.getBoundingClientRect(), frame = node.parentElement!.getBoundingClientRect();
-          const text = node.querySelector('p')!.getBoundingClientRect();
-          return { width: box.width, textWidth: text.width, inside: box.left >= frame.left && box.right <= frame.right,
-            centerOffset: Math.abs((box.top + box.bottom - frame.top - frame.bottom) / 2) };
-        });
-        assert.ok(bounds.width >= 260 && bounds.textWidth >= 120 && bounds.inside && bounds.centerOffset < 1, JSON.stringify(bounds));
-        unavailable = false;
-        await failure.getByRole('button', { name: '立即重试', exact: true }).click();
-        await page.waitForFunction(() => (document.querySelector<HTMLVideoElement>('[data-jav-video] video')?.readyState || 0) >= 1);
-        assert.equal(await failure.count(), 0);
-        assert.ok((await layout(page)).scrollWidth <= viewport.width + 1);
-      } finally { await context.close() }
-    });
     it(`${viewport.name}：加载骨架的两栏保持在详情画框内`, async () => {
       const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, reducedMotion: 'reduce' });
       let release!: () => void;
@@ -167,14 +129,13 @@ describe('库外 JAV 作品详情', () => {
         assert.deepEqual(shared.tagShape, shared.tagTokens, '新作标签沿用本地详情的高度、圆角与边框');
         await page.locator('[data-id-gender="female"] [data-id-face] img').waitFor({ state: 'visible' });
         assert.equal(await page.locator('[data-id-cell="studio"]').evaluate(node => node.tagName), 'SPAN', '未登记厂牌只显示名称');
-        assert.equal(await page.locator('[data-follow-image-dots] button').count(), 13);
+        assert.equal(await page.locator('[data-follow-image-dots] button').count(), 12);
         const dots = await page.locator('[data-follow-image-dots]').evaluate(el => {
           const box = el.getBoundingClientRect();
           const rect = el.querySelector('[aria-current="true"]')!.getBoundingClientRect();
           return el.scrollWidth > el.clientWidth && rect.left >= box.left && rect.right <= box.right;
         });
         assert.ok(dots, '圆点条可滚动且当前项完整可见');
-        assert.equal(await page.locator('[data-carousel-video]').evaluate(el => el.getBoundingClientRect().width), 20);
         assert.equal(await page.locator('[data-media-thumbnails]').count(), 1);
         await page.locator('[data-media-thumbnail="1"] img').waitFor({ state: 'visible' });
         const indicator = page.locator('[data-follow-image-dots]');
@@ -183,14 +144,6 @@ describe('库外 JAV 作品详情', () => {
         await indicator.hover();
         await page.mouse.wheel(0, 180);
         await page.waitForFunction(() => (document.querySelector('[data-follow-image-dots]')?.scrollLeft || 0) > 0);
-        await page.evaluate(() => {
-          const frames: { width: number; height: number }[] = [];
-          Object.assign(window, { detailHeightFrames: frames });
-          const sample = () => { const frame = document.querySelector('[data-stage-media]');
-            if (frame) frames.push({ width: innerWidth, height: frame.getBoundingClientRect().height });
-            if (frames.length < 120) requestAnimationFrame(sample);
-          }; sample();
-        });
         const imageDot = page.getByRole('button', { name: '预览 2', exact: true });
         await page.keyboard.press('Tab');
         await imageDot.focus();
@@ -200,39 +153,13 @@ describe('库外 JAV 作品详情', () => {
         await page.getByRole('button', { name: '封面', exact: true }).click();
         if (viewport.mobile) {
           await page.setViewportSize({ width: 350, height: viewport.height });
-          assert.equal(await page.locator('[data-follow-image-dots] button').count(), 13);
+          assert.equal(await page.locator('[data-follow-image-dots] button').count(), 12);
           await page.setViewportSize({ width: viewport.width, height: viewport.height });
           await page.locator('[data-follow-image-dots]').waitFor({ state: 'visible' });
         }
         await page.getByRole('button', { name: '下一项媒体', exact: true }).click();
         await page.getByRole('img', { name: 'EXM-001 预览 1', exact: true }).waitFor({ state: 'visible' });
         await page.getByRole('button', { name: '上一项媒体', exact: true }).click();
-        await page.getByRole('button', { name: '视频预览', exact: true }).first().click();
-        await page.waitForFunction(() => { const video = document.querySelector<HTMLVideoElement>('[data-jav-video] video'); return video && video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 0 });
-        assert.ok(await page.locator('[data-jav-video] video.vjs-tech').evaluate(video => (video as HTMLVideoElement).paused), '预览等待用户播放');
-        const preview = page.locator('[data-jav-video]');
-        const playerBox = await preview.locator('.video-js').boundingBox();
-        assert.ok(playerBox && Math.abs(playerBox.width / playerBox.height - 16 / 9) < 0.02, JSON.stringify(playerBox));
-        const indicatorBox = await page.locator('[data-follow-image-dots]').boundingBox();
-        assert.ok(playerBox && indicatorBox && indicatorBox.y >= playerBox.y + playerBox.height, '视频 indicator 位于播放器下方');
-        await preview.getByRole('button', { name: '播放', exact: true }).waitFor({ state: 'visible' });
-        assert.equal(await preview.locator('.vjs-control-bar').evaluate(el => getComputedStyle(el).visibility), 'visible');
-        await preview.locator('video.vjs-tech').evaluate(node => { (node as HTMLVideoElement).muted = true });
-        await preview.getByRole('button', { name: '播放', exact: true }).click();
-        await page.waitForFunction(() => (document.querySelector<HTMLVideoElement>('[data-jav-video] video')?.currentTime || 0) > 0);
-        await preview.getByRole('button', { name: '暂停', exact: true }).click();
-        assert.ok(await preview.locator('video.vjs-tech').evaluate(node => (node as HTMLVideoElement).paused));
-        await preview.getByRole('button', { name: '设置', exact: true }).click();
-        await preview.getByRole('menuitem', { name: /播放速度/ }).waitFor({ state: 'visible' });
-        await preview.getByRole('button', { name: '设置', exact: true }).click();
-        await page.getByRole('button', { name: '查看图片', exact: true }).click();
-        assert.equal(await page.locator('[data-jav-video] video.vjs-tech').count(), 0, '切回图片卸下预览播放器');
-        const frames = await page.evaluate(() => (window as unknown as { detailHeightFrames: { width: number; height: number }[] }).detailHeightFrames);
-        assert.ok(frames.length > 3);
-        for (const width of new Set(frames.map(frame => frame.width))) {
-          const heights = frames.filter(frame => frame.width === width).map(frame => frame.height);
-          assert.ok(Math.max(...heights) - Math.min(...heights) < 1, JSON.stringify({ width, heights }));
-        }
         const sourceButton = page.getByRole('link', { name: '作品来源', exact: true });
         assert.deepEqual(await page.locator('[data-jav-actions] :is(button, a)').allTextContents(), ['作品来源']);
         assert.ok(await sourceButton.evaluate(el => parseFloat(getComputedStyle(el).borderWidth) > 0));

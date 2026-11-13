@@ -13,11 +13,10 @@ from .catalog_rules import normalise_code_key, tag_cat
 from .genre_decisions import load_genre_decisions
 from .genre_taxonomy import resolve_genre
 from .javdb_public import (PUBLIC_API, PublicSourceUnavailable,
-                          PublicIdentityAmbiguous, actor_gender, preview_video_url, public_image_url,
-                          public_cache_scope, cache_error)
+                          PublicIdentityAmbiguous, actor_gender, public_image_url,
+                          public_cache_scope)
 from .sources.javdb import maker_writing
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, cache_for
-from .preview_cache import PreviewCache
 
 #: 详情页「重新匹配封面」的预算：人在弹层里等着，挑不出来就报原因。
 COVER_SECONDS = 60.0
@@ -107,8 +106,6 @@ def q_jav_detail(contract, args) -> dict:
     payload.update(_source_fields(source or {}, decisions))
     payload.update(_artwork_fields(contract, code, item, source or {}, refresh=args.get('refresh') == '1',
                                    ambiguous=ambiguous))
-    if payload.get('preview_message'):
-        payload['message'] = '；'.join(filter(None, (payload['message'], payload['preview_message'])))
     payload.update(_identity_fields(contract, code, item, source or {}))
     return payload
 
@@ -176,8 +173,6 @@ def _artwork_fields(contract, code, item, source, *, refresh=False, ambiguous=Fa
             "cover_url": '' if ambiguous else discovery_cover_url(item, source or {}),
             "source_image": bool(source_cover and not is_javdb_image(source_cover)),
             "preview_count": min(len(source.get("preview_images") or []), 30),
-            **({'preview_video_url': '', 'preview_state': 'unavailable'} if ambiguous else
-               _preview_fields(contract, code, source, refresh=refresh)),
             "source_url": '' if ambiguous else "https://javdb.com/v/" + str(source["id"]) if source else item.get("link") or ""}
 
 
@@ -285,40 +280,3 @@ def _fetch_image(contract, code, index, *, movie=None):
     return PUBLIC_API.image(code, index, movie=movie)
 
 
-def _preview_fields(contract, code, source, *, refresh=False):
-    from .jav_official_preview import dmm_preview, javdb_preview, prestige_preview
-
-    prestige = ('prestige' in str(source.get('maker_name') or '').casefold()
-                or 'プレステージ' in str(source.get('maker_name') or ''))
-    provider = 'prestige' if prestige else 'dmm'
-    fetch = (lambda: prestige_preview(code, contract.secrets_root)) if prestige else (
-        lambda: dmm_preview(code, contract.secrets_root))
-    sources = [(provider, fetch), ('javdb', lambda: javdb_preview(code, source.get('id'), contract.secrets_root))]
-    url, errors = '', []
-    for provider, fetch in sources:
-        try:
-            result = PUBLIC_API.official_preview(code, fetch, released=source.get('release_date'),
-                                                 refresh=refresh, provider=provider,
-                                                 **({'source_id': source.get('id')} if provider == 'javdb' else {}))
-            url = result['url']
-            failure = cache_error(f'preview:{provider}:' + code)
-            if failure and not url:
-                raise PublicSourceUnavailable(failure)
-        except PublicSourceUnavailable as error:
-            errors.append(str(error))
-        if url:
-            break
-    if not url:
-        url = preview_video_url(source)
-        if url and '?' in url:
-            try:
-                url = preview_video_url(PUBLIC_API.media_movie(code, movie=source)) or url
-            except PublicSourceUnavailable as error:
-                errors.append(str(error))
-    if not url:
-        return {'preview_video_url': '', 'preview_state': 'unavailable' if errors else 'missing',
-                **({'preview_message': '；'.join(dict.fromkeys(errors))} if errors else {})}
-    playlist = url.endswith('.m3u8') or '.m3u8?' in url
-    ref = PreviewCache(cache_for(contract)).register(code, url, playlist=playlist,
-                                                     media_type='' if playlist else 'video/mp4')
-    return {'preview_video_url': f"/jav-preview/{code}/{ref}{'.m3u8' if playlist else ''}", 'preview_state': 'ready'}

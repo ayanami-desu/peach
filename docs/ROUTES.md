@@ -112,7 +112,7 @@
 | `/poster?id=&c=0..8` | 九宫格的一格，从 `asset.snapshot_path` 指向的 3×3 接触印相裁出 |
 | `/timeline?id=&s=` | 时间轴印相的一张（10×10 格），见 [视频预览](VIDEO_PREVIEWS.md) |
 | `/cover?code=&thumb=` | 官方封套原件；`thumb=1` 长边 1600、`thumb=2` 长边 800 |
-| `/cover-image?code=`、`/jav-image?code=&image=cover`、`/jav-preview/{code}/{ref}` | 采集到的封面、JAV 官方图与预览图 |
+| `/cover-image?code=`、`/jav-image?code=&image=cover` | 采集到的封面与 JAV 官方图 |
 | `/sample-thumb?code=&n=`、`/sample-image?code=&n=` | 官方样张与其缩略图 |
 | `/avatar?id=`、`/avatar-choice?kind=&id=`、`/entity-image?kind=&id=&thumb=` | 资产头像、实体图与派生缩略图 |
 | `/work-icon?work=`、`/logo?studio=&variant=` | 作品与厂牌的标识 |

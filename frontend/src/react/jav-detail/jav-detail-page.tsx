@@ -1,9 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { RiExternalLinkLine } from '@remixicon/react';
 import { entityPath, icon } from '@peach/legacy/core';
 import { tagLabel } from '@peach/legacy/tags';
-import { mountPreviewPlayer } from '../../player';
 import { errorMessage } from '../../api';
 import { textLang } from '../../core/text-lang';
 import { Button, ButtonLink } from '@/components/base/buttons/button';
@@ -43,15 +42,11 @@ function Work({ item, actions, retry, retrying }: JavDetailProps & { item: JavDe
   useEffect(() => { actions.canonicalCode?.(item.code) }, [actions, item.code]);
   useEffect(() => { if (item.state === 'ready') void queryClient.invalidateQueries({ queryKey: ['jav-discoveries'] }) }, [item.code, item.state]);
   const [preview, setPreview] = useState(-1);
-  const media = [{ index: -1, label: '封面' }, ...Array.from({ length: item.preview_count }, (_, index) => ({ index, label: `预览 ${index + 1}` })),
-    ...(item.preview_video_url ? [{ index: -2, label: '视频预览', video: true }] : [])];
+  const media = [{ index: -1, label: '封面' }, ...Array.from({ length: item.preview_count }, (_, index) => ({ index, label: `预览 ${index + 1}` }))];
   return <>
-    <div data-stage-media="" data-jav-art="" data-jav-playing={preview === -2 ? '' : undefined}>
+    <div data-stage-media="" data-jav-art="">
       <Close close={actions.close} />
-      {item.preview_video_url ? <button type="button" data-jav-preview-toggle="" aria-pressed={preview === -2}
-        onClick={() => setPreview(preview === -2 ? -1 : -2)}><Glyph name={preview === -2 ? 'image' : 'play'} />{preview === -2 ? '查看图片' : '视频预览'}</button> : null}
-      {preview === -2 && item.preview_video_url ? <PreviewVideo key={item.preview_video_url} src={item.preview_video_url} />
-        : <JavPicture key={item.code} item={item} image={preview === -1 ? 'cover' : String(preview)} />}
+      <JavPicture key={item.code} item={item} image={preview === -1 ? 'cover' : String(preview)} />
       <MediaCarousel items={media} position={Math.max(0, media.findIndex(entry => entry.index === preview))} onSelect={setPreview}
         below renderThumbnail={entry => <JavPicture item={item} image={entry.index < 0 ? 'cover' : String(entry.index)} thumbnail />} />
     </div>
@@ -116,19 +111,3 @@ function JavIdentity({ item, navigate }: { item: JavDetail; navigate(path: strin
     <IdentitySeries people={item.series_refs.map(person => ({ ...person, id: person.id ?? null }))} onOpen={onOpen} /></div>;
 }
 
-function PreviewVideo({ src }: { src: string }) {
-  const frame = useRef<HTMLDivElement>(null);
-  const [failed, setFailed] = useState(false);
-  useLayoutEffect(() => {
-    if (failed) return;
-    const node = frame.current!;
-    const video = document.createElement('video');
-    video.className = 'video-js vjs-big-play-centered';
-    video.controls = true;
-    video.setAttribute('playsinline', '');
-    video.setAttribute('aria-label', '视频预览');
-    node.append(video);
-    return mountPreviewPlayer(video, { src, type: /\.m3u8(?:\?|$)/i.test(src) ? 'application/x-mpegURL' : 'video/mp4' }, () => setFailed(true));
-  }, [src, failed]);
-  return <div ref={frame} data-jav-video="">{failed ? <Note tone="neutral" action={<Button variant="secondary" onClick={() => setFailed(false)}>立即重试</Button>}>视频预览未取得</Note> : null}</div>;
-}

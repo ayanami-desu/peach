@@ -115,20 +115,6 @@ def public_image_url(value: object) -> bool:
         return False
 
 
-def preview_video_url(movie: dict) -> str:
-    """只投影来源作品的公开 HLS 预览入口，不替来源断言播放成功。"""
-    value = str(movie.get("preview_video_url") or "")
-    try:
-        parts = urlsplit(value)
-        allowed = (parts.scheme == "https" and parts.hostname == "jdforrepam.com"
-                   and not parts.username and not parts.password and parts.port in (None, 443)
-                   and not parts.fragment and not any(char.isspace() for char in value)
-                   and re.fullmatch(r"/api/v1/movies/ttm3u8/preview/[A-Za-z0-9/_-]+\.m3u8", parts.path))
-    except ValueError:
-        return ""
-    return value if allowed else ""
-
-
 class PublicSourceUnavailable(ValueError):
     """公开来源当前未取得。"""
 
@@ -588,7 +574,7 @@ class PublicAPI:
         movie = self._bound_movie(code, movie)
         key = f"movie:{normalise_code_key(code)}:{movie['id']}"
         snapshot = self.snapshots.get(self._cache_key(key)) or self._store().load(identity_cache_key(key))
-        urls = [movie.get(name) for name in ('cover_url', 'thumb_url', 'preview_video_url')]
+        urls = [movie.get(name) for name in ('cover_url', 'thumb_url')]
         urls.extend(actor.get('avatar_url') for actor in movie.get('actors') or [] if isinstance(actor, dict))
         urls.extend((image.get('large_url') or image.get('url')) if isinstance(image, dict) else image
                     for image in movie.get('preview_images') or [])
@@ -596,21 +582,6 @@ class PublicAPI:
                 isinstance(url, str) and '?' in url for url in urls):
             return self.movie(code, refresh=True, source_id=movie['id'])
         return movie
-
-    def official_preview(self, code, fetch, *, released=None, refresh=False, provider='prestige', source_id=None):
-        """预告按来源独立保存；抓到的就留着，手动刷新或 `?refresh=1` 才再问。"""
-        def read():
-            url = fetch()
-            return {'url': url, **({'release_date': released} if url and provider == 'prestige' else {})}
-        key = f'preview:{provider}:' + normalise_code_key(code)
-        if provider == 'javdb':
-            if source_id is None:
-                key += f':search-{RULE}'
-            elif not isinstance(source_id, str) or not re.fullmatch(r'[A-Za-z0-9]+', source_id):
-                raise PublicSourceUnavailable('来源作品身份不匹配')
-            else:
-                key += ':' + source_id
-        return self._cached(key, read, refresh=refresh)
 
     def image(self, code: str, index: str, *, original=False, movie=None) -> str:
         movie = self.media_movie(code, movie=movie)

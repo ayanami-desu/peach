@@ -10,7 +10,6 @@ export interface JavDetail {
   performers: string; performer_refs: JavEntityRef[]; studio_refs: JavEntityRef[]; series_refs: JavEntityRef[];
   tags: string[]; has_cover: boolean; cover_version?: string; cover_url?: string;
   tag_refs?: { name: string; category: string; source_name: string }[];
-  preview_video_url?: string; preview_state?: string;
   source_image: boolean; preview_count: number; comments_count: number;
   source_url: string; checked_at?: string; cache_stale?: boolean;
 }

@@ -16,7 +16,7 @@ describe('图片导航固定位置与悬停', () => {
       await settle(page);
       await mockJavDetail(page);
       await page.route('**/api/jav/detail?*', route => route.fulfill({ json: { ...JAV_DETAIL,
-        performer_refs: [], studio_refs: [], series_refs: [], preview_video_url: '', preview_count: 1 } }));
+        performer_refs: [], studio_refs: [], series_refs: [], preview_count: 1 } }));
       await page.route('**/jav-image?*', route => {
         const vertical = new URL(route.request().url()).searchParams.get('image') === '0';
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${vertical ? 400 : 1200}" height="800"><rect width="100%" height="100%" fill="#456"/></svg>`;

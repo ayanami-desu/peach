@@ -7,13 +7,13 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image
 
 from peach.http import HttpResponse
-from peach.javdb_public import PublicAPI, PublicSourceUnavailable, decode_image, preview_video_url, public_signature_parts
+from peach.javdb_public import PublicAPI, PublicSourceUnavailable, decode_image, public_signature_parts
 from peach.javdb_public import PublicBudgetExceeded, PublicNotFound, PublicRequestBudget, PublicSourcePaused, actor_gender
 from peach.javdb_public import API_HOSTS, APP_HEADERS, APP_QUERY, APP_SIGNATURE, WEB
 from peach.web_jav_detail import JAV_ACTOR_IMAGE_MAX_AGE, JAV_IMAGE_MAX_AGE, jav_image, q_jav_detail
@@ -124,14 +124,6 @@ class PublicProtocolTests(unittest.TestCase):
         with patch.object(api, 'movie', return_value={'id': 'MO50k', 'number': 'MIKR-023'}) as lookup:
             self.assertIs(api.media_movie('MIKR-023', movie=first), first)
         lookup.assert_not_called()
-
-    def test_javdb_preview_cache_is_bound_to_source_id_and_ignores_old_number_only_result(self):
-        api = PublicAPI()
-        api._cached('preview:javdb:MIKR-023', lambda: {'url': 'old'})
-        for identity, url in (('XeYkdb', 'first'), ('MO50k', 'second'), (None, 'checked-search')):
-            fetch = Mock(return_value=url)
-            self.assertEqual(api.official_preview('MIKR-023', fetch, provider='javdb', source_id=identity)['url'], url)
-            fetch.assert_called_once()
 
     def test_signature_rejects_multiple_recipes_unknown_time_and_control_literals(self):
         script = ('const AA="sample-middle",BB="sample-suffix";'
@@ -482,16 +474,6 @@ class PublicProtocolTests(unittest.TestCase):
             self.assertEqual(api.image_from_url('https://tp.spfcas.com/image.jpg', original=True), original)
         self.assertEqual(request.call_count, 2)
 
-    def test_preview_entry_accepts_only_the_public_hls_origin_and_path(self):
-        url = 'https://jdforrepam.com/api/v1/movies/ttm3u8/preview/123/0/720p.m3u8?token=sample'
-        self.assertEqual(preview_video_url({'preview_video_url': url}), url)
-        for value in (url.replace('https:', 'http:'), url.replace('jdforrepam.com', 'jdforrepam.com.evil.example'),
-                      url.replace('https://', 'https://user:pass@'), url.replace('/preview/', '/private/'),
-                      url.replace('.com/', '.com:8443/'), url + '#fragment', 'javascript:alert(1)',
-                      'https://jdforrepam.com:wrong/preview.m3u8'):
-            with self.subTest(url=value):
-                self.assertEqual(preview_video_url({'preview_video_url': value}), '')
-
     def test_actor_images_are_bound_to_current_work_and_cached(self):
         api = self.api()
         original = io.BytesIO()
@@ -512,15 +494,12 @@ class PublicProtocolTests(unittest.TestCase):
 
 
 class DetailProjectionTests(unittest.TestCase):
-    def test_ambiguous_detail_does_not_fall_back_to_number_bound_preview(self):
+    def test_ambiguous_detail_does_not_present_number_bound_source(self):
         from peach.javdb_public import PublicIdentityAmbiguous
-        with patch('peach.web_jav_detail.PUBLIC_API.movie', side_effect=PublicIdentityAmbiguous('多个作品')), \
-                patch('peach.web_jav_detail._preview_fields') as preview:
+        with patch('peach.web_jav_detail.PUBLIC_API.movie', side_effect=PublicIdentityAmbiguous('多个作品')):
             result = q_jav_detail(self.contract, {'code': 'MIKR-023'})
         self.assertEqual(result['state'], 'partial')
-        self.assertEqual(result['preview_state'], 'unavailable')
         self.assertEqual(result['source_url'], '')
-        preview.assert_not_called()
 
     def test_ambiguous_artwork_does_not_present_previous_number_bound_cover_or_link(self):
         from peach.web_jav_detail import _artwork_fields
@@ -558,8 +537,7 @@ class DetailProjectionTests(unittest.TestCase):
         for url in ('https://c0.jdbstatic.com/a.jpg', 'https://tp.spfcas.com/a.jpg?expires=100'):
             with self.subTest(url=url):
                 source = {'id': 'Exact', 'cover_url': url, 'thumb_url': 'https://pics.dmm.co.jp/a.jpg'}
-                with patch('peach.web_jav_detail._preview_fields', return_value={}):
-                    result = _artwork_fields(self.contract, 'MIDA-085', {}, source)
+                result = _artwork_fields(self.contract, 'MIDA-085', {}, source)
                 self.assertFalse(result['source_image'])
                 self.assertEqual(result['cover_url'], '')
 
@@ -634,10 +612,6 @@ class DetailProjectionTests(unittest.TestCase):
         self.assertEqual(sum(url.startswith('https://tp.spfcas.com/') for url in requests), 1)
 
     def setUp(self):
-        for name in ('dmm_preview', 'javdb_preview'):
-            patcher = patch('peach.jav_official_preview.' + name, return_value='')
-            patcher.start()
-            self.addCleanup(patcher.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()

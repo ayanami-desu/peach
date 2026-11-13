@@ -852,14 +852,14 @@ class OperationalScriptTests(unittest.TestCase):
                 return runner.scopes_for_changes(paths)
         # 前缀表：多个文件取并集，反斜杠路径也认。
         self.assertEqual(pick(["src/peach/web_library_shortcuts.py", "web/app.js"])[0], ("catalog", "web"))
-        self.assertEqual(pick(["src\\peach\\preview_cache.py"])[0], ("catalog", "media", "web"))
+        self.assertEqual(pick(["src\\peach\\seed_corrections.py"])[0], ("metadata", "tooling"))
         self.assertEqual(pick(["scripts/probe.py", "pyproject.toml", ".github/workflows/test.yml"])[0],
                          ("full",))
         self.assertEqual(pick(["README.md", "docs/STATUS.md", ".claude/skills/x/SKILL.md"])[0],
                          ("checks",))
         self.assertEqual(pick(["src/peach/web_entity.py", "src/peach/routes_pages.py"])[0],
                          ("catalog", "tooling", "web"))
-        self.assertEqual(pick(["src/peach/preview_cache.py"])[0], ("catalog", "media", "web"))
+        self.assertEqual(pick(["src/peach/jav_poster_crop.py"])[0], ("metadata", "web"))
         # 模块名 ↔ 测试文件名推断，登记在几个域就跑几个域。
         self.assertEqual(pick(["src/peach/media.py"])[0], ("media",))
         self.assertEqual(pick(["src/peach/jobs.py"])[0], ("media", "tooling"))

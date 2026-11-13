@@ -12,7 +12,6 @@ import httpx
 from starlette.applications import Starlette
 from starlette.routing import Route
 
-from peach.preview_cache import PreviewCache
 from peach.remote_media_cache import AVATAR_REFRESH_SECONDS, FAVICON_REFRESH_SECONDS, RemoteMediaCache
 
 
@@ -216,53 +215,3 @@ class RemoteMediaCacheTests(unittest.IsolatedAsyncioTestCase):
         fetch.assert_called_once()
 
 
-class PreviewCacheTests(unittest.TestCase):
-    def test_nested_playlists_keys_and_init_segments_are_local_and_persistent(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache = RemoteMediaCache(Path(directory).resolve())
-            previews = PreviewCache(cache)
-            root = previews.register("ABP-123", "https://cdn.example/root.m3u8", identity="root", playlist=True)
-            fetch = mock.Mock(return_value=b'\xef\xbb\xbf#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=10\nvideo/list\n')
-            body = previews.playlist("ABP-123", root, fetch).decode()
-            self.assertNotIn("https://", body)
-            child = body.splitlines()[-1].rsplit("/", 1)[-1]
-            self.assertTrue(previews.source("ABP-123", child)["playlist"])
-            self.assertEqual(previews.source("ABP-123", child)["url"], "https://cdn.example/video/list")
-            nested = mock.Mock(return_value=b'#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:4,\npart.ts\n#EXT-X-ENDLIST\n')
-            result = previews.playlist("ABP-123", child, nested).decode()
-            self.assertNotIn('URI="key.bin"', result)
-            self.assertNotIn('URI="init.mp4"', result)
-            self.assertNotIn("\npart.ts", result)
-            replay = PreviewCache(RemoteMediaCache(Path(directory))).playlist("ABP-123", child, nested)
-            self.assertEqual(replay.decode(), result)
-            nested.assert_called_once()
-            self.assertEqual(previews.register("ABP-123", "https://cdn.example/changed.m3u8", identity="root"), root)
-            self.assertEqual(previews.source("ABP-123", root)["url"], "https://cdn.example/changed.m3u8")
-            with mock.patch.object(cache, 'bytes', wraps=cache.bytes) as saved:
-                self.assertEqual(previews.playlist('ABP-123', root, fetch).decode(), body)
-            self.assertEqual(saved.call_count, 1)
-            self.assertEqual(fetch.call_count, 2)
-            with self.assertRaises(ValueError):
-                previews.source("ABP-123", "../private")
-            with self.assertRaises(ValueError):
-                previews.register("ABP-123", "https://127.0.0.1/a")
-            for path in cache.root.rglob("*.source.json"):
-                self.assertIn("url", json.loads(path.read_text()))
-
-    def test_signed_playlist_refreshes_and_registers_current_segment_addresses(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache = RemoteMediaCache(Path(directory).resolve())
-            previews = PreviewCache(cache)
-            root = previews.register('EXM-001', 'https://cdn.example/root.m3u8', identity='root')
-            def playlist(signature):
-                return f'#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\npart.ts?sign={signature}\n#EXT-X-ENDLIST\n'.encode()
-            fetch = mock.Mock(side_effect=[playlist('first'), playlist('current')])
-            first = previews.playlist('EXM-001', root, fetch)
-            for path in cache.root.rglob('*.data'):
-                os.utime(path, (0, 0))
-            current = previews.playlist('EXM-001', root, fetch)
-            self.assertNotEqual(first, current)
-            segment = next(line for line in current.decode().splitlines() if line.startswith('/jav-preview/'))
-            self.assertTrue(previews.source('EXM-001', segment.rsplit('/', 1)[-1])['url'].endswith('sign=current'))
-            self.assertEqual(previews.playlist('EXM-001', root, fetch), current)
-            self.assertEqual(fetch.call_count, 2)

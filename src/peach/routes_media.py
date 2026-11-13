@@ -37,7 +37,6 @@ from .media import MediaUnavailable
 from .upstream import UpstreamError, UpstreamTarget, open_upstream
 from .previews import ENTITY_THUMB_TYPE, PreviewUnavailable, entity_image_key
 from .remote_media_cache import AVATAR_REFRESH_SECONDS, FAVICON_REFRESH_SECONDS, cache_for
-from .preview_cache import PreviewCache
 from .routes_auth import require_auth
 from .user_agent import USER_AGENT
 from .remote_media_cache import MEDIA_SECURITY_HEADERS
@@ -443,53 +442,6 @@ def jav_image(request: Request, code: str, image: str = "cover", args: dict[str,
                     headers={**headers, "content-length": str(len(body))})
 
 
-def _jav_preview_target(url: str) -> UpstreamTarget:
-    """已验证的预览来源使用固定主机范围，其他 CDN 逐跳核对公网解析。"""
-    return UpstreamTarget(url, allowed_hosts=("www.prestige-av.com", "jdforrepam.com", "cc3001.dmm.co.jp",
-                                                  "ygp.blxr5es.com"), public_hosts=True)
-
-
-@router.api_route("/jav-preview/{code}/{ref}", methods=["GET", "HEAD"])
-def jav_preview(request: Request, code: str, ref: str, args: dict[str, str] = Depends(require_auth)):
-    from .web_jav_detail import detail_code
-    cache = cache_for(request.app.state.web_contract)
-    previews = PreviewCache(cache)
-    try:
-        code = detail_code({"code": code})
-        source = previews.source(code, ref)
-        url = source["url"]
-        target = _jav_preview_target(url)
-        client = request.app.state.http_transport.client
-        def upstream(method, target, incoming):
-            return open_upstream(client, method, target, incoming=incoming)
-        if source["playlist"]:
-            def fetch(url):
-                response = upstream("GET", _jav_preview_target(url), {})
-                try:
-                    chunks, size = [], 0
-                    for chunk in response.iter_bytes():
-                        size += len(chunk)
-                        if size > 1024 * 1024:
-                            raise ValueError("预览清单过大")
-                        chunks.append(chunk)
-                    return b"".join(chunks)
-                finally:
-                    response.close()
-            body = previews.playlist(code, ref, fetch)
-            return Response(b"" if request.method == "HEAD" else body, media_type="application/vnd.apple.mpegurl",
-                            headers={"cache-control": "private, no-cache", "content-length": str(len(body))})
-        def media():
-            response = upstream(request.method, target, request.headers)
-            if source.get('media_type') == 'video/mp4':
-                kind = response.headers.get('content-type', '').split(';')[0].lower()
-                if kind not in {'video/mp4', 'application/octet-stream', 'binary/octet-stream'}:
-                    response.close()
-                    raise UpstreamError('视频预览响应未取得')
-                response.headers['content-type'] = 'video/mp4'
-            return response
-        return cache.stream(f"preview:{code}:{ref}", request, media)
-    except (ValueError, OSError, UpstreamError, httpx.HTTPError):
-        return Response(status_code=404, headers={"cache-control": "no-store"})
 
 
 @router.api_route("/logo", methods=["GET", "HEAD"])

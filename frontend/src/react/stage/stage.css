@@ -55,11 +55,10 @@
 [data-stage] [data-stage-media]>.video-js{max-height:100%}
 [data-stage] [data-skeleton="detail"] [data-stage-media]{width:100%;max-width:100%;aspect-ratio:auto;max-height:none}
 [data-stage] [data-stage-scroll] :is([data-jav-art],[data-item-gallery]){display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) 116px;align-items:center;justify-items:center}
-[data-stage] [data-stage-scroll] :is([data-jav-art],[data-item-gallery])>:is([data-jav-picture],[data-catalog-picture],[data-jav-picture-wait],[data-jav-video],[class~="video-js"],[role="note"]){grid-area:1/1;min-height:0;max-height:var(--detail-gallery-height);height:var(--detail-gallery-height);width:100%;object-fit:contain}
+[data-stage] [data-stage-scroll] :is([data-jav-art],[data-item-gallery])>:is([data-jav-picture],[data-catalog-picture],[data-jav-picture-wait],[class~="video-js"],[role="note"]){grid-area:1/1;min-height:0;max-height:var(--detail-gallery-height);height:var(--detail-gallery-height);width:100%;object-fit:contain}
 [data-item-samples-state]{position:absolute;right:16px;bottom:44px;z-index:2}
 [data-stage] :is([data-jav-art],[data-item-gallery])>[data-carousel-below]{grid-area:2/1;box-sizing:border-box;min-width:0;align-self:end}
-[data-stage] [data-jav-video]{display:grid;place-items:center}
-[data-stage] [data-stage-scroll] :is([data-jav-video]>[class~="video-js"],[data-item-gallery]>[class~="video-js"]){width:min(100%,calc(var(--detail-gallery-height) * 16 / 9));height:auto;max-height:var(--detail-gallery-height);aspect-ratio:16/9}
+[data-stage] [data-stage-scroll] [data-item-gallery]>[class~="video-js"]{width:min(100%,calc(var(--detail-gallery-height) * 16 / 9));height:auto;max-height:var(--detail-gallery-height);aspect-ratio:16/9}
 @media(max-width:1080px){
   [data-stage]{--detail-media-height:min(56dvh,calc(56.25vw + 116px))}
   [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]):not([data-theater]) [data-stage-grid]{height:auto}
@@ -383,7 +382,7 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
 [data-stage][data-theater] [data-stage-media]{height:var(--detail-media-height);min-height:0}
 [data-stage][data-theater] [data-stage-scroll] :is([data-jav-art],[data-item-gallery]){grid-template-rows:minmax(0,1fr)}
 [data-stage][data-theater] :is([data-media-carousel][data-carousel-below],[data-item-samples-state]){display:none}
-[data-stage][data-theater] [data-stage-scroll] :is([data-stage-media]>.video-js,[data-stage-media]>video,[data-jav-video]>.video-js){width:100%;height:100%;max-height:none;aspect-ratio:auto}
+[data-stage][data-theater] [data-stage-scroll] :is([data-stage-media]>.video-js,[data-stage-media]>video){width:100%;height:100%;max-height:none;aspect-ratio:auto}
 @media(max-width:1080px){[data-stage] [data-stage-media]{border-radius:var(--surface-radius) var(--surface-radius) 0 0}}
 /* 详情页的关闭键压在画面上：亮色主题下白底白晕看不出悬停，用户以 YouTube 为参照——播放器上的键在亮色下也是黑底。 */
 [data-stage-close],[data-stage-close]:hover{background:rgba(0,0,0,.6);color:#fff}

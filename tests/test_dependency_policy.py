@@ -199,7 +199,6 @@ class DependencyPolicyTests(unittest.TestCase):
             "filelock": "filelock",
             "httpx": "httpx",
             "itsdangerous": "itsdangerous",
-            "m3u8": "m3u8",
             "numpy": "numpy",
             "opencc": "opencc",
             "p115client": "p115client",
