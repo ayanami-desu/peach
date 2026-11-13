@@ -120,6 +120,14 @@ export const controlTask = (id: number, action: TaskControlAction, signal?: Abor
 export const setTaskSpeed = (id: number, speed: ProcessingSpeed) =>
   apiSend(`${TASKS_URL}/${id}/control`, { action: 'set_speed', speed_mode: speed }, 'POST');
 
+/** 删掉一条已结束的任务记录；在排或在跑的一轮由服务端拒绝。 */
+export const deleteTask = (id: number, signal?: AbortSignal) =>
+  apiSend(`${TASKS_URL}/${id}`, {}, 'DELETE', signal);
+
+/** 清空全部已结束的任务记录，返回删掉多少条。 */
+export const clearFinishedTasks = (signal?: AbortSignal) =>
+  apiSend<{ deleted: number }>(`${TASKS_URL}/clear-finished`, {}, 'POST', signal);
+
 /** 首屏：取完数才画。中止时 `fetchQuery` 把 `AbortError` 抛回给挂载方，它据此放弃这一次。 */
 export async function prefetchTasks(signal: AbortSignal): Promise<void> {
   await queryClient.fetchQuery({ queryKey: TASKS_KEY, queryFn: () => fetchTasks(signal) });

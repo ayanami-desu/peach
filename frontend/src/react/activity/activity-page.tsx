@@ -12,13 +12,16 @@
  * 各段使用统一分页，最近完成按服务端页码读取，轮询刷新当前页。 */
 import { Children, useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import { RiArrowRightLine, RiHistoryLine } from '@remixicon/react';
-import { useQuery } from '@tanstack/react-query';
+import { RiArrowRightLine, RiDeleteBinLine, RiHistoryLine } from '@remixicon/react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { confirmModal } from '@peach/legacy/ui';
 
 import { Chip } from '@/components/base/badges/chip';
+import { Button } from '@/components/base/buttons/button';
 import { LinkButton } from '@/components/base/buttons/link-button';
 
 import { apiGet, errorMessage } from '../../api';
+import { t } from '../../i18n';
 import { cardClass } from '../components/card';
 import { CodeBlock } from '../components/code-block';
 import { EmptyState } from '../components/empty-state';
@@ -36,7 +39,7 @@ import { TaskControlFeedback, TaskControls } from './task-controls';
 import { TaskIcon } from './task-icon';
 import { TaskResources } from './task-resources';
 import {
-  elapsedText, fetchTasks, foldByKind, foldRoutine, followupDetail, followupTally, groupFollowups, isActive,
+  elapsedText, clearFinishedTasks, fetchTasks, foldByKind, foldRoutine, followupDetail, followupTally, groupFollowups, isActive,
   hasResultProblems, isRoutine, latestOfKind, momentText, pollInterval, problemDestination, progressText,
   readableErrorHeadline, statusLabel, summaryItems, taskIssues, taskSubject, TASKS_KEY, TRIGGER_LABELS, type FollowupCounts, type TaskControlState, type TaskRunPayload,
 } from './tasks';
@@ -121,10 +124,10 @@ function FollowupList({ rows }: { rows: TaskRunPayload[] }) {
 /** 一轮任务一张卡。失败时整张卡的框线换成 danger 色，不给结束原因那行字上色——
  *  一屏十几行里逐行读红字，比看一眼哪张卡的框是红的慢得多。 */
 function RunCard(
-  { run, meta, children, error, issues, followups, followupTotal = 0, badge, resourceActive, controlled }:
+  { run, meta, children, error, issues, followups, followupTotal = 0, badge, resourceActive, controlled, deletable, toast }:
   { run: TaskRunPayload; meta: string; children?: ReactNode; error?: string; issues?: ReactNode;
     followups?: TaskRunPayload[]; followupTotal?: number; badge?: ReactNode; resourceActive?: boolean;
-    controlled?: TaskRunPayload[] },
+    controlled?: TaskRunPayload[]; deletable?: boolean; toast?: (message: string) => void },
 ) {
   const [detailOpen, setDetailOpen] = useState(Boolean(followups?.some(isActive)));
   const parentIds = (controlled || [run]).map((parent) => parent.id);
@@ -162,7 +165,7 @@ function RunCard(
             <strong className="min-w-0 break-words text-title-3-medium text-text-primary">{run.task_label}</strong>
             {badge ?? <StatusBadge run={run} />}
           </div>
-          <TaskControls run={run} runs={controlled} />
+          <TaskControls run={run} runs={controlled} deletable={deletable} toast={toast} />
         </div>
         <p className="text-caption-1-regular text-text-secondary">{meta}</p>
         <TaskResources run={run} active={resourceActive} />
@@ -234,9 +237,10 @@ function RunningRun({ run, followups, followupTotal }:
  *  任务卡只记这一轮的历史：此刻还没解决的问题和「立即重试」在页顶「需要处理」那一块。
  *  `latest` 说它是不是同一种任务最新的那一轮：有些任务只有那一轮还有处理入口。 */
 function SettledRun(
-  { run, followups, runs, latest, followupTotal, followupFailed = 0, followupCancelled = 0 }:
+  { run, followups, runs, latest, followupTotal, followupFailed = 0, followupCancelled = 0, toast }:
   { run: TaskRunPayload; followups?: TaskRunPayload[]; runs?: TaskRunPayload[]; latest: boolean;
-    followupTotal?: number; followupFailed?: number; followupCancelled?: number },
+    followupTotal?: number; followupFailed?: number; followupCancelled?: number;
+    toast?: (message: string) => void },
 ) {
   /* 几批派发并成一张时，最新那一批的「已安排 64 项」说不清整件事：改说一共处理了几项、失败几项，
      有失败时徽章写发现问题，失败的那几条在任务明细里排在前面。 */
@@ -259,6 +263,7 @@ function SettledRun(
        elapsed && `用时 ${elapsed}`]).filter(Boolean).join(' · ');
   return (
     <RunCard run={run} meta={meta} error={run.error} followups={followups} followupTotal={followupTotal} controlled={runs}
+      deletable toast={toast}
       issues={issues.length ? <Disclosure row summary={`问题详情 · ${issues.length} 项`} contentClassName="pb-5">
         <ErrorDetails label="任务问题详情">
         {/* 与数据管理的问题清单同一种分层：名字一层，来源与问题类别跟在名字后面用次级色，原因再低一档。 */}
@@ -328,11 +333,14 @@ function WorkingRun(
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   const id = useId();
   return (
     <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <h3 id={id} className="text-title-2-medium text-text-primary">{title}</h3>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <h3 id={id} className="text-title-2-medium text-text-primary">{title}</h3>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -352,7 +360,7 @@ function RunList({ live = false, paginate = true, children }: { live?: boolean; 
   </>;
 }
 
-export function ActivityPage() {
+export function ActivityPage({ toast }: { toast?: (message: string) => void } = {}) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const tasks = useQuery({
@@ -365,10 +373,28 @@ export function ActivityPage() {
   if (tasks.data && tasks.data !== lastData) setLastData(tasks.data);
   const data = tasks.data || lastData;
   const problem = tasks.error ? errorMessage(tasks.error) : '';
+  /* 清空只动已结束的记录：在排或在跑的一轮服务端不会碰，也不需要先停下。 */
+  const clearing = useMutation({
+    mutationFn: () => clearFinishedTasks(),
+    onSuccess: (result) => {
+      toast?.(t('activity:clear.done', { count: result.deleted }));
+      void tasks.refetch();
+    },
+  });
   // 首屏就没拿到数据：只剩这一条，不画空的三段。
   if (!data) return <Page><Note tone="error">{problem || '读取任务中心失败'}</Note></Page>;
 
   const allFinished = data.finished || [];
+  const confirmClear = () => {
+    if (clearing.isPending) return;
+    void confirmModal({
+      title: t('activity:clear.title'),
+      body: t('activity:clear.body'),
+      confirmLabel: t('activity:clear.confirm'),
+      danger: true,
+      onConfirm: () => clearing.mutateAsync(),
+    });
+  };
   const parents = data.working_parents || [];
   const allRuns = [...(data.running || []), ...(data.skipped || []), ...allFinished, ...parents];
   // 后继挂到派出它的那张卡下面。父任务不在这一屏上（已经被 prune 掉）时照常单独摆出来
@@ -435,17 +461,23 @@ export function ActivityPage() {
             {skipped.length
               ? <Section title="本次未执行">
                   <RunList>{skipped.map((run) => (
-                    <SettledRun key={run.id} run={run} latest={newest.has(run.id)} followups={byParent.get(run.id)} />))}</RunList>
+                    <SettledRun key={run.id} run={run} latest={newest.has(run.id)} followups={byParent.get(run.id)} toast={toast} />))}</RunList>
                 </Section>
               : null}
             {finished.length || Boolean(data.finished_total)
-              ? <Section title="最近完成">
+              ? <Section title="最近完成" action={data.finished_total
+                ? <Button variant="danger" size="small" leadingIcon={RiDeleteBinLine}
+                    disabled={clearing.isPending} onClick={confirmClear}>
+                    {t('activity:clear.action')}
+                  </Button>
+                : undefined}>
+                  {clearing.error ? <Note tone="error">{errorMessage(clearing.error)}</Note> : null}
                   {finished.length
                     ? <RunList paginate={false}>{folds.map(({ run, runs }) => {
                         const tally = followupTally(counts, runs);
                         return <SettledRun key={run.id} run={run} runs={runs} latest={newest.has(run.id)}
                           followups={childrenOf(runs)} followupTotal={tally.total} followupFailed={tally.failed}
-                          followupCancelled={tally.cancelled} />;
+                          followupCancelled={tally.cancelled} toast={toast} />;
                       })}</RunList>
                     : null}
                   <DataTableFooter label="最近完成" total={data.finished_total ?? settled.length} unit="轮任务" pageUnit="轮"

@@ -1,17 +1,18 @@
 /* 任务动作由服务端逐轮给出；收到控制请求不代表后台已经停稳，状态仍以轮询为准。 */
 import { useRef } from 'react';
-import { RiPauseLine, RiPlayLine, RiStopLine } from '@remixicon/react';
+import { RiDeleteBinLine, RiPauseLine, RiPlayLine, RiStopLine } from '@remixicon/react';
 import { useMutation, useMutationState, useQueryClient } from '@tanstack/react-query';
 import { confirmModal } from '@peach/legacy/ui';
 
 import { Button } from '@/components/base/buttons/button';
 
 import { errorMessage } from '../../api';
+import { t } from '../../i18n';
 import { Note } from '../components/note';
 import { busyProps } from '../settings/use-action';
 import { ProcessingMode } from '../library-processing/processing-effort';
 import type { ProcessingSpeed } from '../library-processing/library-processing';
-import { controlTask, setTaskSpeed, isActive, TASKS_KEY, type TaskControlAction, type TaskRunPayload } from './tasks';
+import { controlTask, deleteTask, setTaskSpeed, isActive, TASKS_KEY, type TaskControlAction, type TaskRunPayload } from './tasks';
 
 const CONTROL_KEY = ['task-control'] as const;
 const ICONS = { pause: RiPauseLine, resume: RiPlayLine, cancel: RiStopLine };
@@ -48,8 +49,11 @@ export function TaskControlFeedback() {
   </div>;
 }
 
-/** `runs` 是并在同一张卡里的几批，按钮对每一批各发一次；不给就只管 `run` 这一轮。 */
-export function TaskControls({ run, runs = [run] }: { run: TaskRunPayload; runs?: TaskRunPayload[] }) {
+/** `runs` 是并在同一张卡里的几批，按钮对每一批各发一次；不给就只管 `run` 这一轮。
+ *  `deletable` 只在已结束的卡片上给：在跑或在排的一轮删不得，服务端也会拒绝。 */
+export function TaskControls({ run, runs = [run], deletable = false, toast }: {
+  run: TaskRunPayload; runs?: TaskRunPayload[]; deletable?: boolean; toast?: (message: string) => void;
+}) {
   const client = useQueryClient();
   const pending = useRef({ change: false, cancel: false, confirmation: false });
   const refresh = () => { void client.invalidateQueries({ queryKey: TASKS_KEY }) };
@@ -84,11 +88,32 @@ export function TaskControls({ run, runs = [run] }: { run: TaskRunPayload; runs?
     },
     onSettled: refresh,
   });
+  /* 删除是永久的：成功后这些行不再回来，回执只有一句过去时，不给撤销。
+     折成一张卡的几轮例行任务一起删，否则删掉代表那一轮，卡还留在原处。 */
+  const deletion = useMutation({
+    mutationFn: async () => {
+      const results = await Promise.allSettled(runs.map((row) => deleteTask(row.id)));
+      const failure = results.find((result) => result.status === 'rejected');
+      if (failure?.status === 'rejected') throw failure.reason;
+    },
+    onSuccess: () => { toast?.(t('activity:delete.done')); refresh() },
+  });
   const actions = (run.control?.actions || []).filter((action): action is TaskControlAction => action !== 'set_speed');
   const canSetSpeed = Boolean(run.control?.actions.includes('set_speed') && run.control.speed_mode);
   const followups = !isActive(run);
   const cancelling = cancellation.isPending || cancellation.isSuccess;
-  if (!actions.length && !canSetSpeed) return null;
+  if (!actions.length && !canSetSpeed && !deletable) return null;
+
+  const confirmDelete = () => {
+    if (deletion.isPending) return;
+    void confirmModal({
+      title: t('activity:delete.title'),
+      body: t('activity:delete.body', { name: run.task_label }),
+      confirmLabel: t('activity:delete.confirm'),
+      danger: true,
+      onConfirm: () => deletion.mutateAsync(),
+    });
+  };
 
   const submit = (action: TaskControlAction) => {
     const command = { id: run.id, label: run.task_label, action, followups };
@@ -133,8 +158,14 @@ export function TaskControls({ run, runs = [run] }: { run: TaskRunPayload; runs?
             onClick={() => submit(action)}
             data-tooltip-copy-key={`tasks.control.action.${followups ? 'followups.' : ''}${action}`} />;
         })}
+        {deletable ? <Button type="button" variant="secondary" size="small" iconOnly
+          leadingIcon={RiDeleteBinLine} aria-label={t('activity:delete.action')}
+          title={t('activity:delete.action')}
+          {...busyProps(deletion.isPending)} onClick={confirmDelete}
+          data-tooltip-copy-key="tasks.delete" /> : null}
       </div>
       {speed.error ? <Note tone="error">{errorMessage(speed.error)}</Note> : null}
+      {deletion.error ? <Note tone="error">{errorMessage(deletion.error)}</Note> : null}
     </div>
   );
 }

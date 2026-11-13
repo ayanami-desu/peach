@@ -221,9 +221,9 @@ export const MANAGED_ROUTES: ManagedRouteTable = {
   '/tasks': {
     element: <ManagedMatch path="/tasks" />,
     prefetch: (_open, signal) => withPage(activityPage, prefetchTasks(signal)),
-    page: () => {
+    page: (_open, actions) => {
       const { ActivityPage } = activityPage.get();
-      return <ActivityPage />;
+      return <ActivityPage toast={(message) => actions.receipt(message)} />;
     },
   },
 };

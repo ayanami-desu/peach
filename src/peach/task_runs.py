@@ -245,6 +245,21 @@ def _row(row: sqlite3.Row) -> TaskRun:
     )
 
 
+def _drop_postprocess_links(connection: sqlite3.Connection) -> None:
+    """清掉 `download_task` 里指向已删除运行的行。
+
+    `download_task.postprocess_run_id` 没有外键也没有删除触发器，删掉 `task_run` 行之后
+    这里会留下悬空关联；表还没迁移出来时什么也不做。
+    """
+    if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='download_task'"
+    ).fetchone() is not None:
+        connection.execute(
+            "UPDATE download_task SET postprocess_run_id=NULL "
+            "WHERE postprocess_run_id IS NOT NULL "
+            "AND postprocess_run_id NOT IN (SELECT id FROM task_run)")
+
+
 class TaskRunStore:
     """`task_run` 的唯一写入口。
 
@@ -707,15 +722,45 @@ class TaskRunStore:
                     f"DELETE FROM task_run WHERE task_key=? AND status IN ({marks}) "
                     "AND id<=?", (task_key, threshold["id"]))
                 removed = cursor.rowcount
-                if connection.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='download_task'"
-                ).fetchone() is not None:
-                    connection.execute(
-                        "UPDATE download_task SET postprocess_run_id=NULL "
-                        "WHERE postprocess_run_id IS NOT NULL "
-                        "AND postprocess_run_id NOT IN (SELECT id FROM task_run)")
+                _drop_postprocess_links(connection)
         from .task_control import prune_controls
         prune_controls(self)
+        return removed
+
+    def delete(self, run_id: int) -> None:
+        """删掉一条已结束的记录。
+
+        在排或在跑的那一轮不能删：这里只清记录，不会让任务停下；让它中途失去自己那一行，
+        暂停、取消与恢复都找不到落点。父任务被删时指向它的后继由删除触发器置空关联，
+        `download_task` 的悬空关联与控制文件一并清掉。
+        """
+        if not self.enabled:
+            raise PermissionError('只读端不能删除任务记录')
+        with self.database.write_transaction(notify=False) as connection:
+            row = connection.execute(
+                "SELECT status FROM task_run WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError('任务记录不存在')
+            if row["status"] in ACTIVE_STATUSES:
+                raise ValueError('任务还在进行，不能删除')
+            connection.execute("DELETE FROM task_run WHERE id=?", (run_id,))
+            _drop_postprocess_links(connection)
+        from .task_control import prune_controls
+        prune_controls(self)
+
+    def clear_finished(self) -> int:
+        """删掉全部已结束的记录，返回删掉多少条；在排或在跑的一轮一条都不动。"""
+        if not self.enabled:
+            raise PermissionError('只读端不能删除任务记录')
+        with self.database.write_transaction(notify=False) as connection:
+            cursor = connection.execute(
+                "DELETE FROM task_run WHERE status IN (?,?,?,?)", TERMINAL_STATUSES)
+            removed = cursor.rowcount
+            if removed:
+                _drop_postprocess_links(connection)
+        if removed:
+            from .task_control import prune_controls
+            prune_controls(self)
         return removed
 
     # -- 查询 --------------------------------------------------------------

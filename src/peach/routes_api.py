@@ -219,6 +219,20 @@ def task_run_detail(request: Request, run_id: int,
         return JSONResponse({"error": str(exc.args[0])}, status_code=404)
 
 
+@router.post('/api/tasks/clear-finished')
+def task_runs_clear_finished(request: Request,
+                             _args: dict[str, str] = Depends(require_auth)):
+    """清掉全部已结束的任务记录；在排或在跑的一轮不受影响。
+
+    静态路径写在 `/api/tasks/{run_id}/control` 之前，免得被路径参数先吃掉。
+    """
+    try:
+        removed = request.app.state.web_contract.task_runs.clear_finished()
+    except PermissionError as exc:
+        return JSONResponse({'error': str(exc)}, status_code=403)
+    return {'deleted': removed}
+
+
 @router.post('/api/tasks/{run_id}/control')
 def task_run_control(request: Request, run_id: int, body: dict = Body(default_factory=dict),
                      _args: dict[str, str] = Depends(require_auth)):
@@ -247,6 +261,21 @@ def task_run_control(request: Request, run_id: int, body: dict = Body(default_fa
         return JSONResponse({'error': str(exc)}, status_code=403)
     except ValueError as exc:
         return JSONResponse({'error': str(exc)}, status_code=409)
+
+
+@router.delete('/api/tasks/{run_id}')
+def task_run_delete(request: Request, run_id: int,
+                    _args: dict[str, str] = Depends(require_auth)):
+    """删掉一条已结束的任务记录；仍在进行或排队的一轮拒绝。"""
+    try:
+        request.app.state.web_contract.task_runs.delete(run_id)
+    except KeyError as exc:
+        return JSONResponse({'error': str(exc.args[0])}, status_code=404)
+    except PermissionError as exc:
+        return JSONResponse({'error': str(exc)}, status_code=403)
+    except ValueError as exc:
+        return JSONResponse({'error': str(exc)}, status_code=409)
+    return {'deleted': run_id}
 
 
 @router.get("/api/background-issues")

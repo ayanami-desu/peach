@@ -6,11 +6,13 @@
 import i18next from 'i18next';
 
 import { SETTINGS_KEY } from '../settings-key';
+import enActivity from '../locales/en/activity.json';
 import enCatalog from '../locales/en/catalog.json';
 import enCleanup from '../locales/en/cleanup.json';
 import enNavigation from '../locales/en/navigation.json';
 import enPlayer from '../locales/en/player.json';
 import enSettings from '../locales/en/settings.json';
+import zhActivity from '../locales/zh-CN/activity.json';
 import zhCatalog from '../locales/zh-CN/catalog.json';
 import zhCleanup from '../locales/zh-CN/cleanup.json';
 import zhNavigation from '../locales/zh-CN/navigation.json';
@@ -22,8 +24,8 @@ export type InterfaceLanguage = typeof INTERFACE_LANGUAGES[number];
 export const SOURCE_LANGUAGE: InterfaceLanguage = 'zh-CN';
 
 export const resources = {
-  'zh-CN': { navigation: zhNavigation, settings: zhSettings, cleanup: zhCleanup, catalog: zhCatalog, player: zhPlayer },
-  en: { navigation: enNavigation, settings: enSettings, cleanup: enCleanup, catalog: enCatalog, player: enPlayer },
+  'zh-CN': { navigation: zhNavigation, settings: zhSettings, cleanup: zhCleanup, catalog: zhCatalog, player: zhPlayer, activity: zhActivity },
+  en: { navigation: enNavigation, settings: enSettings, cleanup: enCleanup, catalog: enCatalog, player: enPlayer, activity: enActivity },
 } as const;
 
 /** 设置里能选的值：`auto` 按浏览器与系统语言自动选，其余是固定的界面语言。 */

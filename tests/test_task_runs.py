@@ -339,6 +339,56 @@ class TaskRunStoreTests(unittest.TestCase):
             connection.execute('RELEASE cleanup')
             self.assertEqual(connection.execute('SELECT * FROM task_run').fetchall(), before)
 
+    def test_delete_removes_a_finished_run_and_clears_its_postprocess_link(self):
+        run = self.store.start('download-postprocess', trigger='manual')
+        self.store.finish(run.id, 'succeeded')
+        with self.database.write_transaction(notify=False) as connection:
+            connection.execute("INSERT INTO download_task(provider,source_uri,target,state,updated_at,"
+                               "postprocess_state,postprocess_run_id,postprocess_detail) "
+                               "VALUES('115','sample','/Movies','ingested','now','complete',?,'整理完成')", (run.id,))
+        self.store.delete(run.id)
+        self.assertIsNone(self.store.get(run.id))
+        with self.database.read_connection() as connection:
+            self.assertIsNone(connection.execute(
+                'SELECT postprocess_run_id FROM download_task').fetchone()[0])
+
+    def test_delete_refuses_active_and_unknown_runs(self):
+        active = self.store.start('demo', trigger='manual')
+        with self.assertRaises(ValueError):
+            self.store.delete(active.id)
+        self.assertEqual(self.store.get(active.id).status, 'running')
+        with self.assertRaises(KeyError):
+            self.store.delete(999_999)
+        read_only = TaskRunStore(self.database, enabled=False)
+        with self.assertRaises(PermissionError):
+            read_only.delete(active.id)
+        with self.assertRaises(PermissionError):
+            read_only.clear_finished()
+
+    def test_clear_finished_keeps_active_runs(self):
+        running = self.store.start('demo', trigger='manual')
+        pending = self.store.start('other', trigger='manual')
+        self.store.suspend(pending.id)
+        for status in ('succeeded', 'failed', 'cancelled', 'interrupted'):
+            run = self.store.start('done', trigger='manual')
+            self.store.finish(run.id, status)
+        self.assertEqual(self.store.clear_finished(), 4)
+        self.assertEqual({row.id for row in self.store.query(status='active')}, {running.id, pending.id})
+        self.assertEqual(self.store.query(status='finished'), [])
+        self.assertEqual(self.store.clear_finished(), 0)
+
+    def test_deleting_a_parent_clears_followup_references(self):
+        parent = self.store.start('parent', trigger='manual')
+        child = self.store.enqueue_followups(parent.id, [('child:delete', 'child', '待处理')])['queued'][0]
+        self.store.finish(parent.id, 'succeeded')
+        self.store.delete(parent.id)
+        self.assertIsNone(self.store.get(parent.id))
+        kept = self.store.get(child)
+        self.assertIsNone(kept.parent_run_id)
+        self.assertIsNone(kept.root_run_id)
+        with self.database.read_connection() as connection:
+            self.assertEqual(connection.execute('PRAGMA foreign_key_check').fetchall(), [])
+
     def test_query_filters_by_status_group_and_task(self):
         first = self.store.start("demo", trigger="manual")
         second = self.store.start("other", trigger="cli")

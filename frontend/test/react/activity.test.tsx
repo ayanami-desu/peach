@@ -82,7 +82,7 @@ function stubFetch(tasks: (input: string, init?: RequestInit) => Promise<unknown
       issues = issues.filter((issue) => issue.retry !== input);
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ running: true }) });
     }
-    if (/^\/api\/tasks\/\d+$/.test(input)) {
+    if (/^\/api\/tasks\/\d+$/.test(input) && init?.method !== 'DELETE') {
       return tasks(input, init).then(async (value) => {
         const response = value as { ok: boolean; status: number; json(): Promise<ActivityData> };
         const body = await response.json();
@@ -359,6 +359,62 @@ it('取消任务先复用确认框，初始聚焦取消，未确认或关闭弹�
   await vi.waitFor(() => expect(document.querySelector('dialog')).toBeNull());
 });
 
+it('已结束的任务卡给出删除键，在跑的一轮没有', async () => {
+  const ended = run({ id: 2, status: 'succeeded', finished_at: '2026-09-11T10:04:00Z', progress_total: null });
+  const { host } = await open(payload({ running: [run()], finished: [ended] }));
+  const finishedCard = host.querySelector('[data-run-id="2"]')!;
+  expect(controlButton('删除任务记录', finishedCard)).not.toBeNull();
+  const liveCard = host.querySelector('[data-run-id="1"]')!;
+  expect(controlButton('删除任务记录', liveCard)).toBeNull();
+});
+
+it('删除已结束的记录先确认，成功后按最新一份数据重画', async () => {
+  const calls: [string, string][] = [];
+  let hidden = false;
+  const ended = run({ id: 2, status: 'succeeded', finished_at: '2026-09-11T10:04:00Z', progress_total: null });
+  stubFetch(async (input, init) => {
+    calls.push([input, init?.method || 'GET']);
+    if (init?.method === 'DELETE') {
+      hidden = true;
+      return { ok: true, status: 200, json: async () => ({ deleted: 2 }) };
+    }
+    return { ok: true, status: 200, json: async () => payload({ finished: hidden ? [] : [ended] }) };
+  });
+  await prefetchTasks(new AbortController().signal);
+  const host = await mount(page());
+  await click(controlButton('删除任务记录', host));
+  const dialog = document.querySelector<HTMLDialogElement>('dialog')!;
+  expect(dialog.textContent).toContain('追更检查');
+  expect(calls.filter(([, method]) => method === 'DELETE')).toEqual([]);
+  await click(dialog.querySelector('[data-modal-confirm]'));
+  await vi.waitFor(() => expect(calls).toContainEqual(['/api/tasks/2', 'DELETE']));
+  await vi.waitFor(() => expect(host.querySelector('[data-run-id="2"]')).toBeNull());
+});
+
+it('清空已完成先确认，成功后按服务端返回的条数给回执', async () => {
+  const toast = vi.fn();
+  let cleared = false;
+  const ended = run({ id: 2, status: 'succeeded', finished_at: '2026-09-11T10:04:00Z', progress_total: null });
+  stubFetch(async (input) => {
+    if (input === '/api/tasks/clear-finished') {
+      cleared = true;
+      return { ok: true, status: 200, json: async () => ({ deleted: 1 }) };
+    }
+    return { ok: true, status: 200, json: async () => payload({
+      finished: cleared ? [] : [ended], finished_total: cleared ? 0 : 1 }) };
+  });
+  await prefetchTasks(new AbortController().signal);
+  const host = await mount(<QueryClientProvider client={queryClient}><ActivityPage toast={toast} /></QueryClientProvider>);
+  const clear = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === '清空已完成')!;
+  await click(clear);
+  const dialog = document.querySelector<HTMLDialogElement>('dialog')!;
+  expect(dialog.textContent).toContain('所有已结束的任务记录会被永久删除');
+  await click(dialog.querySelector('[data-modal-confirm]'));
+  await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('已清空 1 条已结束的任务记录'));
+  await vi.waitFor(() => expect([...host.querySelectorAll('button')]
+    .some((button) => button.textContent?.trim() === '清空已完成')).toBe(false));
+});
+
 it('确认取消的请求忙态阻止重复提交，失败留在弹窗内供重试', async () => {
   const answer = pending<{ ok: boolean; status: number; json: () => Promise<unknown> }>();
   let attempts = 0;
@@ -453,7 +509,9 @@ it('取消请求未被接受时，任务自然完成和原卡卸载后仍保留�
   await confirmTaskCancellation();
   current = { ...current, status: 'succeeded', control: undefined, finished_at: '2026-10-31T07:00:00Z' };
   await act(async () => { await queryClient.invalidateQueries({ queryKey: ['tasks'] }) });
-  expect(host.querySelector('[data-task-controls]')).toBeNull();
+  const ended = host.querySelector('#run-1 [data-task-controls]');
+  expect(ended?.querySelectorAll('button')).toHaveLength(1);
+  expect(ended?.querySelector('button')?.getAttribute('aria-label')).toBe('删除任务记录');
   await response.release({ ok: false, status: 409, json: async () => ({ message: '这轮任务已经结束' }) });
   await vi.waitFor(() => expect(host.querySelector('[data-task-control-feedback]')?.textContent).toContain('取消未完成'));
   expect(host.querySelector('[data-task-control-feedback]')?.textContent).toContain('这轮任务已经结束');
@@ -469,7 +527,9 @@ it('父任务的后继取消后在卡片上直接显示取消状态及数量', a
   expect(card.textContent).toContain('后续任务已取消');
   expect(card.textContent).toContain('后续任务已取消 120 项');
   expect(card.querySelector('details')?.open).toBe(false);
-  expect(card.querySelector('[data-task-controls]')).toBeNull();
+  const controls = card.querySelector('[data-task-controls]');
+  expect(controls?.querySelectorAll('button')).toHaveLength(1);
+  expect(controls?.querySelector('button')?.getAttribute('aria-label')).toBe('删除任务记录');
   expect(card.getAttribute('data-status')).toBe('succeeded');
 });
 

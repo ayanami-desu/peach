@@ -1,0 +1,16 @@
+{
+  "delete": {
+    "action": "Delete this task record",
+    "body": "Every record for \u201c{{name}}\u201d on this card will be deleted permanently, and follow-ups listed in its details lose their parent. Runs that are queued or running never appear here.",
+    "confirm": "Delete record",
+    "done": "Task record deleted",
+    "title": "Delete task record"
+  },
+  "clear": {
+    "action": "Clear finished",
+    "body": "Every finished task record will be deleted permanently. Queued and running runs are kept.",
+    "confirm": "Clear finished",
+    "done": "Cleared {{count}} finished task records",
+    "title": "Clear finished tasks"
+  }
+}

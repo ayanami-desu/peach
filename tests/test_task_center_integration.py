@@ -16,7 +16,7 @@ from pathlib import Path
 
 from peach import web_contract, web_tasks
 from peach.jobs import BackgroundJob, TaskRunConflict
-from peach.routes_api import api_get, task_run_detail, task_run_control
+from peach.routes_api import api_get, task_run_delete, task_run_detail, task_run_control, task_runs_clear_finished
 from peach.repository import LedgerDatabase
 from peach.task_runs import TaskRunStore
 from support.ledger import fresh_ledger
@@ -660,6 +660,25 @@ class ConflictStatusTests(unittest.TestCase):
         self.assertEqual(q_settings(self.contract)['taskSpeedMode'], 'standard')
         invalid = task_run_control(self.request, run.id, {'action': 'set_speed', 'speed_mode': 'fast'}, {})
         self.assertEqual(invalid.status_code, 409)
+
+    def test_delete_endpoint_removes_a_finished_run_and_refuses_the_rest(self):
+        run = self.contract.task_runs.start('delete-endpoint', trigger='manual')
+        self.assertEqual(task_run_delete(self.request, run.id, {}).status_code, 409)
+        self.contract.task_runs.finish(run.id, 'succeeded')
+        self.assertEqual(task_run_delete(self.request, run.id + 1000, {}).status_code, 404)
+        self.assertEqual(task_run_delete(self.request, run.id, {})['deleted'], run.id)
+        self.assertIsNone(self.contract.task_runs.get(run.id))
+        self.contract.task_runs.enabled = False
+        self.assertEqual(task_run_delete(self.request, run.id, {}).status_code, 403)
+
+    def test_clear_finished_endpoint_keeps_the_running_round(self):
+        running = self.contract.task_runs.start('still-running', trigger='manual')
+        done = self.contract.task_runs.start('already-done', trigger='manual')
+        self.contract.task_runs.finish(done.id, 'succeeded')
+        self.assertEqual(task_runs_clear_finished(self.request, {})['deleted'], 1)
+        self.assertIsNotNone(self.contract.task_runs.get(running.id))
+        self.contract.task_runs.enabled = False
+        self.assertEqual(task_runs_clear_finished(self.request, {}).status_code, 403)
 
     def test_control_endpoint_rejects_unknown_finished_foreign_and_read_only_runs(self):
         run = self.contract.task_runs.start('control-test', trigger='manual')
