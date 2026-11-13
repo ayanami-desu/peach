@@ -202,7 +202,7 @@ describe('顶栏搜索', () => {
         await page.locator(`${MENU} [data-search-recommendations]`).waitFor();
         // 推荐没到之前栏里先是按最终版式摆的占位，等占位都换成真行再数。
         await page.waitForFunction(() => !document.querySelector('#searchMenu [data-search-placeholder]'), undefined, { timeout: 10_000 });
-        const kinds = await page.locator(`${MENU} [data-search-group]`).evaluateAll(
+        const kinds = await page.locator(`${MENU} [data-search-group][data-kind]`).evaluateAll(
           nodes => nodes.map(node => node.getAttribute('data-kind')));
         assert.deepEqual(kinds, ['performer', 'asset', 'jav']);
         const jav = page.locator(`${MENU} [data-kind="jav"] [data-search-pic] img`).first();

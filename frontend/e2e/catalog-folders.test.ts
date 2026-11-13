@@ -12,14 +12,14 @@ describe('首页文件夹浏览', () => {
 
   for (const viewport of VIEWPORTS) {
     it(`${viewport.name} 目录范围、首页控件、用途预览和返回导航共用馆藏`, { timeout: 90_000 }, async () => {
-      const opened = await visit(browser, '/?browse=folders&loc=local', viewport);
+      const opened = await visit(browser, '/?browse=folders&loc=gdrive', viewport);
       const { page } = opened;
       try {
-        const response = await page.request.get(new URL('/api/folders?loc=local', page.url()).toString());
+        const response = await page.request.get(new URL('/api/folders?loc=gdrive', page.url()).toString());
         assert.equal(response.status(), 200);
         const tree = await response.json();
         const root = tree.roots[0];
-        assert.ok(root, '演示库应有一个本地目录根');
+        assert.ok(root, '演示库应有一个目录根');
         await page.locator('#catalogFolderHeader').getByRole('button', { name: root.name, exact: true }).click();
         await page.waitForFunction(key => new URLSearchParams(location.search).get('folder') === key, root.id);
         await page.locator('#grid [data-media-card]').first().waitFor();
@@ -56,7 +56,7 @@ describe('首页文件夹浏览', () => {
           }
           await page.setViewportSize({ width: viewport.width, height: viewport.height });
           await page.evaluate(() => window.scrollTo(0, 0));
-          const rootPage = await (await page.request.get(new URL(`/api/folders?loc=local&folder=${root.id}`, page.url()).toString())).json();
+          const rootPage = await (await page.request.get(new URL(`/api/folders?loc=gdrive&folder=${root.id}`, page.url()).toString())).json();
           const child = rootPage.children[0];
           if (child) {
             await page.locator('#catalogFoldersTree').getByRole('row', { name: child.name, exact: true }).click();
@@ -72,7 +72,7 @@ describe('首页文件夹浏览', () => {
         await page.screenshot({ path: join(screenshots, `${viewport.name}-rule.png`), fullPage: false });
         await rule.getByRole('button', { name: '保存目录用途', exact: true }).click();
         await rule.waitFor({ state: 'hidden' });
-        const saved = await (await page.request.get(new URL(`/api/folders?loc=local&folder=${root.id}`, page.url()).toString())).json();
+        const saved = await (await page.request.get(new URL(`/api/folders?loc=gdrive&folder=${root.id}`, page.url()).toString())).json();
         assert.equal(saved.rule.purpose, 'category');
         await page.getByRole('button', { name: '设置目录用途', exact: true }).click();
         await page.getByRole('dialog', { name: '设置目录用途', exact: true }).getByRole('button', { name: '移除规则', exact: true }).click();

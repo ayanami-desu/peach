@@ -1,25 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
-import type { Browser, Page } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { launch, requiredEnv, settle, visit, VIEWPORTS } from './harness.ts';
-
-/** 标题行里搜索框、放大镜与版式开关的竖向落位和尺寸，取整到像素；图标连同线宽一起比。 */
-const headControls = (page: Page, selectors: { search: string; icon: string; layout: string }) =>
-  page.evaluate((selectors) => {
-    const box = (selector: string) => {
-      const node = document.querySelector(selector);
-      if (!node) return null;
-      const { y, width, height } = node.getBoundingClientRect();
-      return { y: Math.round(y), width: Math.round(width), height: Math.round(height) };
-    };
-    const icon = document.querySelector(selectors.icon);
-    const search = box(selectors.search);
-    return {
-      search: search && { y: search.y, height: search.height },
-      icon: icon && { ...box(selectors.icon)!, stroke: getComputedStyle(icon).strokeWidth },
-      layout: box(selectors.layout),
-    };
-  }, selectors);
 
 describe('本地与在线艺人共用名册布局', () => {
   let browser: Browser;
@@ -61,41 +43,6 @@ describe('本地与在线艺人共用名册布局', () => {
     });
   }
   for (const viewport of VIEWPORTS) {
-    for (const [path, selected] of [['/performers', '艺人'], ['/creators', '卖家'],
-      ['/performers?scope=online', '在线']] as const) {
-      it(`加载占位页使用同级名册入口（${selected} · ${viewport.name}）`, { timeout: 60_000 }, async () => {
-        const context = await browser.newContext({
-          viewport: { width: viewport.width, height: viewport.height }, isMobile: viewport.mobile,
-        });
-        const page = await context.newPage();
-        let release!: () => void;
-        const gate = new Promise<void>(resolve => { release = resolve });
-        await page.route(url => url.pathname === '/api/index' || url.pathname === '/api/follow/authors', async route => {
-          await gate;
-          await route.continue();
-        });
-        try {
-          // 主模块先铺索引骨架，首屏数据暂缓；标题行与名册入口在等待时已经完整可见。
-          await page.goto(requiredEnv('PEACH_E2E_ORIGIN') + path, { waitUntil: 'commit' });
-          await page.locator('#index [data-skeleton]').first().waitFor();
-          assert.equal(await page.locator('#index [role="tablist"]').count(), 1);
-          assert.deepEqual(await page.locator('#index [role="tab"]').allTextContents(), ['艺人', '卖家', '在线']);
-          assert.deepEqual(await page.locator('#index [role="tab"][aria-selected="true"]').allTextContents(), [selected]);
-          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-          const waiting = await headControls(page, {
-            search: '#index [data-index-search] [data-rac]', icon: '#index [data-index-search] svg', layout: '#index .ihead .iconswitch' });
-          release();
-          await page.locator('#index [data-index-page]').waitFor();
-          assert.deepEqual(await page.locator('#index [role="tab"]').allTextContents(), ['艺人', '卖家', '在线']);
-          const ready = await headControls(page, {
-            search: '#index [data-index-search] [role="presentation"]', icon: '#index [data-index-search] svg',
-            layout: '#index [data-index-layout]' });
-          // 标题行的搜索框与版式开关接管时原地换下：框高、竖向落位、图标与开关宽度都不跳。
-          // 横向位置跟着计数读数的字宽走，骨架那条占位条量不出真数字，不比。
-          assert.deepEqual(waiting, ready, '骨架与接管后的标题行控件几何不同');
-        } finally { release(); await context.close() }
-      });
-    }
     it(`两种版式的卡片尺寸一致，长名字留在卡片内（${viewport.name}）`, { timeout: 60_000 }, async () => {
       const opened = await visit(browser, '/performers', viewport);
       try {
@@ -120,26 +67,12 @@ describe('本地与在线艺人共用名册布局', () => {
           };
         }));
         for (const label of ['紧凑 · 圆形头像', '大图 · 竖幅头像']) {
-          await page.getByRole('tab', { name: '艺人', exact: true }).click();
           await page.getByRole('radio', { name: label, exact: true }).press('Space');
           const layout = label.startsWith('紧凑') ? 'compact' : 'big';
           await page.locator(`#index [data-index-grid][data-layout="${layout}"]`).waitFor();
           await settle(page);
-          const local = await measure();
-          await page.getByRole('tab', { name: '在线', exact: true }).click();
-          await page.locator('#index [data-follow-author][data-index-cell]').first().waitFor();
-          await settle(page);
-          const online = await measure();
-          assert.deepEqual(online, local, '在线卡片与本地卡片的布局不同');
-          assert.ok(online.every(item => item.width >= 150 && item.contained && item.whiteSpace === 'normal'));
-          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-          assert.equal(await page.locator('#index [role="tablist"]').count(), 1);
-          assert.deepEqual(await page.locator('#index [role="tab"]').allTextContents(), ['艺人', '卖家', '在线']);
-          await page.getByRole('tab', { name: '卖家', exact: true }).click();
-          await page.locator('#index [data-index-cell]').first().waitFor();
-          await settle(page);
-          assert.equal(await page.locator('#index [role="tablist"]').count(), 1);
-          assert.equal(await page.locator('#index [aria-label="身份分类"]').count(), 0);
+          const cards = await measure();
+          assert.ok(cards.every(item => item.width >= 150 && item.contained && item.whiteSpace === 'normal'));
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         }
         assert.deepEqual(opened.problems, []);
@@ -165,7 +98,7 @@ describe('本地与在线艺人共用名册布局', () => {
       assert.equal(await page.evaluate(() => history.length), before + 1, '规范化不该多压一条历史');
       assert.equal(await page.evaluate(() => document.body.dataset.surface), '/performers');
       assert.match(await page.title(), /^艺人/);
-      assert.deepEqual(await page.locator('#index [role="tab"][aria-selected="true"]').allTextContents(), ['艺人']);
+      assert.equal(await page.locator('#index [data-index-page]').getAttribute('data-index-page'), 'performers');
       assert.equal(requests.length, 1, `名册只取一次：${requests.join(' | ')}`);
       assert.match(requests[0], /kind=performers/);
       assert.match(requests[0], /category=animation/);

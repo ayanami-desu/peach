@@ -3,7 +3,7 @@
  * 外观由预览与 e2e 量。 */
 import { notifyManager, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as legacyUi from '@peach/legacy/ui';
 
 import { CONFIGURATION_URL } from '../../src/configuration-endpoints';
@@ -13,7 +13,13 @@ import { CONFIGURATION_KEY, prefetchConfiguration } from '../../src/react/settin
 import { ConfigurationPage } from '../../src/react/settings/configuration-page';
 import { buttonNamed, click, mount, section, settle, type } from './render';
 
-afterEach(() => queryClient.clear());
+beforeEach(() => {
+  window.history.replaceState(null, '', window.location.pathname);
+});
+afterEach(() => {
+  queryClient.clear();
+  window.history.replaceState(null, '', window.location.pathname);
+});
 notifyManager.setScheduler(notify => notify());
 
 const DRIVE_URL = '/api/drive';

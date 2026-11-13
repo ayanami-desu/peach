@@ -311,16 +311,17 @@ describe('首页筛选条', () => {
   });
 
   for (const viewport of [DESKTOP, PHONE]) {
-  it(`${viewport.name} JAV 馆藏保留目录版式、筛选和顶部搜索，三个分区可往返`, { timeout: 60_000 }, async () => {
+  it(`${viewport.name} JAV 探索与馆藏各自保留目录版式、筛选和顶部搜索`, { timeout: 60_000 }, async () => {
     const opened = await openHome(browser, '/', viewport);
     try {
       const { page, counts } = opened;
       const before = counts.items.length;
-      const homeIds = await page.locator('#grid [data-media-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-id')));
       if (viewport.mobile) await page.locator('#filterBtn').click();
       await page.locator('button[data-nav="jav"]:visible').first().click();
-      await page.waitForFunction(() => location.pathname === '/' && new URLSearchParams(location.search).get('jav') === '1');
-      await page.getByRole('tab', { name: '馆藏', exact: true, selected: true }).waitFor();
+      await page.waitForURL('**/jav');
+      await page.locator('section[aria-label="馆藏探索"]').waitFor();
+      await page.goto(new URL('/?jav=1', page.url()).toString(), { waitUntil: 'load' });
+      await page.locator('#javLibraryHeader').waitFor({ state: 'visible' });
       await page.locator('#grid [data-media-card]').first().waitFor();
       await settle(page);
       assert.ok(counts.items.slice(before).some((url) => url.searchParams.get('jav') === '1'), 'JAV 口径没有重取列表');
@@ -352,27 +353,17 @@ describe('首页筛选条', () => {
       assert.equal(new URL(page.url()).searchParams.get('jav'), '1');
       assert.equal(new URL(page.url()).searchParams.get('q'), '演示作品');
       if (viewport.mobile) await page.locator('#searchBack').click();
-      await page.getByRole('tab', { name: '发现', exact: true }).click();
-      await page.getByRole('tab', { name: '发现', exact: true, selected: true }).waitFor();
-      assert.equal(await page.locator('#javLibraryHeader').isVisible(), false);
-      await page.getByRole('tab', { name: '想要', exact: true }).click();
-      await page.getByRole('tab', { name: '想要', exact: true, selected: true }).waitFor();
-      await page.getByRole('tab', { name: '馆藏', exact: true }).click();
-      await page.getByRole('tab', { name: '馆藏', exact: true, selected: true }).waitFor();
-      await page.locator('#grid [data-media-card]').first().waitFor();
+      assert.equal(await page.locator('#javLibraryHeader').isVisible(), true);
       assert.equal(await page.locator(`${FILTER} input[name="jav-layout"][value="big"]`).isChecked(), true);
       const box = await layout(page);
       assert.ok(box.scrollWidth <= box.viewportWidth, 'JAV 页面横向溢出');
       await settle(page);
-      const beforeHome = counts.items.length;
       if (viewport.mobile) await page.locator('#filterBtn').click();
       await page.locator('button[data-nav=""]:visible').first().click();
       await page.waitForFunction(() => location.pathname === '/' && !new URLSearchParams(location.search).has('jav'));
       await page.locator(`${FILTER} input[name="home-layout"]`).first().waitFor({ state: 'attached' });
       await page.locator(READOUT, { hasText: '个符合' }).waitFor();
       await settle(page);
-      assert.equal(counts.items.length, beforeHome, '返回首页沿用原来的目录缓存');
-      assert.deepEqual(await page.locator('#grid [data-media-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-id'))), homeIds);
       assert.equal(await page.locator('#javLibraryHeader').isVisible(), false);
       assert.deepEqual(withoutPlayer(opened.problems), []);
     } finally {
@@ -516,7 +507,8 @@ describe('首页筛选条', () => {
           return { filter: style.backdropFilter, width: element.getBoundingClientRect().width,
             viewport: document.documentElement.clientWidth };
         });
-        assert.ok(glass.filter.includes('blur(') && glass.width < glass.viewport, JSON.stringify(glass));
+        assert.equal(glass.filter, 'none', JSON.stringify(glass));
+        assert.ok(glass.width < glass.viewport, JSON.stringify(glass));
       }
       const measured = await layout(page);
       assert.deepEqual(measured.offenders, [], `筛选条把页面撑宽了：${measured.offenders.join('、')}`);

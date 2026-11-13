@@ -47,7 +47,7 @@ describe('管理页面容器与骨架', () => {
         const keys = () => menu.locator('button[data-manage]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-manage')));
         const original = await keys();
         const picked = menu.locator('[data-manage="activity"]');
-        const neighbor = menu.locator('[data-manage="taste"]');
+        const neighbor = menu.locator('[data-manage="cleanup"]');
         const start = (await picked.boundingBox())!;
         const target = (await neighbor.boundingBox())!;
         await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
@@ -58,10 +58,10 @@ describe('管理页面容器与骨架', () => {
         assert.ok(await line.isVisible(), '插入线应显示在目标位置');
         assert.notEqual(await line.locator('span').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
         assert.equal(await neighbor.evaluate(node => node.style.getPropertyValue('--sidebar-nudge')), '10px');
-        assert.equal(await menu.locator('[data-manage="cleanup"]').evaluate(node => node.style.getPropertyValue('--sidebar-delay')), '24ms');
+        assert.equal(await menu.locator('[data-manage="configuration"]').evaluate(node => node.style.getPropertyValue('--sidebar-delay')), '24ms');
         assert.equal(await menu.locator('[data-pill-thumb]').evaluate(node => getComputedStyle(node).opacity), '0');
         if (reducedMotion === 'no-preference') {
-          await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('[data-manage="taste"]')!).translate) > 0);
+          await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('[data-manage="cleanup"]')!).translate) > 0);
           await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-manage="activity"]')!).scale === '0.9');
           assert.equal(await picked.evaluate(node => {
             const rect = node.getBoundingClientRect();

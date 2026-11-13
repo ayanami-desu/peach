@@ -256,9 +256,14 @@ class _Served:
 
 
 def suite_files() -> tuple[str, ...]:
-    """`frontend/e2e` 下的全部浏览器文件，按路径排序。"""
+    """`frontend/e2e` 下由 WebE2ETests 起的浏览器文件，按路径排序。
+
+    `setup.test.ts` 只在首启服务上跑；这里没有那套服务，文件会整组 skip，
+    没有 `# pass` 行，不能混进成功判据。
+    """
     return tuple(sorted(path.relative_to(FRONTEND).as_posix()
-                        for path in (FRONTEND / "e2e").rglob("*.test.ts")))
+                        for path in (FRONTEND / "e2e").rglob("*.test.ts")
+                        if path.name != "setup.test.ts"))
 
 
 def selected_files(only: str) -> tuple[str, ...]:

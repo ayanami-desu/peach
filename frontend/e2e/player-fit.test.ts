@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
 import type { Browser } from 'playwright-core';
-import { launch } from './harness.ts';
+import { launch, requiredEnv } from './harness.ts';
 
 for (const stylesheet of ['../src/player/player.css', '../../web/dist/peach-app.css']) {
 describe(`全屏画面比例：${stylesheet}`, () => {
@@ -20,6 +20,7 @@ describe(`全屏画面比例：${stylesheet}`, () => {
       const page = await browser.newPage({ viewport });
       try {
         const css = readFileSync(new URL(stylesheet, import.meta.url), 'utf8');
+        await page.goto(requiredEnv('PEACH_E2E_ORIGIN'));
         await page.setContent(`<style>${css}</style><div data-stage-media>
           <div class="video-js"><video-player><media-container>
             <video class="vjs-tech" width="1920" height="1080"></video>

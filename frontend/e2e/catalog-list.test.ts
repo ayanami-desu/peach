@@ -25,7 +25,7 @@ describe('馆藏卡片与列表', () => {
   });
   for (const viewport of VIEWPORTS) {
     it(`${viewport.name} 显示切换、文件夹开关、详情与刷新保留列表`, { timeout: 90_000 }, async () => {
-      const opened = await visit(browser, '/?browse=folders&loc=local', viewport);
+      const opened = await visit(browser, '/?browse=folders&loc=gdrive', viewport);
       const { page } = opened;
       try {
         await page.locator('#grid [data-media-card]').first().waitFor({ state: 'visible' });

@@ -49,6 +49,7 @@ describe('外部播放器', () => {
         assert.equal(geometry.sameTop, 0);
         assert.equal(geometry.sameHeight, 0);
         failOpen = false;
+        await page.getByRole('button', { name: '外部播放器', exact: true }).click();
         await page.getByRole('option', { name: '网络播放地址 / VR', exact: true }).click();
         assert.equal(await page.locator('[data-local-playback] [role="alert"]').count(), 0, '换了取法还留着上一次的失败原因');
         await page.getByRole('button', { name: '使用外部播放器打开', exact: true }).click();

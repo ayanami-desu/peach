@@ -16,6 +16,13 @@ async function metadata(page: Page): Promise<void> {
   }, undefined, { timeout: 15_000 });
 }
 
+async function at(page: Page, seconds: number): Promise<void> {
+  await page.waitForFunction((wanted) => {
+    const video = document.querySelector<HTMLVideoElement>('#stage video');
+    return !!video && video.readyState >= 1 && !video.seeking && video.currentTime >= wanted - .05;
+  }, seconds, { timeout: 15_000 });
+}
+
 describe('视频退出续播', () => {
   let browser: Browser;
   let clip: string;
@@ -64,12 +71,12 @@ describe('视频退出续播', () => {
         await page.locator('#stage[open]').waitFor({ state: 'detached' });
         assert.ok(Math.abs(Number(await saved()) - .7) < .1, `关闭后位置异常：${await saved()}`);
         await page.goto(new URL(path, page.url()).toString(), { waitUntil: 'load' });
-        await metadata(page);
+        await at(page, .7);
         await page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.pause());
         const current = () => page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.currentTime);
         assert.ok(Math.abs(await current() - .7) < .1, `重新进入秒数 ${await current()}，存储 ${await saved()}`);
         await page.reload({ waitUntil: 'load' });
-        await metadata(page);
+        await at(page, .7);
         await page.locator(VIDEO).evaluate((video: HTMLVideoElement) => video.pause());
         assert.ok(Math.abs(await current() - .7) < .1, '刷新没有恢复秒数');
         await page.goto(new URL(`${path}?t=1`, page.url()).toString(), { waitUntil: 'load' });

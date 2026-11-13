@@ -1,7 +1,7 @@
 (function() {
 	try {
 		var e = typeof globalThis < "u" ? globalThis : typeof window < "u" ? window : typeof global < "u" ? global : typeof self < "u" ? self : {}, t = new e.Error().stack;
-		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "e96d0bd0-09c5-439b-a951-0717eff83166", e._sentryDebugIdIdentifier = "sentry-dbid-e96d0bd0-09c5-439b-a951-0717eff83166");
+		t && (e._sentryDebugIds = e._sentryDebugIds || {}, e._sentryDebugIds[t] = "ef192649-0cd9-4eb2-bf3e-003f250c3667", e._sentryDebugIdIdentifier = "sentry-dbid-ef192649-0cd9-4eb2-bf3e-003f250c3667");
 	} catch {}
 })();
 import { ACCENT_CHOICES as e, ApiError as t, Button as n, CONFIGURATION_KEY as r, Checkbox as i, Chip as a, DRIVE_KEY as o, DRIVE_URL as s, E3 as c, ErrorText as l, Eu as u, Fact as d, FactList as f, Footer as p, Help as m, Input as h, L1 as g, LoadingDots as _, Note as v, ProcessingMode as y, Progress as b, Rows as x, SETTINGS_KEY as S, Section as C, SectionSkeleton as w, Select$1 as T, SelectItem as E, SettingsRow as D, SortableBoardTabs as O, Stack as k, Switch as A, TaskCenterLink as ee, Uz as te, __toESM as ne, _p as re, apiGet as j, apiSend as M, busyProps as N, confirmModal as P, cx as ie, d6 as ae, devicesSkeleton as oe, errorMessage as F, fetchConfiguration as se, fetchDrives as ce, fetchSettings as le, fmtSize as I, l1 as ue, rememberShape as de, require_jsx_runtime as fe, require_react as pe, t as L, useAction as R, useQuery as z, useQueryClient as B, useSaveSettings as me, z3 as V } from "./peach-app.js";
@@ -2418,9 +2418,12 @@ var kt = 0;
 function At({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refreshing: a }) {
 	let [o] = (0, H.useState)(() => `board-tabs-${++kt}`), [s, c] = (0, H.useState)(() => Et.get(window.location.hash) ?? n), l = (0, H.useRef)(null), u = (0, H.useRef)(s);
 	(0, H.useEffect)(() => {
-		c(n);
+		c(Et.get(window.location.hash) ?? n);
 	}, [n]), (0, H.useEffect)(() => {
-		let e = () => c(Et.get(window.location.hash) ?? "");
+		let e = () => {
+			let e = Et.get(window.location.hash);
+			e && c(e);
+		};
 		return window.addEventListener("hashchange", e), () => window.removeEventListener("hashchange", e);
 	}, []), (0, H.useLayoutEffect)(() => {
 		if (u.current === s) return;
@@ -2567,4 +2570,4 @@ function At({ data: e, receipt: t, section: n, diagnostics: r, reload: i, refres
 }
 export { Dt as ConfigurationPage };
 
-//# debugId=e96d0bd0-09c5-439b-a951-0717eff83166
+//# debugId=ef192649-0cd9-4eb2-bf3e-003f250c3667

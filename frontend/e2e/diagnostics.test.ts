@@ -71,18 +71,19 @@ describe('配置中的系统诊断', () => {
       } finally { await opened.close(); }
     });
     it(`诊断深链等待时保留分区与正文布局（${viewport.name}）`, { timeout: 60_000 }, async () => {
-      const opened = await visit(browser, '/settings/drives', viewport);
       let release!: () => void;
       const gate = new Promise<void>(resolve => { release = resolve; });
+      const opened = await visit(browser, '/settings/drives', viewport, async page => {
+        await page.route('**/api/diagnostics', async route => { await gate; await route.continue(); });
+      });
       try {
         const { page } = opened;
-        await page.route('**/api/diagnostics', async route => { await gate; await route.continue(); });
         await page.goto(new URL('/settings/diagnostics', page.url()).href);
         const panel = page.locator('.ui-board-group-active');
         const skeleton = panel.locator('[data-skeleton="diagnostics"]');
         await skeleton.waitFor();
         await page.getByRole('tab', { name: '系统诊断', selected: true }).waitFor();
-        assert.equal(await panel.locator('section[aria-label="库健康"]').count(), 0);
+        assert.equal(await panel.locator('[data-diagnostic-status]').count(), 0);
         assert.equal(await skeleton.getAttribute('aria-busy'), 'true');
         assert.equal(await panel.locator('article[data-diagnostic-source]').count(), 0);
         const pending = await panel.evaluate(element => {
@@ -105,6 +106,7 @@ describe('配置中的系统诊断', () => {
       const opened = await visit(browser, '/settings/drives', viewport);
       try {
         const { page } = opened;
+        await settle(page);
         await page.route('**/api/diagnostics', async route => {
           const report = await (await route.fetch()).json();
           report.checks.drives = { label: '网盘', status: 'warning', reason: '演示库的网盘未授权',
@@ -112,9 +114,10 @@ describe('配置中的系统诊断', () => {
           await route.fulfill({ json: report });
         });
         await page.getByRole('tab', { name: '系统诊断', exact: true }).click();
+        await page.waitForURL('**/settings/drives#diagnostics', { timeout: 10_000 });
         await page.locator('section[aria-label="来源会话"]').waitFor();
         await settle(page);
-        assert.equal(new URL(page.url()).pathname, '/settings/diagnostics');
+        assert.equal(new URL(page.url()).hash, '#diagnostics');
         const source = page.locator('article[data-diagnostic-source]').first();
         assert.ok(await page.locator('article[data-diagnostic-source]').count() > 1);
         assert.ok(await source.locator('img').getAttribute('src'));

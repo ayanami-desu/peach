@@ -96,9 +96,12 @@ function ConfigurationGroups({ data, receipt, section, diagnostics, reload, refr
   const [chosen, setChosen] = useState(() => ANCHORED.get(window.location.hash) ?? section);
   const workspace = useRef<HTMLDivElement>(null);
   const previous = useRef(chosen);
-  useEffect(() => { setChosen(section) }, [section]);
+  useEffect(() => { setChosen(ANCHORED.get(window.location.hash) ?? section) }, [section]);
   useEffect(() => {
-    const sync = () => setChosen(ANCHORED.get(window.location.hash) ?? '');
+    const sync = () => {
+      const title = ANCHORED.get(window.location.hash);
+      if (title) setChosen(title);
+    };
     window.addEventListener('hashchange', sync);
     return () => window.removeEventListener('hashchange', sync);
   }, []);

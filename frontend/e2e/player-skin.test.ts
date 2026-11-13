@@ -2,13 +2,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { join } from 'node:path';
-import type { Browser, Page } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { launch, requiredEnv, visit, VIEWPORTS } from './harness.ts';
-
-/** 网盘来源按流量计费，详情页先立一道 `#gate`：点一下才拉流、播放器与 vendor 模块才会出来。 */
-async function startPlayer(page: Page): Promise<void> {
-  await page.locator('#stage #gate').click();
-}
 
 describe('播放器皮肤', () => {
   let browser: Browser;
@@ -25,7 +20,6 @@ describe('播放器皮肤', () => {
       await page.route(modulePath, async route => { await gate; await route.continue() });
     });
     try {
-      await startPlayer(opened.page);
       await moduleRequested;
       const video = opened.page.locator('#stage video.video-js');
       await video.waitFor();
@@ -45,7 +39,6 @@ describe('播放器皮肤', () => {
       });
       const { page } = opened;
       try {
-        await startPlayer(page);
         await page.locator('#stage .vjs-peach-settings-toggle').click();
         await page.locator('#stage [data-player-rotation]').click();
         await page.locator('#stage [data-player-rotation-option="90"]').click();
@@ -58,12 +51,8 @@ describe('播放器皮肤', () => {
         });
         await page.reload();
         /* 播放记忆随盘离场（ADR-0157）：旋转与倍速只挂在这一次挂载的播放器上，
-           刷新后计费闸门重新立起来，点开拉流后回到原始方向与 1 倍速。 */
-        await startPlayer(page);
-        await page.waitForFunction(() => {
-          const video = document.querySelector<HTMLVideoElement>('#stage video.vjs-tech');
-          return !!video && video.readyState >= 1;
-        });
+           刷新后播放器重新挂载，回到原始方向与 1 倍速。 */
+        await page.locator('#stage video.vjs-tech').waitFor();
         const restored = await page.locator('#stage video.vjs-tech').evaluate((element) => {
           const video = element as HTMLVideoElement;
           return { rate: video.playbackRate, rotated: video.style.transform.includes('rotate') };
@@ -72,7 +61,7 @@ describe('播放器皮肤', () => {
         assert.equal(restored.rotated, false, '刷新后不恢复旋转');
         await page.locator('#stage .vjs-peach-settings-toggle').click();
         assert.equal(await page.locator('#stage [data-player-rotation] b').textContent(), '0°');
-        assert.equal(await page.locator('#stage [data-player-speed] b').textContent(), '1×');
+        assert.equal(await page.locator('#stage [data-player-speed] b').textContent(), '正常');
         assert.deepEqual(opened.problems, []);
       } finally { await opened.close() }
     });
@@ -83,7 +72,6 @@ describe('播放器皮肤', () => {
       });
       const { page } = opened;
       try {
-        await startPlayer(page);
         await page.locator('#stage .vjs-peach-settings-toggle').click();
         const rotationIcon = await page.locator('#stage [data-player-rotation]>svg').first().evaluate(icon => ({
           fill: getComputedStyle(icon).fill, stroke: getComputedStyle(icon).stroke,
@@ -112,11 +100,10 @@ describe('播放器皮肤', () => {
     it(`${viewport.name}：控制组贴右、进度圆点唯一、全屏保留控件`, { timeout: 60_000 }, async () => {
       const opened = await visit(browser, `/assets/${requiredEnv('PEACH_E2E_ITEM')}`, viewport, async page => {
         await page.addInitScript(theme => localStorage.setItem('peach.settings.v1',
-          JSON.stringify({ detailAutoplay: false, theme })), viewport.mobile ? 'dark' : 'light');
+          JSON.stringify({ detailAutoplay: true, theme })), viewport.mobile ? 'dark' : 'light');
       });
       const { page, problems } = opened;
       try {
-        await startPlayer(page);
         await page.locator('#stage .vjs-peach-bezel').waitFor({ state: 'attached' });
         await page.screenshot({ path: join(process.cwd(), `../build/player-skin-${viewport.name}.png`) });
         const geometry = await page.locator('#stage .video-js').evaluate(root => {

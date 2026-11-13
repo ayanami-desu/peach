@@ -4,18 +4,21 @@
  * 起播 id 定。第一条用例里两条的 `/stream` 由用例在采样结束后放行，确保采到等待状态。
  * 手机那一条用 CDP 发真触摸：浏览器自己合成的 click 也会跟着来，700ms 忽略窗要在这里才验得到。 */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import type { Browser, Page } from 'playwright-core';
 
-import { launch, stubTimelineSheets, visit, VIEWPORTS } from './harness.ts';
+import { launch, requiredEnv, stubTimelineSheets, visit, VIEWPORTS } from './harness.ts';
 import { currentVideo, muteVideos, openImmerse, pickClips, pinQueue, settledClip } from './immerse-fixture.ts';
 
 const DESKTOP = VIEWPORTS.find((viewport) => !viewport.mobile)!;
 const MOBILE = VIEWPORTS.find((viewport) => viewport.mobile)!;
 const HOLD_MS = 1500;
 
-type Item = { id: number; width: number; height: number };
 type Sample = { wide: boolean; shown: boolean; slides: string[] };
 
 /** 当前的舞台：形状、框与动作列、作者标题看不看得见，以及每一格的位移。 */
@@ -51,16 +54,17 @@ describe('沉浸模式', () => {
 
   it('片源先问 stream-plan；首条出画前不露舞台，切片预加载时保持旧形状，出画那一刻才换', async () => {
     const opened = await visit(browser, '/', DESKTOP);
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'peach-immerse-'));
     const { page } = opened;
     const releases: (() => void)[] = [];
     try {
-      const items: Item[] = await page.evaluate(async () =>
-        (await (await fetch('/api/items?limit=60&offset=0&thumb=')).json()).items);
-      const wide = items.find((item) => item.width > item.height);
-      const tall = items.find((item) => item.height > item.width);
-      assert.ok(wide && tall, '演示库里横屏、竖屏各要有一条');
-      await page.route(/\/api\/items\?.*sort=rand/, (route) => route.fulfill({ json: { items: [wide, tall]
-        .map((item) => items.find((full) => full.id === item.id)) } }));
+      const { wide, tall } = await pickClips(page);
+      const tallPath = join(fixtureDir, 'tall.mp4');
+      execFileSync(requiredEnv('PEACH_E2E_FFMPEG'), [
+        '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=#31506b:s=240x426:r=24',
+        '-t', '1', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', tallPath,
+      ], { stdio: 'ignore' });
+      await page.route(/\/api\/items\?.*sort=rand/, (route) => route.fulfill({ json: { items: [wide, tall] } }));
       const planned: number[] = [];
       page.on('request', (request) => {
         const url = new URL(request.url());
@@ -74,9 +78,13 @@ describe('沉浸模式', () => {
         releases.push(release);
       }
       await page.route(new RegExp(`/stream\\?id=(${wide.id}|${tall.id})&`), async (route) => {
-        await holds.get(Number(new URL(route.request().url()).searchParams.get('id')))!.wait;
-        await route.continue().catch(() => {});
+        const id = Number(new URL(route.request().url()).searchParams.get('id'));
+        await holds.get(id)!.wait;
+        if (id === tall.id) await route.fulfill({ path: tallPath, contentType: 'video/mp4' });
+        else await route.continue().catch(() => {});
       });
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        (route) => route.fulfill({ json: { ok: true } }));
       // 这台机器旁边有人：新插进来的每条 video 一律静音。
       await page.addInitScript(() => {
         new MutationObserver(() => document.querySelectorAll('video').forEach((video) => { video.muted = true; }))
@@ -110,6 +118,7 @@ describe('沉浸模式', () => {
     } finally {
       releases.forEach((release) => release());
       await opened.close();
+      rmSync(fixtureDir, { recursive: true, force: true });
     }
   });
 
@@ -120,6 +129,8 @@ describe('沉浸模式', () => {
       const { wide, tall } = await pickClips(page);
       await pinQueue(page, [tall, wide]);
       await muteVideos(page);
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        (route) => route.fulfill({ json: { ok: true } }));
       const details = new Map<number, number>();
       const plans: { id: number; session: string }[] = [];
       const cancels: string[] = [];
@@ -177,6 +188,8 @@ describe('沉浸模式', () => {
       const { wide, tall } = await pickClips(page);
       await pinQueue(page, [tall, wide]);
       await muteVideos(page);
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        (route) => route.fulfill({ json: { ok: true } }));
       await openImmerse(page, tall.id);
       const cdp = await page.context().newCDPSession(page);
       const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x = 0, y = 0) =>
@@ -241,6 +254,8 @@ describe('沉浸模式', () => {
       const { wide } = await pickClips(page);
       await pinQueue(page, [wide]);
       await muteVideos(page);
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        (route) => route.fulfill({ json: { ok: true } }));
       // 演示短片 2 秒：0.1 秒一帧共 20 帧，一张拼图。
       const requested = await stubTimelineSheets(page, { frames: 20, interval: .1 });
       await openImmerse(page, wide.id);
@@ -279,6 +294,8 @@ describe('沉浸模式', () => {
       const { tall } = await pickClips(page);
       await pinQueue(page, [{ ...tall, has_thumb: false }]);
       await muteVideos(page);
+      await page.route((url) => url.pathname === '/api/stream-cancel',
+        (route) => route.fulfill({ json: { ok: true } }));
       await page.route('**/api/timeline?*', route => route.fulfill({ json: null }));
       const sheets: string[] = [];
       page.on('request', (request) => { if (new URL(request.url()).pathname === '/timeline') sheets.push(request.url()) });
