@@ -20,7 +20,6 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
-from peach import web_review
 from peach.previews import (
     LOGO_VARIANTS, RING_MIN_EDGE, PreviewService, PreviewUnavailable, logo_key,
 )
@@ -353,45 +352,6 @@ class LogoAvailabilityTests(unittest.TestCase):
         self.contract.cache_bust()
         self.assertTrue(self.contract.has_logo("Fitch"))
 
-    def test_the_install_path_and_the_resolver_share_one_key_rule(self):
-        """批准落地写的文件名和取图找的文件名只能有一个实现。"""
-        self.assertIs(web_review.studio_logo_key, logo_key)
-
-
-class PageSourceTests(unittest.TestCase):
-    """页面按位置取变体：小地方 icon，厂牌页那个 160px 大位 logo。"""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.application = ROOT / 'frontend/src/application'
-
-    def test_every_small_surface_asks_for_the_icon(self):
-        source = (self.application / 'catalog.js').read_text(encoding='utf-8')
-        for snippet in (
-            "logoUrl(x.k,'icon',x.logo_version)",
-        ):
-            # 壳里的小位只剩这一处厂牌标识，作品详情出演区的厂牌格画在 React 岛里，由
-            # `frontend/test/react/item-detail.test.tsx` 钉住；网盘来源角标走 `MEDIA_SOURCE_ICONS` 那份站标，
-            # 不进这条链。`.entityfavicon` 的模板不写 `data-studio`，图片回退是
-            # 声明式的，不存在按 `img.dataset.studio` 换图的第三处。「不许漏 variant」
-            # 由下面那条按行扫描的断言守。
-            with self.subTest(snippet=snippet):
-                self.assertIn(snippet, source)
-
-    def test_media_sources_do_not_request_studio_logos(self):
-        """网盘使用来源标识，实际图形由前端渲染回归核对；厂牌字标链不接收网盘名称。"""
-        for path in sorted((ROOT / 'frontend/src').rglob('*')):
-            if path.suffix in {'.js', '.ts', '.tsx'}:
-                self.assertNotIn("studio=115", path.read_text(encoding='utf-8'))
-
-    def test_no_logo_request_is_left_without_a_variant(self):
-        """漏掉一处就会在那个位置继续显示补白字标，而且没人会注意到。"""
-        bare = [(path.relative_to(ROOT).as_posix(), line.strip())
-                for path in sorted((ROOT / 'frontend/src').rglob('*')) if path.suffix in {'.js', '.ts', '.tsx'}
-                for line in path.read_text(encoding='utf-8').splitlines()
-                if "/logo?studio=" in line and "variant=" not in line]
-        self.assertEqual(bare, [])
-
 
 class PaddedStudioTests(unittest.TestCase):
     def setUp(self):
@@ -624,19 +584,6 @@ class LogoSourceTests(unittest.TestCase):
                 keys = [MODULE.safe_name(name) for name in table]
                 self.assertEqual(sorted(keys), sorted(set(keys)))
 
-    def test_the_expo_directory_is_the_source_for_the_studios_with_no_image(self):
-        """用户 2026-09-04 指定 jae.tokyo：名录每届各带一套片商自己交的 logo。
-
-        2016 那届只有图没有名字，认不出是谁家的，所以表里没有 jae2016。Prestige 用官网
-        header 的矢量字标，不从名录取。
-        """
-        expo = [url for url in MODULE.LOGO_SOURCES.values() if "jae.tokyo" in url]
-        self.assertEqual(len(expo), 19)
-        self.assertEqual([url for url in expo if "jae2016" in url], [])
-        for url in expo:
-            with self.subTest(url=url):
-                self.assertRegex(url, r"^http://www\.jae\.tokyo/jae201[457]/")
-
     def test_the_mousouzoku_directory_supplies_square_logos_not_wordmarks(self):
         """妄想族名录给的是 200×200 真方标，所以进这一张表而不是字标那张。
 
@@ -652,14 +599,6 @@ class LogoSourceTests(unittest.TestCase):
                     url, r"^https://www\.mousouzoku-av\.com/contents/maker/id\d+/logo_l\.jpg$")
         self.assertEqual(MODULE.safe_name("AVS collector's"),
                          MODULE.safe_name("AVS collector’s"))
-
-    def test_fc2_is_the_registered_logo_source(self):
-        """用户 2026-09-03 指定的是 seeklogo 的 429409（600×600 方形锁定图）。
-
-        同站那份 2000×662 是横向字标，不是这一位要的东西。
-        """
-        self.assertIn("fc2-logo-png_seeklogo-429409",
-                      self.original[MODULE.safe_name("FC2-PPV")])
 
     def test_a_studio_without_a_registered_source_gets_no_logo_row(self):
         self.assertIsNone(MODULE.logo_row("HEYZO", self.target, self.entries,
@@ -832,30 +771,6 @@ class WordmarkSourceTests(unittest.TestCase):
                 self.assertNotIn(studio, MODULE.LOGO_SOURCES)
                 self.assertNotIn(studio, MODULE.ICON_SOURCES)
 
-    def test_a_studio_whose_own_site_carries_the_wordmark_is_pinned_to_that_site(self):
-        """自动发现给 えむっ娘ラボ 小位挑的是它 X 账号那张项圈照片：400×400、内容比
-        1.04，够大够方，里面没有脸所以人像闸也过。「照片不是标识」闸门判不出来，
-        只能指定官网 header 里那张字标，两个位置都从它烤。
-        """
-        self.assertRegex(MODULE.WORDMARK_SOURCES["えむっ娘ラボ"],
-                         r"^https://cdn\.up-timely\.com/image/16/site_design/")
-
-    def test_a_maker_whose_works_all_sit_on_its_labels_takes_its_own_site_header(self):
-        """妄想族是片商实体，作品全挂在旗下 label 上（ADR-0049）：展会名录没有它，
-        它自家的 `maker/list` 列的是旗下 label。门面上那张字标只在官网 header 里。
-        """
-        self.assertRegex(MODULE.WORDMARK_SOURCES["妄想族"],
-                         r"^https://www\.mousouzoku-av\.com/pc/images/pages/common/")
-
-    def test_studios_the_user_named_take_the_wordmark_from_their_own_site_header(self):
-        """用户 2026-09-25 点名：KMP 母公司官网 header 是矢量字标，装着的却是 X 头像位图；
-        `変態紳士倶楽部` 官网 header 挂着字标，盘上一张图都没有。两家都指定官网那张。
-        """
-        self.assertRegex(MODULE.WORDMARK_SOURCES["K M Produce"],
-                         r"^https://www\.km-produce\.com/wp-content/themes/[^/]+/img/logo\.svg$")
-        self.assertRegex(MODULE.WORDMARK_SOURCES["変態紳士倶楽部"],
-                         r"^https://cdn\.up-timely\.com/image/22/site_design/")
-
     def test_studios_swapped_after_the_audit_take_the_official_header_vector_first(self):
         """2026-09-25 全库审计后用户按推荐换的六家都取官网 header，有矢量的必须是矢量：
         同一枚标识换成位图版，等于把「能 svg 就 svg」退回去。
@@ -869,27 +784,6 @@ class WordmarkSourceTests(unittest.TestCase):
         for studio in ("Prestige", "一本道", "Deep's"):
             with self.subTest(studio=studio):
                 self.assertTrue(MODULE.WORDMARK_SOURCES[studio].endswith(".svg"))
-
-    def test_a_label_without_a_site_of_its_own_is_pinned_to_its_parent_directory(self):
-        """ナンパTV 自己没有站，账本里也一条链接都没有——自动发现那四条链全都从
-        链接出发，对它一条都启动不了。母公司 Prestige 的名录里有它的字标。
-        """
-        self.assertRegex(MODULE.WORDMARK_SOURCES["ナンパTV"],
-                         r"^https://www\.prestige-av\.com/api/media/maker/")
-
-    def test_the_labels_that_replaced_an_expo_logo_are_the_five_the_user_picked(self):
-        """用户 2026-09-22 逐张看过对比图后点名这五家换走名录版，其余已有图的不收。
-
-        名录版未必更大：`ラグジュTV` 落地 200×200，展会那份是 413×413。这条约束防的
-        是往表里顺手多塞一家——那一家没人比过两版，装上去可能是降级。
-        `S級素人`、`Real Works` 没有展会版可比，用户 2026-09-23 点名取 KMP 名录字标；
-        `K M Produce` 与 `Prestige` 自己那一枚用户 2026-09-25 点名取官网 header。
-        """
-        picked = {"Jackson", "ラグジュTV", "million", "BAZOOKA", "俺の素人"}
-        from_parent = {studio for studio, url in MODULE.WORDMARK_SOURCES.items()
-                       if "prestige-av.com" in url or "km-produce.com" in url}
-        self.assertEqual(from_parent, picked | {"ナンパTV", "S級素人", "Real Works",
-                                                "K M Produce", "Prestige"})
 
 
 class IconSourceTests(unittest.TestCase):

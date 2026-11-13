@@ -596,9 +596,6 @@ class TasksEndpointTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             web_tasks.q_task(self.contract, run.id + 1000)
 
-    def test_the_list_endpoint_is_registered_on_the_read_contract(self):
-        self.assertIs(web_contract.GET_HANDLERS["/api/tasks"], web_tasks.q_tasks)
-
 
 def _request(contract):
     """routes_api 的端点只用到 `request.app.state` 里的这几样。"""

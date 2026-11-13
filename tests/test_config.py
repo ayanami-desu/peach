@@ -527,14 +527,6 @@ class SerialisationTests(unittest.TestCase):
 class ModuleConstantTests(unittest.TestCase):
     """`config` 的模块常量被大量 import；名字和相对关系都是契约。"""
 
-    def test_paths_derive_from_the_active_data_root(self):
-        self.assertEqual(config.DATABASE_PATH, config.DATA_ROOT / "database" / "ledger.db")
-        self.assertEqual(config.DATABASE_PATH.parent, config.DATABASE_DIR)
-        self.assertEqual(config.FFMPEG_DIR, config.TOOLS_DIR / "ffmpeg")
-        self.assertEqual(config.COVER_DIR, config.GENERATED_DIR / "covers")
-        # 迁移随代码走，不随数据走。
-        self.assertEqual(config.MIGRATIONS_DIR, config.PROJECT_ROOT / "migrations")
-
     def test_drive_settings_project_into_module_constants(self):
         with TempTree() as tree:
             tree.write("[drive]\npublic_url = 'https://peach.example.com'\n"

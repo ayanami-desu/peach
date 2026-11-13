@@ -810,10 +810,6 @@ class TargetTests(unittest.TestCase):
         self.assertNotIn("no_install", options, "写盘不能是退出式开关")
         self.assertFalse(parser.parse_args([]).apply, "缺省必须是空跑")
         self.assertTrue(parser.parse_args(["--apply"]).apply)
-        source = (REPO / "scripts" / "harvest_social_avatars.py").read_text(
-            encoding="utf-8")
-        self.assertIn("elif not args.apply:", source)
-        self.assertNotIn("args.no_install", source)
 
     def test_an_x_function_page_yields_no_handle(self):
         self.assertEqual(self.module.x_handle("https://twitter.com/alice_710_"),

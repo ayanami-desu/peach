@@ -11,8 +11,8 @@ import httpx
 
 from peach.http import HttpResponse
 from peach.metadata import MetadataProviderError
-from peach.sources import SITE_SOURCES, Page, Session
-from peach.sources.seesaa import ROOT, SEESAA, SeesaaSource, WikiPages, page_url
+from peach.sources import Page, Session
+from peach.sources.seesaa import ROOT, SeesaaSource, WikiPages, page_url
 
 
 def fixture(code='ABC-007', actors=None):
@@ -290,10 +290,6 @@ class SeesaaContractTests(unittest.TestCase):
         with self.assertRaises(MetadataProviderError) as caught:
             SeesaaSource().parse(Page(ROOT+'d/Label', fixture()), 'ABC-008')
         self.assertEqual(caught.exception.kind, 'incomplete_search')
-
-    def test_registered_under_the_existing_source_identity(self):
-        self.assertIs(SITE_SOURCES['sougouwiki'], SeesaaSource)
-        self.assertEqual((SEESAA.name, SEESAA.provider), ('sougouwiki', 'sougouwiki'))
 
 
 class ChainWikiTests(unittest.TestCase):

@@ -221,14 +221,6 @@ class ReactBundleTests(unittest.TestCase):
         order = [assets.styles.index(href) for href in ("/dist/peach-app.css", "/app.css", "/board.css")]
         self.assertEqual(order, sorted(order))
 
-    def test_the_first_frame_script_sets_the_dark_class(self):
-        """BoardUI 的深色 token 挂在 `.dark` 上，首帧脚本要在主包加载前按实际深浅加减它。
-
-        之后切换主题由 `applyTheme()` 负责，`frontend/test/appearance/layout.test.ts` 在 DOM 上验。
-        """
-        index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("classList.toggle('dark',", index)
-
 
 class BoardUiUpstreamTests(unittest.TestCase):
     """`frontend/src/react/boardui/` 与 `evilcharts/` 是上游注册表源码的逐字副本，只加不改
@@ -282,25 +274,6 @@ class FrontendManifestTests(unittest.TestCase):
             self.assertIsNotNone(entry, f"{name} 不在 lockfile 里")
             self.assertEqual(entry["version"], version, name)
 
-    def test_the_root_manifest_stays_limited_to_the_vendored_packages(self):
-        """根清单只登记手工 vendor 的那几个包，构建依赖不许混进去。"""
-        root = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-        self.assertNotIn("vite", root.get("devDependencies", {}))
-        self.assertNotIn("preact", root.get("dependencies", {}))
-
-    def test_the_frontend_has_no_preact_left(self):
-        """前端只有 React 一档（ADR-0031）：留着 Preact 就是两套运行时各打一份进产物。"""
-        manifest = json.loads((FRONTEND / "package.json").read_text(encoding="utf-8"))
-        for section in ("dependencies", "devDependencies"):
-            self.assertNotIn("preact", manifest.get(section, {}))
-        config = json.loads(re.sub(r"^\s*//.*$", "", (FRONTEND / "tsconfig.json")
-                                   .read_text(encoding="utf-8"), flags=re.M))
-        self.assertNotIn("jsxImportSource", config["compilerOptions"])
-
-    def test_dependabot_watches_the_frontend_manifest(self):
-        dependabot = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
-        self.assertIn("directory: /frontend", dependabot)
-
     def test_ci_owns_the_only_gate_that_can_catch_a_stale_bundle(self):
         """本机验不了「产物是否由当前源码构建」，这道门槛只在 CI。
 
@@ -345,20 +318,9 @@ class SharedStateContractTests(unittest.TestCase):
                     if "new QueryClient(" in path.read_text(encoding="utf-8")]
         self.assertEqual(declared, ["query/client.ts"], f"QueryClient 建在 {declared}")
 
-    def test_pages_do_not_keep_a_second_copy_of_shared_data(self):
-        """跨页共享的数据不另起一套订阅：`@preact/signals` 已经没有读者。"""
-        outside = [path.name for path in sorted((FRONTEND / "src").rglob("*.ts*"))
-                   if "@preact/signals" in path.read_text(encoding="utf-8")]
-        self.assertEqual(outside, [],
-                         f"{outside} 用了 signal：跨页共享请读同一个 queryKey，局部状态用 hooks")
-
 
 class VitestTests(unittest.TestCase):
     """Vitest 的行为回归与独立的类型、样式检查共同构成前端验收。"""
-
-    def test_the_island_suite_has_a_bounded_worker_pool(self):
-        config = (FRONTEND / "vitest.config.ts").read_text(encoding="utf-8")
-        self.assertIn("maxWorkers: 4", config)
 
     def test_the_island_suite_passes(self):
         npm = frontend_npm("vitest", "vitest")

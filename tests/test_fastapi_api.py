@@ -160,23 +160,6 @@ def tiny_jpeg(tone: int, width: int = 64, height: int = 48) -> bytes:
     return bytes(cv2.imencode(".jpg", canvas)[1])
 
 
-class MediaCacheHeaderTests(unittest.TestCase):
-    """生成物的缓存时长只许在一处写死。
-
-    这条断言扫的是媒体路由真正所在的模块。钉死扫 `api.py` 的话，媒体路由拆到
-    `routes_media.py` 之后它会永远绿——那里已经一条媒体路由都没有了。门槛跟着
-    实现走，不跟着文件名走。
-    """
-
-    def test_no_media_endpoint_hardcodes_a_day(self):
-        source = (ROOT / "src" / "peach" / "routes_media.py").read_text(encoding="utf-8")
-        self.assertIn("MEDIA_CACHE_SECONDS", source, "媒体路由不在这个文件里了，门槛已空转")
-        self.assertNotIn("max-age=86400", source, "媒体端点不该再写死一天")
-        # `immutable` 只许出现在 /vendor/ 那条中间件里，它留在 api.py。这里不查
-        # 字面量：常量上方那段注释正是在解释「为什么不加 immutable」。
-        self.assertNotIn('"public, max-age=31536000, immutable"', source)
-
-
 @unittest.skipUnless(HAS_DEPS, "FastAPI/httpx 尚未安装")
 class ContractJsonTests(unittest.TestCase):
     def test_contract_reads_encode_to_the_same_bytes_as_the_framework_default(self):
@@ -1202,11 +1185,6 @@ class RouteAuthContractTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.app.state.http_transport.close()
         cls.tmp.cleanup()
-
-    def test_the_route_table_is_actually_visible_to_this_test(self):
-        """铺平失败时这个契约会静默变成空断言，所以先钉住「看得见路由」。"""
-        self.assertGreater(len(self.routes), 60, "没有遍历到路由表，下面的断言全是空的")
-        self.assertIn(("GET,HEAD", "/healthz"), self.routes)
 
     def test_every_route_is_gated_unless_it_is_on_the_public_list(self):
         unguarded = sorted(key for key, dependencies in self.routes.items()

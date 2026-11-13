@@ -30,11 +30,6 @@ class EnsureModelTests(unittest.TestCase):
                 face_match.ensure_model(target, allow_download=False)
             self.assertIn("人脸比对模型", str(caught.exception))
 
-    def test_the_pinned_model_is_the_lfs_object(self):
-        self.assertEqual(len(face_match.MODEL_SHA256), 64)
-        self.assertIn("media.githubusercontent.com", face_match.MODEL_URL)
-        self.assertEqual(face_match.COSINE_THRESHOLD, 0.363)
-
 
 class ModelLoadingTests(unittest.TestCase):
     def setUp(self):

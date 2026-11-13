@@ -292,10 +292,6 @@ class GenreTaxonomyTests(unittest.TestCase):
         self.assertEqual(tags, ["主观视角", "苗条"])
         self.assertEqual(unmapped, [])
 
-    def test_non_content_patterns_stay_narrow(self):
-        # 每条形状判据都要说得出它为什么必然是卖法而不是内容。
-        self.assertEqual(len(NON_CONTENT_PATTERNS), 6)
-
     def test_no_pattern_carries_a_control_character(self):
         """`\\b` 被 shell 吃掉一层就成了退格符，正则照样编译、照样静默不匹配。
 

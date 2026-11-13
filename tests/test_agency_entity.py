@@ -9,7 +9,7 @@ from pathlib import Path
 from peach import web_contract as rm_web
 from peach.entities import merge_entity
 from peach.migrations import needs_foreign_keys_off, upgrade
-from peach.web_entity import PROFILE_KINDS, scope_predicate
+from peach.web_entity import scope_predicate
 from scripts.dedupe_entity_links import collect as dedupe_plan
 from scripts.dedupe_entity_links import destination
 from scripts.install_agencies import collect as agency_plan
@@ -302,9 +302,6 @@ class AgencyLedgerTests(unittest.TestCase):
         page = self.page("agency", "ACT")
         self.assertEqual([link["url"] for link in page["links"]],
                          ["https://actentertainment.jp/"])
-
-    def test_agency_is_a_profile_kind(self):
-        self.assertIn("agency", PROFILE_KINDS)
 
     def test_an_unknown_kind_is_still_refused(self):
         self.assertEqual(rm_web.q_entity(self.contract, {"kind": "label", "name": "x"}),

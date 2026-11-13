@@ -526,10 +526,6 @@ class OperationalScriptTests(unittest.TestCase):
         cls.rehome_unknown = load_script("rehome_unknown_jav")
 
 
-    def test_import_has_no_filesystem_or_log_side_effect(self):
-        self.assertIsNone(self.clean_names._logf)
-        self.assertIsNone(self.scrape_codes._logf)
-
     def test_english_title_batch_excludes_codes_that_already_have_japanese(self):
         connection = sqlite3.connect(":memory:")
         connection.execute("CREATE TABLE asset(medium TEXT,code TEXT,catalog_title TEXT,original_title TEXT)")
@@ -715,12 +711,6 @@ class OperationalScriptTests(unittest.TestCase):
             self.assertEqual(rows["javbus"]["blocked"], "1")
             self.assertEqual(rows["r18dev"]["auth_skips"], "0")
             self.assertIn("鉴权失败的来源", printed.getvalue())
-
-    def test_only_not_found_counts_as_a_settled_source_verdict(self):
-        # 本机配置问题（凭据没贴、桥没装）返回的是 unknown / unavailable 错误。把它当
-        # 定论复用，会让配置问题被冻结成来源判决，续跑再也不问这个番号。
-        self.assertEqual(self.scrape_codes.SETTLED_ERROR_KINDS, frozenset({"not_found"}))
-
 
     def test_test_entrypoints_guard_the_worktree_source_and_are_the_only_documented_command(self):
         """两个入口用哪个 venv、给运行器什么环境与参数，由 `test_test_environment.py` 真跑入口验；

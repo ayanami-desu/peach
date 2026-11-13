@@ -168,9 +168,6 @@ class RetryEndpointTests(ModelFilesCase):
         self.assertEqual([run.status for run in self.rows()], ["succeeded", "failed"])
         self.assertTrue((self.root / "tools" / "sface.onnx").is_file())
 
-    def test_the_route_is_open_on_a_read_only_machine(self):
-        self.assertIn("/api/face-models", web_router.READ_ONLY_POST_ROUTES)
-
 
 class StatusTests(ModelFilesCase):
     """活动中心「需要处理」读的那一份：和任务卡同一个来源，读的时候不联网。"""

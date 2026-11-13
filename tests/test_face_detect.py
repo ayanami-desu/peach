@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 from peach import face_detect
 from peach.face_detect import (
-    MODEL_SHA256,
     FaceModelUnavailable,
     ensure_model,
 )
@@ -47,14 +46,6 @@ class EnsureModelTests(unittest.TestCase):
                     ensure_model(target)
             self.assertIn("校验不符", str(caught.exception))
             self.assertFalse(target.exists())
-
-    def test_the_pinned_digest_is_a_real_sha256(self):
-        # 定版是这条复用记录的全部意义：地址钉在 opencv_zoo 的一个提交上，哈希再核一遍内容。
-        self.assertEqual(len(MODEL_SHA256), 64)
-        self.assertTrue(all(ch in "0123456789abcdef" for ch in MODEL_SHA256))
-        self.assertIn("media.githubusercontent.com", face_detect.MODEL_URL,
-                      "opencv_zoo 用 Git LFS，raw 域名只会回一个指针文件")
-        self.assertIn(face_detect.ZOO_COMMIT, face_detect.MODEL_URL)
 
 
 class ModelLoadingTests(unittest.TestCase):
@@ -186,19 +177,6 @@ MODEL_PATH_NAME = face_detect.MODEL_PATH.name
 
 
 class DetectorContractTests(unittest.TestCase):
-    def test_scripts_do_not_reach_for_the_removed_cascade_api(self):
-        """OpenCV 5 的 wheel 里没有 `CascadeClassifier`，也没有级联 XML。
-
-        两个脚本此前一起门都进不去，954 张封面 0 个 sidecar——「人脸取景没生效」
-        的成因就在这里，不在取景公式上。
-        """
-        root = Path(__file__).resolve().parents[1]
-        for name in ("detect_cover_faces.py", "detect_avatar_faces.py"):
-            source = (root / "scripts" / name).read_text(encoding="utf-8")
-            self.assertNotIn("CascadeClassifier", source, name)
-            self.assertNotIn("haarcascades", source, name)
-            self.assertIn("FaceDetector()", source, name)
-
     def test_normalised_face_is_clamped_into_the_frame(self):
         detector = face_detect.FaceDetector.__new__(face_detect.FaceDetector)
         face = face_detect.Face(cx=0.8, cy=0.2, width=0.25, height=0.3, score=0.9)

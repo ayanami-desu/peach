@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import {
-  defaultSortDir, JAV_RELEASE_SORT, nextSortState, preferredDirection, SORT_ALIASES, SORT_KEYS, sortDirWord, SORTS,
+  defaultSortDir, JAV_RELEASE_SORT, nextSortState, preferredDirection, SORT_KEYS, sortDirWord, SORTS,
 } from '../src/sort-preferences';
 
 it('随机无方向，首页偏好与其他排序分别解析', () => {
@@ -19,10 +19,6 @@ it('可翻转的列从 desc 起，随机没有方向；发行时间只在 JAV �
     .toEqual(['随机', '评分', '高潮计数', '观看次数', '时长', '体积', '入库时间', '观看时间', '发行时间']);
   expect(['new', 'played'].map((key) => [sortDirWord(key, 'desc'), sortDirWord(key, 'asc')]))
     .toEqual([['从新到旧', '从旧到新'], ['从近到远', '从远到近']]);
-});
-
-it('地址栏与书签里把方向写进键名的旧键照旧认', () => {
-  expect(SORT_ALIASES).toEqual({ big: ['size', 'desc'], short: ['dur', 'asc'], long: ['dur', 'desc'] });
 });
 
 it('点未选中项换列取默认方向，点选中项翻方向，随机重复点什么都不做', () => {

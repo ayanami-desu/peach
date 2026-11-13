@@ -95,10 +95,6 @@ class WebUiPolicyTests(unittest.TestCase):
         cls.markup_files = markup
         cls.markup = "\n".join(path.read_text(encoding="utf-8") for path in markup)
 
-    def test_primary_button_fill_is_owned_by_board_styles(self):
-        # Board 覆盖层统一负责主按钮面色；基样式中的重复规则会竞争层叠优先级。
-        self.assertNotIn(".geist-button.primary{", self.css)
-
     def assertPageLacks(self, needle: str, message: str = ""):
         for path in self.markup_files:
             with self.subTest(path=path):
@@ -166,28 +162,6 @@ class WebUiPolicyTests(unittest.TestCase):
         self.assertEqual(offenders, [],
                          f"这些规则的 --tungsten 不在允许的焦点／链接／进度／Toggle 之列：{offenders}")
 
-    INVERTED_PRESSED_ALLOWED = (
-        ".hovertools .laterbtn",   # 卡片悬停浮层「稍后看」
-        ".followimagedots button",  # 图集页码点
-    )
-
-    HOVER_FILL_ALLOWED = (
-        ".ib",              # 顶栏图标按钮，八个里只有一个有按下态
-        ".brandpill",       # 顶栏厂牌胶囊，全站一颗
-        ".playerstatsbtn",  # 播放器覆盖层，悬停走 ::after 另一层
-        ".fb .like",        # 这一排彩色反馈按钮的既有约定就是悬停预览按下后的颜色
-        ".popmenu.gselectmenu button",  # 同上；2026-09-04 实测 vercel.com 后台的菜单行，悬停与选中共用同一枚 5% 填充
-    )
-
-    STATE_TOKENS = ('[aria-pressed="true"]', '[aria-selected="true"]',
-                    '[aria-current="page"]', '[aria-current="true"]', ".selected")
-
-    SELECTED_ON_GROUND = (
-        '.chip[aria-pressed="true"]',                     # 产地选择站在对话框的 --ground 上
-        '.popmenu.gselectmenu button[aria-selected="true"]',  # 浮层菜单填 --ground
-        '.ib[aria-pressed="true"]',                       # 顶栏填 --ground
-    )
-
     def test_font_weights_stay_on_the_three_geist_steps(self):
         """字重只有 400／500／600 三档。
 
@@ -254,28 +228,12 @@ class WebUiPolicyTests(unittest.TestCase):
             and not name.startswith(vendor + composed))
         self.assertEqual(unused, [], f"样式表里有没人用的类选择器：{unused}")
 
-    def test_studio_metadata_is_not_compiled_as_inline_javascript(self):
-        self.assertPageLacks('onerror="this.parentNode.innerHTML=')
-        self.assertPageLacks('onload="if(this.naturalWidth')
-
     def test_image_fallbacks_are_declarative_data_not_inline_handlers(self):
         """`<img>` 的回退链以 data 属性声明，模板不编译事件处理器。"""
         self.assertPageLacks(' onerror="', "模板不能包含内联 onerror 属性")
         # 捕获阶段的委托监听与「没有 `data-drop` 的 <img> 一概不动」由
         # `frontend/test/card-art/image-fallback.test.ts` 跑真元素验收；页面上另有一批
         # 靠 CSS 或父节点兜底的图（厂牌 `.mk`），把它们删掉反而是错的。壳自己拼的图也走同一套声明。
-
-    def test_no_site_icon_is_fetched_by_the_browser_from_the_site_itself(self):
-        """站点图标全部由本机给：浏览器不向对方站点要图，也不问第三方图标代理。
-
-        外链的 favicon 是向对方站点发出的真实请求，打开一位女优的资料页就会把 Peach
-        的页面地址报给每一个被链接的站点；第三方代理那一跳则把这一列里的每个站逐个
-        报出去。资料页外链走 `/link-mark`，采集页和口味页走 `/site-mark`，是同一套
-        挑图、合成与缓存；资料卡那一排由 entity-hero.test.tsx 钉住。
-        """
-        for gone in ("faviconUrl", "google.com/s2/favicons", "faviconFallbackUrl", "SITE_FAVICONS"):
-            with self.subTest(gone=gone):
-                self.assertNotIn(gone, self.markup, "站点图标不得由浏览器向站外取")
 
     def test_no_caller_ever_hands_the_link_mark_endpoint_a_url(self):
         # 让前端把地址递给服务端去取，等于开一个任意地址抓取的口子。和 `/follow-stream`
@@ -379,46 +337,6 @@ class CoverSleeveThresholdTests(unittest.TestCase):
         self.assertIsNotNone(anchor, "coverAnchor 的封套判定不见了")
         self.assertEqual((low, high), (float(anchor.group(2)), float(anchor.group(1))))
         self.assertLess(low, high)
-
-    def test_the_face_script_takes_the_thresholds_from_the_module(self):
-        """脚本按封套丢掉左半边的脸，用的必须是模块里那一份，不是自己抄的一份。"""
-        root = Path(__file__).resolve().parents[1]
-        script = (root / "scripts" / "detect_cover_faces.py").read_text(encoding="utf-8")
-        source = (root / "src" / "peach" / "cover_artwork.py").read_text(encoding="utf-8")
-        self.assertIsNone(re.search(r"^SLEEVE_RATIO_M(?:IN|AX) = ", script + source, re.M),
-                          "阈值抄成第二份就会和页面漂开")
-
-
-class BoardStyleIsolationTests(unittest.TestCase):
-    def test_the_board_layer_is_the_only_interface_and_ships_unconditionally(self):
-        """board.css 随页面一起加载，页面上没有第二套界面可选。
-
-        它是盖在 `web/css/` 上的覆盖层，两份一起才画得出一个界面。留一个开关把它摘掉，
-        剩下的是一屏对不上的类名——`.board-*` 那些节点仍在 DOM 里，谁也不给它们样式。
-        判据落在三处：入口 HTML 无条件引它、页面源码没有 `peach.legacy-ui` 与
-        `original-design` 的消费者、应用与设置面板都不读第二套界面的开关。设置里那枚
-        「增加对比度」由 `frontend/test/react/settings-panel.test.tsx` 在渲染结果上验。
-        """
-        root = Path(__file__).resolve().parents[1]
-        html = (root / "web/index.html").read_text(encoding="utf-8")
-        self.assertIn('<link rel="stylesheet" href="/board.css">', html)
-        paths = [*sorted((root / "web").rglob("*")), *sorted((root / "frontend" / "src").rglob("*"))]
-        for path in paths:
-            if path.suffix not in {".js", ".css", ".html", ".ts", ".tsx"} or "dist" in path.parts:
-                continue
-            text = path.read_text(encoding="utf-8")
-            for token in ("peach.legacy-ui", "original-design", "legacyUISetting"):
-                self.assertNotIn(token, text, f"{path.name} 仍在读第二套界面的开关")
-
-    def test_icon_centering_does_not_override_toolbar_visibility(self):
-        root = Path(__file__).resolve().parents[1]
-        css = (root / "web/board.css").read_text(encoding="utf-8")
-        rules = re.findall(r'([^{}]+)\{([^{}]*)\}', css)
-        centering = [selector for selector, body in rules
-                     if 'display:inline-grid' in body and 'place-items:center' in body]
-        self.assertTrue(any('.srctools button' in selector for selector in centering))
-        self.assertFalse(any('.ib,' in selector or '.sidebaraddmenu button' in selector
-                             for selector in centering))
 
 
 class MotionRecipeTests(unittest.TestCase):

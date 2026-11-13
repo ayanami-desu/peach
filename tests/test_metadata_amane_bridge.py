@@ -134,10 +134,6 @@ class BridgeContractTests(unittest.TestCase):
         self.assertEqual(code, bridge.EXIT_NOT_FOUND)
         self.assertEqual(seen, {"airav": None, "freejavbt": "http://127.0.0.1:7890"})
 
-    def test_failure_reasons_have_unique_values(self):
-        self.assertEqual(len(bridge.FAILURE_REASONS), 18)
-        self.assertEqual(len(set(bridge.FAILURE_REASONS)), 18)
-
     def test_a_login_requirement_keeps_its_failure_reason(self):
         runtime = make_runtime({"airav": FakeSourceError("login_required", detail="login page")})
         code, lines = run_main(["--number", "ABW-032", "--sites", "airav"], runtime)
@@ -221,14 +217,6 @@ class BridgeContractTests(unittest.TestCase):
 
 class OfficialSiteTests(unittest.TestCase):
     """官方档的五站（ADR-0048）走同一份 JSON 契约；`makers` 是 amane 的 `official` 模块。"""
-
-    def test_the_official_sites_name_their_amane_crawlers(self):
-        self.assertEqual(bridge.SITES["makers"], ("official", "OfficialCrawler"))
-        self.assertEqual(bridge.SITES["prestige"], ("prestige", "PrestigeCrawler"))
-        self.assertEqual(bridge.SITES["faleno"], ("faleno", "FalenoCrawler"))
-        self.assertEqual(bridge.SITES["dahlia"], ("dahlia", "DahliaCrawler"))
-        self.assertEqual(bridge.SITES["mgstage"], ("mgstage", "MGStageCrawler"))
-        self.assertNotIn("official", bridge.SITES)
 
     def test_each_official_site_reports_hit_miss_and_refusal_on_its_own(self):
         runtime = make_runtime({

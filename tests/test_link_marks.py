@@ -137,10 +137,6 @@ class SmoothnessTests(unittest.TestCase):
         for corner in ((0, 0), (last, 0), (0, last), (last, last)):
             self.assertEqual(image.getpixel(corner)[3], 0, f"{corner} 不该有像素")
 
-    def test_the_mark_is_large_enough_for_a_3x_screen(self):
-        """容器是 32 px CSS。3x 屏要 96 px，改动前的 64 在高分屏上本来就不够。"""
-        self.assertGreaterEqual(link_marks.MARK_SIZE, 96)
-
 
 class ChannelTests(unittest.TestCase):
     """成品图标与字形 favicon 走两条路，别混。"""

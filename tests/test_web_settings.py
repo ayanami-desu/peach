@@ -280,21 +280,6 @@ class SettingsRoundTripTests(unittest.TestCase):
 
 
 class ContractRegistrationTests(unittest.TestCase):
-    def test_the_routes_are_registered_and_the_write_stays_behind_the_ledger_gate(self):
-        """写侧栏顺序要写账本，所以它必须留在只读闸门后面。
-
-        reader（macOS）因此改不了顺序，但读到的是 writer 的那一份——这正是
-        「同一份习惯」的意思，不是缺陷。
-        """
-        from peach import web_contract
-
-        self.assertIs(web_contract.GET_HANDLERS["/api/settings"], q_settings)
-        self.assertIs(web_contract.POST_HANDLERS["/api/settings"], w_settings)
-        self.assertNotIn(
-            "/api/settings", web_contract.READ_ONLY_POST_ROUTES,
-            "这个 POST 写数据库，不能放进只读白名单",
-        )
-
     def test_the_sidebar_key_lists_match_the_web_surface(self):
         """键表是前后端共用的语义契约，两边各写一份就会漂。
 

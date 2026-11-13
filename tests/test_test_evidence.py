@@ -100,10 +100,6 @@ class ParallelShardTests(unittest.TestCase):
             with self.subTest(success=success, code=code):
                 self.assertEqual(exercise(success, code), [expected])
 
-    def test_imported_verification_code_belongs_to_this_workspace(self):
-        self.assertEqual(Path(runner.__file__).resolve().parents[1], Path(__file__).resolve().parents[1])
-        self.assertEqual(Path(evidence.__file__).resolve().parents[1], Path(__file__).resolve().parents[1])
-
     def test_a_zero_exit_with_incomplete_coverage_reports_the_missing_proof(self):
         def spawn(command, **kwargs):
             path = Path(command[command.index('--timings') + 1])

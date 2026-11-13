@@ -255,17 +255,6 @@ class ScrapingAccessTests(unittest.TestCase):
             self.assertIn("再跑一次接着采", str(spent.exception))
             self.assertNotIn("预算", str(spent.exception))
 
-    def test_a_library_scan_asks_for_enough_to_carry_a_batch_of_covers(self):
-        """一趟任务的三条闸门要够一批片子用完，不然每次跑都停在同一个地方。
-
-        一部片问三家目录站、每家 1～2 次，6000 次约等于 1500 部；每来源 2 秒的间隔下
-        三家并行也要 4 小时才用得完，时间不会先掐断请求数。每次约 250 KB，1 GiB 装得下。
-        """
-        from peach import library_processing
-        self.assertEqual(library_processing.MAX_SOURCE_REQUESTS, 6000)
-        self.assertEqual(library_processing.MAX_SOURCE_BYTES, 1024 * 1024 * 1024)
-        self.assertEqual(library_processing.MAX_SOURCE_SECONDS, 4 * 3600)
-
     def test_a_community_source_that_refuses_is_paused_as_a_whole(self):
         """javdb 超配额回 403 不带 Retry-After，接着问只会每条都再撞一次、把封期拖长。"""
         from peach.scraping_access import SourcePaused

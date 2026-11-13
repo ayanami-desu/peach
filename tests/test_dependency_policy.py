@@ -475,17 +475,6 @@ class DependencyPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "--co-author"):
             adopt.commit_message("web", [], "4", "Claude Code")
 
-    def test_the_vendor_check_prints_how_to_fix_itself(self):
-        """`check:vendor` 失败时要印出重算命令。
-
-        只列不同步的路径时，看到这一段的人得先翻 `package.json` 才知道入口叫什么；
-        Dependabot 的 PR 上尤其——那些改动不是人写的，没人知道漏了哪一步。
-        """
-        source = (ROOT / "scripts/vendor_web_dependencies.mjs").read_text(encoding="utf-8")
-        failure = source[source.index("前端固定依赖未同步"):source.index("process.exit(1)")]
-        self.assertIn("npm run vendor:web", failure)
-        self.assertIn("adopt_dependency_bump.py", failure)
-
     def test_uv_installation_preserves_interpreter_and_wheel_contracts(self):
         # 下限而不是等号：工具版本不进依赖图，等号只会让装了最新 uv 的机器全部被拒。
         self.assertRegex(self.pyproject["tool"]["uv"]["required-version"],

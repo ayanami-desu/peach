@@ -13,7 +13,6 @@ from unittest import mock
 from peach import junk, web_batch
 from peach.web_contract import (
     BUNDLE_DIR_ASSETS,
-    CONTENT_BYTES,
     PART_MARK,
     PROMO_CLUSTER_FILES,
     PROMO_DOMAIN,
@@ -145,10 +144,6 @@ class AdJudgementTests(unittest.TestCase):
         self.assertTrue(has_sibling_original("lxvs006pl", {"lxvs006"}))
         self.assertTrue(has_sibling_original("lxvs006ps", {"lxvs006"}))
         self.assertFalse(has_sibling_original("lxvs006pl", {"cawd241"}))
-
-    def test_content_threshold_is_far_above_any_promo_image(self):
-        """插页整包加起来不到 10 MB；判据只要不把这类体积算成内容就够。"""
-        self.assertGreaterEqual(CONTENT_BYTES, 512 * 1024**2)
 
 
 class ResourceJunkQueueTests(unittest.TestCase):

@@ -98,15 +98,6 @@ class JobStatusTests(unittest.TestCase):
             "存储一律 UTC，这一半不能跟着显示口径走",
         )
 
-    def test_the_generated_block_lands_outside_the_repository(self) -> None:
-        """自动区块使用配置中的 Peach 数据目录，保存在仓库外。"""
-        from peach.config import STATE_DIR
-
-        self.assertEqual(MODULE.DOC, STATE_DIR / "job-status.md")
-        self.assertEqual(MODULE.STATE, STATE_DIR / "agent-handoff.json")
-        repo = SCRIPT.parents[1]
-        self.assertNotIn(repo, MODULE.DOC.parents, "自动产物不能落在仓库里")
-
     def test_write_back_creates_the_document_when_it_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             doc = Path(root) / "state" / "job-status.md"

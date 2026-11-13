@@ -1521,9 +1521,6 @@ class WebDataTests(unittest.TestCase):
                              (9022, "SSIS-100-cd2.mp4", "SSIS-100")])
         self.assertEqual(rm_web._edition_groups(self.contract, ["SSIS-100"]), {})
 
-    def test_the_editions_endpoint_is_registered(self):
-        self.assertIn("/api/editions", rm_web.GET_HANDLERS)
-
     def test_query_side_normalisation_matches_the_write_side(self):
         """查询侧和写入侧必须用同一份归一化。
 

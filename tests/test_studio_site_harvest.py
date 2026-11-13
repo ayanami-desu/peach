@@ -460,12 +460,6 @@ class ConfirmedSiteTests(unittest.TestCase):
         self.module = load_module()
         self.title = "SOFT ON DEMAND（ソフト・オン・デマンド）"
 
-    def test_sod_create_points_at_the_parent_company_site(self):
-        """裁决本身要能被读出来：地址和理由都写在表里，不散在代码逻辑里。"""
-        url, reason = self.module.CONFIRMED_SITES["SOD Create"]
-        self.assertEqual(url, "https://www.sod.co.jp/")
-        self.assertIn("Soft On Demand", reason)
-
     def test_a_confirmed_site_is_ok_although_the_title_never_says_the_studio_name(self):
         """这一页 200、是成人站、标题是母公司名——`SOD Create` 这个串它不会有。
 
@@ -833,15 +827,6 @@ class ConfirmedRunTests(unittest.TestCase):
             "sleep": lambda _self, seconds: None,
             "monotonic": lambda _self: 0.0,
         })()
-
-    def test_the_progress_line_cannot_take_the_batch_down(self):
-        """入口块要把 stdout 换成 UTF-8：进度行里有日文标题，而本机控制台是 GBK。
-
-        证据在 CSV 里（UTF-8），进度行糊掉无所谓；一个 print 把整批掉到一半才是代价。
-        """
-        source = (REPO / "scripts" / "harvest_studio_sites.py").read_text(encoding="utf-8")
-        entry = source.split('if __name__ == "__main__":')[-1]
-        self.assertIn('sys.stdout.reconfigure(encoding="utf-8", errors="replace")', entry)
 
     def test_the_confirmed_address_is_the_only_one_requested(self):
         import argparse

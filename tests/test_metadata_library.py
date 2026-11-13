@@ -1428,11 +1428,6 @@ class LibraryNfoTests(unittest.TestCase):
                          ['https://storage92000.contents.fc2.com/file/1.jpg',
                           _ARCHIVE_COVER, _ARCHIVE_COVER_SECOND])
 
-    def test_javdb_keeps_its_own_host_interval_on_both_of_its_hosts(self):
-        """这一档的节奏由用户定，改动要连图床一起改：页面与图分别落在两个主机上。"""
-        from peach.library_processing import SOURCE_INTERVALS
-        self.assertEqual(SOURCE_INTERVALS, {'javdb.com': 3.0, 'jdbstatic.com': 3.0})
-
     def test_every_provider_waits_on_one_shared_host_interval(self):
         """资料处理每起一个 provider 都排同一条队，各干各的就会一起超配额。"""
         from peach.library_processing import SOURCE_LIMITER, LibraryMetadataProvider

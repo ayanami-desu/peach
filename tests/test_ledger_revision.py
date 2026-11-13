@@ -13,7 +13,6 @@ import threading
 import time
 import unittest
 from contextlib import closing
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -356,8 +355,6 @@ class DeclaredTablesTests(unittest.TestCase):
     authorizer 并关掉语句缓存（缓存命中的语句不再经过授权回调），每个场景前清空
     契约与模块级缓存，嵌套缓存的读表才会在外层的计算里出现。
     """
-
-    MOMENT = datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc)
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
