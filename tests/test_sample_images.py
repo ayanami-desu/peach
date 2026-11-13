@@ -182,6 +182,19 @@ class PendingTests(LedgerCase):
                            "label": sample_followup.TASK_LABEL}])
 
 
+    def test_selected_asset_runs_still_plan_samples(self):
+        from peach import library_processing
+        plan = mock.Mock(return_value=[{"key": sample_followup.FOLLOWUP_KEY}])
+        with mock.patch.object(library_processing, "_apply_finished_candidates",
+                               return_value={"applied": 0, "auto_rejected": 0}), \
+                mock.patch.object(sample_followup, "plan", plan):
+            result = library_processing._finish_collection(
+                None, None, self.root, self.covers, {}, None, asset_ids={1}, active=set(), update=False,
+                issue=mock.Mock(), watermark=None, covered=set(), people=False)
+        plan.assert_called_once()
+        self.assertEqual(result["followups"], [{"key": sample_followup.FOLLOWUP_KEY}])
+
+
 class FollowupTests(LedgerCase):
     def test_a_snapshot_is_landed_without_asking_any_site(self):
         self.work(1, "SSIS-057")

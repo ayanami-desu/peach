@@ -2231,7 +2231,7 @@ def _candidate_scope(groups, asset_ids):
 
 def _finish_collection(config, database, candidate_root, cover_root, groups, remote, *,
                        asset_ids, active, update, issue, watermark, covered, people=True, offline=False):
-    """结算本趟候选并补人物资料，全库任务同时推进存量后继。
+    """结算本趟候选并补人物资料；样张缺哪儿就派哪儿，人物后继只在全库任务推进存量。
 
     `people` 为假（没有哪个媒体库的处理方式联网补人物图片）时不补人物资料，也不派实体后继。
     `offline` 为真时只跳过补人物资料：后继照派，这一趟登记的实体过了这一趟就不再算新登记，
@@ -2240,7 +2240,7 @@ def _finish_collection(config, database, candidate_root, cover_root, groups, rem
     profiles = (_enrich_finished_performers(
         database, _candidate_scope(groups, asset_ids), config, candidate_root, remote, active, update, issue)
         if people and not offline else dict(aliases=0, avatars=0, conflicts=0, failed=0))
-    followups = [] if asset_ids is not None else sample_followup.plan(database, config, cover_root)
+    followups = sample_followup.plan(database, config, cover_root)
     if people:
         followups += _entity_followups(database, config, watermark, covered, include_stock=asset_ids is None)
     return dict(followups=followups, auto_applied=auto_apply['applied'],
