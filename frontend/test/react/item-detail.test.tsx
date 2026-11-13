@@ -5,7 +5,6 @@
 import { notifyManager, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
-import * as legacyUi from '@peach/legacy/ui';
 
 import type { GridPage } from '../../src/react/catalog-grid/catalog-grid';
 import type { MediaItem } from '../../src/react/catalog-grid/types';
@@ -47,7 +46,7 @@ function actions(): ActionMocks {
     checkSource: vi.fn(async () => false), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
     openTag: vi.fn(), addToPlaylist: vi.fn(), saveMix: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
     reveal: vi.fn(async () => ''), sync: vi.fn(async () => ({ text: '', removed: [] })),
-    rematch: vi.fn(async () => {}), trashChanged: vi.fn(async () => {}),
+    trashChanged: vi.fn(async () => {}),
     toast: vi.fn(), failure: vi.fn(),
   };
 }
@@ -135,27 +134,6 @@ describe('标签身份', () => {
     await act(async () => { await undo?.() });
     expect(posts(fetcher).map(([, body]) => [body.operation, body.tag]))
       .toEqual([['add', 'OL'], ['remove', '秘书OL']]);
-  });
-});
-
-describe('详情重新匹配资料', () => {
-  it('确认后按这一条番号重跑资料并提示去复核页', async () => {
-    vi.spyOn(legacyUi, 'confirmModal').mockImplementation((async (options: {
-      onConfirm?: () => Promise<unknown>;
-    }) => {
-      await options.onConfirm?.();
-      return { confirmed: true };
-    }) as typeof legacyUi.confirmModal);
-    const { host, actions: given } = await show(item(1, {
-      medium: 'video', is_jav: true, code: 'ABW-123',
-    }));
-    await click(host.querySelector('[data-rematch]'));
-    await settle();
-    expect(given.rematch).toHaveBeenCalledWith(1);
-    expect(given.toast).toHaveBeenCalledWith('已开始重新匹配资料，完成后到复核页确认');
-    expect(legacyUi.confirmModal).toHaveBeenCalledWith(expect.objectContaining({
-      title: '重新匹配资料？', confirmLabel: '重新匹配资料',
-    }));
   });
 });
 

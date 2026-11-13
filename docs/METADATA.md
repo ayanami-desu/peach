@@ -106,8 +106,7 @@ process_library(config, db_path, candidate_root, cover_root, *,
                 database=None, route_overrides=None, state_file=None,
                 asset_ids=None, resume_state=None, speed_mode=None,
                 protected_ids=(), recheck_existing=False, incremental=False,
-                network=None, library_id=None,
-                refresh_metadata=False)
+                network=None, library_id=None)
 ```
 
 - 阶段：`STAGES = (ALL_STAGES, COLLECT_STAGE, METADATA_STAGE)`，即 `all`/`collect`/`metadata`。资产不再落本机，扫描与预览生成都已不在这里：`collect`（旧名）与 `all` 都按采集处理。

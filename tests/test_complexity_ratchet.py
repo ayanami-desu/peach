@@ -59,10 +59,9 @@ BASELINE: dict[str, int] = {
 #: 判过就该这么长的函数：`(分支数, 为什么拆开更差)`。键与 `BASELINE` 同形、不重叠。
 ACCEPTED: dict[str, tuple[int, str]] = {
     "src/peach/library_processing.py:process_library": (
-        41, "顺序流水线：垃圾检查、媒体属性、联网采集、写候选、接触印相、收尾共用一份进度状态"
-            "与问题记录；按番号重新匹配复用同一条逐项处理，只改采集参数；来源扫描、资产查询与"
-            "外部会话分别归 `_scan_sources`、`_collection_rows`、`_RemoteSession`，剩下的是"
-            "任务编排、逐项目资料处理与指定范围的存量重新核查"),
+        34, "顺序流水线：垃圾检查、媒体属性、联网采集、写候选、接触印相、收尾共用一份进度状态"
+            "与问题记录；来源扫描、资产查询与外部会话分别归 `_scan_sources`、`_collection_rows`、"
+            "`_RemoteSession`，剩下的是任务编排、逐项目资料处理与指定范围的存量重新核查"),
     "src/peach/jav_cover_fetch.py:run": (
         50, "批处理的主循环：每个番号依次量本机尺寸、择优、比较、落盘、记日志，统计、日志行"
             "和出错后换新的连接池在整轮里共用，逐段拆开只是把这几样来回传"),

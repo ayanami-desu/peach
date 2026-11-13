@@ -401,19 +401,6 @@ function Side({ item, queue, write, helpers, actions }: {
         <Tags item={item} write={write} helpers={helpers} actions={actions} />
         {item.medium === 'video' && item.is_jav && item.code && item.location !== 'online' ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="small" data-rematch={item.id}
-              title={t('catalog:rematch.hint')}
-              onClick={() => {
-                void confirmModal({
-                  title: t('catalog:rematch.confirmTitle'),
-                  body: t('catalog:rematch.confirmBody'),
-                  confirmLabel: t('catalog:rematch.action'),
-                  onConfirm: async () => {
-                    await actions.rematch(item.id);
-                    actions.toast(t('catalog:rematch.started'));
-                  },
-                });
-              }}>{t('catalog:rematch.action')}</Button>
             <Button variant="secondary" size="small" data-samples-retry={item.id}
               title={t('catalog:rematch.samplesHint')}
               onClick={() => {

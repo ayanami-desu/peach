@@ -2,11 +2,10 @@
 import json
 import hashlib
 import logging
-import time
 
 from . import settings_file
 from .library_processing_scope import scoped_config, scoped_assets
-from .library_processing import (ALL_STAGES, COLLECT_STAGE, STAGES, LABELS,
+from .library_processing import (ALL_STAGES, COLLECT_STAGE, STAGES,
                                 METADATA_STAGE, _asset_selection,
                                 decorate, issues_path, process_library, snapshot)
 from .processing_control import control_for, initial_estimate, valid_mode, mode_ratio
@@ -27,7 +26,7 @@ PUBLIC_FIELDS = frozenset({
     'issues_log', 'issues_truncated', 'retryable_asset_ids', 'notes', 'current_asset_id',
     'current_asset_name', 'current_action', 'current_started_at', 'last_progress_at', 'stalled',
     'waited_seconds', 'completed_at', 'current_source', 'skip_requested', 'archived', 'new_asset_count',
-    'trigger', 'refresh_metadata',
+    'trigger',
 })
 
 
@@ -348,25 +347,6 @@ def _expand_new_scope(db_path, body):
         body['asset_ids'] = ids
 
 
-def _reopen_metadata_reviews(contract, asset_id):
-    """把这一条已审完的元数据决定放回复核队列，不改资产字段。
-
-    复核页把 approved／rejected 当终局；重新匹配必须先把旧决定降为 skipped，
-    新候选才会重新占一行。资产上的值等用户重新通过才换。只动资产主键的行：
-    番号主键的旧批次候选不参与这次刷新，重开它只会多出一道范围更大的判断题。
-    """
-    keys = [f'asset:{asset_id}:{field}' for field in LABELS]
-    marks = ','.join('?' * len(keys))
-    stamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    with contract.database.write_transaction() as connection:
-        connection.execute(
-            f"UPDATE review_decision SET status='skipped', updated_at=? "
-            f"WHERE category='metadata_fields' AND item_key IN ({marks}) "
-            "AND status IN ('approved','rejected')",
-            (stamp, *keys),
-        )
-
-
 def _processing_request(contract, config, previous, body):
     """校验馆藏、阶段与互斥的处理范围。"""
     if not config.configured or not config.drive_roots:
@@ -385,22 +365,16 @@ def _processing_request(contract, config, previous, body):
                 (previous.get('requested_stage') if retry_ids is not None else None) or ALL_STAGES)
     if stage not in STAGES:
         raise ValueError('处理阶段无效')
-    refresh = bool((body or {}).get('refresh')) or (
-        retry_ids is not None and bool(previous.get('refresh_metadata')))
-    refresh_ids = asset_ids if asset_ids is not None else retry_ids
-    if refresh and (stage != METADATA_STAGE or refresh_ids is None or len(refresh_ids) != 1):
-        raise ValueError('重新匹配只支持单个视频的资料阶段')
-    return retry_ids, asset_ids, stage, refresh
+    return retry_ids, asset_ids, stage
 
 
 def _resume_request(previous, speed_mode):
-    """继续一趟暂停的任务：照原任务的阶段、媒体库、范围与重新匹配重发，不另起范围。"""
+    """继续一趟暂停的任务：照原任务的阶段、媒体库与范围重发，不另起范围。"""
     return {
         'stage': previous.get('requested_stage') or ALL_STAGES,
         'library_id': previous.get('library_id'),
         **({'incremental': True} if previous.get('incremental') else
            {'asset_ids': previous['asset_ids']} if previous.get('asset_ids') else {}),
-        **({'refresh': True} if previous.get('refresh_metadata') else {}),
         'speed_mode': speed_mode,
     }
 
@@ -453,7 +427,7 @@ def _scoped_processing_request(contract, config, previous, body, resume):
             raise ValueError('重试或恢复必须沿用原任务的媒体库')
         library_id = previous_library
     config = scoped_config(config, library_id)
-    retry_ids, asset_ids, stage, refresh = _processing_request(contract, config, previous, body)
+    retry_ids, asset_ids, stage = _processing_request(contract, config, previous, body)
     if library_id and asset_ids is not None:
         selected = scoped_assets(config, contract.db_path, library_id, asset_ids)
         if (body or {}).get('scope') != 'new' and set(selected) != set(asset_ids):
@@ -461,7 +435,7 @@ def _scoped_processing_request(contract, config, previous, body, resume):
         if not selected:
             raise ValueError('所选媒体库暂无待处理影片')
         asset_ids = selected
-    return config, library_id, retry_ids, asset_ids, stage, refresh
+    return config, library_id, retry_ids, asset_ids, stage
 
 
 def _refresh_new_files(contract, config, library_id):
@@ -492,12 +466,10 @@ def w_library_processing(contract, body, *, resume=False):
         return _control_action(contract, config, body)
     previous = _current(contract)
     if previous.get('status') in ACTIVE and not resume:
-        if (body or {}).get('refresh'):
-            raise ValueError('已有处理任务在进行，等它结束再重新匹配')
         return public_state(previous)
     if (body or {}).get('retry') is not None:
         previous['retryable_asset_ids'] = _remaining_retry_ids(contract, previous)
-    config, library_id, retry_ids, asset_ids, stage, refresh = _scoped_processing_request(
+    config, library_id, retry_ids, asset_ids, stage = _scoped_processing_request(
         contract, config, previous, body, resume)
     incremental = (body or {}).get('incremental', False)
     if (body or {}).get('scope') == 'new':
@@ -508,22 +480,16 @@ def w_library_processing(contract, body, *, resume=False):
     control = control_for(config)
     mode = _initial_speed(contract, control, previous, body, resume=resume)
     control.request('set_speed', mode=mode)
-    target_ids = asset_ids if asset_ids is not None else retry_ids
     def work(job_id):
         try:
             # 先发现再处理：新上传的文件还没入账，立刻同步一次，待处理队列才有 id。
             if incremental and not resume:
                 _refresh_new_files(contract, config, library_id)
-            # 开工前重开旧决定；任务跑起来以后人再作出的判断不会被收尾覆盖。
-            if refresh:
-                _reopen_metadata_reviews(contract, target_ids[0])
             result = process_library(config, contract.db_path, contract.candidate_root, contract.cover_root,
                 job_id=job_id, retry_ids=retry_ids, stage=stage, asset_ids=asset_ids, incremental=incremental, library_id=library_id,
                 # 自动落库与页面写的是同一个 `LedgerDatabase`：进程内写锁在实例上，
-                # 另建一个就是在同一个进程里开第二条写入路径。重新匹配只产候选，
-                # 不在这里落库。
-                database=None if refresh else contract.database,
-                refresh_metadata=refresh,
+                # 另建一个就是在同一个进程里开第二条写入路径。
+                database=contract.database,
                 resume_state=previous if resume else None,
                 speed_mode=control_for(config).mode,
                 network=getattr(contract, 'network_reachability', None),
@@ -533,21 +499,20 @@ def w_library_processing(contract, body, *, resume=False):
             contract.library_processing_job.update(job_id, **{key: value for key, value in result.items() if key != 'job_id'})
         finally:
             contract.cache_bust()
-    result = _start_job(contract, config, work, stage=stage, refresh=refresh, asset_ids=asset_ids,
+    result = _start_job(contract, config, work, stage=stage, asset_ids=asset_ids,
                         retry_ids=retry_ids, incremental=incremental, mode=mode, library_id=library_id)
     if not resume:
         control.select_next_mode(None)
     return result
 
 
-def _start_job(contract, config, work, *, stage, refresh, asset_ids, retry_ids, incremental, mode,
+def _start_job(contract, config, work, *, stage, asset_ids, retry_ids, incremental, mode,
                library_id=None):
     """起步那行字按这一趟真正要做的事写：点了「只扫描」却看到「准备采集资料」，人会以为点错了。
 
-    恢复参数与起步文案同源：`retry` 那一路要靠 `refresh` 记住这次是重新匹配，
-    增量发现要靠 `incremental` 找回冻结的那批新文件。"""
+    恢复参数与起步文案同源：增量发现要靠 `incremental` 找回冻结的那批新文件。"""
     labels = {ALL_STAGES: '准备处理', COLLECT_STAGE: '准备采集资料',
-              METADATA_STAGE: '准备重新匹配资料' if refresh else '准备采集资料'}
+              METADATA_STAGE: '准备采集资料'}
     estimate_ids = asset_ids if asset_ids is not None else retry_ids
     if incremental:
         from .library_new_assets import pending
@@ -557,10 +522,8 @@ def _start_job(contract, config, work, *, stage, refresh, asset_ids, retry_ids, 
     result = contract.library_processing_job.start(
         work, restart=True, initial={'stage': labels[stage], 'requested_stage': stage,
                                     'library_id': library_id, 'library_name': library_name,
-                                    'refresh_metadata': refresh,
                                     **initial_estimate(config, contract.db_path, stage, estimate_ids, mode)},
         recovery={'stage': stage, 'speed_mode': mode, 'incremental': incremental, 'library_id': library_id,
-                  'refresh': refresh,
                   **({'asset_ids': asset_ids or retry_ids}
                                     if asset_ids is not None or retry_ids is not None else {})})
     return public_state(result)

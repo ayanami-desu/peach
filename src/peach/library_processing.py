@@ -2486,8 +2486,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                     retry_ids=None, active=lambda: True, stage=ALL_STAGES,
                     database=None, route_overrides=None, state_file=None, asset_ids=None,
                     resume_state=None, speed_mode=None, protected_ids=(), recheck_existing=False,
-                    incremental=False, network=None, library_id=None,
-                    refresh_metadata=False):
+                    incremental=False, network=None, library_id=None):
     """给已登记的作品补资料与视频属性，外部资料保留为可复核候选。
 
     `retry_ids` 为 `None` 时处理整个馆藏；给定时只处理这些项目（上一任务记录的
@@ -2511,16 +2510,9 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
     `network` 是 `NetworkReachability`：外部采集开始前当场探一次，判成断网时要出网的行记为
     可重试的「外部资料未取得」、补人物资料整段跳过，本地那几步照常做完；之后每一行读它的快照。
     不给就不判，命令行走这条。
-
-    `refresh_metadata` 只用于单个已选视频：忽略来源缓存，把现有字段一并重新问一遍，
-    以 `requires_review` 候选覆盖旧候选；不抓外部封面。调用方负责让已审完的复核决定
-    重新回到队列。
     """
     config, library_id, selected_ids = _prepare_library_scope(
         config, db_path, stage, asset_ids, retry_ids, database, library_id, resume_state)
-    refresh_ids = asset_ids if asset_ids is not None else retry_ids
-    if refresh_metadata and (stage != METADATA_STAGE or refresh_ids is None or len(refresh_ids) != 1):
-        raise ValueError('重新匹配只支持单个视频的资料阶段')
     from .repository import LedgerDatabase
     judgement_database = database if database is not None else LedgerDatabase(db_path)
     routes = metadata_routes.parse_route_overrides(route_overrides)
@@ -2597,7 +2589,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
 
         update()
         remote = _RemoteSession(config, provider_factory, _MissCache(misses_path(config)),
-                                retrying=retrying or refresh_metadata, recheck_existing=recheck_existing, routes=routes,
+                                retrying=retrying, recheck_existing=recheck_existing, routes=routes,
                                 database=judgement_database)
         flush_candidates = lambda force=False: None
 
@@ -2652,7 +2644,7 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
             prepared = []
             remaining = list(checkpoints.remaining_metadata(rows))
             completed_count = len(rows) - len(remaining)
-            verify_existing = bool(recheck_existing or refresh_metadata)
+            verify_existing = recheck_existing
             for index, (_, row) in enumerate(remaining):
                 guard.check()
                 name = str(row.get('name') or row.get('path') or '')
@@ -2699,7 +2691,6 @@ def process_library(config, db_path, candidate_root, cover_root, *, location='co
                     remote, row, code, missing, stages_of(row['path']), cover_root, covered,
                     update=update, issue=issue,
                     answered=() if verify_existing else _answered_sources(groups, target_key, missing),
-                    fetch_cover=not refresh_metadata,
                     received=lambda entries, row=row, code=code, fields=local_fields, verify=verify_existing:
                         publish(row, code, fields, verify, entries),
                     gate=gate,

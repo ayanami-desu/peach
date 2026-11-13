@@ -1,12 +1,7 @@
 {
   "rematch": {
-    "action": "Match metadata again",
-    "hint": "Fetch this code's metadata from the sources again; confirm the results on the Review page.",
-    "confirmTitle": "Match metadata again?",
-    "confirmBody": "Peach will fetch this code's metadata from the sources again and put the reviewed metadata decisions for this code back in the review queue. Existing fields won't change automatically.",
     "samples": "Match samples again",
     "samplesDone": "Fetched {{count}} sample images",
-    "samplesHint": "Ask for this code's samples right now: the official site first, javdb as the fallback",
-    "started": "Matching metadata again. Confirm the results on the Review page."
+    "samplesHint": "Ask for this code's samples right now: the official site first, javdb as the fallback"
   }
 }
