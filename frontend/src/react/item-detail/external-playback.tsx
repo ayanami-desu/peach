@@ -1,4 +1,4 @@
-/* 外部播放的三种取法：在本机播放器里打开、下 M3U 文件、复制网络播放地址。
+/* 外部播放的三种取法：在本机播放器里打开、下 M3U 文件、复制播放链接。
  *
  * 「本机」指用户自己的手机或电脑：Peach 只把限时链接换成播放器的 URI scheme 交给系统，
  * 不检测也不唤起进程（`docs/EXTERNAL_PLAYERS.md`）。链接有效期 6 小时，设备要能访问当前
@@ -13,7 +13,7 @@ import { ErrorText, Help } from '../settings/section';
 import { busyProps, useAction } from '../settings/use-action';
 
 const TARGET_KEY = 'peach.playback-target.v1';
-const NETWORK_TARGETS = [['m3u', 'M3U 播放列表'], ['url', '网络播放地址 / VR']] as const;
+const NETWORK_TARGETS = [['m3u', 'M3U 播放列表'], ['url', '播放链接']] as const;
 const APP_PREFIX = 'app:';
 
 export function ExternalPlayback({ id, onOpened }: { id: number; onOpened?(): void }) {
@@ -61,7 +61,7 @@ export function ExternalPlayback({ id, onOpened }: { id: number; onOpened?(): vo
     </div>
     {action.error ? <ErrorText>{action.error}</ErrorText> : null}
     {links ? <>
-      <Input label="网络播放地址" value={links.url} isReadOnly />
+      <Input label="播放链接" value={links.url} isReadOnly />
       <Help>链接有效期为 6 小时。本机播放器由系统打开；另一台设备需要能访问当前 Peach 地址。</Help>
     </> : null}
   </div>;

@@ -19,11 +19,23 @@ BROWSER_MIME = {
     ".ogv": "video/ogg",
     ".ogg": "video/ogg",
 }
-#: 入库但不是网页可播：能浏览、能复制直链、能交外部播放器。
-OTHER_VIDEO_SUFFIXES = frozenset({
-    ".mkv", ".avi", ".wmv", ".mov", ".ts", ".m2ts", ".flv", ".mpg", ".mpeg", ".3gp",
-})
+#: 网页播不了、播放器自己解的容器。外链照发，不按格式拦。
+OTHER_VIDEO_MIME = {
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv",
+    ".mov": "video/quicktime",
+    ".ts": "video/mp2t",
+    ".m2ts": "video/mp2t",
+    ".flv": "video/x-flv",
+    ".mpg": "video/mpeg",
+    ".mpeg": "video/mpeg",
+    ".3gp": "video/3gpp",
+}
+OTHER_VIDEO_SUFFIXES = frozenset(OTHER_VIDEO_MIME)
 VIDEO_SUFFIXES = frozenset(BROWSER_MIME) | OTHER_VIDEO_SUFFIXES
+#: 外部播放器能解的容器：网页可播的那几个之外，再加下面这张表。
+PLAYER_MIME = {**BROWSER_MIME, **OTHER_VIDEO_MIME}
 
 
 def suffix_of(name: str | None) -> str:
@@ -32,6 +44,10 @@ def suffix_of(name: str | None) -> str:
 
 def browser_mime(name: str | None) -> str | None:
     return BROWSER_MIME.get(suffix_of(name))
+
+
+def player_mime(name: str | None) -> str | None:
+    return PLAYER_MIME.get(suffix_of(name))
 
 
 @dataclass(frozen=True)
@@ -114,17 +130,19 @@ class MediaEngine:
             raise MediaUnavailable(asset.id)
         return asset.location, asset.drive_root or "", asset.remote_id
 
-    def plan(self, asset_id: int) -> StreamPlan:
+    def plan(self, asset_id: int, *, any_container: bool = False) -> StreamPlan:
+        """`any_container` 给外链与 M3U 用：网页播不了的容器照样能签出去。"""
         asset = self.asset(asset_id)
         self._drive(asset)  # 没有远端 id 的行连计划都不该成立
-        mime = browser_mime(asset.name or asset.path)
+        mime = (player_mime if any_container else browser_mime)(asset.name or asset.path)
         if mime is None:
             raise MediaUnavailable(asset.id)
         return StreamPlan("range", mime, "drive-range")
 
-    def response(self, request, asset: MediaAsset, *, download: bool = False):
+    def response(self, request, asset: MediaAsset, *, download: bool = False,
+                 any_container: bool = False):
         location, root, remote_id = self._drive(asset)
-        mime = browser_mime(asset.name or asset.path)
+        mime = (player_mime if any_container else browser_mime)(asset.name or asset.path)
         if mime is None:
             raise MediaUnavailable(asset.id)
         try:

@@ -15,7 +15,7 @@ from peach.drive_provider import DriveAuthRequired, DriveNotFound
 from peach.ffmpeg import BinaryChoice, binary_diagnostics
 from peach.media import (
     BROWSER_MIME, OTHER_VIDEO_SUFFIXES, VIDEO_SUFFIXES, MediaEngine, MediaNotFound,
-    MediaUnavailable, StreamPlan, browser_mime, suffix_of,
+    MediaUnavailable, StreamPlan, browser_mime, player_mime, suffix_of,
 )
 from peach.repository import MediaAsset
 
@@ -80,6 +80,14 @@ class SuffixTests(unittest.TestCase):
         self.assertIsNone(browser_mime("notes.txt"))
         self.assertEqual(set(BROWSER_MIME), {".mp4", ".m4v", ".webm", ".ogv", ".ogg"})
 
+    def test_containers_only_external_players_decode_have_their_own_mime(self):
+        self.assertEqual(player_mime("ABC-123.mkv"), "video/x-matroska")
+        self.assertEqual(player_mime("clip.avi"), "video/x-msvideo")
+        self.assertEqual(player_mime("clip.mp4"), "video/mp4")
+        self.assertIsNone(player_mime("notes.txt"))
+        self.assertEqual(set(OTHER_VIDEO_SUFFIXES), {
+            ".mkv", ".avi", ".wmv", ".mov", ".ts", ".m2ts", ".flv", ".mpg", ".mpeg", ".3gp"})
+
 
 class MediaEngineTests(unittest.TestCase):
     def engine(self, *assets, streamer=None, cache_root=None):
@@ -103,6 +111,13 @@ class MediaEngineTests(unittest.TestCase):
         engine, _ = self.engine(asset)
         with self.assertRaises(MediaUnavailable):
             engine.plan(1)
+
+    def test_plan_for_external_links_accepts_any_container_players_decode(self):
+        asset = MediaAsset(1, "gdrive:/Movies/ABC-123.mkv", None, location="gdrive",
+                           name="ABC-123.mkv", remote_id="file-1")
+        engine, _ = self.engine(asset)
+        self.assertEqual(engine.plan(1, any_container=True),
+                         StreamPlan("range", "video/x-matroska", "drive-range"))
 
     def test_rows_from_retired_sources_have_no_remote_id(self):
         asset = MediaAsset(1, "M:\\Media\\ABC-123.mp4", None, location="115", name="ABC-123.mp4")

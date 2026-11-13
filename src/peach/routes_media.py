@@ -95,7 +95,7 @@ def external_playback(request: Request, id: int, args: dict[str, str] = Depends(
     from .routes_auth import _origin_key
     from fastapi import HTTPException
     state = request.app.state
-    state.media_engine.plan(id)
+    state.media_engine.plan(id, any_container=True)
     supplied = request.headers.get('origin')
     raw = supplied or str(request.base_url)
     parsed = urlsplit(raw)
@@ -127,7 +127,7 @@ def _external_asset(request: Request, asset_id: int, ticket: str, origin: str):
 @router.api_route("/external-stream/{id}", methods=["GET", "HEAD"])
 def external_stream(request: Request, id: int, ticket: str, origin: str = ''):
     asset = _external_asset(request, id, ticket, origin)
-    return request.app.state.media_engine.response(request, asset)
+    return request.app.state.media_engine.response(request, asset, any_container=True)
 
 
 @router.get("/external-playlist/{id}.m3u")

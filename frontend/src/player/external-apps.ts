@@ -4,7 +4,7 @@
  * scheme。判断能不能装上由系统决定，认不出 scheme 时浏览器什么也不做，页面不会跳走。 */
 import { t } from '../i18n';
 
-export type AppPlatform = 'ios' | 'android' | 'mac' | 'windows';
+export type AppPlatform = 'ios' | 'ipad' | 'android' | 'mac' | 'windows';
 
 export interface AppPlayer {
   id: string;
@@ -19,7 +19,7 @@ const androidIntent = (url: string, packageName?: string) => {
   const parts = new URL(url);
   const spec = [
     `scheme=${parts.protocol.replace(':', '')}`,
-    'type=video/mp4',
+    'type=video/*',
     ...(packageName ? [`package=${packageName}`] : []),
     'end',
   ].join(';');
@@ -27,9 +27,9 @@ const androidIntent = (url: string, packageName?: string) => {
 };
 
 export const APP_PLAYERS: readonly AppPlayer[] = [
-  { id: 'vlc', label: 'VLC', platforms: ['ios', 'android', 'mac', 'windows'],
+  { id: 'vlc', label: 'VLC', platforms: ['ios', 'ipad', 'android', 'mac', 'windows'],
     link: url => `vlc://${url}` },
-  { id: 'vlc-ios', label: 'VLC（iOS）', platforms: ['ios'],
+  { id: 'vlc-ios', label: 'VLC（iOS）', platforms: ['ios', 'ipad'],
     link: url => `vlc-x-callback://x-callback-url/stream?url=${query(url)}` },
   { id: 'iina', label: 'IINA', platforms: ['mac'],
     link: url => `iina://weblink?url=${query(url)}` },
@@ -37,9 +37,11 @@ export const APP_PLAYERS: readonly AppPlayer[] = [
     link: url => `potplayer://${url}` },
   { id: 'mpv', label: 'mpv', platforms: ['mac', 'windows'],
     link: url => `mpv://${url}` },
-  { id: 'infuse', label: 'Infuse', platforms: ['ios'],
+  { id: 'infuse', label: 'Infuse', platforms: ['ios', 'ipad'],
     link: url => `infuse://x-callback-url/play?url=${query(url)}` },
-  { id: 'nplayer', label: 'nPlayer', platforms: ['ios', 'android'],
+  { id: 'senplayer', label: 'SenPlayer', platforms: ['ios', 'ipad'],
+    link: url => `senplayer://x-callback-url/play?url=${query(url)}` },
+  { id: 'nplayer', label: 'nPlayer', platforms: ['ios', 'ipad', 'android'],
     link: url => `nplayer-${url}` },
   { id: 'mxplayer', label: 'MX Player', platforms: ['android'],
     link: url => androidIntent(url, 'com.mxtech.videoplayer.ad') },
@@ -49,7 +51,10 @@ export const APP_PLAYERS: readonly AppPlayer[] = [
 
 export function appPlatform(userAgent: string): AppPlatform {
   const ua = userAgent.toLowerCase();
-  if (/iphone|ipad|ipod/.test(ua)) return 'ios';
+  // iPad 单独一类：现在与 iOS 用同一批播放器，后续可能分家。iPadOS 13 起的
+  // 桌面版 UA 自称 Macintosh，靠 UA 认不出来，这里只认 UA 里写明 iPad 的那些。
+  if (ua.includes('ipad')) return 'ipad';
+  if (/iphone|ipod/.test(ua)) return 'ios';
   if (ua.includes('android')) return 'android';
   if (ua.includes('mac')) return 'mac';
   return 'windows';

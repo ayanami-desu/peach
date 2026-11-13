@@ -1,6 +1,6 @@
 # 外部播放器与 VR
 
-Peach 只对网页能直接播放的容器签发外链：`.mp4`、`.m4v`、`.webm`、`.ogv`、`.ogg`。其他容器入库后可以在详情页看到条目，但签发接口会以 404 拒绝。外部播放通过两条限时链接完成：M3U 播放列表和网络播放地址。
+Peach 签发外链不按容器设限：`.mp4`、`.m4v`、`.webm`、`.ogv`、`.ogg` 之外，`.mkv`、`.avi`、`.wmv`、`.mov`、`.ts`、`.m2ts`、`.flv`、`.mpg`、`.mpeg`、`.3gp` 也照发，编码与容器交给播放器自己解。外部播放通过两条限时链接完成：M3U 播放列表和播放链接。网页内播放仍只认浏览器原生可播的那几个容器。
 
 ## 生成链接
 
@@ -9,11 +9,11 @@ Peach 只对网页能直接播放的容器签发外链：`.mp4`、`.m4v`、`.web
 | 情形 | 响应 |
 | --- | --- |
 | 资产不存在 | 404 `{"error": "no such id"}` |
-| 容器不支持外链，或资产缺少网盘位置 | 404 `{"error": "unavailable"}` |
+| 资产缺少网盘位置（没有远端 id） | 404 `{"error": "unavailable"}` |
 | Origin 无法解析 | 400「播放地址无效」 |
 | 成功 | `{"url": …, "playlist": …, "expires_in": 21600}` |
 
-成功响应返回相对路径 `/external-stream/<id>?ticket=…&origin=…` 与 `/external-playlist/<id>.m3u?ticket=…&origin=…`，页面按当前 origin 拼成完整地址；响应头为 `Cache-Control: no-store`。详情页的选项对应这两种取法，外加把地址交给本机播放器：「M3U 播放列表」下载 `peach-<id>.m3u`，「网络播放地址 / VR」只显示可复制的地址，「VLC」「PotPlayer」这类选项直接把 scheme 地址交给系统。
+成功响应返回相对路径 `/external-stream/<id>?ticket=…&origin=…` 与 `/external-playlist/<id>.m3u?ticket=…&origin=…`，页面按当前 origin 拼成完整地址；响应头为 `Cache-Control: no-store`。详情页的选项对应这两种取法，外加把地址交给本机播放器：「M3U 播放列表」下载 `peach-<id>.m3u`，「播放链接」只显示可复制的地址，「VLC」「PotPlayer」这类选项直接把 scheme 地址交给系统。
 
 ## 票据
 
@@ -57,8 +57,11 @@ Peach 只对网页能直接播放的容器签发外链：`.mp4`、`.m4v`、`.web
 | 设备 | 播放器 | 交给系统的地址 |
 | --- | --- | --- |
 | 桌面 | VLC / PotPlayer / mpv / IINA | `vlc://<链接>`、`potplayer://<链接>`、`mpv://<链接>`、`iina://weblink?url=<编码>` |
-| iPhone、iPad | VLC、Infuse、nPlayer | `vlc-x-callback://x-callback-url/stream?url=<编码>`、`infuse://x-callback-url/play?url=<编码>`、`nplayer-<链接>` |
-| Android | VLC、nPlayer、MX Player、系统默认 | `intent://<主机与路径>#Intent;scheme=https;type=video/mp4;package=<包名>;end` |
+| iPhone | VLC、Infuse、SenPlayer、nPlayer | `vlc-x-callback://x-callback-url/stream?url=<编码>`、`infuse://x-callback-url/play?url=<编码>`、`senplayer://x-callback-url/play?url=<编码>`、`nplayer-<链接>` |
+| iPad | 与 iPhone 同一批 | 同上 |
+| Android | VLC、nPlayer、MX Player、系统默认 | `intent://<主机与路径>#Intent;scheme=https;type=video/*;package=<包名>;end` |
+
+iPad 在 user agent 里单独归一类（`ipad`），当前与 iPhone 用同一批播放器，后续可以分家；iPadOS 13 起的桌面版 UA 自称 Macintosh，这类请求按桌面处理。SenPlayer 认的 scheme 与参数见其 [URL Scheme 文档](https://docs.qq.com/markdown/DQWJpWUpRRnRNRnF4)。
 
 底层播放器拿到的仍是 `/external-stream/<id>?ticket=…`，所以票据约束照旧：6 小时有效、重启即失效、绑定 origin。上一格选的取法存在浏览器本地（`peach.playback-target.v1`），这台设备不再支持那一款时退回第一款可用的。
 
@@ -67,5 +70,5 @@ Peach 只对网页能直接播放的容器签发外链：`.mp4`、`.m4v`、`.web
 - 链接只覆盖票据对应的那一个资产，不含网盘路径、网盘访问凭据或长期登录凭据。
 - 另一台设备要能访问签发链接时用的地址：在 `localhost` 上生成的地址手机打不开，需要换成这台机器在局域网里的地址再生成。
 - 容器与编码由外部播放器自己解码，Peach 只发原始字节，不做转码、切片或缓存。
-- 生成链接不计入观看记录，也不能证明播放器已经开始播放。
+- 生成链接不计入观看记录；播放器播到哪 Peach 观测不到，续播位置只对网页播放器有效。
 - 服务端不检测也不唤起播放器，只把链接换成 scheme 地址交给浏览器；能不能装、装没装由系统决定。

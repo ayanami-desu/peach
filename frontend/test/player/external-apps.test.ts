@@ -16,22 +16,23 @@ describe('本机播放器地址', () => {
     expect(linkOf('vlc-ios')).toBe(`vlc-x-callback://x-callback-url/stream?url=${encodeURIComponent(URL)}`);
     expect(linkOf('iina')).toBe(`iina://weblink?url=${encodeURIComponent(URL)}`);
     expect(linkOf('infuse')).toBe(`infuse://x-callback-url/play?url=${encodeURIComponent(URL)}`);
+    expect(linkOf('senplayer')).toBe(`senplayer://x-callback-url/play?url=${encodeURIComponent(URL)}`);
     expect(linkOf('nplayer')).toBe(`nplayer-${URL}`);
   });
 
   it('Android 用 intent，指定包名的带着播放器走', () => {
     expect(linkOf('mxplayer')).toBe(
-      'intent://peach.example/external-stream/7?ticket=abc#Intent;scheme=https;type=video/mp4;'
+      'intent://peach.example/external-stream/7?ticket=abc#Intent;scheme=https;type=video/*;'
       + 'package=com.mxtech.videoplayer.ad;end');
     expect(linkOf('android-default')).toBe(
-      'intent://peach.example/external-stream/7?ticket=abc#Intent;scheme=https;type=video/mp4;end');
+      'intent://peach.example/external-stream/7?ticket=abc#Intent;scheme=https;type=video/*;end');
   });
 });
 
 describe('按设备挑播放器', () => {
-  it('认得出四类设备', () => {
+  it('认得出五类设备', () => {
     expect(appPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('ios');
-    expect(appPlatform('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)')).toBe('ios');
+    expect(appPlatform('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)')).toBe('ipad');
     expect(appPlatform('Mozilla/5.0 (Linux; Android 15; Pixel 9)')).toBe('android');
     expect(appPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0)')).toBe('mac');
     expect(appPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('windows');
@@ -44,7 +45,10 @@ describe('按设备挑播放器', () => {
       .toEqual(['vlc', 'iina', 'mpv']);
     expect(appPlayers('Mozilla/5.0 (Linux; Android 15; Pixel 9)').map(player => player.id))
       .toEqual(['vlc', 'nplayer', 'mxplayer', 'android-default']);
+    const phones = ['vlc', 'vlc-ios', 'infuse', 'senplayer', 'nplayer'];
     expect(appPlayers('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)').map(player => player.id))
-      .toEqual(['vlc', 'vlc-ios', 'infuse', 'nplayer']);
+      .toEqual(phones);
+    expect(appPlayers('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)').map(player => player.id))
+      .toEqual(phones);
   });
 });

@@ -902,6 +902,15 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/api/stream-plan",
                                                 params={"id": 2, "t": "secret"})).status_code, 404)
 
+    async def test_the_external_playback_route_signs_links_for_any_player_container(self) -> None:
+        signed = await self.client.post("/api/external-playback", params={"id": 2, "t": "secret"})
+        self.assertEqual(signed.status_code, 200, signed.text)
+        answer = await self.client.get(signed.json()["url"], headers={"range": "bytes=0-7"})
+        self.assertEqual(answer.status_code, 206, answer.text)
+        self.assertIn("video/x-matroska", answer.headers["content-type"])
+        self.assertEqual(self.streamer.calls[-1],
+                         ("response", "gdrive", "root-1", "file-2", "video/x-matroska", False))
+
     async def test_the_external_stream_refuses_a_ticket_it_did_not_issue(self) -> None:
         forged = {"ticket": "forged", "origin": "http://test"}
         stream = await self.client.get("/external-stream/1", params=forged)

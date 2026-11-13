@@ -56,7 +56,7 @@ it('菜单按这台设备给得出本机播放器，默认第一款并记住选�
   expect(host.querySelector('[data-select-trigger]')?.textContent?.trim()).toBe('VLC');
   await click(host.querySelector('[aria-label="外部播放器"]'));
   expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent?.trim())).toEqual([
-    'VLC', 'PotPlayer', 'mpv', 'M3U 播放列表', '网络播放地址 / VR',
+    'VLC', 'PotPlayer', 'mpv', 'M3U 播放列表', '播放链接',
   ]);
   await choose(host.querySelector('[aria-label="外部播放器"]'), 'PotPlayer');
   expect(localStorage.getItem('peach.playback-target.v1')).toBe('app:potplayer');
@@ -68,7 +68,7 @@ it('手机上给的是 intent 与 iOS 那几款，不出现桌面播放器', asy
   const host = await mount(<ExternalPlayback id={4} />);
   await click(host.querySelector('[aria-label="外部播放器"]'));
   expect([...document.querySelectorAll('[role="option"]')].map(node => node.textContent?.trim())).toEqual([
-    'VLC', 'VLC（iOS）', 'Infuse', 'nPlayer', 'M3U 播放列表', '网络播放地址 / VR',
+    'VLC', 'VLC（iOS）', 'Infuse', 'SenPlayer', 'nPlayer', 'M3U 播放列表', '播放链接',
   ]);
 });
 
@@ -90,16 +90,16 @@ it('选 M3U 时下载播放列表，换回别的目标时清掉已显示的地�
   expect(downloadUrl).toContain('/external-playlist/9.m3u?ticket=short');
   expect(opened).toHaveBeenCalledOnce();
   expect(host.querySelector('input')?.value).toContain('/external-stream/9?ticket=short');
-  await choose(host.querySelector('[aria-label="外部播放器"]'), '网络播放地址 / VR');
+  await choose(host.querySelector('[aria-label="外部播放器"]'), '播放链接');
   expect(host.querySelector('input')).toBeNull();
 });
 
 it('签发失败时保留原因，不画地址', async () => {
   useBrowserLocation();
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: '容器不支持外链' }), { status: 404 })));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: '播放链接已失效，请在作品详情重新打开' }), { status: 401 })));
   const host = await mount(<ExternalPlayback id={5} />);
   await click(host.querySelector('[aria-label="使用外部播放器打开"]'));
   await settle();
-  expect(host.textContent).toContain('容器不支持外链');
+  expect(host.textContent).toContain('播放链接已失效');
   expect(host.querySelector('input')).toBeNull();
 });
