@@ -54,7 +54,7 @@ export function VideoThumbnailControls({ epoch = 0, disabled = false }: { epoch?
       {save.isPending || data?.status === 'running'
         ? <Stack divided>
             <Help role="status">{save.isPending ? '正在保存…' : '正在采集。'}</Help>
-            {save.isPending ? null : <TaskCenterLink />}
+            {save.isPending ? null : <TaskCenterLink className="self-start" />}
           </Stack>
         : null}
       {error ? <Stack divided><ErrorText>{errorMessage(error)}</ErrorText></Stack> : null}

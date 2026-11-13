@@ -266,7 +266,7 @@ function StoragePolicyForm({ state, receipt, apply }: {
     });
   };
 
-  return <Section guide="data" title={t('settings:storage.policyTitle')} nested>
+  return <Section guide="data" title={t('settings:storage.policyTitle')}>
     <Stack>
       <Help>{t('settings:storage.policyHelp')}</Help>
       <Rows>
@@ -279,7 +279,7 @@ function StoragePolicyForm({ state, receipt, apply }: {
             onChange={value => field('auto_clean', value)} />
         </SettingsRow>
       </Rows>
-      <div className="flex flex-col gap-4 pr-3">
+      <div className="flex flex-col gap-4">
         <ConfigurationInput label={t('settings:storage.policyMinimumFree')} unit="GiB" {...number('minimum_free_gib')} />
         <ConfigurationInput label={t('settings:storage.policyDataMax')} unit="GiB" {...number('data_max_gib')} />
         <ConfigurationInput label={t('settings:storage.policyCacheMax')} unit="GiB" {...number('cache_max_gib')} />

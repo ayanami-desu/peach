@@ -132,10 +132,12 @@ export function ExternalLink({ href, children, leadingIcon }: {
   );
 }
 
-/** 后台任务的进度在任务中心看：说明句后面跟这一颗，点了站内跳过去。 */
-export function TaskCenterLink() {
+/** 后台任务的进度在任务中心看：说明句后面跟这一颗，点了站内跳过去。
+ *  横排底栏里跟按钮同排时按 `items-center` 对齐；竖排 `Stack` 里没有按钮同桌，调用处补 `self-start`
+ *  免得链接撑满整行。 */
+export function TaskCenterLink({ className }: { className?: string }) {
   return (
-    <LinkButton href="/tasks" size="small" trailingIcon={RiArrowRightLine} className="self-start">
+    <LinkButton href="/tasks" size="small" trailingIcon={RiArrowRightLine} className={className}>
       在任务中心查看进度
     </LinkButton>
   );
