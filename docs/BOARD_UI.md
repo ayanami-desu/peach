@@ -32,7 +32,7 @@ Tree View 直接使用上游的目录图标、层级线、32px 紧凑行、键�
 
 官方组件文档与注册表源码已取得；官方实时浏览器示例打开超时，交互视觉实测未取得。Peach 的桌面和手机行为使用临时合成馆藏验收。
 
-目录栏吸顶边界按筛选浮层的实际高度与顶部位置计算，并随窗口和筛选内容变化更新；树内滚动高度保留筛选栏与底部间距。密集模式的 Mix 与作品卡共用顶部 7px 叠层留白，封面下沿对齐。
+目录栏吸顶边界按筛选浮层的实际高度与顶部位置计算，并随窗口和筛选内容变化更新；树内滚动高度保留筛选栏与底部间距。密集模式的作品卡共用顶部 7px 叠层留白，封面下沿对齐。
 
 文件夹模式使用上游 IconButton，在右侧排序控件组中适配 30px 透明按钮和玻璃选中面；Remix 图标保留填充路径。卡片与列表使用共用分段控件，当前浏览器保留所选显示方式。列表由 TanStack Table 驱动现有 BoardUI Table，复用 DataTableFrame、排序与分页控件，行间使用直线；选择接入馆藏现有批量栏。默认每页 20 部，服务端对完整筛选结果排序分页，跨页保留选择。实现依据 [TanStack 服务端分页](https://tanstack.com/table/latest/docs/framework/react/guide/pagination) 与 [排序](https://tanstack.com/table/latest/docs/framework/react/guide/sorting)，2026-10-17 核对。
 

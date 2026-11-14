@@ -209,8 +209,10 @@ def move(connection, old_id: int, new_id: int, *, rule: str = "code") -> None:
         f"UPDATE {GOAL_TABLE} SET wanted=0,replaced_at=strftime('%Y-%m-%d %H:%M:%S','now') "
         "WHERE asset_id=? AND profile_id=?",
         [(new_id, row["profile_id"]) for row in moved_goals])
-    for column in ("current_asset_id", "source_seed_asset_id"):
-        connection.execute(f"UPDATE playlist SET {column}=? WHERE {column}=?", (new_id, old_id))
+    connection.execute(
+        "UPDATE playlist SET current_asset_id=? WHERE current_asset_id=?",
+        (new_id, old_id),
+    )
     for table in ASSET_REFERENCE_TABLES:
         connection.execute(f"DELETE FROM {table} WHERE asset_id=?", (old_id,))
     connection.execute("DELETE FROM asset WHERE id=?", (old_id,))

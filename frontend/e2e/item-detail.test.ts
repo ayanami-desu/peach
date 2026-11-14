@@ -1,6 +1,6 @@
 /* 作品详情岛（`item-detail`）在真浏览器里的行为：从目录卡进出、深链、后退回到详情与刷新后关掉回哪一页、
  * 播放列表换条后关掉回列表页、舞台在媒体框里挂 Video.js、
- * 共演收起、标题折叠、评分与标签的撤销、反馈键态、四种队列、播放列表排序与移出、保存 Mix、接着看、
+ * 共演收起、标题折叠、评分与标签的撤销、反馈键态、三种队列、播放列表排序与移出、接着看、
  * 实体页入口与手机布局。
  *
  * 桩数据见 `item-fixture.ts`；读写接口全部由桩接住，演示库数据库一次都不写。 */
@@ -140,7 +140,7 @@ describe('作品详情岛', () => {
         await page.locator('#stage [data-queue-row]').first().waitFor();
         await page.locator('#stage [data-item-related] [data-media-card]').first().waitFor();
         const measured = await page.locator('[data-detail-continuation]').evaluate(node => {
-          const queue = node.querySelector('[data-mix-queue]')!.getBoundingClientRect();
+          const queue = node.querySelector('[data-detail-queue]')!.getBoundingClientRect();
           const cards = [...node.querySelectorAll('[data-queue-row]')].map(card => card.getBoundingClientRect());
           const related = node.querySelector('[data-item-related] [data-media-card]')!.getBoundingClientRect();
           return { width: queue.width, full: node.getBoundingClientRect().width, cards: cards.map(card => ({ width: card.width, y: card.y })), related: { width: related.width, y: related.y } };
@@ -380,7 +380,7 @@ describe('作品详情岛', () => {
         await page.locator(`#stage [data-queue-item="${id}"][aria-current="true"]`).waitFor();
       };
       const enter = async (resume: number) => {
-        await card.locator('[data-mix-open]').click();
+        await card.locator('[data-playlist-open]').click();
         await pathIs(page, `/assets/${resume}?playlist=${PLAYLIST.id}`);
         await page.locator(DETAIL_READY).waitFor();
         await step(PLAYLIST.items[1]!);
@@ -641,7 +641,6 @@ describe('作品详情岛', () => {
   }
 
   for (const [kind, path, next, wanted] of [
-    ['Mix', `/assets/${ITEM.plain}?mix=${ITEM.plain}`, 14, `/assets/14?mix=${ITEM.plain}`],
     ['分卷', `/assets/22?parts=${ITEM.part}`, 23, `/assets/23?parts=${ITEM.part}`],
     ['版本', `/assets/${ITEM.edition}?editions=${ITEM.edition}`, 32, `/assets/32?editions=${ITEM.edition}`],
     ['播放列表', `/assets/11?playlist=${PLAYLIST.id}`, 15, `/assets/15?playlist=${PLAYLIST.id}`],
@@ -697,27 +696,6 @@ describe('作品详情岛', () => {
         ['reorder', [11, 16, 14, 15]], ['reorder', PLAYLIST.items],
         ['remove', 15], ['add', [15]], ['reorder', PLAYLIST.items],
       ]);
-      assert.deepEqual(withoutPlayer(opened.problems), []);
-    } finally {
-      await opened.close();
-    }
-  });
-
-  it('保存 Mix：确认之后转去新建的那份播放列表', { timeout: 60_000 }, async () => {
-    const opened = await openItemPage(browser, `/assets/${ITEM.plain}?mix=${ITEM.plain}`, DESKTOP);
-    try {
-      const page = opened.page;
-      await page.locator('#stage [data-save-mix]').click();
-      await page.locator('[name="name"]').fill('我的 Mix');
-      await page.locator('[data-modal-confirm]').click();
-      await page.waitForFunction(() => location.pathname.startsWith('/assets/') && new URLSearchParams(location.search).get('playlist') === '8', undefined, { timeout: 10_000 });
-      await page.locator('#stage [data-queue-row]').first().waitFor();
-      assert.deepEqual(await ids(page, '#stage [data-queue-row]', 'data-queue-row'), [ITEM.plain, ...RELATED]);
-      const created = opened.stub.writes.find((write) => write.body.action === 'create')!;
-      assert.deepEqual(created.body, {
-        action: 'create', name: '我的 Mix', asset_ids: [ITEM.plain, ...RELATED], source_kind: 'mix',
-        source_seed_asset_id: ITEM.plain,
-      });
       assert.deepEqual(withoutPlayer(opened.problems), []);
     } finally {
       await opened.close();

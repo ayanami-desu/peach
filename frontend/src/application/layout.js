@@ -296,7 +296,7 @@ export function toggleJavMode(){
 }
 
 export async function reloadAfterWrite(){
-  dropBars();catalogState.mixRelatedCache.clear();
+  dropBars();
   await Promise.all([reloadCurrentSurface(),buildBars()]);
 }
 

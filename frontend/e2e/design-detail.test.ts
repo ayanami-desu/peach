@@ -295,14 +295,14 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
           head: [getComputedStyle(head).display, getComputedStyle(head).flexDirection],
           badge: [getComputedStyle(badge).fontStyle, getComputedStyle(badge).flexShrink, getComputedStyle(badge).maxWidth],
           sameRow: box.top < name.bottom && box.bottom > name.top,
-          heading: getComputedStyle(document.querySelector('#stage [data-mix-queue-head] h2')!).fontWeight,
+          heading: getComputedStyle(document.querySelector('#stage [data-detail-queue-head] h2')!).fontWeight,
         };
       });
       assert.deepEqual(shown, { head: ['flex', 'row'], badge: ['normal', '1', '50%'], sameRow: true, heading: '600' },
         '`<i>` 默认斜体，徽章不是强调语气；长版次字样最多占一半宽，番号不被挤没');
       /* 队列头的按钮是关闭一类的操作，走控件圆角，不是圆形标签。 */
       const head = await editions.page.evaluate(() => {
-        const button = document.querySelector('#stage [data-mix-queue-head] button')!;
+        const button = document.querySelector('#stage [data-detail-queue-head] button')!;
         return [getComputedStyle(button).borderTopLeftRadius, getComputedStyle(button).getPropertyValue('--control-radius').trim()];
       });
       assert.equal(head[0], head[1]);

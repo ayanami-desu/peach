@@ -46,8 +46,8 @@ it('共享 history 入口与覆盖背景模块使用同一份绑定', () => {
   expect(overlay.takeOverlayReturn).toBe(takeOverlayReturn);
 });
 
-it('覆盖层地址是作品详情、四种队列与 JAV 作品，页面与沉浸不算', () => {
-  for (const path of ['/assets/7', '/assets/5?mix=4', '/assets/2?parts=1', '/assets/3?editions=3', '/assets/9?playlist=2', '/works/ABP-968']) {
+it('覆盖层地址是作品详情、三种队列与 JAV 作品，页面与沉浸不算', () => {
+  for (const path of ['/assets/7', '/assets/2?parts=1', '/assets/3?editions=3', '/assets/9?playlist=2', '/works/ABP-968']) {
     expect([path, isOverlayPath(path)]).toEqual([path, true]);
   }
   for (const path of ['/', '/playlists', '/performers/x', '/immerse', '/trash', '/stats']) {
@@ -79,7 +79,7 @@ it('队列地址取完数才推：背景是决定那一刻的地址，不是推�
   shellNavigate('/?tag=a');
   holdOverlayBackground();
   shellNavigate('/stats', { replace: true });
-  shellNavigate('/assets/5?mix=4', { state: overlayState('item') });
+  shellNavigate('/assets/5?parts=4', { state: overlayState('item') });
   expect(usr()).toEqual({ backgroundLocation: { pathname: '/', search: '?tag=a' }, overlay: 'item' });
 });
 

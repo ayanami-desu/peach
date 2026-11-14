@@ -71,7 +71,7 @@ function playerMenuItems(player: VjsPlayer): MenuItem[] {
     const link = new URL(`/assets/${item?.id}`, location.origin);
     if (location.pathname === link.pathname) {
       const context = new URLSearchParams(location.search);
-      for (const key of ['mix', 'parts', 'editions', 'playlist']) {
+      for (const key of ['parts', 'editions', 'playlist']) {
         const value = context.get(key);
         if (value && /^[1-9]\d*$/.test(value)) link.searchParams.set(key, value);
       }

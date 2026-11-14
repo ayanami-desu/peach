@@ -9,7 +9,7 @@ export { rememberRepresentatives, representativeOf } from './representatives';
 export type { RepresentativeRow } from './representatives';
 export {
   avatarInner, cardArtwork, cardIdentity, coverImage, coverUrl, detailPosterUrl, entityAvatar, entityFaceImg,
-  faceBoxAttrs, faceOrigin, facePos, frameArtwork, javArtwork, logoUrl, mixFace, mixLabel, performerLabel,
+  faceBoxAttrs, faceOrigin, facePos, frameArtwork, javArtwork, logoUrl, mediaFace, performerLabel, queueLabel,
   queueAvatarHtml, queueThumbHtml, remoteCoverUrl, withVersion,
 } from './markup';
 export type { Artwork, ArtworkKind, CoverItem, FaceFocus, FaceRef, IdentityItem } from './markup';

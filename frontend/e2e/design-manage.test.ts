@@ -248,14 +248,14 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
       const look = await page.evaluate(() => {
         const card = document.querySelector('#stats [data-playlist-card="1"]')!;
         const css = (selector: string) => getComputedStyle(card.querySelector(selector)!);
-        const stack = card.querySelector('[data-mix-stack]')!;
+        const stack = card.querySelector('[data-playlist-stack]')!;
         const back = getComputedStyle(stack, '::before');
         const mid = getComputedStyle(stack, '::after');
         const title = getComputedStyle(document.querySelector('#stats header h2')!);
-        const cover = css('[data-mix-cover]');
-        const badge = css('[data-mix-badge]');
+        const cover = css('[data-playlist-cover]');
+        const badge = css('[data-playlist-badge]');
         const menu = css('[data-playlist-menu]');
-        const blank = getComputedStyle(document.querySelector('#stats [data-playlist-card="3"] [data-mix-cover] > span')!);
+        const blank = getComputedStyle(document.querySelector('#stats [data-playlist-card="3"] [data-playlist-cover] > span')!);
         return {
           title: [title.fontSize, title.lineHeight, title.fontWeight],
           gap: getComputedStyle(document.querySelector('#stats [data-playlist-grid]')!).gap,
@@ -263,7 +263,7 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
           mid: [mid.borderTopWidth, mid.inset, mid.transform, mid.opacity],
           cover: [cover.backgroundColor, cover.clipPath],
           badge: [badge.backgroundColor, badge.backdropFilter, badge.minHeight, badge.borderRadius, badge.right, badge.bottom],
-          avatars: [...card.querySelectorAll('[data-mix-avatars] button')].map((button) => {
+          avatars: [...card.querySelectorAll('[data-playlist-avatars] button')].map((button) => {
             const style = getComputedStyle(button);
             return [style.width, style.marginLeft, style.zIndex];
           }),
@@ -283,10 +283,10 @@ describe('设计决定：数据管理、索引页与资料页头', () => {
         blank: ['1.44px', 'uppercase'],
       });
       // 指到的头像抬起 4px、放大到 1.05，右边那位朝标题让开 10px。
-      await page.locator('#stats [data-playlist-card="1"] [data-mix-avatars] button').first().hover();
+      await page.locator('#stats [data-playlist-card="1"] [data-playlist-avatars] button').first().hover();
       const lifted = await page.evaluate(() => {
         document.getAnimations().forEach((animation) => animation.finish());
-        return [...document.querySelectorAll('#stats [data-playlist-card="1"] [data-mix-avatars] button')]
+        return [...document.querySelectorAll('#stats [data-playlist-card="1"] [data-playlist-avatars] button')]
           .slice(0, 2).map((button) => getComputedStyle(button).transform);
       });
       assert.deepEqual(lifted, ['matrix(1.05, 0, 0, 1.05, 0, -4)', 'matrix(1, 0, 0, 1, 10, -1.8)']);

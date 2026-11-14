@@ -190,7 +190,7 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-varia
  * 先合成一张再按 `--pic-radius` 切。格子本身不写 `border-radius`，`overflow` 与 `content-visibility`
  * 的裁切就只是矩形：按圆角裁的话每一层各切一次，抗锯齿那一圈里底下的黑会透上来，浅色封面四角就是
  * 一圈灰黑边。光有 `clip-path` 不够，没有蒙版时 Chrome 照样逐层切。 */
-.peach-react :is([data-media-pic], [data-mix-cover]) {
+.peach-react :is([data-media-pic], [data-playlist-cover]) {
   --pic-radius: var(--surface-radius);
   clip-path: inset(0 round var(--pic-radius));
   mask-image: linear-gradient(#000 0 0);
@@ -802,7 +802,7 @@ body:not([data-surface="/trash"]) .peach-react [data-media-card]:not([data-varia
 /* 密集一档保留标题、身份和标签，各占一行。缺少标签时仍保留标签位置；
  * 普通卡也留出叠层卡的 7px，每行是否出现分卷卡不决定整行高度。回收站的网格列宽是自己定的，
  * 不跟密度走，卡是有边的面，这一套不套给它。 */
-body[data-density="dense"]:not([data-surface="/trash"]) .peach-react [data-media-grid] > :is([data-media-card], [data-mix-card]) { padding-top: 7px; }
+body[data-density="dense"]:not([data-surface="/trash"]) .peach-react [data-media-grid] > [data-media-card] { padding-top: 7px; }
 body[data-density="dense"]:not([data-surface="/trash"]) .peach-react [data-media-card] [data-media-meta] { --card-meta-block: calc(2.7em + 36px); }
 body[data-density="dense"]:not([data-surface="/trash"]) .peach-react [data-media-card] [data-media-text] {
   display: grid;
@@ -975,37 +975,6 @@ body[data-surface="/trash"] .peach-react [data-media-tags] {
     margin-left: calc(-1 * (var(--railW) + 32px + 16px));
     padding-left: calc(var(--railW) + 32px + 16px);
   }
-}
-
-/* ── 首页那张 Mix ──
- * 署名行是一枚播放字形，标题与说明的字号同作品卡的元信息区；整张卡是点击区，悬停面同作品卡。 */
-.peach-react [data-mix-glyph] {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border-10);
-  border-radius: 50%;
-  background: var(--overlay-5);
-  color: var(--ink);
-}
-.peach-react [data-mix-glyph] svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
-.peach-react [data-media-grid] > [data-mix-card] { border-radius: var(--surface-radius); font: var(--board-body); }
-.peach-react [data-media-grid] > [data-mix-card] [data-mix-cover] { content-visibility: auto; }
-.peach-react [data-media-grid] [data-mix-badge] { letter-spacing: normal; line-height: inherit; }
-.peach-react [data-media-grid] [data-mix-title] {
-  font-family: inherit; font-size: var(--fs-md); font-weight: 700; line-height: 1.45; letter-spacing: normal; color: inherit;
-}
-.peach-react [data-media-grid] [data-mix-caption] {
-  margin-top: 2px; font-family: inherit; font-size: var(--fs-xs); line-height: inherit; letter-spacing: normal; color: var(--muted);
-}
-
-/* ── 网格的等待、续页与失败 ── */
-.peach-react [data-media-grid] > [data-mix-card]:is(:hover, :focus-within) {
-  border-radius: var(--surface-radius);
-  background: var(--hover);
-  box-shadow: 0 0 0 8px var(--hover);
 }
 
 /* 单列按实际内容定高，列数由网格的真实布局决定。 */

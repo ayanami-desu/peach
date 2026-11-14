@@ -60,7 +60,7 @@ const reply = (body: unknown): Reply => ({ ok: true, status: 200, json: async ()
 /** 一行播放列表；名字用来认出画的是哪一次取回来的。 */
 const playlist = (name: string) => ({
   items: [{
-    id: 1, name, source_kind: 'manual', source_seed_asset_id: null, current_asset_id: null,
+    id: 1, name, current_asset_id: null,
     created_at: '2026-09-01 10:00:00', updated_at: '2026-09-01 10:00:00', item_count: 2,
     preview_asset_id: 11, preview_ids: [11, 12], faces: [],
   }],

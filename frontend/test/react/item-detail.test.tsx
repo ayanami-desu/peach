@@ -1,6 +1,6 @@
 /* 作品详情岛：停在队列哪一条、身份与标签怎么分组、首屏要转去哪、交给壳的是什么、写完之后缓存与回执怎么变。
  *
- * 从目录进出不重取、舞台在媒体框里挂 Video.js、脱盘说明、四种队列、拖动排序、保存 Mix、接着看与手机
+ * 从目录进出不重取、舞台在媒体框里挂 Video.js、脱盘说明、三种队列、拖动排序、接着看与手机
  * 布局要真浏览器，在 `frontend/e2e/item-detail.test.ts` 里量；尺寸与色板在 `e2e/design-*.test.ts`。 */
 import { notifyManager, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { act } from 'react';
@@ -34,7 +34,7 @@ function helpers(patch: Partial<ItemDetailHelpers> = {}): ItemDetailHelpers {
     badgeHtml: () => '', titleHtml: (shown) => String(shown.name), displayName: (shown) => String(shown.name),
     javImage: () => 'cover',
     tagLabel: (tag) => tag, isDurationTag: (tag) => tag.startsWith('长片'), tagCandidates: () => [], sourceOffline: () => false,
-    offlineReason: () => '盘没挂上', relatedSkeletonHtml: () => '', mixRelated: async () => [], wireDrag: vi.fn(),
+    offlineReason: () => '盘没挂上', relatedSkeletonHtml: () => '', wireDrag: vi.fn(),
     wireDragReorder: vi.fn(), ...patch,
   };
 }
@@ -44,7 +44,7 @@ function actions(): ActionMocks {
   return {
     close: vi.fn(), present: vi.fn(), redirect: vi.fn(), openQueueItem: vi.fn(), mountPlayer: vi.fn(() => vi.fn()), reopen: vi.fn(),
     checkSource: vi.fn(async () => false), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
-    openTag: vi.fn(), addToPlaylist: vi.fn(), saveMix: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
+    openTag: vi.fn(), addToPlaylist: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
     reveal: vi.fn(async () => ''), sync: vi.fn(async () => ({ text: '', removed: [] })),
     trashChanged: vi.fn(async () => {}),
     toast: vi.fn(), failure: vi.fn(),
@@ -166,8 +166,7 @@ describe('停在队列哪一条', () => {
     media.dispatchEvent(new Event('ended', { bubbles: false }));
     expect(acts.openQueueItem).toHaveBeenCalledWith({ kind: 'editions', seedId: 1, autoplay: true }, 3);
   });
-  it('Mix 就是点的那一条；分卷与版本点的不在组里退到第一条；播放列表退到续播位置', () => {
-    expect(chooseItem(queue('mix', [1, 2]), 9)).toBe(9);
+  it('分卷与版本点的不在组里退到第一条；播放列表退到续播位置', () => {
     expect(chooseItem(queue('parts', [1, 2]), 2)).toBe(2);
     expect(chooseItem(queue('editions', [1, 2]), 9)).toBe(1);
     expect(chooseItem(queue('playlist', [1, 2], { currentAssetId: 2 }), null)).toBe(2);
@@ -187,7 +186,7 @@ describe('停在队列哪一条', () => {
     const parts = queue('parts', [1, 2], { items: [row(1, { part_label: '1' }), row(2, { part_label: '2' })] });
     expect(withPartLabel(item(2), parts).part_label).toBe('2');
     const plain = item(2);
-    expect(withPartLabel(plain, queue('mix', [2]))).toBe(plain);
+    expect(withPartLabel(plain, queue('playlist', [2]))).toBe(plain);
   });
 
   it('本篇与特典在标题和队列中使用完整标签，数字卷保留序号', async () => {
@@ -309,15 +308,12 @@ describe('首屏取数', () => {
     expect(fetcher.mock.calls.map(([url]) => url)).toContain('/api/parts?id=1');
   });
 
-  it('重开同一条也重取：缓存里那份是上次打开时的；Mix 的种子刚随队列取过，不取第二遍', async () => {
+  it('重开同一条也重取：缓存里那份是上次打开时的', async () => {
     const fetcher = serve(undefined, { '/api/item?id=1': item(1, { rating: 100 }) });
     queryClient.setQueryData(itemKey(1), item(1, { rating: 20 }));
     await prefetchItemDetail(props({ id: 1 }), signal);
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/item?id=1']);
     expect(queryClient.getQueryData<DetailItem>(itemKey(1))?.rating).toBe(100);
-    fetcher.mockClear();
-    await prefetchItemDetail(props({ id: 1, queue: { kind: 'mix', seedId: 1, fresh: true } }), signal);
-    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(['/api/item?id=1']);
   });
 });
 
@@ -355,11 +351,11 @@ describe('交给壳的', () => {
 
   it('队列里点另一条交给壳换，带着队列引用', async () => {
     serve();
-    queryClient.setQueryData(queueKey({ kind: 'mix', seedId: 1 }), queue('mix', [1, 2, 3]));
-    const { host, actions: done } = await show(item(1), { queue: { kind: 'mix', seedId: 1 } });
+    queryClient.setQueryData(queueKey({ kind: 'parts', seedId: 1 }), queue('parts', [1, 2, 3]));
+    const { host, actions: done } = await show(item(1), { queue: { kind: 'parts', seedId: 1 } });
     expect(host.querySelector('[data-queue-item="1"]')?.getAttribute('aria-current')).toBe('true');
     await click(host.querySelector('[data-queue-item="3"]'));
-    expect(done.openQueueItem).toHaveBeenCalledWith({ kind: 'mix', seedId: 1, playlistId: undefined }, 3);
+    expect(done.openQueueItem).toHaveBeenCalledWith({ kind: 'parts', seedId: 1, playlistId: undefined }, 3);
   });
 
   it('播放列表里已消失的那一行标出来、点不开', async () => {
@@ -583,17 +579,13 @@ describe('侧栏怎么读', () => {
 
   it('每一枚键的字形只说它旁边那件事', async () => {
     serve();
-    queryClient.setQueryData(queueKey({ kind: 'mix', seedId: 1 }), queue('mix', [1, 2]));
-    const mix = await show(item(1, { liked: true }), { queue: { kind: 'mix', seedId: 1 } });
-    expect(glyph(mix.host.querySelector('#preferenceToggle'))).toBe('#i-notebook-pen');
-    expect(mix.host.querySelector('#likeBtn')?.getAttribute('aria-label')).toBe('取消喜欢');
-    expect(glyph(mix.host.querySelector('#addPlaylist'))).toBe('#i-playlist');
-    expect(glyph(mix.host.querySelector('[data-save-mix]'))).toBe('#i-playlist');
-    expect(glyph(mix.host.querySelector('[data-kind="o"]'))).toBe('#i-sperm');
-    expect(glyph(mix.host.querySelector('[data-rate="1"]'))).toBe('#i-star');
-    queryClient.clear();
-    queryClient.setQueryData(queueKey({ kind: 'playlist', playlistId: 7 }), queue('playlist', [2, 3], { playlistId: 7 }));
-    const playlist = await show(item(2), { queue: { kind: 'playlist', playlistId: 7 } });
+    queryClient.setQueryData(queueKey({ kind: 'playlist', playlistId: 7 }), queue('playlist', [1, 2], { playlistId: 7 }));
+    const playlist = await show(item(1, { liked: true }), { queue: { kind: 'playlist', playlistId: 7 } });
+    expect(glyph(playlist.host.querySelector('#preferenceToggle'))).toBe('#i-notebook-pen');
+    expect(playlist.host.querySelector('#likeBtn')?.getAttribute('aria-label')).toBe('取消喜欢');
+    expect(glyph(playlist.host.querySelector('#addPlaylist'))).toBe('#i-playlist');
+    expect(glyph(playlist.host.querySelector('[data-kind="o"]'))).toBe('#i-sperm');
+    expect(glyph(playlist.host.querySelector('[data-rate="1"]'))).toBe('#i-star');
     expect(glyph(playlist.host.querySelector('[data-edit-playlist]'))).toBe('#i-playlist');
   });
 
@@ -608,12 +600,12 @@ describe('侧栏怎么读', () => {
     ]);
   });
 
-  it('接着看空结果显示说明，关闭推荐与 Mix 队列不显示推荐区', async () => {
+  it('接着看空结果显示说明，关闭推荐与播放列表队列不显示推荐区', async () => {
     serve(undefined, { '/api/related': { items: [] } });
     const off = await show(item(1), { relatedLimit: 0 });
     expect(off.host.querySelector('[data-item-related]')).toBeNull();
-    queryClient.setQueryData(queueKey({ kind: 'mix', seedId: 2 }), queue('mix', [2, 3]));
-    const queued = await show(item(2), { relatedLimit: 12, queue: { kind: 'mix', seedId: 2 } });
+    queryClient.setQueryData(queueKey({ kind: 'playlist', playlistId: 7 }), queue('playlist', [2, 3], { playlistId: 7 }));
+    const queued = await show(item(2), { relatedLimit: 12, queue: { kind: 'playlist', playlistId: 7 } });
     expect(queued.host.querySelector('[data-item-related]')).toBeNull();
     const empty = await show(item(3), { relatedLimit: 12 });
     await settle();

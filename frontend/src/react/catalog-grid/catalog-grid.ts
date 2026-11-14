@@ -5,20 +5,15 @@
  *
  * 一屏卡片的排法全由这里算，渲染只照着画：
  * - 分卷与版次各自折叠。同一组只留第一次出现的那一张，跨页也算（设置关掉就不折）。
- * - 目录每一页可见的卡够 8 张时，第 8 位插一张 Mix；种子从 Mix 位再往下隔一屏开始找，
- *   不会和同屏的卡撞图。
  * - 竖屏带每接一页出现一条，落点在这一页新增的那几行之间的行边界上随机取一个。 */
 import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 
 import { apiGet } from '../../api';
-import { javImageKind } from '../../jav-artwork';
 import type { CatalogGridProps, MediaItem, MediaPage } from './types';
 import { queryClient } from '../query';
 
 /** 竖屏带一条放几张。 */
 export const SHORTS_BATCH = 18;
-/** Mix 卡插在每一页的这一位，也就是第 8 张。 */
-export const MIX_SLOT = 7;
 
 /** 一页的结果，外加第一页为空时「整个馆藏是不是空的」：空态据此说「还没有作品」还是
  *  「没有符合的」。 */
@@ -165,49 +160,23 @@ export function collapseGroups(
   });
 }
 
-/** 这一条真能画出图吗：和卡片封面的分支一致，只看 `has_cover` 会把只有官方封套、却按
- *  预览图偏好画的条目当成有图。 */
-export const mixHasPicture = (item: MediaItem | undefined, javImage: string) =>
-  !!item && Boolean(javImageKind(item, javImage));
-
-/** 种子决定 Mix 的封面和署名。从 Mix 位再往下隔一屏开始找有图、有署名的，找不到逐级放宽。 */
-export function mixSeed(visible: readonly MediaItem[], javImage: string): MediaItem | undefined {
-  const named = (item: MediaItem) => mixHasPicture(item, javImage)
-    && Boolean(item.creator || (item.performers || []).length || item.studio);
-  return visible.slice(MIX_SLOT + 8).find(named)
-    || visible.slice(MIX_SLOT + 1).find(named)
-    || visible.slice(MIX_SLOT + 1).find((item) => mixHasPicture(item, javImage))
-    || visible[visible.length - 1];
-}
-
-/** 网格里的一格：一张作品卡，或一张 Mix。 */
-export type Tile = { kind: 'card'; item: MediaItem } | { kind: 'mix'; seed: MediaItem };
-
-/** 把已取回的各页排成一列格子。首枚 Mix 等累计够八张再插入，随后各页独立插入。
- *  `pageStarts[i]` 是第 i 页在这一列里的起点，竖屏带的落点要落在那一页新增的格子之间。 */
-export function arrangeTiles(
-  pages: readonly GridPage[], { collapse, mix, javImage }: { collapse: boolean; mix: boolean; javImage: string },
-): { tiles: Tile[]; pageStarts: number[] } {
+/** 把已取回的各页排成一列卡片。`pageStarts[i]` 是第 i 页在这一列里的起点，
+ *  竖屏带的落点要落在那一页新增的卡片之间。 */
+export function arrangeCards(
+  pages: readonly GridPage[], { collapse }: { collapse: boolean },
+): { cards: MediaItem[]; pageStarts: number[] } {
   const seen = { parts: new Set<string>(), editions: new Set<string>() };
   /* 翻页期间库里新进了作品，偏移量整体后挪，上一页末尾那几条会在下一页再出现一次。
      同一条只画第一次：一屏里两张一样的卡什么也不说明。 */
   const ids = new Set<number>();
-  const tiles: Tile[] = [];
+  const cards: MediaItem[] = [];
   const pageStarts: number[] = [];
   for (const page of pages) {
-    pageStarts.push(tiles.length);
+    pageStarts.push(cards.length);
     const fresh = page.items.filter((item) => !ids.has(item.id) && Boolean(ids.add(item.id)));
-    const visible = collapseGroups(fresh, seen, collapse);
-    const cards: Tile[] = visible.map((item) => ({ kind: 'card', item }));
-    tiles.push(...cards);
-    if (mix) {
-      const firstMix = !tiles.some((tile) => tile.kind === 'mix');
-      const pool = firstMix ? tiles.flatMap((tile) => tile.kind === 'card' ? [tile.item] : []) : visible;
-      const seed = pool.length >= 8 ? mixSeed(pool, javImage) : undefined;
-      if (seed) tiles.splice(firstMix ? MIX_SLOT : pageStarts.at(-1)! + MIX_SLOT, 0, { kind: 'mix', seed });
-    }
+    cards.push(...collapseGroups(fresh, seen, collapse));
   }
-  return { tiles, pageStarts };
+  return { cards, pageStarts };
 }
 
 /** 竖屏带的落点候选：从这一页新增的那几行开始，每个行边界一个；两端各留至少一行，剪在
@@ -237,16 +206,16 @@ export function shortsParams(filters: Readonly<Record<string, string>>, offset: 
   return params.toString();
 }
 
-/** 把一列格子按竖屏带切成几段，段与段之间插带子。 */
-export function splitSections(tiles: readonly Tile[], cuts: readonly ShortsCut[]) {
+/** 把一列卡片按竖屏带切成几段，段与段之间插带子。 */
+export function splitSections(cards: readonly MediaItem[], cuts: readonly ShortsCut[]) {
   const ordered = [...cuts].sort((a, b) => a.at - b.at);
-  const sections: { start: number; tiles: Tile[]; strip: ShortsCut | null }[] = [];
+  const sections: { start: number; cards: MediaItem[]; strip: ShortsCut | null }[] = [];
   let start = 0;
   for (const cut of ordered) {
-    sections.push({ start, tiles: tiles.slice(start, cut.at), strip: cut });
+    sections.push({ start, cards: cards.slice(start, cut.at), strip: cut });
     start = cut.at;
   }
-  sections.push({ start, tiles: tiles.slice(start), strip: null });
+  sections.push({ start, cards: cards.slice(start), strip: null });
   return sections;
 }
 

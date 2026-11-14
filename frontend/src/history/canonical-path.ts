@@ -9,7 +9,7 @@ export function canonicalPath(path: string): string {
     const match = pattern.exec(url.pathname);
     if (match) { url.pathname = prefix + (prefix === '/works/' ? match[1]!.toUpperCase() : match[1]); break }
   }
-  const queue = /^\/(mix|parts|editions|playlists)\/(\d+)\/(\d+)$/.exec(url.pathname);
+  const queue = /^\/(parts|editions|playlists)\/(\d+)\/(\d+)$/.exec(url.pathname);
   if (queue) {
     url.pathname = `/assets/${queue[3]}`;
     url.searchParams.set(queue[1] === 'playlists' ? 'playlist' : queue[1]!, queue[2]!);

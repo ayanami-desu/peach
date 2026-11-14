@@ -74,7 +74,7 @@ function helpers(patch: Partial<ItemDetailHelpers> = {}): ItemDetailHelpers {
     badgeHtml: () => '', titleHtml: (shown) => String(shown.name), displayName: (shown) => String(shown.name),
     javImage: () => 'cover',
     tagLabel: (tag) => tag, isDurationTag: () => false, tagCandidates: () => [], sourceOffline: () => false,
-    offlineReason: () => '盘没挂上', relatedSkeletonHtml: () => '', mixRelated: async () => [], wireDrag: vi.fn(),
+    offlineReason: () => '盘没挂上', relatedSkeletonHtml: () => '', wireDrag: vi.fn(),
     wireDragReorder: vi.fn(), ...patch,
   };
 }
@@ -84,7 +84,7 @@ function actions(): { [K in keyof RequestActions]: Mock<RequestActions[K]> } {
   return {
     close: vi.fn(), present: vi.fn(), redirect: vi.fn(), openQueueItem: vi.fn(), reopen: vi.fn(),
     checkSource: vi.fn(async () => false), openEntity: vi.fn(), openUnowned: vi.fn(), openRegion: vi.fn(),
-    openTag: vi.fn(), addToPlaylist: vi.fn(), saveMix: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
+    openTag: vi.fn(), addToPlaylist: vi.fn(), editPlaylist: vi.fn(), openPlaylists: vi.fn(),
     reveal: vi.fn(async () => ''), sync: vi.fn(async () => ({ text: '', removed: [] })), trashChanged: vi.fn(async () => {}),
     toast: vi.fn(), failure: vi.fn(),
   };

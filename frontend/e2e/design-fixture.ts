@@ -299,12 +299,12 @@ export async function openPlaylistsPage(browser: Browser, viewport = DESKTOP): P
   const opened = await visit(browser, '/playlists', viewport);
   const face = (id: number, name: string, kind = 'performer') => ({ kind, id, name, has_image: false });
   const row = (id: number, patch: Record<string, unknown> = {}) => ({
-    id, name: `列表${id}`, source_kind: 'manual', source_seed_asset_id: null, current_asset_id: null,
+    id, name: `列表${id}`, current_asset_id: null,
     created_at: '2026-09-01 10:00:00', updated_at: '2026-09-01 10:00:00', item_count: 2,
     preview_asset_id: 11, preview_ids: [11, 12], faces: [], ...patch,
   });
   await opened.page.route((url) => url.pathname === '/api/playlists', (route) => route.fulfill({ json: { items: [
-    row(1, { source_kind: 'mix', faces: [face(901, '甲'), face(902, '乙'), face(903, '丙', 'creator')] }),
+    row(1, { faces: [face(901, '甲'), face(902, '乙'), face(903, '丙', 'creator')] }),
     row(2),
     row(3, { item_count: 0, preview_asset_id: null, preview_ids: [] }),
   ] } }));

@@ -1,4 +1,4 @@
-/* 详情类历史条目的背景（ADR-0031「覆盖式路由」）：作品详情、四种队列与关注详情压在一页上面，
+/* 详情类历史条目的背景（ADR-0031「覆盖式路由」）：作品详情、三种队列与关注详情压在一页上面，
  * 它们的历史条目在 `usr` 里记下压在哪一页上（`backgroundLocation`），条目自己说得清背景。
  *
  * 写：壳在决定打开详情的那一刻调 `holdOverlayBackground` 记下背景，push 详情地址时用 `overlayState` 带上；
@@ -22,13 +22,13 @@ export type OverlayPath = typeof OVERLAY_PATHS[number];
 
 export type OverlayKind = 'item' | 'jav';
 
-/** 一条覆盖地址要打开的那一条：作品详情，或四种队列里的一条（`key` 是种子或播放列表）。 */
+/** 一条覆盖地址要打开的那一条：作品详情，或三种队列里的一条（`key` 是种子或播放列表）。 */
 export type OverlayTarget =
   | { kind: 'jav'; code: string }
   | { kind: 'item'; id: number }
-  | { kind: 'queue'; queue: 'mix' | 'parts' | 'editions' | 'playlist'; key: number; item: number };
+  | { kind: 'queue'; queue: 'parts' | 'editions' | 'playlist'; key: number; item: number };
 
-const QUEUES = ['mix', 'parts', 'editions', 'playlist'] as const;
+const QUEUES = ['parts', 'editions', 'playlist'] as const;
 
 /** 地址匹配哪一条覆盖路径；本地条目使用数字，库外作品使用有效番号。 */
 export function overlayMatch(pathname: string, search = ''): { path: OverlayPath; target: OverlayTarget } | null {

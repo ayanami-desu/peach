@@ -348,7 +348,7 @@ describe('舞台岛', () => {
   });
 
   it('队列换条：旧播放器先拆，新播放器才挂，同一时刻只有一个', { timeout: 60_000 }, async () => {
-    const opened = await openItemPage(browser, `/assets/${ITEM.plain}?mix=${ITEM.plain}`, DESKTOP);
+    const opened = await openItemPage(browser, `/assets/${ITEM.part}?parts=${ITEM.part}`, DESKTOP);
     try {
       const page = opened.page;
       await page.locator(PLAYER).waitFor({ state: 'attached' });

@@ -12,10 +12,10 @@ import { apiGet } from '../api';
 import { javDisplayName, javTitleHtml } from '../core/jav-title';
 import { tagLabel } from '../core/tags';
 import { pageSkeletonHtml } from './../management-placeholder';
-import { buildBars, catalogGridLayout, catalogState, commitContextFilter, goHome, loadCatalog, mixRelated } from './catalog.js';
+import { buildBars, catalogGridLayout, catalogState, commitContextFilter, goHome, loadCatalog } from './catalog.js';
 import { wireDragReorder } from '../ui-kit';
 import { currentBarsContext, entityState, openEntity, revealForIsland, syncForIsland } from './entity.js';
-import { openAddToPlaylist, rereadPlaylists, saveMixAsPlaylist } from './playlists.js';
+import { openAddToPlaylist, rereadPlaylists } from './playlists.js';
 import { releaseHoverPreviews } from './../card-art/hover';
 import { applicationEffects } from './effects';
 import { loadingState } from './loading.js';
@@ -60,8 +60,6 @@ export function openQueue(kind,key,itemId,push,anchor=null,options={}){
   return openItem(itemId==null?null:+itemId,false,queue,anchor,push);
 }
 
-export function openMix(seedId,itemId=seedId,push=true,anchor=null){return openQueue('mix',seedId,itemId,push,anchor)}
-
 export function openEditions(seedId,itemId=seedId,push=true,anchor=null){return openQueue('editions',seedId,itemId,push,anchor)}
 
 export function openParts(seedId,itemId=seedId,push=true,anchor=null){return openQueue('parts',seedId,itemId,push,anchor)}
@@ -69,7 +67,7 @@ export function openParts(seedId,itemId=seedId,push=true,anchor=null){return ope
 export function openPlaylist(playlistId,itemId=null,push=true){return openQueue('playlist',playlistId,itemId,push)}
 
 export function hasReturnSurface(){
-  return !!$('#grid').querySelector('[data-id],[data-mix-seed]')
+  return !!$('#grid').querySelector('[data-id]')
     ||!!document.querySelector('[data-video-wall]')
     ||!$('#index').hidden||!$('#stats').hidden;
 }
@@ -200,7 +198,6 @@ mediaState.itemDetailHelpers = {
   sourceOffline:key=>preferencesState.sourceOffline(key),
   offlineReason:key=>preferencesState.offlineReason(key),
   relatedSkeletonHtml:()=>pageSkeletonHtml('正在读取推荐',{cards:true,className:'related-skeleton'}),
-  mixRelated:seedId=>mixRelated(seedId),
   wireDrag:el=>wireDrag(el),
   wireDragReorder:(root,options)=>wireDragReorder(root,options),
 };
@@ -240,7 +237,6 @@ mediaState.itemDetailActions = {
   openRegion:region=>goHome({region:region||'none'}),
   openTag:tag=>commitContextFilter(filters=>{filters.tag=tag}),
   addToPlaylist:item=>openAddToPlaylist(item),
-  saveMix:options=>saveMixAsPlaylist(options),
   editPlaylist:()=>openRoutedPage('/playlists'),
   openPlaylists:()=>openRoutedPage('/playlists'),
   reveal:id=>revealForIsland(id),

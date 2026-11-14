@@ -52,8 +52,8 @@ class RehomeTests(unittest.TestCase):
              " VALUES('p1',?,1,'manual','2026-01-01 00:00:00')", (asset_id,)),
             ("INSERT INTO watch_queue(profile_id,asset_id,added_at,source)"
              " VALUES('p1',?,'2026-01-01 00:00:00','manual')", (asset_id,)),
-            ("INSERT INTO playlist(id,profile_id,name,source_kind,current_asset_id,created_at,updated_at)"
-             " VALUES(5,'p1','清单','manual',?,'x','x')", (asset_id,)),
+            ("INSERT INTO playlist(id,profile_id,name,current_asset_id,created_at,updated_at)"
+             " VALUES(5,'p1','清单',?,'x','x')", (asset_id,)),
             ("INSERT INTO playlist_item(playlist_id,asset_id,position,added_at) VALUES(5,?,0,'x')",
              (asset_id,)),
             ("INSERT INTO activity_event(id,asset_id,profile_id,kind,occurred_at,source,event_key)"

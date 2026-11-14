@@ -77,7 +77,7 @@ it('详情压着下面那一页时，页面组的元素不重挂，看到的是�
     ['/posts/3', over('/nowhere', 'follow')], ['/assets/7', over('/nowhere')], ['/assets/2?parts=1', over('/nowhere')]];
   for (const [path, state] of steps) await act(async () => { r.shellNavigate(path, { state }) });
   await act(async () => { pop('/posts/3') });
-  await act(async () => { r.peachHistory.push('/assets/5?mix=4', over('/nowhere')) });
+  await act(async () => { r.peachHistory.push('/assets/5?parts=4', over('/nowhere')) });
   expect([seen.mounted, seen.unmounted]).toEqual([1, 0]);
   expect(new Set(seen.paths)).toEqual(new Set(['/nowhere']));
 });

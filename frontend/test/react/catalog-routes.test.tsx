@@ -104,17 +104,16 @@ const helpers: MediaCardHelpers = {
 };
 function cardActions(): MediaCardActions {
   return {
-    open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(), openMix: vi.fn(),
+    open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(),
     openEntity: vi.fn(), openUnowned: vi.fn(), toggleTag: vi.fn(), toggleSelection: vi.fn(),
-    watchLater: vi.fn(async () => {}), rate: vi.fn(async () => {}), resourceOperation: vi.fn(async () => {}), mixRelated: vi.fn(async () => []),
-    canFlip: () => true,
+    watchLater: vi.fn(async () => {}), rate: vi.fn(async () => {}), resourceOperation: vi.fn(async () => {}),
   };
 }
 const catalogOpen = (patch: Partial<CatalogGridProps> = {}): CatalogGridProps => ({
   mode: 'catalog', helpers, actions: cardActions(), layout: { active: false, size: 'small', portrait: false, javImage: 'cover' },
   selectMode: false, selected: new Set(), seekSeconds: 10, revision: 0, skeletonHtml: () => '', wireDrag: vi.fn(),
   settled: vi.fn(), filters: { sort: 'seed' }, batchSize: 60, groupCollapse: true, excludeVertical: false,
-  mix: false, shorts: false, onCount: vi.fn(), emptyHtml: () => '', canLoadMore: () => true, ...patch,
+  shorts: false, onCount: vi.fn(), emptyHtml: () => '', canLoadMore: () => true, ...patch,
 });
 
 /** 垃圾队列那一页的打开：计数行是壳的 `#count`，壳往里铺着骨架那一版。 */

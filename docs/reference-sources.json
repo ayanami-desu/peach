@@ -308,9 +308,9 @@
       "snapshot": "docs/reference-snapshots/f95-masked-gofile-media.md",
       "checked_on": "2026-08-28",
       "sha256": "0bcd972cb7c89880151d84d976c4c29ffaa5b5b8122c8aa6ac41111afdc37911",
-      "role": "F95 Cookie 解掩码、文件站目标校验、Gofile 文件列表未取得说明与 Mix 计数边界。",
+      "role": "F95 Cookie 解掩码、文件站目标校验、Gofile 文件列表未取得说明与播放列表卡计数边界。",
       "consumers": [
-        "frontend/src/react/components/mix-card.tsx"
+        "frontend/src/react/components/playlist-card.tsx"
       ]
     },
     {

@@ -82,8 +82,7 @@ export function VideoWall({ items, finite, hasMore, busy, loading = false, error
     ? { kind:'editions', seedId:selected.edition_group.seed_id }
     : selected?.part_group ? { kind:'parts', seedId:selected.part_group.seed_id } : null;
   const groupQuery = useQuery({ queryKey:queueKey(groupRef || { kind:'parts', seedId:0 }), enabled:!!groupRef,
-    queryFn:({ signal }) => fetchQueue(groupRef!, { tagLabel:helpers.tagLabel,
-      mixRelated:async () => [] }, signal),
+    queryFn:({ signal }) => fetchQueue(groupRef!, signal),
   });
   const group = groupRef ? groupQuery.data : undefined;
   const activeItem = group?.items.find(item => item.id === chooseItem(group, sourceId || selected?.id || null)) || selected;

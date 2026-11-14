@@ -1,4 +1,4 @@
-/* 馆藏卡片网格：一屏卡片怎么排（取数的查询串、折叠、Mix 落位、竖屏带落点），以及一张卡
+/* 馆藏卡片网格：一屏卡片怎么排（取数的查询串、折叠、跨页去重、竖屏带落点），以及一张卡
  * 画出什么、点哪里去哪里。 */
 import { act, useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -8,7 +8,7 @@ import { MediaCard, cardRatio, type MediaCardVariant } from '../../src/react/com
 import { CatalogGridPage, LoadMore } from '../../src/react/catalog-grid/catalog-grid-page';
 import type { CatalogGridProps } from '../../src/react/catalog-grid/types';
 import {
-  MIX_SLOT, SHORTS_BATCH, arrangeTiles, catalogParams, catalogSummary, collapseGroups, fetchCatalogPage, latestCatalogPages, mixSeed, nextOffset, visibleCatalogBatch,
+  SHORTS_BATCH, arrangeCards, catalogParams, catalogSummary, collapseGroups, fetchCatalogPage, latestCatalogPages, nextOffset, visibleCatalogBatch,
   shortsBoundaries, shortsParams, replaceCatalogItem, type GridPage,
 } from '../../src/react/catalog-grid/catalog-grid';
 import type { MediaCardActions, MediaCardHelpers, MediaCardLayout, MediaItem } from '../../src/react/catalog-grid/types';
@@ -156,13 +156,12 @@ describe('续页', () => {
     mode: 'catalog', layout: SMALL, selectMode: false, selected: new Set(), seekSeconds: 10, revision: 0,
     helpers: { badgeHtml: () => '', titleHtml: (_it, raw) => raw, displayName: (_it, raw) => raw, tagLabel: (tag) => tag },
     actions: {
-      open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(), openMix: vi.fn(),
+      open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(),
       openEntity: vi.fn(), openUnowned: vi.fn(), toggleTag: vi.fn(), toggleSelection: vi.fn(),
       watchLater: vi.fn(async () => {}), rate: vi.fn(async () => {}), resourceOperation: vi.fn(async () => {}),
-      mixRelated: vi.fn(async () => []), canFlip: () => true,
     },
     skeletonHtml: () => '', wireDrag: vi.fn(), settled: vi.fn(), filters, batchSize: 3, groupCollapse: true,
-    excludeVertical: false, mix: false, shorts: false, onCount: vi.fn(), emptyHtml: () => '', canLoadMore: () => true,
+    excludeVertical: false, shorts: false, onCount: vi.fn(), emptyHtml: () => '', canLoadMore: () => true,
   });
   const cards = (host: ParentNode) => host.querySelectorAll('[data-media-grid] > [data-media-card]').length;
   /** 请求链上有 fetch、json、查询缓存与重画几段：一拍一拍放行，直到条件成立。 */
@@ -361,24 +360,13 @@ describe('一屏卡片的排法', () => {
     expect(collapseGroups(first, { parts: new Set(), editions: new Set() }, false).map((x) => x.id)).toEqual([1, 2, 3]);
   });
 
-  it('每一页够 8 张就在第 8 位插一张 Mix；翻页重复出现的条目只画一次', () => {
-    const named = (id: number) => item(id, { creator: `作者 ${id}` });
-    const first = Array.from({ length: 20 }, (_, index) => named(index + 1));
-    const second = [named(20), ...Array.from({ length: 9 }, (_, index) => named(index + 21))];
-    const { tiles, pageStarts } = arrangeTiles([page(first), page(second, 20)], { collapse: true, mix: true, javImage: 'cover' });
-    expect(tiles[MIX_SLOT]?.kind).toBe('mix');
-    expect(pageStarts).toEqual([0, 21]);
-    const ids = tiles.flatMap((tile) => (tile.kind === 'card' ? [tile.item.id] : []));
-    expect(ids.filter((id) => id === 20)).toHaveLength(1);
-    expect(tiles[pageStarts[1]! + MIX_SLOT]?.kind).toBe('mix');
-    expect(arrangeTiles([page(first)], { collapse: true, mix: false, javImage: 'cover' }).tiles.some((tile) => tile.kind === 'mix')).toBe(false);
-  });
-
-  it('Mix 的种子不取它挨着的那张：从 Mix 位往下隔一屏找有图有署名的，都没署名就取末尾', () => {
-    const visible = Array.from({ length: 20 }, (_, index) => item(index + 1, { creator: `作者 ${index + 1}` }));
-    expect(mixSeed(visible, 'cover')?.id).toBe(MIX_SLOT + 9);
-    const anonymous = Array.from({ length: 20 }, (_, index) => item(index + 1, { has_thumb: false }));
-    expect(mixSeed(anonymous, 'cover')?.id).toBe(20);
+  it('翻页重复出现的条目只画一次，页起点按画出来的卡数累计', () => {
+    const first = Array.from({ length: 20 }, (_, index) => item(index + 1));
+    const second = [item(20), ...Array.from({ length: 9 }, (_, index) => item(index + 21))];
+    const { cards, pageStarts } = arrangeCards([page(first), page(second, 20)], { collapse: true });
+    expect(pageStarts).toEqual([0, 20]);
+    expect(cards.filter((card) => card.id === 20)).toHaveLength(1);
+    expect(cards).toHaveLength(29);
   });
 
   it('竖屏带落在这一页新增那几行的行边界上，两端各留至少一行', () => {
@@ -417,11 +405,11 @@ describe('作品卡', () => {
     tagLabel: (tag) => `#${tag}`,
   };
   const actionsFor = (): MediaCardActions => ({
-    open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(), openMix: vi.fn(),
+    open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(),
     openEntity: vi.fn(), openUnowned: vi.fn(), toggleTag: vi.fn(), toggleSelection: vi.fn(),
     watchLater: vi.fn(async (_it: MediaItem, onChange: (on: boolean) => void) => onChange(true)),
     rate: vi.fn(async () => {}),
-    resourceOperation: vi.fn(async () => {}), mixRelated: vi.fn(async () => []), canFlip: () => true,
+    resourceOperation: vi.fn(async () => {}),
   });
   const render = async (target: MediaItem, options: { variant?: MediaCardVariant; selectMode?: boolean; layout?: MediaCardLayout } = {}) => {
     const actions = actionsFor();

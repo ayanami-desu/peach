@@ -322,7 +322,7 @@ async function swap(request: StageRequest, dialog: HTMLDialogElement): Promise<v
   /* 点下去的那一行随详情重建卸掉了，焦点落回 body：交给队列里新的当前行，没有队列交给关闭键。 */
   const active = document.activeElement;
   if (active === dialog || !dialog.contains(active)) {
-    (dialog.querySelector<HTMLElement>('[data-mix-item][aria-current="true"]')
+    (dialog.querySelector<HTMLElement>('[data-detail-queue-entry][aria-current="true"]')
       || dialog.querySelector<HTMLElement>('#closeStage'))?.focus({ preventScroll: true });
   }
 }

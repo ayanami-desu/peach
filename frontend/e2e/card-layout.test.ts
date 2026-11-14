@@ -4,7 +4,7 @@ import type {Browser,Page} from 'playwright-core';
 import {launch,requiredEnv,settle,VIEWPORTS} from './harness.ts';
 import {ITEM,openItemPage} from './item-fixture.ts';
 
-const FRAMES='#grid [data-media-grid] > [data-media-card] [data-media-pic], #grid [data-mix-cover]';
+const FRAMES='#grid [data-media-grid] > [data-media-card] [data-media-pic]';
 
 /** 首页铺 20 张纯白预览图的作品，`size` 是首页版式；`patch` 按序号改其中几张。 */
 async function openHome(page:Page,size:string,patch:(i:number)=>Record<string,unknown>=()=>({})){
@@ -15,7 +15,7 @@ async function openHome(page:Page,size:string,patch:(i:number)=>Record<string,un
  })),total:20,has_more:false}}));
  await page.route('**/poster?*',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="white"/></svg>'}));
  await page.goto(requiredEnv('PEACH_E2E_ORIGIN')+'/',{waitUntil:'load'});
- await page.locator('#grid [data-mix-card]').waitFor();
+ await page.locator('#grid [data-media-card]').first().waitFor();
 }
 
 /** 截图里一块的最暗通道值，用页面自己的 canvas 解码 PNG。 */
@@ -157,7 +157,7 @@ describe('混排作品的画面框',()=>{
   }finally{await opened.close()}
  });
  for(const viewport of VIEWPORTS)for(const size of ['big','small']){
-  it(`${viewport.name} ${size} 作品与 Mix 等高并保留横图`,async()=>{
+  it(`${viewport.name} ${size} 作品卡等高并保留横图`,async()=>{
    const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height}});
    try{
     const page=await context.newPage();
@@ -181,18 +181,6 @@ describe('混排作品的画面框',()=>{
      });
      assert.ok(meta.height<=meta.content+17,JSON.stringify({density,...meta}));
     }
-    if(size==='small')for(const density of ['roomy','dense']){
-     await page.evaluate(value=>{document.body.dataset.density=value},density);
-     const row=await page.locator('#grid [data-mix-card]').evaluate(mix=>{
-      const mixCover=mix.querySelector('[data-mix-cover]')!.getBoundingClientRect();
-      const peer=mix.parentElement!.querySelector(':scope > [data-media-card]')!;
-      const peerCover=peer.querySelector('[data-media-pic]')!.getBoundingClientRect();
-      return {mixBottom:mixCover.bottom-mix.getBoundingClientRect().top,peerBottom:peerCover.bottom-peer.getBoundingClientRect().top,
-       mixTop:mixCover.top-mix.getBoundingClientRect().top,peerTop:peerCover.top-peer.getBoundingClientRect().top};
-     });
-     assert.ok(Math.abs(row.mixBottom-row.peerBottom)<1,JSON.stringify(row));
-     assert.ok(Math.abs(row.mixTop-row.peerTop)<1,JSON.stringify(row));
-    }
    }finally{await context.close()}
   });
  }
@@ -206,14 +194,14 @@ describe('混排作品的画面框',()=>{
     await openHome(page,'small');
     await page.evaluate(()=>{document.documentElement.dataset.theme='light';document.documentElement.classList.remove('dark')});
     const corners=[];
-    for(const frame of ['#grid [data-media-grid] > [data-media-card] [data-media-pic]','#grid [data-mix-cover]']){
+    for(const frame of ['#grid [data-media-grid] > [data-media-card] [data-media-pic]']){
      // 这一格滚到吸顶的顶栏与排序条下面，等它的图到货；角内侧那一点打到的得是这张卡自己，没被别的东西压着。
      const box=await page.locator(frame).first().evaluate(async node=>{
       scrollBy(0,node.getBoundingClientRect().top-240);
       const img=node.querySelector('img')!;
       if(!img.complete)await new Promise(done=>img.addEventListener('load',done,{once:true}));
       await new Promise(requestAnimationFrame);
-      const box=node.getBoundingClientRect(),card=node.closest('[data-media-card],[data-mix-card]');
+      const box=node.getBoundingClientRect(),card=node.closest('[data-media-card]');
       const covers=[[box.left+8,box.top+8],[box.right-8,box.top+8],[box.left+8,box.bottom-8],[box.right-8,box.bottom-8]]
        .map(([x,y])=>document.elementFromPoint(x,y)).filter(hit=>!hit||!card?.contains(hit))
        .map(hit=>hit?`${hit.tagName} ${[...hit.attributes].map(a=>a.name).join(' ')}`:'视口外');

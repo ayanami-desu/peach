@@ -32,7 +32,7 @@ export function refreshOverlayScrollbars(root:HTMLElement):void{
  * 保持在同一层级及可视边缘。宿主因此得是定位祖先，
  * 而且不一定和容器一样大（设置面板的卡片还含着标题栏），所以轨道的位置每次都按
  * 两个 rect 量出来，不假设它们同框。两条轴各一条轨道，谁溢出谁显示——同一个容器
- * 可能在不同版式下换轴（队列列表 `[data-mix-list]` 在带队列的详情格里就是横滚）。
+ * 可能在不同版式下换轴（队列列表 `[data-detail-queue-list]` 在带队列的详情格里就是横滚）。
  * 整页那一条是唯一的例外：`html` 没有元素父级，轨道挂进 body 并由 `.page` 改成
  * fixed，位置只认视口，不用量。
  * 几何按 2026-09-05 实测 vercel.com 侧栏：

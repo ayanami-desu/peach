@@ -103,7 +103,7 @@ compositionState.shellActions = {
     const open=navigationState.requestedQueue;navigationState.requestedQueue=null;
     if(open)void open();
   },
-  /* 覆盖地址要打开的那一条（作品详情与四种队列），地址栏已经是它。 */
+  /* 覆盖地址要打开的那一条（作品详情与三种队列），地址栏已经是它。 */
   openOverlay:target=>{
     const requested=navigationState.requestedOverlay;
     navigationState.requestedOverlay=null;

@@ -40,7 +40,6 @@ describe('馆藏卡片与列表', () => {
         const count = await page.locator('#grid [data-catalog-row]').count();
         assert.ok(count > 0);
         const listedIds = await page.locator('#grid [data-catalog-row]').evaluateAll(rows => rows.map(row => row.getAttribute('data-id')).sort());
-        assert.equal(await page.locator('#grid [data-mix-card]').count(), 0);
         const geometry = await page.locator('#grid [data-catalog-row]').first().evaluate(node => {
           const row = node.getBoundingClientRect();
           const picture = node.querySelector('[data-list-picture]')!.getBoundingClientRect();

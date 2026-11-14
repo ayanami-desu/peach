@@ -64,7 +64,7 @@
 | 地址 | 跳到 |
 | --- | --- |
 | `/item/{id}` | `/assets/{id}` |
-| `/mix/{seed}/{id}`、`/parts/{seed}/{id}`、`/editions/{seed}/{id}`、`/playlists/{seed}/{id}` | `/assets/{id}`，并记下取景上下文（`mix`、`parts`、`editions`、`playlist`） |
+| `/parts/{seed}/{id}`、`/editions/{seed}/{id}`、`/playlists/{seed}/{id}` | `/assets/{id}`，并记下取景上下文（`parts`、`editions`、`playlist`） |
 | `/jav/movie/{code}` | `/works/{规范化后的番号}` |
 | `/activity` | `/tasks` |
 | `/scraping` | `/sources` |

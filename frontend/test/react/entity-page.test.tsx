@@ -103,10 +103,10 @@ function shellProps(patch: Partial<EntityPageProps> = {}): EntityPageProps {
         personAvatar: vi.fn(() => ({ html: '', face: '' })),
       },
       actions: {
-        open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(), openMix: vi.fn(),
+        open: vi.fn(), openResource: vi.fn(), openShort: vi.fn(), openShorts: vi.fn(),
         openEntity: vi.fn(), openUnowned: vi.fn(), toggleTag: vi.fn(), toggleSelection: vi.fn(),
-        watchLater: vi.fn(async () => {}), rate: vi.fn(async () => {}), resourceOperation: vi.fn(async () => {}), mixRelated: vi.fn(async () => []),
-        canFlip: () => true, revealSource: vi.fn(async () => ''),
+        watchLater: vi.fn(async () => {}), rate: vi.fn(async () => {}), resourceOperation: vi.fn(async () => {}),
+        revealSource: vi.fn(async () => ''),
       },
     },
     helpers: {

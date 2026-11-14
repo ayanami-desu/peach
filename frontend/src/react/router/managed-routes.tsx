@@ -237,9 +237,8 @@ export const IMMERSE_ROUTES: Readonly<Record<string, { element: ReactElement }>>
   '/immerse': { element: <ImmerseMatch /> },
 };
 
-/* 播放列表页由元素按匹配打开（`pages/playlists.tsx`）：首屏每次都向服务端重取（首页刚存的 Mix 进来就要
-   看得到）。停在这一页时壳要求重读，元素经 `updateManagedRoute` 推一个新的 `revision`，页面只重取、不重挂。点开
-   一份进舞台、翻页门槛与回执都归壳。 */
+/* 播放列表页由元素按匹配打开（`pages/playlists.tsx`）：首屏每次都向服务端重取。停在这一页时壳要求重读，
+   元素经 `updateManagedRoute` 推一个新的 `revision`，页面只重取、不重挂。点开一份进舞台、翻页门槛与回执都归壳。 */
 export const BROWSE_ROUTES: BrowseRouteTable = {
   '/playlists': {
     element: <PlaylistsMatch />,

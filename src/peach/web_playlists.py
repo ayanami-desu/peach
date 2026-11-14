@@ -47,7 +47,7 @@ def _ids(value: object, *, allow_empty: bool = True) -> list[int]:
 
 def _playlist(connection, playlist_id: int):
     row = connection.execute(
-        "SELECT id,profile_id,name,source_kind,source_seed_asset_id,current_asset_id,"
+        "SELECT id,profile_id,name,current_asset_id,"
         "created_at,updated_at FROM playlist WHERE id=? AND profile_id=?",
         (playlist_id, DEFAULT_PROFILE_ID),
     ).fetchone()
@@ -142,7 +142,7 @@ def _playlist_faces(contract: PlaylistContract, members):
 def q_playlists(contract: PlaylistContract, _args=None):
     with contract.read_connection() as connection:
         rows = [dict(row) for row in connection.execute(
-            "SELECT p.id,p.name,p.source_kind,p.source_seed_asset_id,p.current_asset_id,"
+            "SELECT p.id,p.name,p.current_asset_id,"
             "p.created_at,p.updated_at,count(pi.asset_id) item_count,"
             "COALESCE(p.current_asset_id,(SELECT first.asset_id FROM playlist_item first "
             "WHERE first.playlist_id=p.id ORDER BY first.position LIMIT 1)) preview_asset_id "
@@ -197,14 +197,10 @@ def w_playlist(contract: PlaylistContract, body):
         if action == "create":
             name = _name(body.get("name"))
             ids = _existing_video_ids(connection, _ids(body.get("asset_ids", [])))
-            source_kind = "mix" if body.get("source_kind") == "mix" else "manual"
-            seed_id = int(body["source_seed_asset_id"]) if body.get("source_seed_asset_id") else None
-            if seed_id is not None and seed_id not in ids:
-                raise ValueError("Mix 种子必须在播放列表中")
             cursor = connection.execute(
-                f"INSERT INTO playlist(profile_id,name,source_kind,source_seed_asset_id,"
-                f"current_asset_id,created_at,updated_at) VALUES(?,?,?,?,?,{now},{now})",
-                (DEFAULT_PROFILE_ID, name, source_kind, seed_id, ids[0] if ids else None),
+                f"INSERT INTO playlist(profile_id,name,current_asset_id,created_at,updated_at) "
+                f"VALUES(?,?,?,{now},{now})",
+                (DEFAULT_PROFILE_ID, name, ids[0] if ids else None),
             )
             playlist_id = int(cursor.lastrowid)
             connection.executemany(

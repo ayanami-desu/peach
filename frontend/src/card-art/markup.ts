@@ -173,7 +173,7 @@ export function avatarInner(name: string, ref: FaceRef | null | undefined, repId
     }));
 }
 
-/** 卡片署名、Mix 叠放头像、沉浸作者那一格：`avatarInner` 读取引用或顶栏代表作表。`kind` 为空是
+/** 卡片署名、播放列表卡的叠放头像、沉浸作者那一格：`avatarInner` 读取引用或顶栏代表作表。`kind` 为空是
  *  「没有署名人」，不退代表作，按女优那一档出首字母。 */
 export function entityAvatar(name: string, ref: FaceRef | null | undefined, kind: string): string {
   return avatarInner(name, ref, kind ? representativeOf(name) : null, kind || 'performer');
@@ -288,12 +288,12 @@ export function javArtwork(item: CoverItem, layout: 'big' | 'small', eager: bool
 export function cardArtwork(item: CoverItem, size: 'big' | 'small',
   eager: boolean, javImage: unknown): Artwork {
   if (item.is_jav) return javArtwork(item, size, eager, javImage);
-  return mixFace(item, size, eager, javImage);
+  return mediaFace(item, size, eager, javImage);
 }
 
-/** Mix 的一张画面，播放队列每一行的小图也是它：番号作品走封套链，其余取本地预览格，同一条
- *  在两处长得一样。`size` 只施加给番号作品。 */
-export function mixFace(item: CoverItem, size: 'big' | 'small', eager: boolean, javImage: unknown): Artwork {
+/** 卡片与队列小图共用的一张画面：番号作品走封套链，其余取本地预览格，同一条在两处长得一样。
+ *  `size` 只施加给番号作品。 */
+export function mediaFace(item: CoverItem, size: 'big' | 'small', eager: boolean, javImage: unknown): Artwork {
   if (item.is_jav) return javArtwork(item, size, eager, javImage);
   if (item.has_cover && item.cover_key) return { kind: 'cover', html: coverImage(item, size, eager) };
   return frameArtwork(item, eager);
@@ -307,9 +307,9 @@ export function frameArtwork(item: CoverItem, eager: boolean): Artwork {
   return { kind: 'thumb', html: `<img class="poster" src="/poster?id=${item.id}&c=4" width="640" height="360" alt="" loading="${eager ? 'eager' : 'lazy'}" decoding="async">` };
 }
 
-/** 播放队列一行的小图：Mix 画面按小图取，没有可用的图就写「无预览」占住那一格。 */
+/** 播放队列一行的小图：按小图取，没有可用的图就写「无预览」占住那一格。 */
 export function queueThumbHtml(item: CoverItem, javImage: unknown): string {
-  return mixFace(item, 'small', false, javImage).html || '<span class="nopic">无预览</span>';
+  return mediaFace(item, 'small', false, javImage).html || '<span class="nopic">无预览</span>';
 }
 
 /* 详情开场给播放器的海报位：video.js 的脚本还在下载、流源还没接上时，画面先给本地
@@ -378,8 +378,8 @@ export function queueAvatarHtml(item: IdentityItem): string {
   return `<span class="mav">${avatarInner(name, ref, kind ? representativeOf(name) : null, kind || 'performer')}</span>`;
 }
 
-/** Mix 的署名：番号作品先认女优，其余先认创作者。 */
-export function mixLabel(item: IdentityItem, tagLabel: (tag: string) => string): string {
+/** 队列行的署名：番号作品先认女优，其余先认创作者。 */
+export function queueLabel(item: IdentityItem, tagLabel: (tag: string) => string): string {
   const performer = (item.performers || [])[0];
   if (item.is_jav && performer) return entityDisplayName('performer', performer);
   if (item.creator) return entityDisplayName('creator', item.creator);

@@ -1621,7 +1621,6 @@ class WebDataTests(unittest.TestCase):
         path = self.stage_media(1)
         playlist = rm_web.w_playlist(self.contract, {
             "action": "create", "name": "待清理", "asset_ids": [1],
-            "source_kind": "mix", "source_seed_asset_id": 1,
         })["playlist"]
         rm_web.w_feedback(self.contract, {"id": 1, "kind": "dispose"})
         result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
@@ -1635,9 +1634,6 @@ class WebDataTests(unittest.TestCase):
             self.assertEqual(left, 0, f"{table} 残留了已删资产的引用")
         self.assertIsNone(con.execute(
             "SELECT current_asset_id FROM playlist WHERE id=?", (playlist["id"],),
-        ).fetchone()[0])
-        self.assertIsNone(con.execute(
-            "SELECT source_seed_asset_id FROM playlist WHERE id=?", (playlist["id"],),
         ).fetchone()[0])
         con.close()
 
@@ -2368,12 +2364,11 @@ class WebDataTests(unittest.TestCase):
         vanish(2)
         self.assertIsNone(web_playlists.q_playlist(self.contract, {"id": created["id"]})["current_asset_id"])
 
-    def test_persistent_playlist_can_save_mix_reorder_resume_and_edit(self):
+    def test_persistent_playlist_reorder_resume_and_edit(self):
         created = rm_web.w_playlist(self.contract, {
-            "action": "create", "name": "  Alice Mix  ", "asset_ids": [1, 2, 1],
-            "source_kind": "mix", "source_seed_asset_id": 1,
+            "action": "create", "name": "  Alice 列表  ", "asset_ids": [1, 2, 1],
         })["playlist"]
-        self.assertEqual(created["name"], "Alice Mix")
+        self.assertEqual(created["name"], "Alice 列表")
         self.assertEqual([item["id"] for item in created["items"]], [1, 2])
         self.assertEqual(created["current_asset_id"], 1)
 

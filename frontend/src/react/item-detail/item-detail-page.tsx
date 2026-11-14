@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { fmtDur, fmtSize, icon, requestErrorMessage } from '@peach/legacy/core';
 import {
-  coverUrl, mixLabel, performerLabel, queueAvatarHtml, queueThumbHtml,
+  coverUrl, queueLabel, performerLabel, queueAvatarHtml, queueThumbHtml,
 } from '@peach/card-art';
 import { confirmModal, spinnerHtml } from '@peach/legacy/ui';
 
@@ -24,7 +24,7 @@ import { patchCatalogItems, replaceCatalogItem } from '../catalog-grid/catalog-g
 import type { MediaItem } from '../catalog-grid/types';
 import { RetryNote } from '../components/grid-reveal';
 import { PendingWork, pendingRefetch } from '../components/pending-work';
-import { MixQueue, MixQueueRow } from '../components/mix-queue';
+import { QueuePanel, QueuePanelRow } from '../components/detail-queue';
 import { RelatedSection } from '../components/related-section';
 import { DetailContinuation } from '../components/detail-continuation';
 import { DetailTags } from '../components/detail-tags';
@@ -63,7 +63,7 @@ export function ItemDetailPage(props: ItemDetailProps) {
   const { queue: ref, actions } = props;
   const queueResult = useQuery({
     queryKey: ref ? queueKey(ref) : ['item-queue', 'none'],
-    queryFn: ({ signal }) => fetchQueue(ref!, props.helpers, signal),
+    queryFn: ({ signal }) => fetchQueue(ref!, signal),
     enabled: !!ref,
   });
   const queue = ref ? queueResult.data || null : null;
@@ -270,28 +270,24 @@ function Queue({ queue, itemId, helpers, actions }: {
       });
     }
   }, [helpers, queue.kind]);
-  const saveMix = useSaveMix(queue, actions);
-  const head = queue.kind === 'mix'
-    ? <button type="button" data-save-mix="" title="保存为播放列表" aria-label="保存为播放列表" onClick={saveMix}
+  const head = queue.kind === 'playlist'
+    ? <button type="button" data-edit-playlist="" title="编辑播放列表" aria-label="编辑播放列表" onClick={actions.editPlaylist}
       dangerouslySetInnerHTML={{ __html: icon('playlist') }} />
-    : queue.kind === 'playlist'
-      ? <button type="button" data-edit-playlist="" title="编辑播放列表" aria-label="编辑播放列表" onClick={actions.editPlaylist}
-        dangerouslySetInnerHTML={{ __html: icon('playlist') }} />
-      : null;
+    : null;
   const ref = { kind: queue.kind, seedId: queue.seedId, playlistId: queue.playlistId };
   return (
-    <MixQueue kind={queue.kind} title={copy.title} summary={copy.summary} onClose={actions.close} actions={head} listRef={listRef}>
+    <QueuePanel kind={queue.kind} title={copy.title} summary={copy.summary} onClose={actions.close} actions={head} listRef={listRef}>
       {queue.items.map((row) => {
         const edition = queue.kind === 'editions' && row.edition_label
           ? <i className={`javedition ${EDITION_TONE[row.edition_label] || 'censored'}`} data-queue-edition="">{row.edition_label}</i> : null;
         // 已消失的条目照旧列在播放列表里、能移出，但文件不在盘上，这一行不能点开去播放。
         const gone = queue.kind === 'playlist' && isVanished(row);
         return (
-          <MixQueueRow key={row.id} current={row.id === itemId} data-queue-item={row.id} row={{ 'data-queue-row': row.id }}
+          <QueuePanelRow key={row.id} current={row.id === itemId} data-queue-item={row.id} row={{ 'data-queue-row': row.id }}
             disabled={gone} title={gone ? '文件已不在盘上，不能播放' : undefined}
             {...(gone ? { 'data-queue-vanished': '' } : {})}
             onClick={() => { if (!gone) actions.openQueueItem(ref, row.id) }}
-            pic={<><Html html={queueThumbHtml(row, helpers.javImage())} /><i className="mono" data-mix-item-duration="">{fmtDur(row.duration)}</i></>}
+            pic={<><Html html={queueThumbHtml(row, helpers.javImage())} /><i className="mono" data-detail-queue-entry-duration="">{fmtDur(row.duration)}</i></>}
             lead={<Html html={queueAvatarHtml(row)} />}
             after={queue.kind === 'playlist' ? (
               <span data-queue-edit="">
@@ -303,22 +299,12 @@ function Queue({ queue, itemId, helpers, actions }: {
             <span data-queue-head="">{edition}<b data-middle-truncate="">{helpers.displayName(row)}</b></span>
             <span data-truncate-end="">{gone ? '已消失 · 文件已不在盘上'
               : queue.kind === 'parts' || (queue.kind === 'editions' && row.part_label)
-                ? partLabel(row.part_label) : mixLabel(row, helpers.tagLabel)}</span>
-          </MixQueueRow>
+                ? partLabel(row.part_label) : queueLabel(row, helpers.tagLabel)}</span>
+          </QueuePanelRow>
         );
       })}
-    </MixQueue>
+    </QueuePanel>
   );
-}
-
-/** 保存 Mix：壳弹表单（舞台是原生模态，弹层要进同一层），确认时由这里写库。 */
-function useSaveMix(queue: DetailQueue, actions: ItemDetailActions) {
-  const save = useMutation({
-    mutationFn: (name: string) => apiSend<{ playlist: PlaylistPayload }>(PLAYLIST_URL, {
-      action: 'create', name, asset_ids: queue.items.map((row) => row.id), source_kind: 'mix', source_seed_asset_id: queue.seedId,
-    }).then((result) => result.playlist),
-  });
-  return () => actions.saveMix({ title: queue.title, count: queue.items.length, save: (name) => save.mutateAsync(name) });
 }
 
 /** 播放列表的排序与移出。两者写完都把服务端回的整份列表换进队列缓存，行原地重排，不重挂舞台；

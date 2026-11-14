@@ -99,12 +99,11 @@ describe('设计决定：作品卡、管理页与复核', () => {
     } finally { await opened.close() }
   });
 
-  it('馆藏卡片的字取页面正文那一档，角标、悬停控件、进度条、竖屏带、Mix 与回收站卡面按定下的样子画', { timeout: 90_000 }, async () => {
+  it('馆藏卡片的字取页面正文那一档，角标、悬停控件、进度条、竖屏带与回收站卡面按定下的样子画', { timeout: 90_000 }, async () => {
     /* 演示库凑不出回收站里的非视频资源：回收站那一页把第二条换成一个压缩包。
        目录那一页给前三条挂半程观看进度，量进度条的颜色。 */
     const opened = await openCatalogFixture(browser, (payload, url) => {
       if (url.searchParams.get('state') !== 'trash') {
-        if (!url.searchParams.has('orient')) assert.ok(payload.items.length >= 8, 'Mix 外观夹具至少提供八张作品');
         for (const item of payload.items.slice(0, 3)) Object.assign(item, { duration: 600, play_seconds: 300 });
         return;
       }
@@ -149,22 +148,17 @@ describe('设计决定：作品卡、管理页与复核', () => {
     try {
       await page.locator('#grid [data-shorts-strip]').first().waitFor({ timeout: 10_000 });
       await page.locator('#grid [data-media-grid] > [data-media-card] [data-media-progress]').first().waitFor({ timeout: 10_000 });
-      // 本例检查外观，夹具提供完整首页，Mix 按累计八张的真实规则插入。
-      await page.locator('#grid [data-mix-glyph]').first().waitFor({ state: 'attached' });
       const catalog = await readStyles({
         card: '[data-media-grid] > [data-media-card]',
         badge: '[data-media-grid] > [data-media-card] [data-media-badge]',
         shorts: '[data-shorts-strip] > h2',
-        mix: '[data-media-grid] > [data-mix-card]',
-        mixTitle: '[data-media-grid] > [data-mix-card] [data-mix-title]',
-        mixGlyph: '[data-media-grid] > [data-mix-card] [data-mix-glyph]',
         strip: '[data-shorts-strip]',
         progress: '[data-media-grid] > [data-media-card] [data-media-progress] > i',
         seekGlyph: '[data-media-grid] > [data-media-card] [data-media-seek] svg',
         laterButton: '[data-media-grid] > [data-media-card] [data-media-later] button',
         laterGlyph: '[data-media-grid] > [data-media-card] [data-media-later] svg',
       });
-      const { body, caption, md, card, badge, shorts, mix, mixTitle } = catalog;
+      const { body, caption, card, badge, shorts } = catalog;
       /* 竖屏带靠底色和网格区分，不描线；宽屏上往左铺过侧栏轨道，贴视口那一侧不留圆角。 */
       assert.deepEqual([catalog.strip?.background, catalog.strip?.borderWidth], [catalog.ground.background, '0px'],
         '竖屏带不是页面底色那一张面，或者描了一圈线');
@@ -216,8 +210,6 @@ describe('设计决定：作品卡、管理页与复核', () => {
       assert.ok(lifted.top >= 0 && lifted.bottom >= 0, `放大的竖屏卡被横滚行裁掉：${JSON.stringify(lifted)}`);
       await page.mouse.move(0, 0);
       assert.equal(catalog.progress?.background, catalog.tungsten.background, '观看进度条不是钨丝蓝');
-      assert.deepEqual([catalog.mixGlyph?.background, catalog.mixGlyph?.borderWidth, catalog.mixGlyph?.borderColor],
-        [catalog.overlay.background, '1px', catalog.overlay.borderColor], 'Mix 署名位那枚字形不是半透明底加细边');
       /* 主控保持 58px 配 34px 图标；角落动作取同一档 36px 配 18px 图标。 */
       assert.deepEqual([catalog.seekGlyph?.width, catalog.laterButton?.width, catalog.laterGlyph?.width], ['34px', '36px', '18px'],
         '悬停控件的尺寸和图标比例变了');
@@ -232,11 +224,6 @@ describe('设计决定：作品卡、管理页与复核', () => {
       assert.deepEqual([badge?.fontSize, badge?.lineHeight], [caption.fontSize, caption.lineHeight], '来源角标的字不是 caption 那一档');
       assert.equal(badge?.minHeight, '24px', '来源角标矮于 24px');
       assert.deepEqual([shorts?.fontFamily, shorts?.lineHeight], [body.fontFamily, '20px'], '竖屏带标题的字体或行高不同页面正文');
-      assert.ok(mix && mixTitle, '夹具目录里没有插进 Mix');
-      assert.deepEqual([mix.fontSize, mix.lineHeight], ['14px', '20px'], '网格里的 Mix 卡没取页面正文那一档');
-      assert.equal(mixTitle.letterSpacing, 'normal', '网格里的 Mix 标题带着字距');
-      assert.ok(Math.abs(parseFloat(mixTitle.lineHeight) - parseFloat(md.fontSize) * 1.45) < .5,
-        `网格里的 Mix 标题行高 ${mixTitle.lineHeight}，不是 --fs-md 的 1.45 倍`);
 
       await page.goto(new URL('/trash', page.url()).href, { waitUntil: 'load' });
       await page.locator('#grid [data-media-card][data-variant="resource"]').first().waitFor({ timeout: 15_000 });
@@ -480,14 +467,13 @@ describe('设计决定：作品卡、管理页与复核', () => {
     });
     try {
       const shapeOf = (selector: string) => opened.page.locator(selector).first().evaluate((element) => {
-        const stack = element.querySelector('[data-media-stack],[data-mix-stack]')!;
-        const cover = element.querySelector('[data-media-pic],[data-mix-cover]')!;
+        const stack = element.querySelector('[data-media-stack]')!;
+        const cover = element.querySelector('[data-media-pic]')!;
         return {
           // 封面格的圆角由 clip-path 裁出来（media-card.css），格子本身不写 border-radius。
           cover: getComputedStyle(cover).clipPath.match(/round (\S+)\)$/)?.[1] ?? '0px',
           ground: getComputedStyle(cover).backgroundColor,
           layers: ['::before', '::after'].map((pseudo) => getComputedStyle(stack, pseudo).borderTopLeftRadius),
-          faces: element.querySelectorAll('[data-mix-faces]').length,
           preview: Boolean(element.querySelector('[data-media-preview]')),
         };
       });
@@ -497,12 +483,7 @@ describe('设计决定：作品卡、管理页与复核', () => {
       assert.deepEqual(part.layers, [part.cover, part.cover], '分卷卡的叠层纸边和封面不是同一档圆角');
       // 封面格背后压着纸边：格子是空的，纸边线条就从封面没盖住的地方透出来。
       assert.notEqual(part.ground, 'rgba(0, 0, 0, 0)', '叠层卡的封面格是透明的，纸边会透进封面');
-      assert.equal(part.faces, 0, '分卷卡仍挂着翻卡面板');
       assert.ok(part.preview, '分卷卡悬停没有分段预览入口');
-      if (await opened.page.locator('#grid [data-mix-card]').count()) {
-        const mix = await shapeOf('#grid [data-mix-card]');
-        assert.deepEqual(mix.layers, [mix.cover, mix.cover], 'Mix 卡的叠层纸边和封面不是同一档圆角');
-      }
       assert.deepEqual(opened.problems, []);
     } finally {
       await opened.close();

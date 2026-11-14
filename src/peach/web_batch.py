@@ -272,10 +272,6 @@ def purge_assets(connection, rows, *, eligible=None) -> dict:
             f"UPDATE playlist SET current_asset_id=NULL WHERE current_asset_id IN ({marks})",
             purged,
         )
-        connection.execute(
-            f"UPDATE playlist SET source_seed_asset_id=NULL WHERE source_seed_asset_id IN ({marks})",
-            purged,
-        )
         for table in ASSET_REFERENCE_TABLES:
             connection.execute(f"DELETE FROM {table} WHERE asset_id IN ({marks})", purged)
         # 按文件出的资料候选键是 `asset:<编号>:<字段>`；资产删了，这些决定就没有可指的东西（#486）。

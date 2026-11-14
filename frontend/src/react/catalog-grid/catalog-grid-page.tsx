@@ -12,7 +12,6 @@ import {
   type RefObject,
 } from 'react';
 import { useInfiniteQuery, useQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
-import { mixFace as mixArtwork, mixLabel, relayoutCovers, type Artwork } from '@peach/card-art';
 import { isOverlayPath, peachHistory } from '@peach/history';
 import { requestErrorMessage } from '@peach/legacy/core';
 import { LOAD_MORE_STATUS, loadingDotsHtml } from '@peach/legacy/ui';
@@ -21,13 +20,12 @@ import { apiGet } from '../../api';
 import { PLAYBACK_PROGRESS_EVENT, type PlaybackProgress } from '../../player/telemetry';
 import { LOAD_MORE_MARGIN, RetryNote } from '../components/grid-reveal';
 import { SkeletonContent } from '../components/skeleton-content';
-import { cardRatio, MediaCard, type MediaCardVariant } from '../components/media-card';
-import { MIX_FLIP_FACES, MixCard } from '../components/mix-card';
+import { MediaCard, type MediaCardVariant } from '../components/media-card';
 import {
-  SHORTS_BATCH, arrangeTiles, catalogParams, catalogQuery, catalogSummary, collapseGroups, entityQuery, latestCatalogPages, mixHasPicture,
-  replaceCatalogItem, shortsBoundaries, shortsParams, splitSections, type GridPage, type ShortsCut, type Tile,
+  SHORTS_BATCH, arrangeCards, catalogParams, catalogQuery, catalogSummary, collapseGroups, entityQuery, latestCatalogPages,
+  replaceCatalogItem, shortsBoundaries, shortsParams, splitSections, type GridPage, type ShortsCut,
 } from './catalog-grid';
-import type { CatalogGridProps, MediaCardLayout, MediaCardHelpers, MediaItem, MediaPage } from './types';
+import type { CatalogGridProps, MediaItem, MediaPage } from './types';
 import { VideoWall } from '../video-wall/video-wall';
 import { finiteWallFilters, wallHasCover } from '../video-wall/wall-layout';
 import { wallEmptyHtml } from '../video-wall/wall-empty';
@@ -153,20 +151,20 @@ function GridBody(props: CatalogGridProps) {
     props.settled?.(props.revision);
   }, [result.isPending, result.isPlaceholderData, props.revision]);
 
-  const { tiles, pageStarts } = useMemo(() => arrangeTiles(result.data?.pages || [], {
-    collapse: props.groupCollapse !== false, mix: !!props.mix && !trash, javImage: layout.javImage,
-  }), [result.data, props.groupCollapse, props.mix, trash, layout.javImage]);
-  const shown = tiles.reduce((count, tile) => count + (tile.kind === 'card' ? 1 : 0), 0);
+  const { cards, pageStarts } = useMemo(() => arrangeCards(result.data?.pages || [], {
+    collapse: props.groupCollapse !== false,
+  }), [result.data, props.groupCollapse]);
+  const shown = cards.length;
   const total = Number(result.data?.pages[0]?.total ?? summary.data?.total ?? shown);
   const finiteWall = entity || finiteWallFilters(props.filters);
   const wallAvailable = !trash && !props.selectMode && !!actions.wallPlayer && !!actions.wallDetails;
-  const wallItems = tiles.flatMap(tile => tile.kind === 'card' && wallHasCover(tile.item) ? [tile.item] : []);
+  const wallItems = cards.filter(wallHasCover);
   const wallPool = wallItems;
   const body = useRef<HTMLDivElement | null>(null);
-  const cuts = useShortsStrips(props, result.isPlaceholderData ? undefined : result.data, tiles, pageStarts, body);
+  const cuts = useShortsStrips(props, result.isPlaceholderData ? undefined : result.data, cards, pageStarts, body);
   /* 状态条数的是这一页画出来的全部卡：主网格加上插在中间的竖屏带。竖屏格只用视频帧，
      按帧图判断有没有图；筛竖屏时主网格本身也是竖屏格。 */
-  const shownItems = tiles.flatMap(tile => tile.kind === 'card' ? [tile.item] : []);
+  const shownItems = cards;
   const shortItems = cuts.flatMap(cut => cut.items);
   const portrait = !!layout.portrait;
   const merge = (...lists: number[][]) => [...new Set(lists.flat())];
@@ -204,14 +202,12 @@ function GridBody(props: CatalogGridProps) {
     if (next.isFetchNextPageError) throw next.error;
   }, [result.fetchNextPage]);
 
-  const card = (tile: Tile) => tile.kind === 'mix'
-    ? <HomeMix key={`mix:${tile.seed.id}`} seed={tile.seed} layout={layout} helpers={helpers} actions={actions} />
-    : (
-      <MediaCard key={tile.item.id} item={tile.item} grouped={props.groupCollapse !== false}
-        variant={trash && tile.item.medium && tile.item.medium !== 'video' ? 'resource' : 'grid'} layout={layout}
-        selected={props.selected.has(tile.item.id)} selectMode={props.selectMode} seekSeconds={props.seekSeconds}
-        helpers={helpers} actions={actions} onOpen={trash ? openResource : open} />
-    );
+  const card = (item: MediaItem) => (
+    <MediaCard key={item.id} item={item} grouped={props.groupCollapse !== false}
+      variant={trash && item.medium && item.medium !== 'video' ? 'resource' : 'grid'} layout={layout}
+      selected={props.selected.has(item.id)} selectMode={props.selectMode} seekSeconds={props.seekSeconds}
+      helpers={helpers} actions={actions} onOpen={trash ? openResource : open} />
+  );
 
   const content = () => {
     if (wallAvailable && props.wall) return <VideoWall
@@ -230,16 +226,16 @@ function GridBody(props: CatalogGridProps) {
     if (!result.data) {
       return <RetryNote message={requestErrorMessage(result.error)} onRetry={() => void result.refetch()} />;
     }
-    if (!tiles.length) {
+    if (!cards.length) {
       const html = props.emptyHtml?.({ trash, libraryEmpty: !!result.data.pages[0]?.libraryEmpty }) || '';
       return <div data-media-empty="" dangerouslySetInnerHTML={{ __html: html }} />;
     }
     return (
       <>
         <div data-media-sections="" data-select-mode={props.selectMode ? '' : undefined}>
-          {splitSections(tiles, cuts).map((section) => (
+          {splitSections(cards, cuts).map((section) => (
             <Fragment key={section.start}>
-              <MediaGrid>{section.tiles.map(card)}</MediaGrid>
+              <MediaGrid>{section.cards.map(card)}</MediaGrid>
               {section.strip ? <ShortsStrip cut={section.strip} props={props} onOpen={openShort} /> : null}
             </Fragment>
           ))}
@@ -327,7 +323,7 @@ export function LoadMore({ entity, load, enabled, children }: {
  *  分卷与版本按主网格同一个开关折叠（`collapseGroups`），一组跨几条带也只留第一次出现的那一张。 */
 function useShortsStrips(
   props: CatalogGridProps, data: InfiniteData<GridPage, number> | undefined,
-  tiles: readonly Tile[], pageStarts: readonly number[], body: RefObject<HTMLElement | null>,
+  cards: readonly MediaItem[], pageStarts: readonly number[], body: RefObject<HTMLElement | null>,
 ): ShortsCut[] {
   type Saved = { cuts: ShortsCut[]; offset: number; handled: number };
   const cacheKey = ['catalog-short-layout', catalogParams(props.filters || {}, !!props.excludeVertical)];
@@ -376,7 +372,7 @@ function useShortsStrips(
     const last = sections?.[sections.length - 1];
     const columns = last ? Math.max(1, getComputedStyle(last).gridTemplateColumns.split(' ').length) : 1;
     const addedFrom = Math.max(0, (pageStarts[arrived.page] ?? 0) - start);
-    const boundaries = shortsBoundaries(tiles.length - start, addedFrom, columns);
+    const boundaries = shortsBoundaries(cards.length - start, addedFrom, columns);
     if (!boundaries.length) return;
     /* 落点定了才折叠：剪不出落点的这一批下次照原偏移量重取，不能先记成已出现。 */
     const items = collapseGroups(arrived.items, own.groups, props.groupCollapse !== false);
@@ -413,41 +409,5 @@ function ShortsStrip({ cut, props, onOpen }: {
         ))}
       </div>
     </section>
-  );
-}
-
-/** Mix 的一张画面：番号版式开着时番号作品按这一屏的大图／小图取，其余一律按小图。 */
-function mixFace(item: MediaItem, layout: MediaCardLayout, eager: boolean): Artwork {
-  return mixArtwork(item, layout.active && item.is_jav ? layout.size : 'small', eager, layout.javImage);
-}
-
-/** 目录每一页第 8 位的那张 Mix：以种子为首的相似作品。整张卡是点击区，悬停逐张翻过那一叠。 */
-function HomeMix({ seed, layout, helpers, actions }: {
-  seed: MediaItem; layout: MediaCardLayout; helpers: MediaCardHelpers; actions: CatalogGridProps['actions'];
-}) {
-  const faces = useRef(new Map<string, string>());
-  const latest = useRef(layout);
-  latest.current = layout;
-  const label = mixLabel(seed, helpers.tagLabel);
-  const flipImages = useCallback(async () => {
-    const current = latest.current;
-    const related = await actions.mixRelated(seed.id);
-    const list = [seed, ...related].filter((item) => mixHasPicture(item, current.javImage)).slice(0, MIX_FLIP_FACES);
-    faces.current = new Map(list.map((item) => [String(item.id), mixFace(item, current, true).html]));
-    return list.map((item) => String(item.id));
-  }, [seed, actions]);
-  const jav = layout.active && !!seed.is_jav;
-  const size = jav ? layout.size : 'small';
-  const artwork = mixFace(seed, layout, false);
-  return (
-    <MixCard data-mix-seed={String(seed.id)} name={`Mix · ${label}`}
-      caption={`${helpers.displayName(seed, seed.name || '')}及相似作品`} count={0} badge="Mix" glyph wholeCard
-      poster={null} artwork={artwork}
-      artworkIdentity={size === 'small' ? artwork.html : mixFace(seed, { ...layout, size: 'small' }, false).html}
-      relayoutArt={(root) => relayoutCovers(root, size)}
-      ratio={cardRatio(seed, 'grid', layout)}
-      flipImages={flipImages} faceHtml={(id) => faces.current.get(id) || ''} canFlip={actions.canFlip}
-      faces={[]} onOpenEntity={actions.openEntity}
-      onOpen={(anchor) => actions.openMix(seed.id, anchor)} openLabel={`打开 Mix · ${label}`} />
   );
 }

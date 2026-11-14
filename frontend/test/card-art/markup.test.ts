@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   avatarInner, cardArtwork, cardIdentity, coverImage, coverUrl, detailPosterUrl, entityAvatar, entityFaceImg,
-  faceBoxAttrs, faceOrigin, facePos, javArtwork, logoUrl, mixFace, mixLabel, performerLabel, queueAvatarHtml,
+  faceBoxAttrs, faceOrigin, facePos, javArtwork, logoUrl, mediaFace, performerLabel, queueAvatarHtml, queueLabel,
   queueThumbHtml,
 } from '../../src/card-art/markup';
 import { rememberRepresentatives, representativeOf } from '../../src/card-art/representatives';
@@ -327,10 +327,10 @@ describe('cardArtwork 与队列小图', () => {
     expect(cardArtwork({ id: 1 }, 'big', false, 'cover').kind).toBe('');
   });
 
-  it('Mix 叠卡最上面那张立刻取，其余懒加载', () => {
-    expect(parse(mixFace({ id: 1, has_thumb: true }, 'big', true, 'cover').html)!.getAttribute('loading')).toBe('eager');
-    expect(parse(mixFace({ id: 1, has_thumb: true }, 'big', false, 'cover').html)!.getAttribute('loading')).toBe('lazy');
-    expect(mixFace({ id: 1 }, 'big', true, 'cover').kind).toBe('');
+  it('播放列表叠卡最上面那张立刻取，其余懒加载', () => {
+    expect(parse(mediaFace({ id: 1, has_thumb: true }, 'big', true, 'cover').html)!.getAttribute('loading')).toBe('eager');
+    expect(parse(mediaFace({ id: 1, has_thumb: true }, 'big', false, 'cover').html)!.getAttribute('loading')).toBe('lazy');
+    expect(mediaFace({ id: 1 }, 'big', true, 'cover').kind).toBe('');
   });
 
   it('队列一行没有图时写「无预览」占住那一格；番号作品按小图取', () => {
@@ -402,7 +402,7 @@ describe('卡片署名的身份推导', () => {
   });
 });
 
-describe('称谓与 Mix 署名', () => {
+describe('称谓与队列署名', () => {
   it('「女优」只用于番号发行物', () => {
     expect(performerLabel({ is_jav: true })).toBe('女优');
     expect(performerLabel({ is_jav: false })).toBe('艺人');
@@ -411,12 +411,12 @@ describe('称谓与 Mix 署名', () => {
 
   it('番号作品先认女优，其余先认创作者，再依次退到厂牌、番号、首个标签', () => {
     const label = (tag: string) => `#${tag}`;
-    expect(mixLabel({ is_jav: true, creator: 'x', performers: ['p'] }, label)).toBe('p');
-    expect(mixLabel({ creator: 'x', performers: ['p'] }, label)).toBe('x');
-    expect(mixLabel({ studio: 's', code: 'c' }, label)).toBe('s');
-    expect(mixLabel({ code: 'c' }, label)).toBe('c');
-    expect(mixLabel({ tags: ['t'] }, label)).toBe('#t');
-    expect(mixLabel({}, () => '')).toBe('为你推荐');
+    expect(queueLabel({ is_jav: true, creator: 'x', performers: ['p'] }, label)).toBe('p');
+    expect(queueLabel({ creator: 'x', performers: ['p'] }, label)).toBe('x');
+    expect(queueLabel({ studio: 's', code: 'c' }, label)).toBe('s');
+    expect(queueLabel({ code: 'c' }, label)).toBe('c');
+    expect(queueLabel({ tags: ['t'] }, label)).toBe('#t');
+    expect(queueLabel({}, () => '')).toBe('为你推荐');
   });
 });
 

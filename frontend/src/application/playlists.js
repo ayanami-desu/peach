@@ -1,12 +1,12 @@
 /* playlists 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
 import { pageOpens, playlistsRevision, state, writeShell } from './../shell/index';
 import { buildBars, catalogState, homePath } from './catalog.js';
-import { navigationState, openRoutedPage } from './navigation.js';
+import { navigationState } from './navigation.js';
 import { enterManagementSurface, showHomeSurfaces, showManagementBody } from './layout.js';
 import { openEntity } from './entity.js';
 import { $, api, esc } from '../core';
 import { checkboxHtml, formModal, noteHtml } from '../ui-kit';
-import { disposeStage, openPlaylist } from './media.js';
+import { disposeStage } from './media.js';
 import { receiptsState } from './receipts.js';
 import { applicationEffects } from './effects';
 import { releaseHoverPreviews } from './../card-art/hover';
@@ -25,26 +25,6 @@ export function openTasteSignal(kind,name){
 export function playlistNameField(value=''){
   return `<label class="modalfield"><span>名称</span><input class="geist-input" name="name"
     maxlength="80" placeholder="输入名称" value="${esc(value)}"></label>`;
-}
-
-export async function saveMixAsPlaylist({title,count,save}){
-  const modal=formModal({
-    title:'保存为播放列表',
-    description:`这个 Mix 的 ${count} 个视频会存成一份可以继续播放的列表。`,
-    body:playlistNameField(title),
-    confirmLabel:'保存为播放列表',
-    onConfirm:()=>{
-      const name=modal.dialog.querySelector('[name="name"]').value.trim();
-      if(!name)throw new Error('播放列表名称不能为空');
-      return save(name);
-    }});
-  modal.dialog.querySelector('[name="name"]').select();
-  const {confirmed,result}=await modal.done;
-  if(!confirmed)return;
-  await openPlaylist(result.id,result.current_asset_id,true);
-  receiptsState.actionReceipt('已保存为播放列表',{undo:async()=>{
-    await playlistsState.playlistWrite({action:'delete',id:result.id});openRoutedPage('/playlists');
-  }});
 }
 
 export async function openAddToPlaylist(item){

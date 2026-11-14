@@ -1,7 +1,7 @@
-/* 播放列表页：保存下来的 Mix 与手动建的列表，按最近改动排。
+/* 播放列表页：手动建的列表，按最近改动排。
  *
- * 一份播放列表就是一叠视频，和首页那张 Mix 卡是同一件东西，所以穿同一身
- * （`components/mix-card.tsx`）：封面悬停时逐张翻过列表里的画面，下面一行是列表里出镜最多
+ * 一份播放列表就是一叠视频，所以穿同一身
+ * （`components/playlist-card.tsx`）：封面悬停时逐张翻过列表里的画面，下面一行是列表里出镜最多
  * 的那几位的头像，标题就是列表名。改名和删除收进名字右边那个点点点菜单——它们是这张卡的
  * 次要动作，不该和「打开」并排占着一整行。
  *
@@ -24,7 +24,7 @@ import { errorMessage } from '../../api';
 import type { PlaylistsProps } from '../bundle';
 import { EmptyState, EmptyFocusButton } from '../components/empty-state';
 import { RetryNote } from '../components/grid-reveal';
-import { MixCard } from '../components/mix-card';
+import { PlaylistCard } from '../components/playlist-card';
 import { ModalFrame } from '../components/modal-frame';
 import { ObjectOrderDialog } from '../components/object-order-dialog';
 import { spriteGlyph } from '../components/sprite-glyph';
@@ -200,7 +200,7 @@ export function PlaylistsPage({ openPlaylist, openEntity, canFlip, toast, revisi
           {/* 遗留样式表那条 `.stats h2` 不在层里，把二级标题定成 24px（窄屏 20px），工具类压不过，
               字形带 `!`；它给的 4px 底距与这里的 `mb-1` 相同。 */}
           <h2 className="mb-1 text-display-4-medium! text-text-primary">播放列表</h2>
-          <p className="text-body-2-regular text-text-secondary">保存 Mix，按自己的顺序继续播放。</p>
+          <p className="text-body-2-regular text-text-secondary">按自己的顺序继续播放。</p>
         </div>
         <CreateForm toast={toast} />
       </header>
@@ -217,8 +217,7 @@ export function PlaylistsPage({ openPlaylist, openEntity, canFlip, toast, revisi
               const resume = resumeAssetId(row);
               const name = row.name.trim() || '未命名播放列表';
               return (
-                <MixCard key={row.id} data-playlist-card={String(row.id)} name={name}
-                  caption={row.source_kind === 'mix' ? '由 Mix 保存' : '手动播放列表'}
+                <PlaylistCard key={row.id} data-playlist-card={String(row.id)} name={name}
                   count={row.item_count}
                   poster={row.preview_asset_id ? posterUrl(row.preview_asset_id) : null}
                   flipImages={async () => (row.preview_ids || []).map(posterUrl)}
@@ -233,7 +232,7 @@ export function PlaylistsPage({ openPlaylist, openEntity, canFlip, toast, revisi
         : (
           <EmptyState icon={PLAYLIST} title="还没有播放列表"
             actions={<EmptyFocusButton target='[data-playlist-create] input'>新建播放列表</EmptyFocusButton>}>
-            保存 Mix 或新建列表后，会在这里按自己的顺序继续播放。
+            新建列表后，会在这里按自己的顺序继续播放。
           </EmptyState>
         )}
       </div>

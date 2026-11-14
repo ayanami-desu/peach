@@ -5,10 +5,10 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MIX_FLIP_LEAD_MS, MIX_FLIP_MS, useStackFlip, type StackFlip } from '../../src/react/components/use-stack-flip';
+import { STACK_FLIP_LEAD_MS, STACK_FLIP_MS, useStackFlip, type StackFlip } from '../../src/react/components/use-stack-flip';
 import { mount } from './render';
 
-/** 指针停多久才开始，同钩子里的 `MIX_FLIP_ARM_MS`。 */
+/** 指针停多久才开始，同钩子里的 `STACK_FLIP_ARM_MS`。 */
 const ARM_MS = 340;
 
 let decoders: Array<{ url: string; resolve(): void; reject(): void }> = [];
@@ -81,10 +81,10 @@ describe('悬停翻卡', () => {
     await enter();
     await advance(ARM_MS);
     await act(async () => stale(['/stale.jpg', '/old.jpg']));
-    await advance(MIX_FLIP_LEAD_MS);
+    await advance(STACK_FLIP_LEAD_MS);
     expect(flip.faces).toEqual(['/a.jpg', '/b.jpg', '/c.jpg']);
     expect(onStage()).toBe('/b.jpg');
-    await advance(MIX_FLIP_MS);
+    await advance(STACK_FLIP_MS);
     expect(onStage()).toBe('/c.jpg');
     await leave();
     expect(vi.getTimerCount()).toBe(0);
@@ -94,7 +94,7 @@ describe('悬停翻卡', () => {
     autoDecode = (url) => url !== '/b.jpg';
     await mount(<Probe load={async () => ['/a.jpg', '/b.jpg', '/c.jpg']} />);
     await enter();
-    await advance(ARM_MS + MIX_FLIP_LEAD_MS);
+    await advance(ARM_MS + STACK_FLIP_LEAD_MS);
     expect(flip.faces).toEqual(['/a.jpg', '/c.jpg']);
     expect(onStage()).toBe('/c.jpg');
     await leave();

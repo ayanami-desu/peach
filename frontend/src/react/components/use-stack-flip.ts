@@ -5,20 +5,20 @@
  * 否则会当场弹回原位。多选、遮挡、减少动效与滚动中都不启动，这些判据归壳，经 `canFlip`
  * 递进来；取图前后各再问一次。离开即停并还原静止封面。
  *
- * 翻哪些由调用方给：播放列表翻它自己的封面，首页 Mix 现拉相关作品。能用的图少于两张就
+ * 翻哪些由调用方给：播放列表翻它自己的封面。能用的图少于两张就
  * 不翻：一张图翻过去还是它自己。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** 一张停多久再翻走。 */
-export const MIX_FLIP_MS = 1100;
+export const STACK_FLIP_MS = 1100;
 /** 面板建好到第一次翻动。直接用 1.1 秒间隔等第一张，指针停下到有反应要接近两秒。 */
-export const MIX_FLIP_LEAD_MS = 420;
+export const STACK_FLIP_LEAD_MS = 420;
 /** 最多预备几张，一次悬停不拉一整批封面。 */
-export const MIX_FLIP_FACES = 9;
+export const STACK_FLIP_FACES = 9;
 /** 指针停多久才算「在看这一叠」，扫过去的不启动。 */
-const MIX_FLIP_ARM_MS = 340;
+const STACK_FLIP_ARM_MS = 340;
 /** 一张图等多久还没解码好就不要它。 */
-const MIX_FLIP_READY_MS = 5000;
+const STACK_FLIP_READY_MS = 5000;
 
 export interface StackFlipOptions {
   /** 这一叠要翻的图地址，按翻动顺序。 */
@@ -69,7 +69,7 @@ function readyImage(url: string, run: Run, referrerPolicy?: ReferrerPolicy): Pro
       resolve(ok);
     };
     const cancel = () => finish(false);
-    const timeout = setTimeout(cancel, MIX_FLIP_READY_MS);
+    const timeout = setTimeout(cancel, STACK_FLIP_READY_MS);
     run.cancels.add(cancel);
     image.onerror = cancel;
     image.onload = () => {
@@ -119,7 +119,7 @@ export function useStackFlip({ load, canFlip, referrerPolicy }: StackFlipOptions
     state.at = (out + 1) % state.count;
     setLeaving(out);
     setCurrent(state.at);
-    later(MIX_FLIP_MS - 120, () => setLeaving((now) => (now === out ? null : now)));
+    later(STACK_FLIP_MS - 120, () => setLeaving((now) => (now === out ? null : now)));
   };
 
   const start = async () => {
@@ -130,7 +130,7 @@ export function useStackFlip({ load, canFlip, referrerPolicy }: StackFlipOptions
     const alive = () => state.live && generation === state.generation;
     let pool: readonly string[] = [];
     try {
-      pool = (await latest.current.load()).slice(0, MIX_FLIP_FACES);
+      pool = (await latest.current.load()).slice(0, STACK_FLIP_FACES);
     } catch {
       return;
     }
@@ -144,16 +144,16 @@ export function useStackFlip({ load, canFlip, referrerPolicy }: StackFlipOptions
     setFaces(usable);
     setCurrent(0);
     setLeaving(null);
-    later(MIX_FLIP_LEAD_MS, () => {
+    later(STACK_FLIP_LEAD_MS, () => {
       step();
-      state.cycle = setInterval(step, MIX_FLIP_MS);
+      state.cycle = setInterval(step, STACK_FLIP_MS);
     });
   };
 
   const onPointerEnter = () => {
     const state = run.current;
     if (state.armed !== null) { clearTimeout(state.armed); state.timers.delete(state.armed) }
-    state.armed = later(MIX_FLIP_ARM_MS, () => { state.armed = null; void start() });
+    state.armed = later(STACK_FLIP_ARM_MS, () => { state.armed = null; void start() });
   };
   const onPointerLeave = () => {
     clear();

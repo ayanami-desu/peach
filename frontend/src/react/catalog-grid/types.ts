@@ -91,8 +91,6 @@ export interface MediaCardActions {
   openShort(item: MediaItem): void;
   /** 竖屏带标题上那枚键：进沉浸模式。 */
   openShorts(): void;
-  /** 打开以这一条为种子的 Mix。 */
-  openMix(seedId: number, anchor: HTMLElement): void;
   openEntity(kind: string, name: string): void;
   /** 打开「未归属」那一批。 */
   openUnowned(): void;
@@ -106,10 +104,6 @@ export interface MediaCardActions {
   rate(item: MediaItem, star: number, onChange: (rating: number | null) => void, signal?: AbortSignal): Promise<void>;
   /** 回收站卡上那枚键：还原或移入回收站。写 ledger，做完重读目录并给撤销；失败由壳报，再抛出。 */
   resourceOperation(item: MediaItem, operation: 'restore' | 'dispose'): Promise<void>;
-  /** Mix 翻页要的相关作品，每个种子只取一次，和点开后的队列共用。 */
-  mixRelated(seedId: number): Promise<MediaItem[]>;
-  /** 此刻能不能悬停翻页：多选、遮挡、减少动效与滚动中都回 false。 */
-  canFlip(): boolean;
 }
 
 /** 馆藏卡片网格。三种取数：
@@ -143,11 +137,9 @@ export interface CatalogGridProps {
   groupCollapse?: boolean;
   /** 首页默认列表排除竖屏（另有竖屏带承接）；判据归壳。 */
   excludeVertical?: boolean;
-  /** 每一页第 8 位插一张 Mix。 */
-  mix?: boolean;
   /** 每接一页插一条竖屏带。 */
   shorts?: boolean;
-  /** 每接一页报一次：总数与此刻显示的卡数（Mix 与竖屏带不算）。壳据此推筛选条的读数、重画批量条，
+  /** 每接一页报一次：总数与此刻显示的卡数（竖屏带不算）。壳据此推筛选条的读数、重画批量条，
    *  回收站把读数写在说明行上。 */
   onCount?(total: number, shown: number): void;
   /** 首屏取数失败：没有读数可报，壳据此把筛选条那条读数微光收起。 */

@@ -25,7 +25,7 @@
   --detail-card-height:calc(var(--detail-card-width) * 9 / 16 + 6px + var(--detail-card-meta-height));
   --detail-continuation-height:calc(var(--detail-card-height) + 65px + var(--detail-continuation-extra,0px));
 }
-[data-stage]:has([data-detail-continuation]>[data-mix-queue]),[data-detail-continuation]:has(>[data-mix-queue]){--detail-continuation-extra:20px}
+[data-stage]:has([data-detail-continuation]>[data-detail-queue]),[data-detail-continuation]:has(>[data-detail-queue]){--detail-continuation-extra:20px}
 /* 氛围色定义在这里，右侧详情栏、切换队列和「接着看」共用同一档。三块同属
    一格详情，底色差 4% 就会在整幅宽度上留下一条界线，看着像两块面板拼起来；
    分块靠留白和小标题，不靠色差。 */
@@ -77,24 +77,24 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
   grid-template-areas:"media side";align-items:start}
 [data-stage-grid][data-with-queue]>[data-stage-media]{grid-area:media}
 [data-stage-grid][data-with-queue]>[data-stage-side]{grid-area:side;background:var(--detail-surface)}
-[data-detail-continuation]>[data-mix-queue]{max-height:360px;border-left:0;border-top:1px solid var(--line-soft);
+[data-detail-continuation]>[data-detail-queue]{max-height:360px;border-left:0;border-top:1px solid var(--line-soft);
   background:var(--detail-surface)}
-[data-detail-continuation] [data-mix-queue-actions] [data-queue-close]{display:none}
+[data-detail-continuation] [data-detail-queue-actions] [data-queue-close]{display:none}
 /* 两区共用底色；分集与推荐各自横滚，区隔只用细线和留白。 */
 [data-detail-continuation]{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;flex:none;background:var(--detail-surface)}
 [data-detail-continuation]:empty{display:none}
 [data-detail-continuation]>[data-item-related]{min-width:0}
 @media (min-width:1081px){
   /* 标题、摘要与操作键共同决定首行高度，两区封面排在共享的第二行。 */
-  [data-detail-continuation]:has(>[data-mix-queue]):has(>[data-item-related]){grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto}
+  [data-detail-continuation]:has(>[data-detail-queue]):has(>[data-item-related]){grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto}
   [data-detail-continuation][data-queue-cards="1"]:has(>[data-item-related]){grid-template-columns:minmax(0,calc(var(--detail-card-width) + 28px)) minmax(0,1fr)}
   [data-detail-continuation][data-queue-cards="2"]:has(>[data-item-related]){grid-template-columns:minmax(0,calc(var(--detail-card-width) * 2 + 38px)) minmax(0,1fr)}
-  [data-detail-continuation]:has(>[data-mix-queue]):has(>[data-item-related])>:is([data-mix-queue],[data-item-related]){display:grid;grid-template-rows:subgrid;grid-row:span 2;row-gap:0}
-  [data-detail-continuation]:has(>[data-item-related])>[data-mix-queue]{grid-column:1}
-  .peach-react [data-detail-continuation]>[data-mix-queue]+[data-item-related]{border-left:1px solid var(--line-soft);padding-top:14px}
-  .peach-react [data-detail-continuation]>[data-mix-queue]+[data-item-related] h3{margin:0;padding-bottom:11px;align-self:start}
-  [data-detail-continuation]:has(>[data-mix-queue])>[data-item-related]{grid-column:2}
-  [data-detail-continuation]:has(>[data-item-related])>[data-mix-queue] [data-mix-list]{padding-top:8px}
+  [data-detail-continuation]:has(>[data-detail-queue]):has(>[data-item-related])>:is([data-detail-queue],[data-item-related]){display:grid;grid-template-rows:subgrid;grid-row:span 2;row-gap:0}
+  [data-detail-continuation]:has(>[data-item-related])>[data-detail-queue]{grid-column:1}
+  .peach-react [data-detail-continuation]>[data-detail-queue]+[data-item-related]{border-left:1px solid var(--line-soft);padding-top:14px}
+  .peach-react [data-detail-continuation]>[data-detail-queue]+[data-item-related] h3{margin:0;padding-bottom:11px;align-self:start}
+  [data-detail-continuation]:has(>[data-detail-queue])>[data-item-related]{grid-column:2}
+  [data-detail-continuation]:has(>[data-item-related])>[data-detail-queue] [data-detail-queue-list]{padding-top:8px}
 }
 .peach-react [data-detail-continuation] [data-media-card][data-variant="next"]{width:var(--detail-card-width);gap:6px;isolation:isolate}
 .peach-react [data-detail-continuation] [data-media-card][data-variant="next"] [data-media-pic]{aspect-ratio:16/9;flex:none}
@@ -111,63 +111,63 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
   transition:opacity .15s ease}
 [data-detail-continuation] [data-media-card][data-variant="next"]:is(:hover,:focus-within)::before{opacity:1}
 .peach-react [data-detail-continuation] [data-media-card][data-variant="next"][data-longhover]{transform:none;filter:none}
-[data-detail-continuation]:has(>[data-mix-queue]) [data-media-card][data-variant="next"] [data-media-pic]{aspect-ratio:16/9}
-[data-mix-queue]{min-width:0;max-height:76vh;display:flex;flex-direction:column;border-left:1px solid var(--line-soft);
+[data-detail-continuation]:has(>[data-detail-queue]) [data-media-card][data-variant="next"] [data-media-pic]{aspect-ratio:16/9}
+[data-detail-queue]{min-width:0;max-height:76vh;display:flex;flex-direction:column;border-left:1px solid var(--line-soft);
   background:color-mix(in srgb,var(--video-glow,#15202a) 10%,var(--surface) 90%)}
-[data-mix-queue-head]{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;
+[data-detail-queue-head]{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;
   min-height:70px;padding:12px 12px 10px 15px;border-bottom:1px solid var(--line-soft)}
-[data-mix-queue-head] h2{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-lg)}
-[data-mix-queue-head] span{display:block;margin-top:3px;color:var(--muted);font-size:var(--fs-xs)}
-[data-mix-queue-head] button{width:36px;height:36px;padding:0;border:0;border-radius:var(--control-radius);background:transparent;
-  color:var(--ink);cursor:pointer;display:grid;place-items:center}[data-mix-queue-head] button:hover{background:var(--hover)}
-[data-mix-queue-head] svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
-[data-mix-queue-actions]{display:flex;align-items:center;gap:2px}
-[data-mix-list]{min-height:0;overflow-y:auto;padding:6px}
-[data-mix-row]{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;border-radius:var(--control-radius)}[data-mix-row]:has([data-mix-item][aria-current="true"]){background:var(--hover)}[data-mix-row] [data-mix-item][aria-current="true"]{background:transparent}
-[data-mix-item]{width:100%;display:grid;grid-template-columns:94px minmax(0,1fr);gap:10px;align-items:center;
+[data-detail-queue-head] h2{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-lg)}
+[data-detail-queue-head] span{display:block;margin-top:3px;color:var(--muted);font-size:var(--fs-xs)}
+[data-detail-queue-head] button{width:36px;height:36px;padding:0;border:0;border-radius:var(--control-radius);background:transparent;
+  color:var(--ink);cursor:pointer;display:grid;place-items:center}[data-detail-queue-head] button:hover{background:var(--hover)}
+[data-detail-queue-head] svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
+[data-detail-queue-actions]{display:flex;align-items:center;gap:2px}
+[data-detail-queue-list]{min-height:0;overflow-y:auto;padding:6px}
+[data-detail-queue-row]{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;border-radius:var(--control-radius)}[data-detail-queue-row]:has([data-detail-queue-entry][aria-current="true"]){background:var(--hover)}[data-detail-queue-row] [data-detail-queue-entry][aria-current="true"]{background:transparent}
+[data-detail-queue-entry]{width:100%;display:grid;grid-template-columns:94px minmax(0,1fr);gap:10px;align-items:center;
   padding:7px;border:0;border-radius:var(--control-radius);background:transparent;color:var(--ink);text-align:left;cursor:pointer}
-[data-mix-item]:hover{background:var(--overlay-5)}[data-mix-item][aria-current="true"]{background:var(--hover)}
+[data-detail-queue-entry]:hover{background:var(--overlay-5)}[data-detail-queue-entry][aria-current="true"]{background:var(--hover)}
 /* 圆角只裁一次，理由同卡片的封面格（media-card.css）：按圆角逐层裁，角上会透出底下的黑。 */
-[data-mix-item-pic]{position:relative;aspect-ratio:16/9;clip-path:inset(0 round var(--badge-radius));
+[data-detail-queue-entry-pic]{position:relative;aspect-ratio:16/9;clip-path:inset(0 round var(--badge-radius));
   mask-image:linear-gradient(#000 0 0);overflow:hidden;background:#000}
-[data-mix-item-pic] img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}[data-mix-item-pic] [data-mix-item-duration]{right:4px;bottom:3px}
+[data-detail-queue-entry-pic] img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}[data-detail-queue-entry-pic] [data-detail-queue-entry-duration]{right:4px;bottom:3px}
 /* 队列行的署名层照抄卡片的 `.meta`：横向队列和「接着看」并排出现在同一屏，
    一边有头像一边没有，看着就是两套控件。头像在这里不可点（整行是一个 button，
    里面不能再嵌 button），所以也不给 hover 提示。 */
-[data-mix-item-meta]{display:flex;gap:10px;min-width:0;align-items:center}
-[data-mix-item-meta] [class~="mav"]{cursor:inherit}
-[data-mix-item-meta] [class~="mav"]:hover{box-shadow:none}
-[data-mix-item-meta] [class~="mavstack"] [class~="mav"]{box-shadow:0 0 0 2px var(--ground)}
-[data-mix-item-text]{min-width:0}[data-mix-item-text] b,[data-mix-item-text] span{display:block;overflow:hidden;white-space:nowrap}[data-mix-item-text] [data-truncate-end]{text-overflow:ellipsis}
-[data-mix-item-text] b{font-size:var(--fs-xs);line-height:1.4}[data-mix-item-text] span{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
+[data-detail-queue-entry-meta]{display:flex;gap:10px;min-width:0;align-items:center}
+[data-detail-queue-entry-meta] [class~="mav"]{cursor:inherit}
+[data-detail-queue-entry-meta] [class~="mav"]:hover{box-shadow:none}
+[data-detail-queue-entry-meta] [class~="mavstack"] [class~="mav"]{box-shadow:0 0 0 2px var(--ground)}
+[data-detail-queue-entry-text]{min-width:0}[data-detail-queue-entry-text] b,[data-detail-queue-entry-text] span{display:block;overflow:hidden;white-space:nowrap}[data-detail-queue-entry-text] [data-truncate-end]{text-overflow:ellipsis}
+[data-detail-queue-entry-text] b{font-size:var(--fs-xs);line-height:1.4}[data-detail-queue-entry-text] span{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
 /* 拖动中的行减淡，落点画一条线——和侧栏顺序那一列同一套表现，类名由共用的
    wireDragReorder 挂上。 */
-[data-mix-row][data-queue-row]{position:relative;cursor:grab}
-[data-mix-row][data-queue-row]:active{cursor:grabbing}
-[data-mix-row][class~="dragging"]{opacity:.42}
-[data-mix-row][class~="drop-before"]::before,[data-mix-row][class~="drop-after"]::after{content:'';position:absolute;z-index:4;left:6px;right:6px;height:2px;border-radius:var(--pill-radius);background:var(--ink)}
-[data-mix-row][class~="drop-before"]::before{top:-3px}[data-mix-row][class~="drop-after"]::after{bottom:-3px}
+[data-detail-queue-row][data-queue-row]{position:relative;cursor:grab}
+[data-detail-queue-row][data-queue-row]:active{cursor:grabbing}
+[data-detail-queue-row][class~="dragging"]{opacity:.42}
+[data-detail-queue-row][class~="drop-before"]::before,[data-detail-queue-row][class~="drop-after"]::after{content:'';position:absolute;z-index:4;left:6px;right:6px;height:2px;border-radius:var(--pill-radius);background:var(--ink)}
+[data-detail-queue-row][class~="drop-before"]::before{top:-3px}[data-detail-queue-row][class~="drop-after"]::after{bottom:-3px}
 /* 详情下方的集合不是侧栏列表，而是与「接着看」同语义的横向切换带。
-   Mix、分卷、播放列表、视频合集与多媒体只改变标题和标识，共用同一套卡片尺寸。 */
-[data-detail-continuation]>[data-mix-queue]{padding:14px 14px 16px;overflow:hidden}
-[data-detail-continuation]>[data-mix-queue] [data-mix-queue-head]{min-height:0;padding:0 0 11px;border:0}
-[data-detail-continuation]>[data-mix-queue] [data-mix-queue-head] h2{font-size:var(--fs-sm);letter-spacing:.06em}
-[data-detail-continuation]>[data-mix-queue] [data-mix-queue-head] span{max-width:72ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-[data-detail-continuation]>[data-mix-queue] [data-mix-list]{display:grid;grid-auto-flow:column;grid-auto-columns:var(--detail-card-width);
+  分卷、播放列表、视频合集与多媒体只改变标题和标识，共用同一套卡片尺寸。 */
+[data-detail-continuation]>[data-detail-queue]{padding:14px 14px 16px;overflow:hidden}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-head]{min-height:0;padding:0 0 11px;border:0}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-head] h2{font-size:var(--fs-sm);letter-spacing:.06em}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-head] span{max-width:72ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-list]{display:grid;grid-auto-flow:column;grid-auto-columns:var(--detail-card-width);
   gap:10px;overflow-x:auto;overflow-y:hidden;padding:0 0 3px;overscroll-behavior-inline:contain;scroll-snap-type:x proximity}
-[data-detail-continuation]>[data-mix-queue] [data-mix-row]{display:block;position:relative;min-width:0;background:transparent;scroll-snap-align:start}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item]{display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:0}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item]:hover,[data-detail-continuation]>[data-mix-queue] [data-mix-item][aria-current="true"]{background:transparent}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item-pic]{width:100%}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-row]{display:block;position:relative;min-width:0;background:transparent;scroll-snap-align:start}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry]{display:flex;flex-direction:column;align-items:stretch;gap:7px;padding:0}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry]:hover,[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry][aria-current="true"]{background:transparent}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry-pic]{width:100%}
 /* 当前那张的框画在格子里面：格子按圆角整块裁（clip-path），画在外面的阴影一律被裁掉。外圈墨色、
    里圈垫一道底色，几个版本的封面都是同一张深色画面时也认得出是哪一张。 */
-[data-detail-continuation]>[data-mix-queue] [data-mix-item][aria-current="true"] [data-mix-item-pic]:after{content:"";position:absolute;
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry][aria-current="true"] [data-detail-queue-entry-pic]:after{content:"";position:absolute;
   inset:0;z-index:1;border-radius:var(--badge-radius);box-shadow:inset 0 0 0 2px var(--ink),inset 0 0 0 4px var(--ground);pointer-events:none}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item-meta]{width:100%;padding:0 2px;align-items:flex-start}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item-meta] [class~="mav"],[data-detail-continuation]>[data-mix-queue] [data-mix-item-meta] [class~="mavstack"]{margin-top:2px}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item-text]{flex:1;min-width:0}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item-text] b{font-size:var(--fs-sm)}
-[data-detail-continuation]>[data-mix-queue] [data-mix-item][data-media-kind="image"] [data-mix-item-pic] img{object-fit:cover}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry-meta]{width:100%;padding:0 2px;align-items:flex-start}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry-meta] [class~="mav"],[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry-meta] [class~="mavstack"]{margin-top:2px}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry-text]{flex:1;min-width:0}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry-text] b{font-size:var(--fs-sm)}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-entry][data-media-kind="image"] [data-detail-queue-entry-pic] img{object-fit:cover}
 /* 两座详情岛（`item-detail`、`jav-detail`）的宿主 `[data-stage-scroll]` 里多一层 React 根：不占盒子，格子照旧是
    舞台这一层的直接排版对象；字体、行高与字色照舞台往下传，不换成 React 根的那一套，里面的
    骨架与队列是两座岛共用的遗留几何。 */
@@ -194,12 +194,12 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
   [data-stage][data-theater] [data-stage-media]>.video-js,[data-stage][data-theater] [data-stage-media]>video{max-height:calc(100vh - var(--topH) - 56px)}
 }
 /* 横向队列把标题和摘要视为一个信息块，保存入口紧跟整个信息块并垂直居中。 */
-[data-detail-continuation]>[data-mix-queue] [data-mix-queue-head]{grid-template-columns:minmax(0,max-content) max-content minmax(0,1fr);gap:5px 8px}
-[data-detail-continuation]>[data-mix-queue] [data-mix-queue-head]>div:first-child{min-width:0}
-[data-detail-continuation]>[data-mix-queue] [data-mix-queue-actions]{grid-column:2;grid-row:1;align-self:center}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-head]{grid-template-columns:minmax(0,max-content) max-content minmax(0,1fr);gap:5px 8px}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-head]>div:first-child{min-width:0}
+[data-detail-continuation]>[data-detail-queue] [data-detail-queue-actions]{grid-column:2;grid-row:1;align-self:center}
 
 /* ── 队列缩略图的时长角标 ── */
-[data-mix-item-duration]{position:absolute;right:6px;bottom:6px;z-index:2;background:color-mix(in srgb,#000 70%,transparent);
+[data-detail-queue-entry-duration]{position:absolute;right:6px;bottom:6px;z-index:2;background:color-mix(in srgb,#000 70%,transparent);
   color:#F2EADF;padding:2px 6px;border-radius:var(--badge-radius);transition:opacity .15s ease}
 /* ── 详情栏 ── */
 [data-stage-side]{min-width:0;min-height:0;align-self:stretch;border-left:1px solid var(--line-soft);overflow:hidden;
@@ -227,20 +227,20 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
 [data-stage-actions] [data-stage-action="dislike"]:hover,[data-stage-actions] [data-stage-action="dislike"][aria-pressed="true"]{color:var(--drop);background:color-mix(in srgb,var(--drop) 12%,transparent)}
 [data-stage-actions] [data-stage-action="seen"]:hover,[data-stage-actions] [data-stage-action="seen"][aria-pressed="true"]{color:var(--keep);background:color-mix(in srgb,var(--keep) 12%,transparent)}
 [data-stage-actions] [data-stage-action="later"]:hover,[data-stage-actions] [data-stage-action="later"][aria-pressed="true"]{color:var(--loupe);background:color-mix(in srgb,var(--loupe) 12%,transparent)}
-/* Mix 切换带里的窄卡只放两个头像：第三个挤掉的正好是署名那一行的宽度，元数据会折成
+/* 切换带里的窄卡只放两个头像：第三个挤掉的正好是署名那一行的宽度，元数据会折成
    三到四行。接着看那一排的窄卡是同一个判据，写在 `media-card.css` 的 `next` 变体上。 */
-[data-detail-continuation]>[data-mix-queue] [class~="mavstack"] [class~="mav"]:nth-child(n+3){display:none}
+[data-detail-continuation]>[data-detail-queue] [class~="mavstack"] [class~="mav"]:nth-child(n+3){display:none}
 /* ── 网盘分组的小标题 ── */
-[data-mix-group-label]{display:flex;align-items:center;gap:8px;margin:12px 10px 6px;color:var(--ink);
+[data-detail-queue-group-label]{display:flex;align-items:center;gap:8px;margin:12px 10px 6px;color:var(--ink);
   font-size:var(--fs-xs);font-weight:600}
-[data-mix-group-label]:first-child{margin-top:4px}
-[data-mix-group-label] span{color:var(--muted);font-variant-numeric:tabular-nums;font-weight:400}
+[data-detail-queue-group-label]:first-child{margin-top:4px}
+[data-detail-queue-group-label] span{color:var(--muted);font-variant-numeric:tabular-nums;font-weight:400}
 /* ── 单列与窄屏 ── */
 @media (max-width:1080px){[data-stage-grid],[data-stage-grid][data-with-queue]{grid-template-columns:minmax(0,1fr)}
   [data-stage-grid][data-with-queue]{grid-template-areas:"media" "side"}
   [data-stage-side],[data-stage-grid][data-with-queue]>[data-stage-side]{grid-column:auto;border-left:0;border-top:1px solid var(--line-soft)}
   [data-stage-side-content]{height:auto;max-height:none}
-  [data-mix-queue],[data-detail-continuation]>[data-mix-queue]{max-height:420px;border-left:0;border-top:1px solid var(--line-soft)}}
+  [data-detail-queue],[data-detail-continuation]>[data-detail-queue]{max-height:420px;border-left:0;border-top:1px solid var(--line-soft)}}
 @media (max-width:760px){
   [data-stage-actions]{width:100%}[data-stage-actions] button{flex:1 1 0;min-width:38px}
 }

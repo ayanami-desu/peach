@@ -2,7 +2,7 @@ import { initialCatalogFilters, resetCatalogFilters, homeCatalogState, homePath 
 import { CatalogController } from '../react/catalog-grid/catalog-controller';
 import { nextRating, ratingStars } from '../react/components/rating-values';
 /* catalog 域控制器：本域状态与动作，启动由 Application 的生命周期统一安装。 */
-import { censorOn, preferencesState, refreshAll, replaceCatalogAddress, sidebarFacets, wireDrag } from './preferences.js';
+import { preferencesState, refreshAll, replaceCatalogAddress, sidebarFacets, wireDrag } from './preferences.js';
 import { nextSortState } from './../sort-preferences';
 import { $, STATE_ROUTES, api, esc, firstGrapheme, isCatalogPath, leadingGraphemes } from '../core';
 import { barsContext, detailReturnBarsContext, notifyShell, pageOpens, selectMode, selected, state, writeShell } from './../shell/index';
@@ -10,7 +10,7 @@ import { receiptsState } from './receipts.js';
 import { fetchBars, fetchTopsPage } from './../catalog-bars';
 import { confirmModal, dissolveValue, fitSkeleton, wireHorizontalScroller } from '../ui-kit';
 import { navigationState, paintSidebar, syncNavigation } from './navigation.js';
-import { disposeStage, mediaState, openEditions, openItem, openMix, openParts, openTok } from './media.js';
+import { disposeStage, mediaState, openEditions, openItem, openParts, openTok } from './media.js';
 import { buildManageBar, cardLayout, homeLayoutActive, javActive, layoutState, setHomeLayout, setJavLayout, showHomeSurfaces } from './layout.js';
 import { selectionState, setSelectMode, toggleSelection } from './selection.js';
 import { javDisplayName, javTitleHtml } from '../core/jav-title';
@@ -33,7 +33,7 @@ import { catalogEmptyHtml } from './../catalog-onboarding';
 import { junkRoute } from './../junk-queue';
 import { wallAddress } from '../react/video-wall/wall-route';
 import { restoringPage } from '../history/page-navigation';
-export const catalogState = { barsRequestSeq: undefined, barsPendingSeq: undefined, barsRendered: undefined, catalogFilterProps: undefined, catalogFilterMounting: undefined, catalogTagRows: undefined, catalogTopsPages: undefined, initialParams: undefined, resolveSort: undefined, initialCatalogUrl: undefined, initialParam: undefined, HOME_QUERY_KEYS: undefined, searchValueSnapshot: undefined, cancelSearchDissolve: undefined, rememberSearchValue: undefined, clearSearchField: undefined, mixRelatedCache: undefined, reduceMotion: undefined, tagList: undefined, tagPressed: undefined, withTagToggled: undefined, gridHelpers: undefined, gridActions: undefined, topsQueryParams: undefined, facetCountsSeq: undefined, VIEW_PILLS: undefined, catalogViews: undefined, TAGS_FIRST: undefined, catalogOnScreen: undefined, COMBO_LABELS: undefined, hideCatalogCombo: undefined, junkQueueHelpers: undefined, junkQueueActions: undefined };
+export const catalogState = { barsRequestSeq: undefined, barsPendingSeq: undefined, barsRendered: undefined, catalogFilterProps: undefined, catalogFilterMounting: undefined, catalogTagRows: undefined, catalogTopsPages: undefined, initialParams: undefined, resolveSort: undefined, initialCatalogUrl: undefined, initialParam: undefined, HOME_QUERY_KEYS: undefined, searchValueSnapshot: undefined, cancelSearchDissolve: undefined, rememberSearchValue: undefined, clearSearchField: undefined, reduceMotion: undefined, tagList: undefined, tagPressed: undefined, withTagToggled: undefined, gridHelpers: undefined, gridActions: undefined, topsQueryParams: undefined, facetCountsSeq: undefined, VIEW_PILLS: undefined, catalogViews: undefined, TAGS_FIRST: undefined, catalogOnScreen: undefined, COMBO_LABELS: undefined, hideCatalogCombo: undefined, junkQueueHelpers: undefined, junkQueueActions: undefined };
 
 export function dropOfflineFromDefaultLoc(){
   if(catalogState.initialParams.has('loc'))return;
@@ -62,14 +62,6 @@ export function openResourceCard(item,anchor=null){
     window.open('/photo?id='+id,'_blank','noopener');return
   }
   toggleSelection(id);
-}
-
-export function mixRelated(seedId){
-  if(!catalogState.mixRelatedCache.has(seedId))
-    catalogState.mixRelatedCache.set(seedId,api('/api/related?id='+seedId+'&limit=28')
-      .then(d=>(d.items||[]).filter(x=>x.id!==seedId))
-      .catch(error=>{catalogState.mixRelatedCache.delete(seedId);throw error}));
-  return catalogState.mixRelatedCache.get(seedId);
 }
 
 export function openGridCard(it,anchor){
@@ -475,7 +467,6 @@ export function catalogGridProps(){
     /* 只有首页默认列表排除竖屏——那里另有独立的竖屏带承接它们。搜索必须能搜到竖屏作品，
        否则按名字找一条竖屏视频会得到 0 结果。JAV 模式恒不含竖屏：番号发行物本身就是横版。 */
     excludeVertical:(home&&path!=='/wall'&&!state.q&&!state.orient&&state.browse!=='folders')||state.jav==='1',
-    mix:home&&path!=='/wall'&&!trash&&state.browse!=='folders',
     /* JAV 模式不插竖屏带：主列表的 exclude_vertical 管不到它，它是独立请求、独立插入的。 */
     shorts:home&&path!=='/wall'&&!javActive()&&state.orient!=='竖屏'&&!trash&&state.browse!=='folders',
     countRow:$('#count'),onCount:paintCatalogCount,onCountFailed:()=>paintCatalogFilter({count:false}),
@@ -547,7 +538,6 @@ applicationEffects.handler($('#wallBtn'), 'onclick', ()=>{
   if(context.type==='entity'&&context.kind!=='tag')filters[context.kind]=context.name;
   navigationState.navigatePath(wallAddress(undefined,filters));
 });
-catalogState.mixRelatedCache = new Map();
 catalogState.reduceMotion = ()=>matchMedia('(prefers-reduced-motion:reduce)').matches;
 catalogState.tagList = (value=state.tag)=>String(value||'').split(',').filter(Boolean);
 catalogState.tagPressed = (value,tag)=>catalogState.tagList(value).includes(String(tag));
@@ -570,7 +560,6 @@ catalogState.gridActions = {
   openResource:(it,anchor)=>stageApi()?.miniplayerTakesCard(it)?stageApi().miniplayerPlay(it.id):openResourceCard(it,anchor),
   openShort:it=>stageApi()?.miniplayerTakesCard(it)?stageApi().miniplayerPlay(it.id):openTok(it.id),
   openShorts:()=>openTok(),
-  openMix:(seedId,anchor)=>openMix(seedId,seedId,true,anchor),
   openEntity:(kind,name)=>openEntity(kind,name),
   openUnowned:()=>goHome({owner:'none'}),
   /* 卡片上的标签是「只看这个标签」，已经在筛它就取消。在哪一屏点就在哪一屏生效。 */
@@ -581,8 +570,6 @@ catalogState.gridActions = {
   watchLater:(it,onChange)=>toggleWatchLater(it,onChange),
   rate:(it,star,onChange,signal)=>rateCatalogItem(it,star,onChange,signal),
   resourceOperation:(it,operation)=>runResourceOperation(it,operation),
-  mixRelated:seedId=>mixRelated(seedId),
-  canFlip:()=>!selectMode&&!censorOn()&&!window.__scrolling&&!catalogState.reduceMotion(),
 };
 catalogState.topsQueryParams = (context,page=0)=>{
   const params=new URLSearchParams({n:'60',seed:state.seed||''});

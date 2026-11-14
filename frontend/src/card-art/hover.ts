@@ -1,7 +1,7 @@
 /* 卡片悬停预览：只有本地文件拉真视频。远端网盘上的来源只扫本地接触印相，避免页面移除后
  * 继续下载或填满缓存。
  *
- * 卡片有两种：壳拼的 `.card`，和 React 网格里的 `[data-media-card]`／`[data-mix-card]`。
+ * 卡片有两种：壳拼的 `.card`，和 React 网格里的 `[data-media-card]`。
  * 悬停态写在卡上的 `data-previewing`／`data-longhover`：卡的类名归 React 管，壳不往上加。
  *
  * 要不要起预览，判据在壳里（多选、遮挡、悬停延时设置），由 `configureHoverPreview` 以取值函数
@@ -24,7 +24,7 @@ export interface HoverItem { id: number; location?: string; has_thumb?: boolean 
 type HoverCard = HTMLElement & { _stopHover?: () => void; _hoverEvents?: AbortController };
 type HoverVideo = HTMLVideoElement & { _hop?: ReturnType<typeof setInterval> };
 
-const HOVER_CARDS = '.card,[data-media-card],[data-mix-card]';
+const HOVER_CARDS = '.card,[data-media-card]';
 
 let config: HoverPreviewConfig = { selecting: () => false, censored: () => false, delaySeconds: () => 0 };
 

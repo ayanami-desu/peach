@@ -18,7 +18,7 @@ function clickPath(href: string, init: MouseEventInit = {}, attributes: Record<s
   return result;
 }
 
-it.each(['/assets/11', '/assets/21?parts=21&t=30', '/assets/31?editions=31', '/assets/11?mix=11',
+it.each(['/assets/11', '/assets/21?parts=21&t=30', '/assets/31?editions=31',
   '/assets/11?playlist=2', '/works/ABP-968#comments'])(
   '站内详情链接进入覆盖导航：%s', path => {
     expect(clickPath(path)).toBe(path);

@@ -4,8 +4,7 @@
  * POST `/api/playlist`。写端点回的是带 `items` 的整份列表，不是列表页那一行的形状，
  * 改名还会动 `updated_at`、换掉排序，所以写完一律让列表键重取，不拿回话拼缓存。
  *
- * 首页存完一份 Mix 再进来要看得到它：首屏 `prefetch` 每次都向服务端重取，不读缓存里
- * 上一次的那一份。 */
+ * 首屏 `prefetch` 每次都向服务端重取，不读缓存里上一次的那一份。 */
 import { apiGet, apiSend } from '../../api';
 import { queryClient } from '../query';
 
@@ -27,9 +26,6 @@ export interface PlaylistFace {
 export interface PlaylistRow {
   id: number;
   name: string;
-  /** `mix` 是从 Mix 存下来的，其余是手动建的。 */
-  source_kind: string;
-  source_seed_asset_id: number | null;
   current_asset_id: number | null;
   created_at: string;
   updated_at: string;
@@ -47,8 +43,6 @@ export interface PlaylistsData { items: PlaylistRow[] }
 export interface PlaylistDetail {
   id: number;
   name: string;
-  source_kind: string;
-  source_seed_asset_id: number | null;
   current_asset_id: number | null;
   items: { id: number; name?: string; title?: string }[];
 }
@@ -88,13 +82,8 @@ export const reorderPlaylist = (id: number, ids: number[]) =>
 export const keepPlaylist = (id: number): Promise<PlaylistDetail | null> =>
   apiGet<PlaylistDetail>(`${PLAYLIST_URL}?id=${id}`).catch(() => null);
 
-/** 撤销删除：重建一份新记录，装同一批视频、同一个来源。Mix 种子不在列表里了就不带，
- *  服务端要求种子必须在列表中。 */
+/** 撤销删除：重建一份新记录，装同一批视频。 */
 export function recreatePlaylist(kept: PlaylistDetail) {
   const ids = (kept.items || []).map((entry) => entry.id);
-  const seed = kept.source_seed_asset_id;
-  return apiSend<Written>(PLAYLIST_URL, {
-    action: 'create', name: kept.name, asset_ids: ids, source_kind: kept.source_kind,
-    source_seed_asset_id: seed !== null && ids.includes(seed) ? seed : null,
-  });
+  return apiSend<Written>(PLAYLIST_URL, { action: 'create', name: kept.name, asset_ids: ids });
 }

@@ -26,7 +26,6 @@ describe('首页文件夹浏览', () => {
         await page.getByRole('navigation', { name: '文件夹路径' }).getByText(root.name, { exact: true }).waitFor();
         await page.locator('[data-catalog-filter] [data-catalog-views]').waitFor();
         assert.ok(await page.locator('[data-catalog-filter] [data-entity-sorts]').isVisible());
-        assert.equal(await page.locator('#grid [data-mix-card]').count(), 0);
         const screenshots = join('..', 'build', 'agent-verification', 'folders');
         mkdirSync(screenshots, { recursive: true });
         await page.screenshot({ path: join(screenshots, `${viewport.name}.png`), fullPage: false });

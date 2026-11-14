@@ -631,7 +631,6 @@ def _page_redirect(request: Request, path: str, *, context: tuple[str, int] | No
 
 
 @router.api_route("/item/{item_id}", methods=["GET", "HEAD"])
-@router.api_route("/mix/{seed_id}/{item_id}", methods=["GET", "HEAD"])
 @router.api_route("/parts/{seed_id}/{item_id}", methods=["GET", "HEAD"])
 @router.api_route("/editions/{seed_id}/{item_id}", methods=["GET", "HEAD"])
 @router.api_route("/playlists/{seed_id}/{item_id}", methods=["GET", "HEAD"])

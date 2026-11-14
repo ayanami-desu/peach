@@ -107,8 +107,7 @@ CREATE TABLE performer_profile(entity_id INTEGER PRIMARY KEY,source TEXT,
 CREATE TABLE watch_queue(profile_id TEXT,asset_id INTEGER,added_at TEXT,source TEXT,
   PRIMARY KEY(profile_id,asset_id));
 CREATE TABLE playlist(
-  id INTEGER PRIMARY KEY,profile_id TEXT,name TEXT,source_kind TEXT,
-  source_seed_asset_id INTEGER,current_asset_id INTEGER,created_at TEXT,updated_at TEXT);
+  id INTEGER PRIMARY KEY,profile_id TEXT,name TEXT,current_asset_id INTEGER,created_at TEXT,updated_at TEXT);
 CREATE TABLE playlist_item(
   playlist_id INTEGER,asset_id INTEGER,position INTEGER,added_at TEXT,
   PRIMARY KEY(playlist_id,asset_id),UNIQUE(playlist_id,position));

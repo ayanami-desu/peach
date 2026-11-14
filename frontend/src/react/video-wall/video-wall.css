@@ -150,12 +150,12 @@ body[data-wall-open] :is(body>header,#drawer,#main,#catalogPageHeading,#listTitl
 .peach-react [data-wall-seek]::-moz-range-thumb { width:8px; height:8px; border:0; border-radius:50%; background:var(--ink); }
 .peach-react [data-wall-play-error] { position:absolute; bottom:85px; left:24px; right:24px; z-index:4; }
 .peach-react [data-wall-queue] { position:absolute; left:24px; right:24px; bottom:88px; max-height:58%; z-index:5; display:flex; overflow:hidden; background:rgba(7,7,7,.94); backdrop-filter:blur(24px); border:1px solid var(--line-soft); }
-.peach-react [data-wall-queue] [data-mix-queue] { width:100%; min-height:0; max-height:100%; height:auto; border:0; background:transparent; display:grid; grid-template-rows:auto minmax(0,1fr); }
-.peach-react [data-wall-queue] [data-mix-list] { display:block; overflow:auto; overscroll-behavior:contain; }
-.peach-react [data-wall-queue] [data-mix-item-text] { display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
-.peach-react [data-wall-queue] [data-mix-item-text] b { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.peach-react [data-wall-queue] [data-mix-item-text] span { font-size:12px; opacity:.78; }
-.peach-react [data-wall-queue] :is([data-mix-row],[data-mix-item]) { border-radius:0; }
+.peach-react [data-wall-queue] [data-detail-queue] { width:100%; min-height:0; max-height:100%; height:auto; border:0; background:transparent; display:grid; grid-template-rows:auto minmax(0,1fr); }
+.peach-react [data-wall-queue] [data-detail-queue-list] { display:block; overflow:auto; overscroll-behavior:contain; }
+.peach-react [data-wall-queue] [data-detail-queue-entry-text] { display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
+.peach-react [data-wall-queue] [data-detail-queue-entry-text] b { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.peach-react [data-wall-queue] [data-detail-queue-entry-text] span { font-size:12px; opacity:.78; }
+.peach-react [data-wall-queue] :is([data-detail-queue-row],[data-detail-queue-entry]) { border-radius:0; }
 .peach-react :is([data-wall-focus-actions] button,[data-wall-focus-close]) {
   display:grid; place-items:center; width:36px; height:36px; padding:6px; border:0; border-radius:0; background:transparent; color:var(--ink); cursor:pointer;
 }

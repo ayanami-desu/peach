@@ -94,10 +94,10 @@ describe('详情底部的队列与推荐', () => {
         const page = opened.page;
         await page.locator('#stage [data-related-row] [data-media-card]').first().waitFor({ timeout: 15_000 });
         const boxes = await page.evaluate(() => {
-          const queue = document.querySelector('#stage [data-mix-queue]')!;
+          const queue = document.querySelector('#stage [data-detail-queue]')!;
           const related = document.querySelector('#stage [data-item-related]')!;
           const q = queue.getBoundingClientRect(), r = related.getBoundingClientRect();
-          const queuePic = queue.querySelector('[data-mix-item-pic]')!.getBoundingClientRect();
+          const queuePic = queue.querySelector('[data-detail-queue-entry-pic]')!.getBoundingClientRect();
           const relatedPic = related.querySelector('[data-media-pic]')!.getBoundingClientRect();
           return { q: { top: q.top, bottom: q.bottom, right: q.right }, r: { top: r.top, left: r.left },
             covers: { queue: { top: queuePic.top, height: queuePic.height }, related: { top: relatedPic.top, height: relatedPic.height } },

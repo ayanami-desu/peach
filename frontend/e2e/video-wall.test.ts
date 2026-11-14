@@ -103,11 +103,11 @@ describe('播放墙的浏览与详情', () => {
       });
       assert.equal(glow.width, '2px'); assert.match(glow.shadow, /inset/);
       await page.getByRole('button', { name:'切换视频',exact:true }).click();
-      const list = page.locator('[data-wall-queue] [data-mix-list]');
+      const list = page.locator('[data-wall-queue] [data-detail-queue-list]');
       const box = await list.boundingBox(); assert.ok(box);
       const position = await camera(page);
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 480);
-      await page.waitForFunction(() => document.querySelector('[data-wall-queue] [data-mix-list]')!.scrollTop > 0);
+      await page.waitForFunction(() => document.querySelector('[data-wall-queue] [data-detail-queue-list]')!.scrollTop > 0);
       assert.deepEqual(await camera(page), position);
       await page.getByRole('button', { name:'收起作品',exact:true }).click();
       await page.waitForFunction(() => document.querySelector('[data-wall-refresh] button')?.getAttribute('aria-busy') !== 'true');

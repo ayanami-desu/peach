@@ -6,7 +6,7 @@ import { entityLinkId, entityLinkName, registerResponseEntities } from '../../sr
 it('两类对象与队列兼容地址保留筛选和播放位置', () => {
   expect(canonicalPath('/item/12?t=93')).toBe('/assets/12?t=93');
   expect(canonicalPath('/jav/movie/abp-968?q=x')).toBe('/works/ABP-968?q=x');
-  for (const [source, key] of [['mix', 'mix'], ['parts', 'parts'], ['editions', 'editions'], ['playlists', 'playlist']]) {
+  for (const [source, key] of [['parts', 'parts'], ['editions', 'editions'], ['playlists', 'playlist']]) {
     expect(canonicalPath(`/${source}/21/22?t=42`)).toBe(`/assets/22?t=42&${key}=21`);
     expect(overlayTarget('/assets/22', `?${key}=21&t=42`)).toEqual({ kind: 'queue', queue: key, key: 21, item: 22 });
   }

@@ -2,7 +2,7 @@
  *
  * 舞台里的格子（`[data-stage-grid]` / `[data-stage-media]` / `[data-stage-side]` /
  * `[data-stage-side-content]`）、标题行、规格行、标签行、操作键条（`[data-stage-actions]` 与关注详情
- * 也有的 `later` / `seen` / `dislike` 三枚）和队列（`[data-mix-queue]` 一族）是和关注详情共用的，
+ * 也有的 `later` / `seen` / `dislike` 三枚）和队列（`[data-detail-queue]` 一族）是和关注详情共用的，
  * 几何归 `../stage/stage.css` 与 `../../player/player.css`；这里只写作品详情自己的几块。
  *
  * 选择器全用 `data-*`，前面挂 `[data-item-detail]`（「接着看」在格子外面，挂 `[data-item-related]`）：
@@ -77,14 +77,14 @@
 .peach-react [data-item-detail] [data-item-gate="offline"] button { cursor: pointer; margin-top: 4px; }
 
 /* ── 队列行 ──
-   徽章和标题同一行，标题那一行自己是 flex 容器：`[data-mix-item-text]` 的 b/span 都是块级的，并排只能靠
+   徽章和标题同一行，标题那一行自己是 flex 容器：`[data-detail-queue-entry-text]` 的 b/span 都是块级的，并排只能靠
    这一层，`min-width:0` 才让中段省略照旧按剩余宽度算。 */
-.peach-react [data-mix-queue] [data-queue-head] { display: flex; align-items: center; gap: 5px; margin-top: 0; color: var(--ink); }
-.peach-react [data-mix-queue] [data-queue-head] b { flex: 1; min-width: 0; }
+.peach-react [data-detail-queue] [data-queue-head] { display: flex; align-items: center; gap: 5px; margin-top: 0; color: var(--ink); }
+.peach-react [data-detail-queue] [data-queue-head] b { flex: 1; min-width: 0; }
 /* 版本字样最多占一半：长字样自己省略，番号总留得下。 */
-.peach-react [data-mix-queue] [data-queue-edition] { flex: 0 1 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; }
+.peach-react [data-detail-queue] [data-queue-edition] { flex: 0 1 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; }
 /* 播放列表的顺序靠拖，每格右上角只剩抓手和移出，压在缩略图上，深色半透明底。 */
-.peach-react [data-mix-queue] [data-queue-edit] {
+.peach-react [data-detail-queue] [data-queue-edit] {
   position: absolute;
   z-index: 3;
   right: 5px;
@@ -98,9 +98,9 @@
   background: rgba(0, 0, 0, .62);
   color: #fff;
 }
-.peach-react [data-mix-queue] [data-queue-grip] { display: grid; place-items: center; width: 20px; color: var(--muted); cursor: grab; }
-.peach-react [data-mix-queue] [data-queue-grip] svg { width: 16px; height: 16px; stroke: currentColor; fill: none; }
-.peach-react [data-mix-queue] [data-queue-edit] button {
+.peach-react [data-detail-queue] [data-queue-grip] { display: grid; place-items: center; width: 20px; color: var(--muted); cursor: grab; }
+.peach-react [data-detail-queue] [data-queue-grip] svg { width: 16px; height: 16px; stroke: currentColor; fill: none; }
+.peach-react [data-detail-queue] [data-queue-edit] button {
   width: 26px;
   height: 26px;
   border: 0;
@@ -112,8 +112,8 @@
   place-items: center;
   cursor: pointer;
 }
-.peach-react [data-mix-queue] [data-queue-edit] button:hover { background: var(--hover); }
-.peach-react [data-mix-queue] [data-queue-edit] svg { width: 15px; height: 15px; stroke: currentColor; fill: none; }
+.peach-react [data-detail-queue] [data-queue-edit] button:hover { background: var(--hover); }
+.peach-react [data-detail-queue] [data-queue-edit] svg { width: 15px; height: 15px; stroke: currentColor; fill: none; }
 
 /* ── 标题 ──
    默认折成两行：番号在前、正文在后，两行够认出是哪一部；正文动辄五六行，整段摊开会把评分、标签

@@ -61,7 +61,7 @@ const ROUTE_ENTRIES = {
   '/flagged': { nav: 'flagged', title: '已标记' },
   '/junk-files': { nav: 'ads', title: '垃圾文件' },
   '/trash': { section: 'trash', title: t('navigation:manage.trash') },
-  // 覆盖：详情与四种队列。分卷与版本队列没有自己的标签。
+  // 覆盖：详情与三种队列。分卷与版本队列没有自己的标签。
   '/assets/:id': { title: '媒体记录' },
   '/works/:code': { nav: 'jav', title: 'JAV 作品' },
   // 沉浸模式进页面组，不算覆盖。

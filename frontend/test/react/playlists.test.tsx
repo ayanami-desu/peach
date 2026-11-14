@@ -19,7 +19,7 @@ afterEach(() => { queryClient.clear() });
 notifyManager.setScheduler((notify) => notify());
 
 const row = (id: number, patch: Partial<PlaylistRow> = {}): PlaylistRow => ({
-  id, name: `列表${id}`, source_kind: 'manual', source_seed_asset_id: null, current_asset_id: null,
+  id, name: `列表${id}`, current_asset_id: null,
   created_at: '2026-09-01 10:00:00', updated_at: '2026-09-01 10:00:00', item_count: 2,
   preview_asset_id: 11, preview_ids: [11, 12], faces: [], ...patch,
 });
@@ -91,7 +91,7 @@ function confirmYes() {
 }
 
 describe('首屏', () => {
-  it('缓存里有上一次的列表也照样重取：首页刚存的 Mix 要看得到', async () => {
+  it('缓存里有上一次的列表也照样重取', async () => {
     queryClient.setQueryData(PLAYLISTS_KEY, { items: [row(1)] });
     const server = serve({ 'GET /api/playlists': { body: { items: [row(1), row(2)] } } });
     await prefetchPlaylists(new AbortController().signal);
@@ -128,36 +128,34 @@ describe('卡片', () => {
   it('名称只有空白时标题与读屏名写「未命名播放列表」', async () => {
     const host = await open([row(1, { name: '   ' })]);
     expect(card(host, 1).textContent).toContain('未命名播放列表');
-    expect(card(host, 1).querySelector('[data-mix-open]')?.getAttribute('aria-label')).toBe('打开播放列表 未命名播放列表');
+    expect(card(host, 1).querySelector('[data-playlist-open]')?.getAttribute('aria-label')).toBe('打开播放列表 未命名播放列表');
   });
 
   it('上千条的徽标带千分位', async () => {
     const host = await open([row(1, { item_count: 98765 })]);
-    expect(card(host, 1).querySelector('[data-mix-badge]')?.textContent).toBe('98,765 个视频');
+    expect(card(host, 1).querySelector('[data-playlist-badge]')?.textContent).toBe('98,765 个视频');
   });
 
-  it('来源、条数与封面按行画；点封面从续播点接着播', async () => {
+  it('条数与封面按行画；点封面从续播点接着播', async () => {
     const given = props();
-    const host = await open([row(1, { source_kind: 'mix', current_asset_id: 12, item_count: 3 }), row(2)], given);
-    const mix = card(host, 1);
-    expect(mix.textContent).toContain('由 Mix 保存');
-    expect(card(host, 2).textContent).toContain('手动播放列表');
-    expect(mix.querySelector('[data-mix-badge]')?.textContent).toBe('3 个视频');
-    expect(mix.querySelector('[data-mix-poster]')?.getAttribute('src')).toBe('/poster?id=11&c=4');
-    const opener = mix.querySelector<HTMLButtonElement>('[data-mix-open]')!;
+    const host = await open([row(1, { current_asset_id: 12, item_count: 3 }), row(2)], given);
+    const stack = card(host, 1);
+    expect(stack.querySelector('[data-playlist-badge]')?.textContent).toBe('3 个视频');
+    expect(stack.querySelector('[data-playlist-poster]')?.getAttribute('src')).toBe('/poster?id=11&c=4');
+    const opener = stack.querySelector<HTMLButtonElement>('[data-playlist-open]')!;
     expect(opener.getAttribute('aria-label')).toBe('打开播放列表 列表1');
     await click(opener);
     expect(given.openPlaylist).toHaveBeenCalledWith(1, 12);
-    await click(card(host, 2).querySelector('[data-mix-open]'));
+    await click(card(host, 2).querySelector('[data-playlist-open]'));
     expect(given.openPlaylist).toHaveBeenLastCalledWith(2, 11);
   });
 
   it('空列表没有去处：点击区不可点，封面写「无预览」', async () => {
     const given = props();
     const host = await open([row(3, { item_count: 0, preview_asset_id: null, preview_ids: [] })], given);
-    const opener = card(host, 3).querySelector<HTMLButtonElement>('[data-mix-open]')!;
+    const opener = card(host, 3).querySelector<HTMLButtonElement>('[data-playlist-open]')!;
     expect(opener.disabled).toBe(true);
-    expect(card(host, 3).querySelector('[data-mix-cover]')?.textContent).toContain('无预览');
+    expect(card(host, 3).querySelector('[data-playlist-cover]')?.textContent).toContain('无预览');
     await click(opener);
     expect(given.openPlaylist).not.toHaveBeenCalled();
   });
@@ -166,12 +164,12 @@ describe('卡片', () => {
     const given = props();
     const faces = [{ kind: 'performer', id: 7, name: '甲', has_image: false }];
     const host = await open([row(1, { faces }), row(2, { name: '周末慢看' })], given);
-    const avatar = card(host, 1).querySelector<HTMLButtonElement>('[data-mix-avatars] button')!;
+    const avatar = card(host, 1).querySelector<HTMLButtonElement>('[data-playlist-avatars] button')!;
     expect(avatar.getAttribute('aria-label')).toBe('打开资料页：甲');
     expect(avatar.innerHTML).toBe('<span class="ini">甲</span>');
     await click(avatar);
     expect(given.openEntity).toHaveBeenCalledWith('performer', '甲');
-    expect(card(host, 2).querySelector('[data-mix-initial]')?.textContent).toBe('周');
+    expect(card(host, 2).querySelector('[data-playlist-initial]')?.textContent).toBe('周');
   });
 });
 
@@ -252,11 +250,11 @@ describe('改名', () => {
 
 describe('删除', () => {
   const kept = (patch: Partial<PlaylistDetail> = {}): PlaylistDetail => ({
-    id: 1, name: '列表1', source_kind: 'mix', source_seed_asset_id: 12, current_asset_id: 12,
+    id: 1, name: '列表1', current_asset_id: 12,
     items: [{ id: 11 }, { id: 12 }], ...patch,
   });
 
-  it('先过确认，删之前取回内容；撤销按原内容与来源重建一份', async () => {
+  it('先过确认，删之前取回内容；撤销按原内容重建一份', async () => {
     const seen = confirmYes();
     const server = serve({
       'GET /api/playlist?id=1': { body: kept() },
@@ -264,7 +262,7 @@ describe('删除', () => {
         ? { body: { ok: true, deleted: 1 } } : written(5)),
     });
     const given = props();
-    const host = await open([row(1, { source_kind: 'mix' })], given);
+    const host = await open([row(1)], given);
     await menuAction(host, 1, '删除播放列表');
     await settle();
     expect(seen[0]).toMatchObject({ title: '删除播放列表', confirmLabel: '删除播放列表', danger: true });
@@ -275,23 +273,9 @@ describe('删除', () => {
     await act(async () => { await undoOf(given.toast)() });
     await settle();
     expect(server.posts()[1]).toEqual({
-      action: 'create', name: '列表1', asset_ids: [11, 12], source_kind: 'mix', source_seed_asset_id: 12,
+      action: 'create', name: '列表1', asset_ids: [11, 12],
     });
     expect(server.reads()).toBe(2);
-  });
-
-  it('Mix 种子已经不在列表里时重建不带种子', async () => {
-    confirmYes();
-    const server = serve({
-      'GET /api/playlist?id=1': { body: kept({ source_seed_asset_id: 99 }) },
-      'POST /api/playlist': { body: { ok: true, deleted: 1 } },
-    });
-    const given = props();
-    const host = await open([row(1)], given);
-    await menuAction(host, 1, '删除播放列表');
-    await settle();
-    await act(async () => { await undoOf(given.toast)() });
-    expect(server.posts()[1]).toMatchObject({ action: 'create', source_seed_asset_id: null });
   });
 
   it('内容取不到时照删，但不给撤销', async () => {
@@ -342,14 +326,14 @@ describe('悬停翻页', () => {
     await settle();
   };
   const stateOf = (host: ParentNode) =>
-    [...host.querySelectorAll('[data-mix-face]')].map((face) => face.getAttribute('data-mix-face'));
+    [...host.querySelectorAll('[data-playlist-face]')].map((face) => face.getAttribute('data-playlist-face'));
 
   it('停 340ms 才开始，420ms 翻第一下，之后每 1100ms 一张；离开还原静止封面', async () => {
     vi.stubGlobal('Image', LoadedImage);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     const host = await open([row(1, { preview_ids: [11, 12, 13] })]);
     const article = card(host, 1);
-    const panel = article.querySelector<HTMLElement>('[data-mix-faces]')!;
+    const panel = article.querySelector<HTMLElement>('[data-playlist-faces]')!;
     await hover(article);
     await advance(339);
     expect(panel.hidden).toBe(true);
@@ -362,7 +346,7 @@ describe('悬停翻页', () => {
     expect(stateOf(article)).toEqual(['', 'off', 'on']);
     await leave(article);
     expect(panel.hidden).toBe(true);
-    expect(article.querySelectorAll('[data-mix-face]')).toHaveLength(0);
+    expect(article.querySelectorAll('[data-playlist-face]')).toHaveLength(0);
   });
 
   it('壳说不能翻（多选、遮挡、减少动效、滚动中）就不启动', async () => {
@@ -371,7 +355,7 @@ describe('悬停翻页', () => {
     const host = await open([row(1, { preview_ids: [11, 12, 13] })], props({ canFlip: () => false }));
     await hover(card(host, 1));
     await advance(2000);
-    expect(card(host, 1).querySelector<HTMLElement>('[data-mix-faces]')?.hidden).toBe(true);
+    expect(card(host, 1).querySelector<HTMLElement>('[data-playlist-faces]')?.hidden).toBe(true);
   });
 
   it('只有一张图可翻时不翻', async () => {
@@ -380,6 +364,6 @@ describe('悬停翻页', () => {
     const host = await open([row(1, { preview_ids: [11] })]);
     await hover(card(host, 1));
     await advance(2000);
-    expect(card(host, 1).querySelector<HTMLElement>('[data-mix-faces]')?.hidden).toBe(true);
+    expect(card(host, 1).querySelector<HTMLElement>('[data-playlist-faces]')?.hidden).toBe(true);
   });
 });
