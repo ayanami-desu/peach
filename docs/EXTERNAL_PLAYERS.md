@@ -56,12 +56,12 @@ Peach 签发外链不按容器设限：`.mp4`、`.m4v`、`.webm`、`.ogv`、`.og
 
 | 设备 | 播放器 | 交给系统的地址 |
 | --- | --- | --- |
-| 桌面 | VLC / PotPlayer / mpv / IINA | `vlc://<链接>`、`potplayer://<链接>`、`mpv://<链接>`、`iina://weblink?url=<编码>` |
+| 桌面 | VLC / PotPlayer / mpv / IINA / SenPlayer（仅 macOS） | `vlc://<链接>`、`potplayer://<链接>`、`mpv://<链接>`、`iina://weblink?url=<编码>`、`senplayer://x-callback-url/play?url=<编码>` |
 | iPhone | VLC、Infuse、SenPlayer、nPlayer | `vlc-x-callback://x-callback-url/stream?url=<编码>`、`infuse://x-callback-url/play?url=<编码>`、`senplayer://x-callback-url/play?url=<编码>`、`nplayer-<链接>` |
 | iPad | 与 iPhone 同一批 | 同上 |
 | Android | VLC、nPlayer、MX Player、系统默认 | `intent://<主机与路径>#Intent;scheme=https;type=video/*;package=<包名>;end` |
 
-iPad 在 user agent 里单独归一类（`ipad`），当前与 iPhone 用同一批播放器，后续可以分家；iPadOS 13 起的桌面版 UA 自称 Macintosh，这类请求按桌面处理。SenPlayer 认的 scheme 与参数见其 [URL Scheme 文档](https://docs.qq.com/markdown/DQWJpWUpRRnRNRnF4)。
+iPad 在 user agent 里单独归一类（`ipad`），当前与 iPhone 用同一批播放器，后续可以分家；iPadOS 13 起的桌面版 UA 自称 Macintosh，这类请求按桌面处理；SenPlayer 也有 macOS 版，所以 iPad 用桌面版 UA 时同样能看到它。SenPlayer 认的 scheme 与参数见其 [URL Scheme 文档](https://docs.qq.com/markdown/DQWJpWUpRRnRNRnF4)。
 
 底层播放器拿到的仍是 `/external-stream/<id>?ticket=…`，所以票据约束照旧：6 小时有效、重启即失效、绑定 origin。上一格选的取法存在浏览器本地（`peach.playback-target.v1`），这台设备不再支持那一款时退回第一款可用的。
 

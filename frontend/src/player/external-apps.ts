@@ -39,7 +39,7 @@ export const APP_PLAYERS: readonly AppPlayer[] = [
     link: url => `mpv://${url}` },
   { id: 'infuse', label: 'Infuse', platforms: ['ios', 'ipad'],
     link: url => `infuse://x-callback-url/play?url=${query(url)}` },
-  { id: 'senplayer', label: 'SenPlayer', platforms: ['ios', 'ipad'],
+  { id: 'senplayer', label: 'SenPlayer', platforms: ['ios', 'ipad', 'mac'],
     link: url => `senplayer://x-callback-url/play?url=${query(url)}` },
   { id: 'nplayer', label: 'nPlayer', platforms: ['ios', 'ipad', 'android'],
     link: url => `nplayer-${url}` },

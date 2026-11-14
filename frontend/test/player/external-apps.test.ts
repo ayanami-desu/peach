@@ -42,7 +42,7 @@ describe('按设备挑播放器', () => {
     expect(appPlayers('Mozilla/5.0 (Windows NT 10.0; Win64; x64)').map(player => player.id))
       .toEqual(['vlc', 'potplayer', 'mpv']);
     expect(appPlayers('Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0)').map(player => player.id))
-      .toEqual(['vlc', 'iina', 'mpv']);
+      .toEqual(['vlc', 'iina', 'mpv', 'senplayer']);
     expect(appPlayers('Mozilla/5.0 (Linux; Android 15; Pixel 9)').map(player => player.id))
       .toEqual(['vlc', 'nplayer', 'mxplayer', 'android-default']);
     const phones = ['vlc', 'vlc-ios', 'infuse', 'senplayer', 'nplayer'];
