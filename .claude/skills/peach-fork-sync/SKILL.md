@@ -1,22 +1,22 @@
 ---
 name: peach-fork-sync
-description: 同步 peach-mitao 上游到本 fork 的 master、发布镜像、更新 cloud-server 容器或清理同步产物时使用。
+description: 用户明确要求同步 peach-mitao 上游、发布镜像、更新 cloud-server 容器或清理同步产物时使用；不要主动同步。
 ---
 
 # fork 上游同步与服务器更新
 
-最后复核：2026-11-05
-证据来源：2026-11-05 的单分支调整与上游同步（72acee03、run 42001986938）及服务器 sha-72acee0 更新核验。
+最后复核：2026-11-14
+证据来源：2026-11-05 的单分支调整与上游同步（72acee03、run 42001986938）、服务器 sha-72acee0 更新核验，以及 2026-11-14 的全量 rebase 评估（79 个 fork 提交，31 个冲突停点）。
 
 ## 分支职责
 
-- `upstream/master` 是上游事实。本 fork 只有 `master` 一条分支，直接叠加上 fork 改动并负责部署；同步一律变基到 `upstream/master`，不产生 merge 提交，也不维护快照分支。
+- `upstream/master` 是上游事实。本 fork 只有 `master` 一条分支，直接叠加上 fork 改动并负责部署。同步不是例行任务：先确认用户要同步，并说明全量变基会重放全部 fork 提交、需要评估冲突量；用户确认后再变基到 `upstream/master`，不产生 merge 提交，也不维护快照分支。
 - `master` 只保留 `.github/workflows/docker.yml`（构建 `ghcr.io/<owner>/peach:sha-<7 位短 SHA>` 与 `:master`）；继承自上游的工作流一律不进这条分支。仓库级 Actions 保持开启，关掉会连镜像产线一起停。
 - `origin/master` 的跟踪 ref 可能过期；推送前用 `git ls-remote origin refs/heads/master` 核对真实值。
 
 ## 同步到 master
 
-1. `git fetch upstream`，`git rebase upstream/master`。
+1. 先征得用户同意。`git fetch upstream` 后，在隔离工作树用 `git merge-tree` 或试跑评估冲突量并报告；用户确认同步后执行 `git rebase upstream/master`。
 2. 冲突判据：继承自上游的工作流（release、test、project-board、star-history、upgrade-smoke、ghcr-mirror、issue-intake 等）一律 `git rm`，`docker.yml` 保留 fork 版本；`web/dist/*` 不手工合并，每个提交用 `npm --prefix frontend run build` 重建后逐文件 `git add`；测试冲突两边用例都保留。
 3. 依赖先就位：上游新增前端依赖时 `npm --prefix frontend ci --ignore-scripts`；主检出 `.venv` 与 `uv.lock` 不一致会让 `./scripts/test.sh` 拒跑，先 `uv sync --locked --all-extras`。
 4. 路由代码合并后核对复杂度棘轮：函数分支数到 30 要么拆开，要么在同一次改动里记入 `ACCEPTED` 并写理由。
