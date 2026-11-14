@@ -1,4 +1,8 @@
 {
+  "detail": {
+    "collapseMedia": "Collapse player",
+    "expandMedia": "Expand player"
+  },
   "rematch": {
     "samples": "Match samples again",
     "samplesDone": "Fetched {{count}} sample images",

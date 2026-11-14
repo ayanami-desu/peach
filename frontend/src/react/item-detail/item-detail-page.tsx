@@ -142,6 +142,7 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
   /* 播放器挂在这块框里，`<video>` 由舞台建：Video.js 会把它包进自己的 div，从小窗展开回来时
      整个实例还要搬进来，那一截 DOM 不归 React。 */
   const frameRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const [image, setImage] = useState(-2);
   const refreshSamples = useRef(false);
   const source = useQuery({ queryKey: javDetailKey(item.code || ''),
@@ -176,8 +177,17 @@ function MediaFrame({ item, gate, helpers, actions, autoplay, onEnded }: {
   const badge = helpers.badgeHtml(item.location || '', 'srcbig');
   return (
     <div ref={frameRef} data-stage-media="" data-item-media={gate || 'video'} data-item-gallery={hasPictures ? '' : undefined}
-      data-item-picture={image !== -2 ? '' : undefined}>
+      data-item-picture={image !== -2 ? '' : undefined} data-media-collapsed={collapsed ? '' : undefined}>
       <CloseStage onClose={actions.close} />
+      {!gate ? (
+        <button type="button" data-media-collapse="" aria-expanded={!collapsed}
+          aria-label={t(collapsed ? 'catalog:detail.expandMedia' : 'catalog:detail.collapseMedia')}
+          title={t(collapsed ? 'catalog:detail.expandMedia' : 'catalog:detail.collapseMedia')}
+          onClick={() => setCollapsed(open => !open)}>
+          <Glyph name={collapsed ? 'chevron-down' : 'chevron-up'} />
+          <span data-media-collapse-label="">{t('catalog:detail.expandMedia')}</span>
+        </button>
+      ) : null}
       <div data-player-toolbar="">
         <span data-player-stats-slot="" />
         {hasPictures && image !== -2 ? <button type="button" data-jav-preview-toggle="" aria-pressed="true"

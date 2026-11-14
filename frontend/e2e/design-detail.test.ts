@@ -411,13 +411,58 @@ describe('设计决定：关注详情、作品详情、播放器与侧栏', () =
     }
   });
 
+  it('手机上视频格按画面比例收缩、不额外留黑，且可收起成紧凑顶栏后再展开', { timeout: 60_000 }, async () => {
+    const opened = await openItemPage(browser, `/assets/${ITEM.plain}`, MOBILE);
+    try {
+      const page = opened.page;
+      await page.locator(PLAYER_BAR).waitFor({ state: 'attached' });
+      const media = page.locator('#stage [data-stage-media]');
+      const expandedBox = (await media.boundingBox())!;
+      const playerBox = (await page.locator('#stage .video-js').boundingBox())!;
+      assert.ok(expandedBox.height <= MOBILE.height * 0.56 + 1, `手机播放区过高：${expandedBox.height}`);
+      assert.ok(Math.abs(expandedBox.height - playerBox.height) <= 2,
+        `无样图时媒体格不应多余留黑：media=${expandedBox.height}, player=${playerBox.height}`);
+
+      const toggle = page.locator('#stage [data-media-collapse]');
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      await page.evaluate(() => {
+        const video = document.querySelector('#stage video.vjs-tech') as HTMLElement | null;
+        if (video) video.dataset.collapseProbe = 'kept';
+      });
+      await toggle.click();
+      await page.locator('#stage [data-stage-media][data-media-collapsed]').waitFor();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      const collapsedBox = (await media.boundingBox())!;
+      assert.ok(collapsedBox.height >= 60 && collapsedBox.height <= 64, `收起后顶栏高度异常：${collapsedBox.height}`);
+      const closeBox = (await page.locator('#closeStage').boundingBox())!;
+      const toggleBox = (await toggle.boundingBox())!;
+      assert.ok(toggleBox.x + toggleBox.width <= closeBox.x - 4, `展开钮与关闭钮重叠：toggle=${JSON.stringify(toggleBox)}, close=${JSON.stringify(closeBox)}`);
+      await page.evaluate(() => {
+        const scroller = document.querySelector('#stage > [data-stage-scroll]') as HTMLElement;
+        scroller.scrollTop = 200;
+      });
+      const stickyCollapsed = (await media.boundingBox())!;
+      assert.ok(Math.abs(stickyCollapsed.y - collapsedBox.y) <= 1, '收起后的顶栏仍停在浮窗顶部');
+
+      await toggle.click();
+      await page.locator('#stage [data-stage-media]:not([data-media-collapsed])').waitFor();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      assert.equal(await page.locator('#stage video.vjs-tech').getAttribute('data-collapse-probe'), 'kept', '收起再展开不能重建播放器');
+      const restoredBox = (await media.boundingBox())!;
+      assert.ok(Math.abs(restoredBox.height - expandedBox.height) <= 2, '展开后恢复原高度');
+      assert.deepEqual(withoutPlayer(opened.problems), []);
+    } finally {
+      await opened.close();
+    }
+  });
+
   it('手机上界面按钮与标签长按不选字、点按不等双击判定；标题、番号这类馆藏数据照常能选中复制', { timeout: 90_000 }, async () => {
     /* 每个样本取 [touch-action, user-select]；没找到记成 null。 */
     const touchOf = (page: Page, selectors: string[]) => page.evaluate((list) => list.map((selector) => {
       const node = document.querySelector(selector);
       return node ? [getComputedStyle(node).touchAction, getComputedStyle(node).userSelect] : null;
     }), selectors);
-    const controls = ['#closeStage', '#likeBtn', '#stage [data-stage-action]', '#stage [data-title-fold]', '#tagPlus',
+    const controls = ['#closeStage', '#stage [data-media-collapse]', '#likeBtn', '#stage [data-stage-action]', '#stage [data-title-fold]', '#tagPlus',
       '#stage [data-detail-tag] [data-tag]'];
     const stage = await openItemPage(browser, `/assets/${ITEM.plain}`, MOBILE);
     try {

@@ -32,6 +32,9 @@
 .peach-react [data-player-toolbar] > :is([data-player-stats-slot], [data-player-net-slot]) { display: contents; }
 .peach-react [data-player-toolbar] :is([data-player-stats-button], [data-player-net], [data-jav-preview-toggle]) { position: relative; top: auto; left: auto; flex: none; }
 .peach-react [data-player-toolbar] button { pointer-events: auto; }
+@media (max-width: 1080px) {
+  .peach-react [data-item-media]:has(> [data-media-collapse]):has(> [class~="video-js"]) > [data-player-toolbar] { right: 106px; }
+}
 .peach-react [data-item-gallery][data-item-picture] [data-player-toolbar] > :is([data-player-stats-slot], [data-player-net-slot]) { display: none; }
 .peach-react [data-item-gallery][data-item-picture] > :is([class~="video-js"], video, [data-item-gate], #playerStatsBtn, #playerStats, #playerNet, [data-ambient-canvas]) { display: none; }
 .peach-react [data-catalog-picture] { display: block; width: 100%; height: auto; max-height: calc(76vh - 112px); object-fit: contain; min-height: 0; }

@@ -1,4 +1,8 @@
 {
+  "detail": {
+    "collapseMedia": "收起播放区",
+    "expandMedia": "展开播放区"
+  },
   "rematch": {
     "samples": "重新匹配样张",
     "samplesDone": "取到 {{count}} 张样张",

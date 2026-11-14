@@ -60,11 +60,13 @@
 [data-stage] :is([data-jav-art],[data-item-gallery])>[data-carousel-below]{grid-area:2/1;box-sizing:border-box;min-width:0;align-self:end}
 [data-stage] [data-stage-scroll] [data-item-gallery]>[class~="video-js"]{width:min(100%,calc(var(--detail-gallery-height) * 16 / 9));height:auto;max-height:var(--detail-gallery-height);aspect-ratio:16/9}
 @media(max-width:1080px){
-  [data-stage]{--detail-media-height:min(56dvh,calc(56.25vw + 116px))}
+  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]){--detail-media-height:min(56dvh,56.25vw)}
+  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]):has([data-item-gallery],[data-jav-art]){--detail-media-height:min(56dvh,calc(56.25vw + 116px))}
   [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]):not([data-theater]) [data-stage-grid]{height:auto}
+  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]) [data-stage-media]:not([data-item-gallery]):not([data-jav-art]):not([data-media-collapsed]):has(>.video-js){height:auto;max-height:56dvh}
 }
 @media(max-width:760px){
-  [data-stage]{height:calc(100dvh - env(safe-area-inset-top) - 16px)}
+  [data-stage][data-stage-kind="item"],[data-stage][data-stage-kind="jav"]{height:calc(100dvh - env(safe-area-inset-top) - 16px)}
 }
 body[data-detail-open]{overflow:hidden;--glow-drift-play:paused}
 body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,paused,running}
@@ -341,9 +343,32 @@ body[data-detail-open] [class~=glowlayer]::before{animation-play-state:paused,pa
    半屏，浮窗下半截空着。
    视频格吸在这一层顶上，往下翻标签和动作时画面还在；图片不吸——一张竖图就能占满整屏，
    吸住它下面就没有地方可滚。 */
+[data-media-collapse]{display:none}
 @media(max-width:1080px){
   [data-stage]>[data-stage-scroll]{max-height:calc(100dvh - 34px);overflow:hidden auto;overscroll-behavior:contain}
-  [data-stage] [data-stage-media]:has(>.video-js){position:sticky;top:0;z-index:3}}
+  [data-stage] [data-stage-media]:has(>.video-js){position:sticky;top:0;z-index:3}
+  [data-stage-media]:has(>.video-js)>[data-media-collapse]{position:absolute;top:11px;right:58px;z-index:9;width:40px;height:40px;
+    padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.6);color:#fff;
+    cursor:pointer;isolation:isolate;overflow:hidden;touch-action:manipulation;user-select:none}
+  [data-stage-media]>[data-media-collapse]:after{content:"";position:absolute;z-index:0;inset:4px;border-radius:50%;
+    background:transparent;pointer-events:none;transition:background .2s cubic-bezier(.05,0,0,1)}
+  [data-stage-media]>[data-media-collapse]:hover:after,[data-stage-media]>[data-media-collapse]:focus-visible:after{background:rgba(255,255,255,.2)}
+  [data-stage-media]>[data-media-collapse]:active:after{background:rgba(255,255,255,.3)}
+  [data-stage-media]>[data-media-collapse]:focus-visible{outline:2px solid var(--tungsten);outline-offset:2px}
+  [data-stage-media]>[data-media-collapse] svg{position:relative;z-index:1;width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;
+    filter:drop-shadow(0 0 1px rgba(0,0,0,.8))}
+  [data-stage-media]:not([data-media-collapsed])>[data-media-collapse]>[data-media-collapse-label]{display:none}
+  [data-stage]:is([data-stage-kind="item"],[data-stage-kind="jav"]) [data-stage-media][data-media-collapsed]:has(>.video-js){
+    height:62px;min-height:0;grid-template-rows:62px;background:var(--detail-surface,var(--ground));border-bottom:1px solid var(--line-soft)}
+  [data-stage-media][data-media-collapsed]:has(>.video-js)>:not([data-media-collapse]):not([data-stage-close]){display:none}
+  [data-stage-media][data-media-collapsed]:has(>.video-js)>[data-media-collapse]{
+    left:11px;right:58px;width:auto;height:40px;padding:0 12px;border:1px solid var(--line);border-radius:var(--control-radius);
+    display:flex;align-items:center;gap:8px;justify-content:flex-start;background:var(--surface);color:var(--ink);
+    font-size:var(--fs-sm);font-weight:500}
+  [data-stage-media][data-media-collapsed]:has(>.video-js)>[data-media-collapse]:after{display:none}
+  [data-stage-media][data-media-collapsed]:has(>.video-js)>[data-media-collapse]:hover{background:var(--hover)}
+  [data-stage-media][data-media-collapsed]:has(>.video-js)>[data-media-collapse] svg{filter:none;flex:none}
+}
 /* 手机上浮窗离屏幕边只留 8px，画面格按视频自己的比例排：竖屏和方形视频装进 16:9 的格子里
    只剩中间一小块画面。比例由播放器读到元数据后写进 `--peach-video-ratio`，读到之前仍是 16:9；
    高度封顶 56dvh，吸顶以后下面至少还有四成屏给详情。

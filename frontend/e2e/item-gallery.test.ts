@@ -166,6 +166,20 @@ describe('馆藏 JAV 官方预览', () => {
       const geometry = await layout(page);
       assert.ok(geometry.scrollWidth <= geometry.viewportWidth + 1);
       assert.deepEqual(opened.problems, []);
+      if (viewport.mobile) {
+        const expanded = (await frame.boundingBox())!;
+        assert.ok(expanded.height <= Math.min(viewport.height * 0.56, viewport.width * 0.5625 + 116) + 2,
+          `手机预览图集高度过高：${expanded.height}`);
+        const collapse = frame.locator('[data-media-collapse]');
+        await collapse.click();
+        await page.locator('[data-stage-media][data-media-collapsed]').waitFor();
+        const collapsed = (await frame.boundingBox())!;
+        assert.ok(collapsed.height >= 60 && collapsed.height <= 64, `图集收起高度异常：${collapsed.height}`);
+        assert.ok(await dots.isHidden());
+        await collapse.click();
+        await page.locator('[data-stage-media]:not([data-media-collapsed])').waitFor();
+        assert.ok(await dots.isVisible());
+      }
       await page.screenshot({ path: `../build/item-gallery-${viewport.name}.png` });
     } finally { await opened.close() }
   });
