@@ -3,6 +3,7 @@
 - 状态：已采纳
 - 日期：2026-11-03
 - 关系：补充 [ADR-0087](0087-vanished-files-keep-personal-records.md) 决策二的触发时机；判据沿用它的番号键
+- 被取代：ADR-0157 决策九取消按番号接回与 `record_rehome.CodeRelocator`；按文件身份接回仍有效
 
 ## 背景
 
@@ -18,6 +19,8 @@
 ## 决策
 
 扫描与推送发现登记一个还没有账本行的视频之前，先按文件身份接回；接不上时，再由 `record_rehome.CodeRelocator` 按番号判断。以下条件全部成立，就把旧行的 `path`、`name` 改成新文件，不新建行：
+
+> ADR-0157 决策九之后，`CodeRelocator` 已随 `record_rehome` 删除；下面三条判据不再执行，文件身份接回保留。
 
 1. 新文件名解析出番号（`normalise_code_key`），并且新文件所在目录里这个番号的视频只有它一个。
 2. 同一扫描根下，这个番号的在库视频（`disposal IS NULL`）恰好一条。

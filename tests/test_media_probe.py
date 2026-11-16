@@ -142,11 +142,10 @@ class ProbeMissingTests(unittest.TestCase):
     def fake_probe(duration):
         return mock.Mock(return_value=(duration, 640, 360, "h264", 25.0, None))
 
-    def test_only_rows_without_duration_and_with_a_remote_id(self):
+    def test_only_rows_without_duration(self):
         missing = self.insert("a.mp4", remote_id="file-1")
         self.insert("b.mp4", duration=90.0, remote_id="file-2")
         self.insert("c.jpg", medium="photo", remote_id="file-3")
-        self.insert("d.mp4")
         engine, asked = self.engine()
         with mock.patch.object(media_probe, "probe", self.fake_probe(12.0)) as probed:
             self.assertEqual(media_probe.probe_missing(self.db, engine, "ffprobe"), 1)

@@ -5,8 +5,7 @@
 
 媒体只在网盘上，永久删除先把网盘上的文件移进该盘的回收站，再删账本行。移不成的行留在库里并进
 `blocked`：文件还在，下次扫描会用新编号把它插回来，而它身上的标签与观看记录接不上。
-旧来源与本机文件没有远端 id，只删账本行。物理删除要清的引用表只写在
-`personal_records.ASSET_REFERENCE_TABLES` 一处。
+物理删除要清的引用表只写在 `personal_records.ASSET_REFERENCE_TABLES` 一处。
 """
 from __future__ import annotations
 
@@ -168,21 +167,21 @@ def _live_rows(connection, rows, eligible):
 def _delete_remote(contract: WebContract, rows) -> tuple[list, list[dict]]:
     """把清单上仍在网盘里的文件移进回收站，返回可删账本行的行与没移成的行。
 
-    没有 `remote_id` 的行（旧来源、本机文件）和已消失的行只删账本行。远端说文件本来就不在
-    （`DriveNotFound`）也算删掉了：上一次可能删了文件却没删成行。其余失败进 `blocked`，
-    账本行留着——文件还在，下次扫描会把它当新资产插回来，标签与观看记录接不上。
+    已消失的行只删账本行。远端说文件本来就不在（`DriveNotFound`）也算删掉了：上一次可能
+    删了文件却没删成行。其余失败进 `blocked`，账本行留着——文件还在，下次扫描会把它当新
+    资产插回来，标签与观看记录接不上。
     """
     kept, blocked = [], []
     for row in rows:
-        remote_id = row["remote_id"]
-        if not remote_id or row["disposal"] == VANISHED:
+        if row["disposal"] == VANISHED:
             kept.append(row)
             continue
         checkpoint()
         try:
             if contract.drives is None:
                 raise DriveError("网盘连接未接入")
-            contract.drives.provider_for(row["location"], row["drive_root"] or "").delete(remote_id)
+            contract.drives.provider_for(
+                row["location"], row["drive_root"] or "").delete(row["remote_id"])
         except DriveNotFound:
             kept.append(row)
         except DriveError as error:

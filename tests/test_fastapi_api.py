@@ -417,8 +417,6 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
                      "file-1", "root-1", str(snapshot)),
                     (2, "gdrive", "gdrive:/Media/two.mkv", "two.mkv", "video", 30.0, 64,
                      "file-2", "root-1", ""),
-                    (3, "onedrive", "onedrive:/Media/three.mp4", "three.mp4", "video", 12.0, 32,
-                     None, "root-2", ""),
                 ],
             )
             connection.commit()
@@ -780,12 +778,12 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_after_scan_hands_the_database_path_to_follow_ups(self) -> None:
         from types import SimpleNamespace
 
-        from peach import media_probe, record_rehome
-        with patch.object(media_probe, "probe_missing") as probe, \
-                patch.object(record_rehome, "reattach_in") as reattach:
+        from peach import library_new_assets, media_probe
+        with patch.object(library_new_assets, "remember") as remember, \
+                patch.object(media_probe, "probe_missing") as probe:
             self.app.state.drive_sync._after("gdrive", SimpleNamespace(new_ids=[7]))
         self.assertEqual(probe.call_args.args[0], self.settings.db_path)
-        reattach.assert_called_once_with(self.settings.db_path, [7])
+        remember.assert_called_once_with(self.settings.db_path, [7])
 
     def _library_row(self, name: str = "主库", key: str = "gdrive:root-1", icon: str = "database") -> dict:
         return {"id": key, "name": name, "icon": icon, "color": "blue",
@@ -875,11 +873,6 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_stream_route_refuses_an_extension_browsers_cannot_play(self) -> None:
         answer = await self.client.get("/stream", params={"id": 2, "t": "secret"})
-        self.assertEqual(answer.status_code, 404)
-        self.assertEqual(answer.json()["error"], "unavailable")
-
-    async def test_the_stream_route_refuses_an_asset_without_a_remote_id(self) -> None:
-        answer = await self.client.get("/stream", params={"id": 3, "t": "secret"})
         self.assertEqual(answer.status_code, 404)
         self.assertEqual(answer.json()["error"], "unavailable")
 

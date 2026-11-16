@@ -446,14 +446,6 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(self._ledger_path(1), "gdrive:/夹/旧/1.mp4")
         self.assertEqual(self._ledger_path(2), "gdrive:/夹/旧/ABC-002.mp4")
 
-    def test_an_asset_without_a_remote_id_is_reported(self):
-        with closing(sqlite3.connect(self.db_path)) as connection:
-            connection.execute("UPDATE asset SET remote_id=NULL WHERE id=1")
-            connection.commit()
-        result = self._apply(self._plan(file_template="{number}"))
-        reasons = {failure["asset_id"]: failure["reason"] for failure in result["failures"]}
-        self.assertEqual(reasons[1], organize.SKIP_NO_REMOTE_ID)
-
     def test_a_failed_ledger_write_puts_the_name_back(self):
         plan = self._plan(file_template="{number}")
         with mock.patch.object(organize, "_update_row", return_value=0):

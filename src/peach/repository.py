@@ -123,7 +123,7 @@ class MediaAsset:
     name: str | None = None
     duration: float | None = None
     size: int | None = None
-    #: 网盘里的稳定 id；旧来源（115/PikPak/光鸭/已挂载网盘）的行没有这个值。
+    #: 网盘里的稳定 id。
     remote_id: str | None = None
     #: 扫描起点（远端目录 id）；同一个来源可以接多个账号，靠它认哪本账。
     drive_root: str | None = None

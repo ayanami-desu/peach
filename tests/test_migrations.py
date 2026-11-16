@@ -32,7 +32,7 @@ class MigrationTests(unittest.TestCase):
                                    [(index, index) for index in range(1, 1501)])
             connection.commit()
             asset = connection.execute('SELECT id,location,path,name,medium,code FROM asset').fetchall()
-        self.assertEqual([item.version for item in upgrade(self.db, MIGRATIONS)], ['0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059'])
+        self.assertEqual([item.version for item in upgrade(self.db, MIGRATIONS)], ['0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059', '0060'])
         with closing(sqlite3.connect(self.db)) as connection:
             self.assertEqual(connection.execute('SELECT id,location,path,name,medium,code FROM asset').fetchall(), asset)
             self.assertEqual(connection.execute('SELECT count(*) FROM task_run').fetchone()[0], 1500)
@@ -57,7 +57,7 @@ class MigrationTests(unittest.TestCase):
                                "VALUES(1,'local','a.mp4','a.mp4','video',2)")
             connection.commit()
             asset = connection.execute('SELECT id,location,path,name,medium,code FROM asset').fetchall()
-        self.assertEqual([item.version for item in upgrade(self.db, MIGRATIONS)], ['0054', '0055', '0056', '0057', '0058', '0059'])
+        self.assertEqual([item.version for item in upgrade(self.db, MIGRATIONS)], ['0054', '0055', '0056', '0057', '0058', '0059', '0060'])
 
         def revision(connection):
             return connection.execute("SELECT n FROM ledger_revision WHERE tbl='asset'").fetchone()[0]
@@ -103,7 +103,7 @@ class MigrationTests(unittest.TestCase):
                 [('creator_tags', state, state, '本人', '旧记录', 'old') for state in ('approved', 'rejected', 'skipped')])
             connection.commit()
             before = connection.execute('SELECT * FROM review_decision ORDER BY item_key').fetchall()
-            self.assertEqual([item.version for item in upgrade(self.db, MIGRATIONS)], ['0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059'])
+            self.assertEqual([item.version for item in upgrade(self.db, MIGRATIONS)], ['0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059', '0060'])
             self.assertEqual(connection.execute('SELECT * FROM review_decision ORDER BY item_key').fetchall(), before)
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM review_decision_history').fetchone()[0], 0)
             def revision():
@@ -146,7 +146,7 @@ class MigrationTests(unittest.TestCase):
             assets = connection.execute('SELECT id,location,path,name,medium,code FROM asset').fetchall()
             tags = connection.execute('SELECT * FROM asset_tag').fetchall()
             self.assertEqual(len(connection.execute('PRAGMA foreign_key_check').fetchall()), 4)
-            self.assertEqual([m.version for m in upgrade(self.db, MIGRATIONS)], ['0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059'])
+            self.assertEqual([m.version for m in upgrade(self.db, MIGRATIONS)], ['0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059', '0060'])
             self.assertEqual(connection.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(connection.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
             self.assertEqual(connection.execute('SELECT id,parent_run_id,root_run_id FROM task_run ORDER BY id').fetchall(),
@@ -169,15 +169,50 @@ class MigrationTests(unittest.TestCase):
         upgrade(self.db, prior)
         connection = sqlite3.connect(self.db)
         try:
-            connection.execute("INSERT INTO asset(id,location,path,medium,disposal) VALUES(1,'local','sample.mp4','video','trash')")
+            connection.execute("INSERT INTO asset(id,location,path,medium,disposal) "
+                               "VALUES(1,'local','sample.mp4','video','trash')")
             connection.execute("INSERT INTO asset_tag(asset_id,tag,source) VALUES(1,'示例','user')")
             connection.commit()
-            self.assertEqual([migration.version for migration in upgrade(self.db, MIGRATIONS)], ['0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059'])
+            self.assertEqual([migration.version for migration in upgrade(self.db, MIGRATIONS)], ['0046', '0047', '0048', '0049', '0050', '0051', '0052', '0053', '0054', '0055', '0056', '0057', '0058', '0059', '0060'])
             self.assertEqual(connection.execute("SELECT disposal,disposal_reason FROM asset WHERE id=1").fetchone(), ('trash', None))
             self.assertEqual(connection.execute("SELECT tag,source FROM asset_tag WHERE asset_id=1").fetchall(), [('示例', 'user')])
             self.assertEqual(connection.execute("SELECT count(*) FROM asset").fetchone()[0], 1)
         finally:
             connection.close()
+
+    def test_rehome_schema_is_dropped_without_touching_assets(self):
+        prior = self.root.resolve() / 'prior'
+        prior.mkdir()
+        for path in MIGRATIONS.glob('*.sql'):
+            if path.name < '0060_':
+                shutil.copyfile(path, prior / path.name)
+        upgrade(self.db, prior)
+        with closing(sqlite3.connect(self.db)) as connection:
+            connection.executescript("""
+              INSERT INTO asset(id,location,path,name,medium,rating) VALUES
+                (1,'115','B:/Media/old.mp4','old.mp4','video',4),
+                (2,'local','R:/Media/local.mp4','local.mp4','video',NULL);
+              INSERT INTO asset(id,location,path,name,medium,remote_id) VALUES
+                (3,'gdrive','gdrive:/Media/current.mp4','current.mp4','video','file-3');
+              INSERT INTO asset_tag(asset_id,tag,source) VALUES(1,'旧标签','user');
+              INSERT INTO record_rehome(source,rule,old_asset_id,new_asset_id,snapshot_json,
+                                        moved_json,created_at)
+                VALUES('auto:vanished-reattach','code',1,3,'{}','[]','2026-01-01');
+            """)
+            connection.commit()
+        self.assertEqual([m.version for m in upgrade(self.db, MIGRATIONS)], ['0060'])
+        with closing(sqlite3.connect(self.db)) as connection:
+            self.assertEqual(connection.execute('SELECT id FROM asset ORDER BY id').fetchall(),
+                             [(1,), (2,), (3,)])
+            self.assertEqual(connection.execute('SELECT count(*) FROM asset_tag').fetchone()[0], 1)
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='record_rehome'").fetchone())
+            columns = {row[1] for row in connection.execute(
+                'PRAGMA table_info(asset_quality_goal)')}
+            self.assertNotIn('replaced_at', columns)
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM ledger_revision WHERE tbl='record_rehome'").fetchone())
+            self.assertEqual(connection.execute('PRAGMA foreign_key_check').fetchall(), [])
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -191,7 +226,7 @@ class MigrationTests(unittest.TestCase):
         sqlite3.connect(self.db).close()
         backup = self.root / "before.db"
         done = upgrade(self.db, MIGRATIONS, backup)
-        self.assertEqual([m.version for m in done], [f'{number:04d}' for number in range(60)])
+        self.assertEqual([m.version for m in done], [f'{number:04d}' for number in range(61)])
         self.assertTrue(backup.exists())
         con = sqlite3.connect(self.db)
         tables = {row[0] for row in con.execute(
@@ -209,7 +244,7 @@ class MigrationTests(unittest.TestCase):
                          "asset_tag_preference", "asset_search", "follow_playback",
                          "genre_decision", "asset_subtitle", "task_run", "performer_profile", "code_sample_image",
                          "entity_classification", "entity_identity_link", "seed_pack_history", "schema_migration"} <= tables)
-        self.assertEqual(versions, [f'{number:04d}' for number in range(60)])
+        self.assertEqual(versions, [f'{number:04d}' for number in range(61)])
         self.assertEqual(upgrade(self.db, MIGRATIONS), [])
         self.assertEqual(plan(self.db, MIGRATIONS)[1], [])
 
@@ -348,8 +383,8 @@ class MigrationTests(unittest.TestCase):
         upgrade(self.db, base_migrations)
         connection = sqlite3.connect(self.db)
         connection.executescript("""
-          INSERT INTO asset(id,location,path,name,medium,creator)
-          VALUES(1,'115','B:/xxr/门槛/one.mp4','one.mp4','video','门槛');
+          INSERT INTO asset(id,location,path,name,medium,creator,remote_id)
+          VALUES(1,'115','B:/xxr/门槛/one.mp4','one.mp4','video','门槛','file-1');
           INSERT INTO entity(id,kind,canonical_name,normalized_name,created_at,updated_at)
           VALUES(101,'creator','门槛','门槛','now','now'),
                 (102,'creator','Actual Creator','actual creator','now','now');
@@ -379,8 +414,8 @@ class MigrationTests(unittest.TestCase):
         upgrade(self.db, base_migrations)
         connection = sqlite3.connect(self.db)
         connection.executescript("""
-          INSERT INTO asset(id,location,path,name,medium,creator)
-          VALUES(1,'115','B:/kkg/asce/one.mp4','one.mp4','video','asce');
+          INSERT INTO asset(id,location,path,name,medium,creator,remote_id)
+          VALUES(1,'115','B:/kkg/asce/one.mp4','one.mp4','video','asce','file-1');
           INSERT INTO entity(id,kind,canonical_name,normalized_name,created_at,updated_at)
           VALUES(101,'creator','asce','asce','now','now'),
                 (102,'tag','制服','制服','now','now'),
@@ -417,10 +452,10 @@ class MigrationTests(unittest.TestCase):
         upgrade(self.db, base_migrations)
         connection = sqlite3.connect(self.db)
         connection.executescript("""
-          INSERT INTO asset(id,location,path,name,medium,creator)
-          VALUES(1,'115','B:\\云下载\\足交仙人\\feet of Suzyq (1).mp4','one.mp4','video','足交仙人'),
-                (2,'115','B:\\MVP\\捅主任\\TokyoDolls\\32.mp4','32.mp4','video','捅主任'),
-                (3,'115','B:\\创作者\\捅主任\\real.mp4','real.mp4','video','捅主任');
+          INSERT INTO asset(id,location,path,name,medium,creator,remote_id)
+          VALUES(1,'115','B:\\云下载\\足交仙人\\feet of Suzyq (1).mp4','one.mp4','video','足交仙人','file-1'),
+                (2,'115','B:\\MVP\\捅主任\\TokyoDolls\\32.mp4','32.mp4','video','捅主任','file-2'),
+                (3,'115','B:\\创作者\\捅主任\\real.mp4','real.mp4','video','捅主任','file-3');
           INSERT INTO entity(id,kind,canonical_name,normalized_name,created_at,updated_at)
           VALUES(101,'creator','足交仙人','足交仙人','now','now'),
                 (102,'creator','捅主任','捅主任','now','now');

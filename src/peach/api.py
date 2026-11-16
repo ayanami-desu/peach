@@ -32,7 +32,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import DEFAULT_EXCLUDED_CONTENT_TYPES, GZipMiddleware
 
-from . import __version__, ledger_backups, media_probe, record_rehome, web_contract
+from . import __version__, ledger_backups, media_probe, web_contract
 from . import routes_api, routes_auth, routes_configuration, routes_media, routes_pages
 from .config import PeachSettings
 from .drive_connections import DriveConnections
@@ -255,11 +255,7 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     scan_service = ScanService(drive, repository)
 
     def after_scan(key: str, result) -> None:
-        """新登记的行要探时长，再把消失作品的个人记录接回来。
-
-        扫描只负责登记；两件事都靠 `new_ids` 认对象，所以挂在同步之后一次做完。
-        探测在前：接回的第二条判据要比时长。
-        """
+        """新登记的行要探时长，并留在「待补全」队列里等「同步新增文件」处理。"""
         ids = list(result.new_ids)
         if not ids:
             return
@@ -269,7 +265,6 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
         choice = resolver.ffprobe()
         media_probe.probe_missing(database.db_path, media_engine, choice.path if choice else None,
                                   asset_ids=ids)
-        record_rehome.reattach_in(database.db_path, ids)
 
     drive_sync = DriveSync(scan_service, after=after_scan)
     drive.sync_state = drive_sync.state

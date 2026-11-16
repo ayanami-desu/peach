@@ -2,8 +2,7 @@
 
 `asset.location` 是驱动名（`gdrive`／`onedrive`），`asset.remote_id` 是网盘给的稳定 id，
 两者的组合是唯一键；`path` 形如 `gdrive:/Movies/a.mp4`，由扫描起点的名字与目录名拼出来，
-只给页面显示与日志定位，不参与身份判定。旧来源（115、PikPak、挂载网盘、本机磁盘）的行
-`remote_id` 为空，本模块从不碰它们。
+只给页面显示与日志定位，不参与身份判定。
 
 两条入口：
 
@@ -134,8 +133,7 @@ class ScanService:
     """一个账本上的网盘扫描入口。
 
     驱动与扫描起点都按当前设置现问现用（`drive_reader`）：换过账号、扫描起点或取字节方式
-    之后 `DriveConnections` 会重建驱动实例，抓住构造时那一份表就等于换了没用。驱动之外的
-    来源不扫：旧账本里的 115／PikPak／本地磁盘行只读展示。
+    之后 `DriveConnections` 会重建驱动实例，抓住构造时那一份表就等于换了没用。
     """
 
     def __init__(self, drive_reader: DriveLookup, repository: LedgerRepository,
@@ -283,11 +281,10 @@ class ScanService:
         """落一批行，返回（本次新建的 id，因展示路径被别的行占用而没落上的行数）。
 
         「新建」按写前后同一身份有没有行来判，不看时间戳：两趟扫描落在同一秒里也不该
-        把老行当成新行。
+        把已有行当成新行。
 
-        `asset` 上还留着挂载时代的 `UNIQUE(location, path)`：同一条展示路径换成另一份
-        文件时，新身份插不进去。这里不动老行（它还带着观看记录与处置历史），只把撞上的
-        行数报出去。
+        `asset` 上还留着 `UNIQUE(location, path)`：同一条展示路径换成另一份文件时，新身份
+        插不进去。这里不动已有行，只把撞上的行数报出去。
         """
         if not rows:
             return [], 0
@@ -327,8 +324,7 @@ class ScanService:
         with self.database.write_transaction() as connection:
             ids = [int(row[0]) for row in connection.execute(
                 "SELECT id FROM asset WHERE location=? AND drive_root IN ("
-                + marks + ") AND remote_id IS NOT NULL "
-                "AND disposal IS NULL AND (last_seen IS NULL OR last_seen<?)",
+                + marks + ") AND disposal IS NULL AND (last_seen IS NULL OR last_seen<?)",
                 (source, *roots, stamp))]
             return len(mark_vanished(connection, ids, started))
 

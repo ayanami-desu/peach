@@ -119,15 +119,6 @@ class MediaEngineTests(unittest.TestCase):
         self.assertEqual(engine.plan(1, any_container=True),
                          StreamPlan("range", "video/x-matroska", "drive-range"))
 
-    def test_rows_from_retired_sources_have_no_remote_id(self):
-        asset = MediaAsset(1, "M:\\Media\\ABC-123.mp4", None, location="115", name="ABC-123.mp4")
-        engine, _ = self.engine(asset)
-        for call in (lambda: engine.plan(1),
-                     lambda: engine.read(asset, 0, 4),
-                     lambda: engine.ffmpeg_input(asset)):
-            with self.assertRaises(MediaUnavailable):
-                call()
-
     def test_read_passes_offset_and_length_to_the_drive(self):
         asset = MediaAsset(1, "gdrive:/a.mp4", None, location="gdrive", name="a.mp4",
                            remote_id="file-1")

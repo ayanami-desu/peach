@@ -55,7 +55,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
                 "test_studio_followup.py", "test_creator_identity_followup.py", "test_sample_images.py",
                 "test_jav_code_domain.py",
                 "test_web_ui.py", "test_web_js.py",
-                "test_web_perf.py", "test_record_rehome.py",
+                "test_web_perf.py",
                 "test_web_orphan_records.py",
                 "test_web_review.py", "test_web_settings.py", "test_system_language.py"),
     # 任务中心的两个文件跟着 `test_jobs.py` 走：`jobs.py` 与 `task_runs.py` 是同一条
@@ -104,7 +104,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
                  "test_agency_entity.py", "test_agency_reject.py", "test_label_maker.py",
                  "test_seed_pack.py", "test_seed_followup.py", "test_seed_corrections.py"),
     "tooling": ("test_scripts.py", "test_trash_junk.py", "test_auth.py", "test_access.py", "test_cli.py", "test_server.py", "test_diagnostics.py", "test_error_reporting.py", "test_library_diagnostics.py", "test_script_policy.py",
-                "test_record_rehome.py", "test_downloads_retry.py", "test_media_probe.py", "test_onboarding.py", "test_folder_picker.py", "test_ledger_backups.py", "test_clear_camera_filename_codes.py",
+                "test_downloads_retry.py", "test_media_probe.py", "test_onboarding.py", "test_folder_picker.py", "test_ledger_backups.py", "test_clear_camera_filename_codes.py",
                 "test_agent_worktree.py", "test_check_public_text.py", "test_issue_intake.py", "test_star_history.py", "test_test_evidence.py", "test_test_history.py", "test_test_environment.py", "test_dependency_policy.py",
                 "test_version_bump.py", "test_changelog.py", "test_runner_launcher.py",
                 "test_config.py", "test_log_retention.py",
@@ -234,9 +234,8 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     # 推送发现横跨扫描登记（tooling）与 HTTP 端点（catalog），按名字只推得出一个域。
     # 入库通知由推送发现、云下载整理与任务接口共用，测试分在 catalog 与 tooling，按名字推不出来。
     "src/peach/ingest_notices.py": ("catalog", "tooling"),
-    # 个人记录的判据与搬运（ADR-0087）：资源同步与列表在 catalog，扫描登记与撤回脚本在 tooling。
+    # 个人记录的判据（ADR-0087）：资源同步与列表在 catalog，扫描登记与撤回脚本在 tooling。
     "src/peach/personal_records.py": ("catalog", "tooling"),
-    "src/peach/record_rehome.py": ("catalog", "tooling"),
     "src/peach/web_orphan_records.py": ("catalog", "web"),
     "src/peach/web_library_shortcuts.py": ("catalog", "web"),
     # 入口页共用件的测试住在首启与配置来源那两份 tooling 测试里。

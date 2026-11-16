@@ -2203,10 +2203,8 @@ def _collection_rows(db_path, *, locations, asset_ids):
     query += ' ORDER BY id'
     with closing(sqlite3.connect(db_path, timeout=30)) as connection:
         connection.row_factory = sqlite3.Row
-        # 只收这个来源下已经有远端身份的视频：没有 remote_id 的行是挂载时代留下的，取不到流。
         rows = [dict(row) for row in connection.execute(query, parameters)
                 if row['location'] in locations
-                and row['remote_id']
                 and not is_local_extra(row['name'], row['path'])]
         genre_decisions = load_genre_decisions(connection)
     return rows, genre_decisions

@@ -205,11 +205,6 @@ class GenerateTest(unittest.TestCase):
         self.assertIsNone(preview_sheets.generate(self.engine, 'ffmpeg', 1, self.root))
         self.assertIsNone(self.snapshot_path(1))
 
-    def test_returns_none_for_a_row_without_a_remote_id(self):
-        self._insert(1, remote_id=None)
-        self.assertIsNone(preview_sheets.generate(self.engine, 'ffmpeg', 1, self.root))
-        self.assertIsNone(self.snapshot_path(1))
-
     def test_leaves_a_disposed_row_untouched(self):
         self._insert(1, disposal='vanished')
         made = preview_sheets.generate(self.engine, 'ffmpeg', 1, self.root)
@@ -252,7 +247,6 @@ class PendingTest(unittest.TestCase):
         self._insert(1)                                           # 缺图，该做
         self._insert(2, snapshot_path='/tmp/snapshots/b/x.jpg')   # 已经有图
         self._insert(3, disposal='vanished')                      # 不在馆藏里了
-        self._insert(4, remote_id=None)                           # 挂载时代的旧行，取不到流
         self._insert(5, duration=0)                               # 没片长，摊不开采样点
         self._insert(6, medium='image')                           # 不是视频
         self.assertEqual(self.pending(), [1])

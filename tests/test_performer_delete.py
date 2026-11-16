@@ -100,14 +100,19 @@ class PerformerDeleteTests(unittest.TestCase):
         self.assertEqual(self.contract.task_runs.query(limit=1)[0].status, 'cancelled')
 
     def test_more_than_200_files_delete_together_and_keep_profile_photos_and_unrelated_media(self):
+        drive = FakeDrive()
+        self.contract.drives = drive
         for asset_id in range(1, 202):
             self.add(asset_id)
         photo = self.add(202, medium='image')
         other = self.add(203, entity_id=2)
+        with self.contract.write_transaction() as c:
+            c.execute("UPDATE asset SET location='gdrive',remote_id='R'||id,drive_root='ROOT' "
+                      "WHERE id <= 201")
         result = self.delete(self.plan())
         self.assertEqual(result['purged'], 201)
         self.assertEqual(result['blocked'], [])
-        self.assertTrue((self.root / '1.mp4').is_file(), "没有远端 id 的行只删账本行，本机文件不碰")
+        self.assertEqual(len(drive.deleted), 201)
         self.assertTrue(photo.exists())
         self.assertTrue(other.exists())
         with self.contract.read_connection() as c:
@@ -116,7 +121,9 @@ class PerformerDeleteTests(unittest.TestCase):
             self.assertEqual(c.execute('PRAGMA foreign_key_check').fetchall(), [])
 
     def test_database_failure_keeps_the_ledger_row(self):
+        self.contract.drives = FakeDrive()
         path = self.add(1)
+        self.on_drive(1, 'R1')
         with self.contract.write_transaction() as c:
             c.execute("CREATE TRIGGER reject_delete BEFORE DELETE ON asset BEGIN SELECT RAISE(ABORT,'blocked delete'); END")
         with self.assertRaisesRegex(Exception, 'blocked delete'):
@@ -166,9 +173,12 @@ class PerformerDeleteTests(unittest.TestCase):
             w_performer_delete(self.contract, {'entity_ids': [1]})
 
     def test_selected_performers_share_one_deduplicated_deletion_plan(self):
+        self.contract.drives = FakeDrive()
         self.add(1)
         self.add(2, entity_id=2)
         self.add(3, medium='image')
+        self.on_drive(1, 'R1')
+        self.on_drive(2, 'R2')
         with self.contract.write_transaction() as c:
             c.execute("INSERT INTO asset_entity(asset_id,entity_id,role,source) VALUES(1,2,'performer','user:manual')")
         plan = self.plan('2,1,2')

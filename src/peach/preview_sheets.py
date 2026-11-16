@@ -150,15 +150,12 @@ def _record(engine, record, destination: Path) -> None:
 def pending(connection, limit: int, *, asset_ids=None) -> list[int]:
     """还没有接触印相、又能抽帧的视频，按 id 升序。
 
-    `remote_id IS NOT NULL` 是「能取到字节」的判据：挂载时代的旧行没有远端 id，
-    现在既播不了也读不了，别把它们排进队列。`duration > 0` 同理——没有片长就摊不开
-    采样点，等探测补上再说。
+    `duration > 0` 是「摊得开采样点」的判据：没有片长就等探测补上再说。
 
     `asset_ids` 把范围限到这一轮处理的那几部；不给就是全库，用于整库补齐。
     """
     query = ("SELECT id FROM asset WHERE medium='video' AND disposal IS NULL "
-             "AND remote_id IS NOT NULL AND (snapshot_path IS NULL OR snapshot_path='') "
-             "AND duration > 0")
+             "AND (snapshot_path IS NULL OR snapshot_path='') AND duration > 0")
     parameters: list[object] = []
     if asset_ids is not None:
         chosen = sorted({int(value) for value in asset_ids})

@@ -125,15 +125,11 @@ class MediaEngine:
 
     def _drive(self, asset: MediaAsset) -> tuple[str, str, str]:
         """`(来源类型, 扫描起点, 远端 id)`：同一个来源可以接多个账号，取字节要看扫描起点。"""
-        if not asset.location or not asset.remote_id:
-            # 旧来源的行与本地磁盘行都进不来：它们没有远端 id，取字节的入口不成立。
-            raise MediaUnavailable(asset.id)
         return asset.location, asset.drive_root or "", asset.remote_id
 
     def plan(self, asset_id: int, *, any_container: bool = False) -> StreamPlan:
         """`any_container` 给外链与 M3U 用：网页播不了的容器照样能签出去。"""
         asset = self.asset(asset_id)
-        self._drive(asset)  # 没有远端 id 的行连计划都不该成立
         mime = (player_mime if any_container else browser_mime)(asset.name or asset.path)
         if mime is None:
             raise MediaUnavailable(asset.id)

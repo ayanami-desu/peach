@@ -11,7 +11,7 @@ from typing import Mapping, Protocol, Sequence
 GOOGLE = "gdrive"
 ONEDRIVE = "onedrive"
 
-#: 内置驱动。`asset.location` 只允许出现这两个值；旧账本里的其他来源只读展示。
+#: 内置驱动。`asset.location` 只允许出现这两个值。
 LOCATIONS: tuple[str, ...] = (GOOGLE, ONEDRIVE)
 
 #: 取字节的两种方式：`redirect` 交给浏览器跟预授权地址走，`proxy` 由 Peach 带着 Range 转发。

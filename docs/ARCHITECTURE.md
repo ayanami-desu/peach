@@ -58,9 +58,9 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 
 `asset.path` 降级为展示用的虚拟路径，由 `scan.virtual_path(location, segments)` 拼出，形如 `gdrive:/Movies/2024/a.mp4`：第一段是 `<location>:`，后面每一段是远端目录名。它不翻成本机路径——这台机器上没有那份文件。目录树、面包屑与筛选都读这一列，见[目录浏览](DIRECTORY_BROWSING.md)。
 
-`asset.drive_root`（迁移 `0056`）记下这个文件是在哪个配置的扫描根下被找到的，媒体库分组按（来源，扫描根）这一对收窄。挂载时代的旧行（115、PikPak、光鸭、已挂载网盘）保留原样只读展示，`remote_id` 为空，不参与扫描与播放。
+`asset.drive_root`（迁移 `0056`）记下这个文件是在哪个配置的扫描根下被找到的，媒体库分组按（来源，扫描根）这一对收窄。代码不再为 `remote_id` 为空的行保留分支；当前部署账本里没有这类行，迁移 `0060` 只删除接回表与列，不改写资产行。
 
-`0000_legacy_schema.sql` 里 `UNIQUE(location, path)` 还在，扫描写库时按身份判新建、按这对键做幂等 upsert，撞上老行只计冲突不改行。
+`0000_legacy_schema.sql` 里 `UNIQUE(location, path)` 还在，扫描写库时按身份判新建、按这对键做幂等 upsert，撞上已有行只计冲突不改行。
 
 ## 馆藏探索
 
@@ -93,11 +93,9 @@ ids = list(result.new_ids)
 if not ids: return
 choice = resolver.ffprobe()
 media_probe.probe_missing(database, media_engine, choice.path if choice else None, asset_ids=ids)
-record_rehome.reattach_in(database, ids)
 ```
 
-1. `media_probe.probe_missing`：用 provider 给的宽高时长（Drive `videoMediaMetadata`、OneDrive `video` facet）先填，缺的再用 HTTP Range 喂 `ffprobe`，探测结果只写账本，不落本地文件。
-2. `record_rehome.reattach_in`：把旧账本里已消失、但同一番号又出现的记录接回新资产，个人记录不丢。
+`media_probe.probe_missing`：用 provider 给的宽高时长（Drive `videoMediaMetadata`、OneDrive `video` facet）先填，缺的再用 HTTP Range 喂 `ffprobe`，探测结果只写账本，不落本地文件。
 
 扫描本身不碰字节：登记只看列表响应里的元数据。探测和抽帧是唯一会读片源的地方。
 

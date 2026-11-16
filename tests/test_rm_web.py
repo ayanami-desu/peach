@@ -258,8 +258,11 @@ class WebDataTests(unittest.TestCase):
         # 实体图和已裁好的头像同处 `avatar_root`，同样得落在临时目录里。
         self.avatars = Path(self.tmp.name).resolve() / "avatars"
         self.avatars.mkdir()
+        self.drives = mock.Mock()
+        self.drives.provider_for.return_value = self.drives
         self.contract = rm_web.WebContract(
-            Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos)
+            Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
+            drives=self.drives)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1609,11 +1612,13 @@ class WebDataTests(unittest.TestCase):
         self.assertTrue(finished.is_set(), "第二次写入没能在 10 秒内拿到写锁，写锁没被释放")
 
     def stage_media(self, aid, name="clip.mp4"):
-        """把某条资产指向一个真实的临时文件，用来确认删除不碰本机文件。"""
+        """把资产指向一个网盘 id 与一个真实的临时文件，用来确认删除不碰本机文件。"""
         path = Path(self.tmp.name) / name
         path.write_bytes(b"media")
         con = sqlite3.connect(self.db_path)
-        con.execute("UPDATE asset SET path=?,snapshot_path=NULL WHERE id=?", (str(path), aid))
+        con.execute(
+            "UPDATE asset SET location='gdrive',remote_id=?,drive_root='ROOT',path=?,"
+            "snapshot_path=NULL WHERE id=?", (f"R{aid}", str(path), aid))
         con.commit(); con.close()
         return path
 
@@ -1626,7 +1631,8 @@ class WebDataTests(unittest.TestCase):
         result = rm_web.w_batch(self.contract, {"ids": [1], "operation": "delete"})
 
         self.assertEqual((result["purged"], result["blocked"]), (1, []))
-        self.assertTrue(path.is_file(), "没有远端 id 的行只删账本行，本机文件不碰")
+        self.drives.delete.assert_called_once_with("R1")
+        self.assertTrue(path.is_file(), "删除只动网盘文件，本机文件不碰")
         self.assertIsNone(self.row(1), "数据库行也要一起消失")
         con = sqlite3.connect(self.db_path)
         for table in rm_web.ASSET_REFERENCE_TABLES:
@@ -1686,7 +1692,7 @@ class WebDataTests(unittest.TestCase):
         self.assertEqual(result["purged"], 1)
         self.assertIsNone(self.row(1))
         self.assertIsNotNone(self.row(2), "不在回收站的资产一个都不能碰")
-        self.assertTrue(binned.is_file() and kept.is_file(), "没有远端 id 的行只删账本行")
+        self.assertTrue(binned.is_file() and kept.is_file(), "删除只动网盘文件，本机文件不碰")
 
     def test_empty_trash_spares_rows_restored_meanwhile(self):
         """读出行之后、删之前被还原出回收站的，事务里复核时留下并进 `blocked`。"""
@@ -1755,7 +1761,7 @@ class WebDataTests(unittest.TestCase):
                 [("metadata_fields", "asset:1:title"), ("metadata_fields", "asset:2:title"),
                  ("metadata_fields", "asset:11:title"), ("creator_tags", "asset:1:title")])
         contract = rm_web.WebContract(Path(self.db_path), avatar_root=self.avatars, logo_root=self.logos,
-                                      candidate_root=candidates)
+                                      candidate_root=candidates, drives=self.drives)
         rm_web.w_feedback(contract, {"id": 1, "kind": "dispose"})
 
         self.assertEqual(rm_web.w_empty_trash(contract)["purged"], 1)

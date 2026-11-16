@@ -52,7 +52,6 @@ SKIP_OUTSIDE_SCOPE = "不在整理范围内"
 SKIP_TARGET_EXISTS = "目标已存在"
 SKIP_TARGET_FOLDER = "目标目录不存在"
 SKIP_TOO_LONG = "路径过长"
-SKIP_NO_REMOTE_ID = "资产没有网盘标识"
 
 
 class OrganizeError(ValueError):
@@ -427,8 +426,6 @@ def _move_one(drive, connection: sqlite3.Connection, asset_id: int,
         return "数据库里这一行已经变了"
     if current[2] is not None:
         return "资产已不在馆藏，未执行整理"
-    if not current[0]:
-        return SKIP_NO_REMOTE_ID
     try:
         target_parts = segments_of(location, new_path)
         parent = listing.folder_id(target_parts[:-1])

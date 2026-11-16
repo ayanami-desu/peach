@@ -156,7 +156,6 @@
     "test_python_lint": 0.285,
     "test_r18_machine_translation_repair": 16.763,
     "test_readme_contracts": 0.009,
-    "test_record_rehome": 79.213,
     "test_reference_updates": 0.031,
     "test_related": 3.191,
     "test_repo_hygiene": 7.227,

@@ -78,7 +78,7 @@ def library_facts(request: Request) -> dict[str, dict]:
         rows = connection.execute(
             "SELECT location, drive_root, COUNT(*) AS videos,"
             " SUM(duration IS NULL OR snapshot_path IS NULL) AS missing"
-            " FROM asset WHERE disposal IS NULL AND medium='video' AND remote_id IS NOT NULL"
+            " FROM asset WHERE disposal IS NULL AND medium='video'"
             " GROUP BY location, drive_root").fetchall()
     except Exception:
         return {}

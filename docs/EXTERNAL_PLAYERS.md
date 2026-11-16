@@ -9,7 +9,7 @@ Peach 签发外链不按容器设限：`.mp4`、`.m4v`、`.webm`、`.ogv`、`.og
 | 情形 | 响应 |
 | --- | --- |
 | 资产不存在 | 404 `{"error": "no such id"}` |
-| 资产缺少网盘位置（没有远端 id） | 404 `{"error": "unavailable"}` |
+| 资产不是可播放媒体 | 404 `{"error": "unavailable"}` |
 | Origin 无法解析 | 400「播放地址无效」 |
 | 成功 | `{"url": …, "playlist": …, "expires_in": 21600}` |
 

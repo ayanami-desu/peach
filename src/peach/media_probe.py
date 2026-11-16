@@ -28,7 +28,7 @@ PROBED_COLUMNS = ("duration", "width", "height", "vcodec", "fps", "has_audio",
 UPDATE = f"UPDATE asset SET {','.join(f'{column}=?' for column in PROBED_COLUMNS)} WHERE id=?"
 
 #: 缺时长的视频。
-_MISSING = "medium='video' AND duration IS NULL AND remote_id IS NOT NULL"
+_MISSING = "medium='video' AND duration IS NULL"
 
 
 def context_fields(width: int, height: int, duration: float) -> tuple[str | None, str | None, str | None]:
