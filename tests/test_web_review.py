@@ -3114,7 +3114,7 @@ class ReviewQueueTests(unittest.TestCase):
             ])
 
     def test_a_stale_candidate_lands_on_the_current_vocabulary(self):
-        """候选文件停在抓取那一刻：那时给的撤掉的粗桶与退役名，落库时按现在的词表处理。"""
+        """候选文件停在抓取那一刻：那时给的撤掉的粗桶、退役名与来源的分辨率，落库时按现在的词表处理。"""
         con = sqlite3.connect(self.db_path)
         con.execute("UPDATE asset SET code='ABC-001' WHERE id=1")
         con.commit(); con.close()
@@ -3122,7 +3122,7 @@ class ReviewQueueTests(unittest.TestCase):
             "candidate_key": "ABC-001:tags:r18dev:specific", "source": "r18dev",
             "source_url": "https://r18.dev/example", "confidence": 0.9,
             "provider_id": "ABC-001",
-            "value": ["乳系", "处女", "颜射"], "display_value": "乳系、处女、颜射",
+            "value": ["乳系", "处女", "颜射", "4K"], "display_value": "乳系、处女、颜射、4K",
             "warnings": [],
         }
         self.write_metadata_candidates([{

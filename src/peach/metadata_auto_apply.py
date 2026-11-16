@@ -1148,6 +1148,16 @@ def _leads_chain(field: str, candidate: dict, code: str) -> bool:
     return chain_rank(field, source, code=code)[0] <= CHAIN_OFFICIAL
 
 
+#: 来源写的分辨率说的是官方发行版本，不是手里这份文件（`genre_taxonomy.NON_CONTENT_GENRES`）。
+#: 旧映射写进候选文件的这几个落库时丢掉，文件自己的画质由探测写进 `ctx_quality`。
+SOURCE_RESOLUTION_TAGS = frozenset({"4K", "2K", "2160P", "1080P", "720P", "480P"})
+
+
+def _landing_tags(names) -> list[str]:
+    """候选标签按现在的词表换名（`current_tags`），再去掉来源给的分辨率。"""
+    return [tag for tag in current_tags(names) if tag not in SOURCE_RESOLUTION_TAGS]
+
+
 def _tag_names(candidate: dict) -> list[str]:
     """候选里按现在的词表认得出、落库时会写下的标签名。"""
     names = []
@@ -1156,7 +1166,7 @@ def _tag_names(candidate: dict) -> list[str]:
             names.append(_approved_entity_name(raw, "tag"))
         except ValueError:
             continue
-    return current_tags(names)
+    return _landing_tags(names)
 
 
 def _verified_tags(row: dict, evidence: list[dict], current: str) -> Verification:
@@ -1795,7 +1805,7 @@ def _apply_metadata_candidate(
         raise ValueError("标签候选必须是数组")
     # 候选文件停在抓取那一刻：那时的映射可能还给过退役名或已撤掉的粗桶，
     # 落库这一步按现在的词表换名或丢掉。
-    tags = current_tags(_approved_entity_name(tag, "tag") for tag in raw_tags)
+    tags = _landing_tags(_approved_entity_name(tag, "tag") for tag in raw_tags)
     if not tags:
         raise ValueError("标签候选为空")
     # 整套换掉的时候，并集补进来的那几个（`_extend_approved_tags`）一起清：它们是
@@ -1850,7 +1860,7 @@ def _extend_approved_tags(connection, row: dict, candidate: dict, batch: str,
     if not isinstance(raw_tags, list):
         return None
     try:
-        written = current_tags(_approved_entity_name(tag, "tag") for tag in raw_tags)
+        written = _landing_tags(_approved_entity_name(tag, "tag") for tag in raw_tags)
         asset_ids, _source, confidence, metadata = _landing_scope(connection, row, candidate)
     except ValueError:
         return None
