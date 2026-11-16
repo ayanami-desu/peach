@@ -159,19 +159,19 @@ Docker 镜像构建会在 `frontend-build` 阶段自动运行 `npm --prefix fron
 | `@tanstack/react-query` 5.107.1、`@tanstack/query-core` 5.107.1 | 服务端数据缓存、轮询与失效 |
 | `@tanstack/react-table` 9.3.1 | 目录表格的列、排序与虚拟化基准 |
 | `@remixicon/react` 4.9.0 | React 子树里的图标组件 |
-| `motion` 14.10.1 | 抽屉、选择条、数字滚动等过渡；带 `prefers-reduced-motion` 分支 |
+| `motion` 14.14.0 | 抽屉、选择条、数字滚动等过渡；带 `prefers-reduced-motion` 分支 |
 | `sonner` 2.0.8 | 提示条 |
 | `skullet` 0.0.3 | 骨架屏的尺寸测量与动画 |
-| `driver.js` 1.10.2 | 首启引导的分步高亮 |
-| `i18next` 27.0.1 | 界面文案的翻译查找与插值 |
+| `driver.js` 1.14.0 | 首启引导的分步高亮 |
+| `i18next` 27.1.1 | 界面文案的翻译查找与插值 |
 | `diff` 9.0.0 | 文案与配置的差异显示 |
 | `recharts` 3.10.1 | 统计页图表 |
 | `d3-sankey` 0.12.3 | 流向图布局；BoardUI 的差异表把它记给流向图，当前源码没有引入方 |
 | `clsx` 2.1.1、`tailwind-merge` 3.7.0 | 条件类名摊平后交给 BoardUI 的 `cx`；`tailwind-merge` 认得 Peach 的字阶类，不会把 `text-caption-1-regular` 当成颜色类丢掉 |
 
-构建与测试工具（`devDependencies`）：`vite` 8.3.6、`typescript` 7.0.2、`oxlint` 1.92.0、`@shadcn/lint` 0.2.5、`vitest` 5.1.0、`happy-dom` 21.0.4、`playwright-core` 1.65.0、`@sentry/cli` 3.8.2、`@sentry/vite-plugin` 11.11.0（sourcemap 上传）、`@tailwindcss/vite` 4.3.5、`tailwindcss` 4.3.5、`oxc-parser` 0.157.0（文案检查扫源码）、`agentation` 3.1.2（界面标注）、`@types/react` 与 `@types/react-dom` 19.3.0、`@types/d3-sankey`。
+构建与测试工具（`devDependencies`）：`vite` 8.3.8、`typescript` 7.0.2、`oxlint` 1.93.0、`@shadcn/lint` 0.2.5、`vitest` 5.1.0、`happy-dom` 21.0.4、`playwright-core` 1.65.1、`@sentry/cli` 3.8.2、`@sentry/vite-plugin` 11.12.0（sourcemap 上传）、`@tailwindcss/vite` 4.3.5、`tailwindcss` 4.3.5、`oxc-parser` 0.158.0（文案检查扫源码）、`agentation` 3.1.2（界面标注）、`@types/react` 与 `@types/react-dom` 19.3.0、`@types/d3-sankey`。
 
-`web/vendor/` 的第三方资源由根 `package.json` 的 `devDependencies` 钉版本，`npm run vendor:web` 按版本号写成目录并附许可证与来源说明，`npm run check:vendor` 校验字节一致：`@fontsource-variable/inter` 5.3.0（正文字体，落在 `web/vendor/inter/5.3.0/`）、`swiper` 14.4.0（卡片与画廊的滑动）、`@videojs/cdn` 10.3.0（播放器运行时）。`lucide-static` 1.70.0、`@phosphor-icons/core` 2.1.1、`remixicon` 4.9.1 与 `healthicons` 3.1.0 的图标以 symbol 内联进 `web/index.html` 的雪碧图，`web/vendor/` 里只放它们的许可证与来源说明。同一个脚本还会把 `web/` 各文件里引用的版本号改齐。新增依赖时在这两张表里补一行用途，再跑一次 `npm run vendor:web` 更新产物与锁文件。
+`web/vendor/` 的第三方资源由根 `package.json` 的 `devDependencies` 钉版本，`npm run vendor:web` 按版本号写成目录并附许可证与来源说明，`npm run check:vendor` 校验字节一致：`@fontsource-variable/inter` 5.3.0（正文字体，落在 `web/vendor/inter/5.3.0/`）、`swiper` 14.4.0（卡片与画廊的滑动）、`@videojs/cdn` 10.4.0（播放器运行时）。`lucide-static` 1.72.0、`@phosphor-icons/core` 2.1.1、`remixicon` 4.9.1 与 `healthicons` 3.1.0 的图标以 symbol 内联进 `web/index.html` 的雪碧图，`web/vendor/` 里只放它们的许可证与来源说明。同一个脚本还会把 `web/` 各文件里引用的版本号改齐。新增依赖时在这两张表里补一行用途，再跑一次 `npm run vendor:web` 更新产物与锁文件。
 
 ## 站点标识与图标
 
