@@ -6,6 +6,7 @@ COPY frontend/package.json frontend/package-lock.json ./frontend/
 RUN npm --prefix frontend ci --ignore-scripts
 COPY frontend ./frontend
 COPY resources/media-sources.json ./resources/media-sources.json
+COPY resources/browser-icons ./resources/browser-icons
 RUN npm --prefix frontend run build
 
 FROM python:3.15.1-slim-trixie AS build
