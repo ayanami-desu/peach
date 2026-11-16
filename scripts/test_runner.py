@@ -159,7 +159,7 @@ SCOPE_TEST_IDS: dict[str, tuple[str, ...]] = {}
 AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     "scripts/run_gitlab_runner.py": ("tooling",),
     "scripts/render_star_history.py": ("tooling",),
-    "frontend/e2e/jav-userscript-contract.mjs": ("catalog", "web"),
+    "frontend/e2e/jav-userscript-contract.ts": ("catalog", "web"),
     "web/integrations/peach-jav.user.js": ("catalog", "web"),
     "scripts/fetch_face_models.py": ("tooling", "packaging"),
     "src/peach/seed_corrections.py": ("metadata", "tooling"),
@@ -294,7 +294,7 @@ AUTO_SCOPE_PREFIXES: tuple[tuple[str, str | tuple[str, ...]], ...] = (
     ("scripts/sync_brand_marks.py", ("catalog", "tooling")),
     ("scripts/detect_cover_faces.py", ("web", "tooling")),
     ("scripts/demo_dataset.py", ("web", "tooling")),
-    ("scripts/vendor_web_dependencies.mjs", ("web", "tooling")),
+    ("scripts/vendor_web_dependencies.ts", ("web", "tooling")),
     ("scripts/audit_video_endcards.py", ("media", "tooling")),
     ("src/peach/platform.py", "core"),
     # 产地的判据住在 `regions.py`，验它的测试叫 `test_content_region.py`：

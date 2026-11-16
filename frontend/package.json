@@ -16,12 +16,12 @@
     "build:agentation": "vite build -c vite.agentation.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/react",
     "lint": "oxlint -c .oxlintrc.json src test e2e",
-    "check:copy": "node scripts/copy-check.mjs",
+    "check:copy": "node scripts/copy-check.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "node e2e/run.mjs",
-    "i18n:literals": "node scripts/i18n-literals.mjs",
-    "i18n:terms": "node scripts/i18n-terms.mjs"
+    "e2e": "node e2e/run.ts",
+    "i18n:literals": "node scripts/i18n-literals.ts",
+    "i18n:terms": "node scripts/i18n-terms.ts"
   },
   "dependencies": {
     "@remixicon/react": "4.9.0",

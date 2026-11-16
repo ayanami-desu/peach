@@ -3,8 +3,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createTranslator, resolveInterfaceLanguage, resources, storedInterfaceLanguage, INTERFACE_LANGUAGES, SOURCE_LANGUAGE } from '../src/i18n';
-// @ts-expect-error 检查脚本是纯 ESM，没有类型声明
-import { BASELINE, countLiterals, scan } from '../scripts/i18n-literals.mjs';
+import { BASELINE, countLiterals, scan } from '../scripts/i18n-literals.ts';
 
 const frontend = resolve(__dirname, '..');
 const locales = join(frontend, 'src/locales');
@@ -151,7 +150,7 @@ describe('写死的中文文案只减不增', () => {
     const raised = Object.entries(scan() as Record<string, number>)
       .filter(([file, count]) => count > (baseline[file] ?? 0))
       .map(([file, count]) => `${file}: ${count}（基线 ${baseline[file] ?? 0}）`);
-    expect(raised, '新文案写进 src/locales/<语言>/*.json，用 t() 取；抽走后跑 node scripts/i18n-literals.mjs --write 收紧基线').toEqual([]);
+    expect(raised, '新文案写进 src/locales/<语言>/*.json，用 t() 取；抽走后跑 node scripts/i18n-literals.ts --write 收紧基线').toEqual([]);
   }, 60_000);
 
   it('计数认字符串、模板和 JSX 文字，不认注释、对象键、导入路径和 console', () => {

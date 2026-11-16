@@ -197,7 +197,7 @@ Docker 镜像构建会在 `frontend-build` 阶段自动运行 `npm --prefix fron
 
 界面文案的源文是 `frontend/src/locales/zh-CN/<命名空间>.json`，英文在 `locales/en/`，两份由同一个 PR 维护。缺译文的键回落到中文；界面语言选「自动」时按浏览器语言、再按系统语言判定，两边都对不上时用英文（决策见 [ADR-0156](adr/0156-interface-translation.md)）。
 
-`scripts/copy-rules.json` 是文案规则的唯一来源，两组规则：`prose` 拦沿革叙述与不清楚的表述，`doc_terms` 要求把抽象说法换成具体机制。`frontend/scripts/copy-check.mjs` 扫前端源码，`scripts/check_copy_final_state.py` 扫 Python、HTML 与文档；确需保留的逐行加 `copy-lint-disable-line` 豁免。`i18n:literals` 与 `i18n:terms` 统计字面量与术语。
+`scripts/copy-rules.json` 是文案规则的唯一来源，两组规则：`prose` 拦沿革叙述与不清楚的表述，`doc_terms` 要求把抽象说法换成具体机制。`frontend/scripts/copy-check.ts` 扫前端源码，`scripts/check_copy_final_state.py` 扫 Python、HTML 与文档；确需保留的逐行加 `copy-lint-disable-line` 豁免。`i18n:literals` 与 `i18n:terms` 统计字面量与术语。
 
 ## 检查
 

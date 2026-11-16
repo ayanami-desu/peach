@@ -1,6 +1,6 @@
 // 找还没进术语表的高频词（ADR-0156「新增概念」）：数 2–4 字中文片段出现在多少条不同文案里，
 // 文案取自 zh-CN 语言资源和源码里还写死的中文；去掉术语表已收的词和被更长片段吸收的片段。
-// 只出候选清单，要不要进术语表由维护者定。用法：node scripts/i18n-terms.mjs [最少条数，默认 8]
+// 只出候选清单，要不要进术语表由维护者定。用法：node scripts/i18n-terms.ts [最少条数，默认 8]
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

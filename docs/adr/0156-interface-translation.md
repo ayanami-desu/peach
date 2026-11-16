@@ -90,7 +90,7 @@ Peach 的界面只有中文。前端源码里写死的中文文案节点约 7,00
 | 语言白名单 | 后端放行的语言和资源目录不一致 | `tests/test_web_settings.py` |
 | 原位改字 | 抽走的文案改不了，或者改到了译文文件 | `tests/test_dev_copy.py` |
 
-基线只往下收：`node scripts/i18n-literals.mjs --write` 只降低各文件的数目。数目要上升只能手改基线文件，在评审里说明理由。
+基线只往下收：`node frontend/scripts/i18n-literals.ts --write` 只降低各文件的数目。数目要上升只能手改基线文件，在评审里说明理由。
 
 以下两项不进每个 PR 的 CI：
 

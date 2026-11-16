@@ -113,6 +113,8 @@ GitHub 的字段与模板机制见 [Issue types](https://docs.github.com/en/issu
 
 `frontend/` 需要 Node 24 或更高版本。
 
+Node 脚本与测试写成 `.ts`（前端源码另有 `.tsx` 与少量 `.js`），由 Node 24 的类型擦除直接运行，不新建 `.mjs`、`.cjs`；本地模块按完整文件名导入，例如 `'../scripts/copy-check.ts'`。`tests/test_repo_hygiene.py` 会拦下 `.mjs`、`.cjs`。
+
 运行 Peach 时不需要 Node，Python 服务和安装包直接读取构建好的 `web/dist/`。`web/dist/` 不提交进 Git，在 Docker 镜像构建、打包与测试流程中通过 `npm --prefix frontend run build` 生成；从源码本地启动时先跑一次 `npm --prefix frontend ci && npm --prefix frontend run build`。目录结构与样式约定见 [`docs/FRONTEND.md`](docs/FRONTEND.md)。
 
 ## 提交说明与变更日志

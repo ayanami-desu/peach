@@ -284,7 +284,7 @@ class DependencyPolicyTests(unittest.TestCase):
         换上游版本时新旧画法混在同一条按钮上。归属由生成脚本自己在写文件前拦，
         这里核的是那道拦阻还在、名单也还覆盖得住实际的雪碧图。
         """
-        generator = (ROOT / "scripts" / "vendor_web_dependencies.mjs").read_text(
+        generator = (ROOT / "scripts" / "vendor_web_dependencies.ts").read_text(
             encoding="utf-8")
         self.assertIn("const handDrawnIcons = new Set([", generator)
         self.assertIn("if (orphans.length) {", generator)
