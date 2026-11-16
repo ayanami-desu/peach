@@ -15,9 +15,9 @@ export function IdentityCell({ kind, person, onOpen, hidden, overflow, face }: {
   const image = kind === 'performer' || kind === 'creator'
     ? <span data-id-face="" dangerouslySetInnerHTML={{ __html: `<span>${esc(firstGrapheme(displayName))}</span>`
       + entityFaceImg({ kind, id: person.id, hasImage: person.has_image, version: person.image_version,
-        focus: person.avatar_focus, rep: person.has_avatar ? person.rep : null, standIn: person.avatar_stand_in }) }} />
+        focus: person.avatar_focus, rep: person.has_avatar ? person.rep : null, standIn: person.avatar_stand_in, thumb: 2 }) }} />
     : <span data-id-face=""><span>{kind === 'studio' ? leadingGraphemes(person.name, 2) : firstGrapheme(person.name)}</span>
-      {kind === 'studio' && person.has_logo ? <img src={logoUrl(person.name, 'icon', person.logo_version)} alt="" width={128} height={128} loading="lazy" decoding="async" data-drop="self" /> : null}</span>;
+      {kind === 'studio' && person.has_logo ? <img src={logoUrl(person.name, 'icon', person.logo_version, true)} alt="" width={128} height={128} loading="lazy" decoding="async" data-drop="self" /> : null}</span>;
   const content = <>{face ?? image}<span data-id-name="">{displayName}</span></>;
   const attrs = { 'data-id-cell': kind, title: displayName, hidden, 'data-castoverflow': overflow ? '' : undefined };
   return person.id ? <button type="button" {...attrs} data-entity-kind={kind} data-entity-name={person.name}

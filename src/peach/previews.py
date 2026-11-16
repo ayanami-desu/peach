@@ -488,6 +488,11 @@ ENTITY_THUMB_FORMAT = "WEBP"
 ENTITY_THUMB_TYPE = "image/webp"
 ENTITY_THUMB_QUALITY = 80
 
+#: 卡片署名与身份格的那一档。圆框在卡片和详情署名里显示 32–56 CSS px，三倍屏最多
+#: 168 设备像素，320 盖得住；640 那一档同样是重编码，但像素是这里的四倍。只给
+#: `thumb=2` 使用，大位和索引页仍取 640。
+ENTITY_SMALL_THUMB_EDGE = 320
+
 
 def entity_thumb_root(avatar_root: Path) -> Path:
     """实体图派生件的目录：实体图旁边那一个。
@@ -518,6 +523,12 @@ COVER_THUMB_QUALITY = 90
 COVER_SMALL_THUMB_EDGE = 800
 COVER_SMALL_THUMB_QUALITY = 85
 
+#: 厂牌方形图标位的派生档。卡片署名与身份格的图标显示 56–128 CSS px，三倍屏最多
+#: 384 设备像素；原始标识常是 400 px、单张约 18 KB，首页一屏二十来张就是几百 KB。
+#: 标识带文字，质量取 90；`keep_alpha=True` 保住透明底，否则圆框里会压出黑底或白块。
+LOGO_THUMB_EDGE = 128
+LOGO_THUMB_QUALITY = 90
+
 
 def cover_thumb_root(cover_root: Path) -> Path:
     """封面派生件的目录：封面目录旁边那一个，理由同 `entity_thumb_root`。
@@ -540,10 +551,11 @@ class DerivedImageService:
     """
 
     def __init__(self, root: Path, edge: int = ENTITY_THUMB_EDGE,
-                 quality: int = ENTITY_THUMB_QUALITY):
+                 quality: int = ENTITY_THUMB_QUALITY, *, keep_alpha: bool = False):
         self.root = root.resolve()
         self.edge = edge
         self.quality = quality
+        self.keep_alpha = keep_alpha
         self.capacity_guard = None
 
     def path_for(self, key: str) -> Path:
@@ -574,7 +586,10 @@ class DerivedImageService:
                 with atomic_path(destination) as temporary:
                     with Image.open(source) as opened:
                         image = ImageOps.exif_transpose(opened)
-                        if image.mode not in {"RGB", "L"}:
+                        if self.keep_alpha:
+                            if image.mode not in {"RGB", "RGBA", "L", "LA"}:
+                                image = image.convert("RGBA")
+                        elif image.mode not in {"RGB", "L"}:
                             image = image.convert("RGB")
                         # `thumbnail` 只缩不放：本来就比这一档小的图原样重编码，不上采样。
                         image.thumbnail((self.edge, self.edge), Image.LANCZOS)

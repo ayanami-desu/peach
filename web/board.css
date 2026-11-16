@@ -1,4 +1,5 @@
-@import url('/vendor/inter/5.3.0/index.css');
+/* 字体样式表由页面 head 直接加载（`web/index.html` 与 `web_entry._PAGE_HEAD`）：
+   之前在这里 `@import`，浏览器要多发现一轮才去取 Inter，而正文每个字都要等它。 */
 /* Translucent navigation experiment, using browser-native backdrop compositing. */
 /* 底色薄到能看见身后的东西在动，可读性交给 `--glass-lume`：Apple 的 regular 变体
    「blurs and adjusts the luminosity of background content」，压暗（暗色）或提亮（浅色）

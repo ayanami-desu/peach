@@ -34,14 +34,15 @@ export function catalogParams(filters: Readonly<Record<string, string>>, exclude
 export const catalogKey = (params: string, revision: number): QueryKey => ['catalog-grid', 'catalog', params, revision];
 export const entityKey = (key: string, revision: number): QueryKey => ['catalog-grid', 'entity', key, revision];
 
-/** 目录的一页。第一页为空、又不是回收站时，再问一次整个馆藏有没有东西。 */
+/** 目录的一页。第一页带总数；往后的页不带，只看 `has_more`。第一页为空、又不是回收站时，
+ *  再问一次整个馆藏有没有东西。 */
 export async function fetchCatalogPage(
-  params: string, offset: number, batch: number, trash: boolean, signal: AbortSignal, includeTotal = true,
+  params: string, offset: number, batch: number, trash: boolean, signal: AbortSignal,
 ): Promise<GridPage> {
   const query = new URLSearchParams(params);
   query.set('limit', String(batch));
   query.set('offset', String(offset));
-  if (offset || !includeTotal) query.set('count', '0');
+  if (offset) query.set('count', '0');
   const page = await apiGet<MediaPage>(`/api/items?${query}`, signal);
   const result: GridPage = { ...page, items: page.items || [], offset, batch };
   if (!offset && !result.items.length && !trash) {
@@ -73,12 +74,6 @@ function firstCatalogBatch(maximum: number): number {
     window.innerHeight - grid.getBoundingClientRect().top, height, parseFloat(style.rowGap) || 0, maximum);
 }
 
-export function catalogSummary(params: string, signal: AbortSignal): Promise<MediaPage> {
-  const query = new URLSearchParams(params);
-  query.set('summary_only', '1');
-  return apiGet<MediaPage>(`/api/items?${query}`, signal);
-}
-
 /** 资料页作品区的下一页：壳给的第一页可能带 `has_more`，也可能只有总数。 */
 export const nextEntityOffset = (last: GridPage, pages: GridPage[]): number | undefined => {
   const loaded = pages.reduce((sum, page) => sum + page.items.length, 0);
@@ -94,7 +89,7 @@ export function catalogQuery(props: CatalogGridProps) {
   return {
     queryKey: catalogKey(params, props.revision || 0),
     queryFn: ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) =>
-      fetchCatalogPage(params, pageParam, progressive && !pageParam ? firstCatalogBatch(batch) : batch, trash, signal, !progressive),
+      fetchCatalogPage(params, pageParam, progressive && !pageParam ? firstCatalogBatch(batch) : batch, trash, signal),
     initialPageParam: 0,
     getNextPageParam: nextOffset(batch),
   };

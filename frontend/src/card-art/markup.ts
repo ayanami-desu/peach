@@ -50,22 +50,20 @@ export const coverUrl = (item: { code?: string | null; cover_key?: string; cover
     item.cover_version);
 };
 
-/** 卡片网格起步取 800 那一档的屏幕像素密度上限。 */
-export const CARD_COVER_SMALL_DPR = 1.5;
-
-/* 卡片网格的封面先取哪一档。卡片在 1440 宽桌面上铺开 168–360 CSS px，一倍屏要不到 400
-   设备像素，800 那一档就够；更密的屏起步取 1600 那一档，大位封面不必先糊后清、多下一张。
-   起步档不够清楚的，由 `upgradeCover` 量过显示尺寸再往上换。 */
+/* 卡片网格一律先取 800 那一档。卡片在 1440 宽桌面上铺开 168–360 CSS px，二倍屏最多
+   720 设备像素，800 盖得住；1600 只在 `upgradeCover` 量过显示尺寸、确实不够时才换，
+   避免一屏小卡直接下载四五倍像素。 */
 export const cardCoverUrl = (item: { code?: string | null; cover_key?: string; cover_version?: string }): string =>
-  coverUrl(item, (window.devicePixelRatio || 1) <= CARD_COVER_SMALL_DPR ? 2 : 1);
+  coverUrl(item, 2);
 
 /** 库外作品的官方封面：`/cover-image` 按番号在服务端查地址，经 Peach 的出网设置取图，浏览器不直连图床。 */
 export const remoteCoverUrl = (item: { code?: string | null }): string =>
   `/cover-image?code=${encodeURIComponent(item.code || '')}`;
 
-/** 厂牌标识地址，`variant` 跟着位置走：大位要字标、小位要方形图标。 */
-export const logoUrl = (studio: string, variant: string, version?: string | null): string =>
-  withVersion(`/logo?studio=${encodeURIComponent(studio)}&variant=${variant}`, version);
+/** 厂牌标识地址，`variant` 跟着位置走：大位要字标、小位要方形图标。
+ *  `thumb` 取长边 128 的派生件；图标位显示 56–128 px，原始 400 px 是多余下载。 */
+export const logoUrl = (studio: string, variant: string, version?: string | null, thumb = false): string =>
+  withVersion(`/logo?studio=${encodeURIComponent(studio)}&variant=${variant}${thumb ? '&thumb=1' : ''}`, version);
 
 const focusOf = (value: unknown): FaceFocus | null =>
   value && typeof value === 'object' ? value as FaceFocus : null;
@@ -75,6 +73,9 @@ const focusOf = (value: unknown): FaceFocus | null =>
 export function performerLabel(item: { is_jav?: boolean } | null | undefined): string {
   return item && item.is_jav ? '女优' : '艺人';
 }
+
+/* 实体图的派生档：`true` 取长边 640，`2` 取 320，`false` 取原件。 */
+export type EntityThumb = boolean | 1 | 2;
 
 /* 实体那张脸：规范实体图优先，取不到退到代表作头像，两样都取不到就一个 `<img>`
    都不出。四个位置（顶栏圆头像、卡片署名、共演者、资料页大位）共用这一份。
@@ -91,9 +92,9 @@ export function performerLabel(item: { is_jav?: boolean } | null | undefined): s
    兜底链最后一环必须真的把 `<img>` 拿掉（`data-drop="self"`）：留着取不到图的
    `<img>`，`:has(img)` 仍然匹配，首字母垫底回不来，浏览器还会把 alt 画出来。
 
-   `thumb` 要的是实体图缩到长边 640 的那一份，默认就取它：顶栏、卡片署名、同台艺人、
-   身份格这些圆框都在 70 CSS px 以内，640 在三倍屏上也有富余。只有资料页大位传 `false`
-   取原件——那里就是要看清，人脸放大也要原件的像素。
+   `thumb` 默认取长边 640 那一份：顶栏、同台艺人、身份格这些圆框都在 70 CSS px 以内，
+   640 在三倍屏上也有富余。卡片署名和身份格传 `2` 取 320；资料页大位传 `false` 取原件
+   ——那里就是要看清，人脸放大也要原件的像素。
 
    `version` 是服务端随 `has_image` 下发的 `image_version`，`logoVersion` 是 `logo_version`。
 
@@ -108,18 +109,20 @@ export function entityFaceImg({
   kind?: string; id?: number | null | undefined; hasImage?: boolean | undefined; version?: string | null | undefined;
   rep?: number | null | undefined; mark?: number | null | undefined; logo?: string;
   logoVersion?: string | null | undefined; logoVariant?: string; alt?: string;
-  lazy?: boolean; style?: string; dropStyle?: boolean; focus?: unknown; thumb?: boolean;
+  lazy?: boolean; style?: string; dropStyle?: boolean; focus?: unknown; thumb?: EntityThumb;
   standIn?: boolean | undefined;
 } = {}): string {
   const useEntity = !!(id && hasImage);
-  const entitySrc = useEntity ? withVersion(`/entity-image?kind=${kind}&id=${id}${thumb ? '&thumb=1' : ''}`, version) : '';
+  const tier = thumb === true ? 1 : thumb === false ? 0 : thumb;
+  const entitySrc = useEntity ? withVersion(`/entity-image?kind=${kind}&id=${id}${tier ? `&thumb=${tier}` : ''}`, version) : '';
   // `rep` 由服务端的 has_avatar 决定有没有值，没有就不出这一环。
   const avatarSrc = rep ? `/avatar?id=${rep}` : '';
   /* 公司的门面是它自己的标识，不是作品截图——那是某部片的画面，说的是别人的事。
      厂牌走 `/logo`：`logo` 只在调用方问过 `has_logo` 时才有值。变体跟着位置走，
-     大位要字标、小位要方形图标。事务所没有标识文件，走官网那条链接的站点圆标 `mark`。 */
+     大位要字标、小位要方形图标；图标位同时取长边 128 的派生件。事务所没有标识文件，
+     走官网那条链接的站点圆标 `mark`。 */
   const useLogo = !!logo;
-  const src = useLogo ? logoUrl(logo, logoVariant, logoVersion)
+  const src = useLogo ? logoUrl(logo, logoVariant, logoVersion, logoVariant === 'icon')
     : (entitySrc || avatarSrc || (mark ? `/link-mark?id=${mark}` : ''));
   if (!src) return '';
   const fallbacks = useLogo ? [entitySrc, avatarSrc].filter(Boolean)
@@ -157,7 +160,7 @@ export function entityFaceImg({
    一个个看才发现得了。公司那一格要的是「明确不取景」，传 `null` 覆盖掉。 */
 export function avatarInner(name: string, ref: FaceRef | null | undefined, repId: number | null | undefined,
   kind = 'performer', markId: number | null = null, logoName = '', logoVariant = 'icon',
-  focus: unknown = undefined, thumb = true): string {
+  focus: unknown = undefined, thumb: EntityThumb = true): string {
   // 这一层大多是小圆框和窄格子，厂牌标识在那里要方形图标而不是横着的字标；索引页的
   // 厂牌大格是同一个模板里的例外，由调用方点名要 `large`。
   const hint = focus === undefined ? (ref && ref.avatar_focus) || null : focus;
@@ -176,7 +179,8 @@ export function avatarInner(name: string, ref: FaceRef | null | undefined, repId
 /** 卡片署名、播放列表卡的叠放头像、沉浸作者那一格：`avatarInner` 读取引用或顶栏代表作表。`kind` 为空是
  *  「没有署名人」，不退代表作，按女优那一档出首字母。 */
 export function entityAvatar(name: string, ref: FaceRef | null | undefined, kind: string): string {
-  return avatarInner(name, ref, kind ? representativeOf(name) : null, kind || 'performer');
+  return avatarInner(name, ref, kind ? representativeOf(name) : null, kind || 'performer',
+    null, '', 'icon', undefined, 2);
 }
 
 /* 人脸取景：资料页圆框按检出的人脸中心取景（/api/entity 的 avatar_focus）。

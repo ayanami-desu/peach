@@ -20,7 +20,9 @@ _PAGE_HEAD = ('<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8">'
               '<meta name="viewport" content="width=device-width,initial-scale=1">'
               '<meta name="color-scheme" content="light dark">'
               '<meta name="robots" content="noindex, nofollow">'
-              '<link rel="icon" href="/favicon.ico" type="image/x-icon">')
+              '<link rel="icon" href="/favicon.ico" type="image/x-icon">'
+              '<link rel="preload" href="/vendor/inter/5.3.0/files/inter-latin-wght-normal.woff2"'
+              ' as="font" type="font/woff2" crossorigin>')
 
 #: 手动选的深浅压过系统偏好，必须在第一次绘制前定下来，所以排在任何样式之前：`dark` 类给
 #: BoardUI 的色板，`data-theme` 记手动那一档，判据同 `web/index.html` 的预读脚本。

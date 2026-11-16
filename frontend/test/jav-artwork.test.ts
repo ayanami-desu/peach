@@ -17,6 +17,10 @@ describe('JAV 默认封面', () => {
     expect(javImageKind({ ...jav, has_thumb: false }, 'thumbnail')).toBe('cover');
     expect(javImageKind({ ...jav, has_cover: false, has_thumb: false }, 'cover')).toBe('');
   });
+  it('只有本地正封、没有接触印相时仍用本地正封，不把 69 张有图的卡片留成无图', () => {
+    expect(javImageKind({ ...jav, has_cover: false, has_thumb: false, has_local_poster: true }, 'cover'))
+      .toBe('thumbnail');
+  });
   it('原地更新多个表面的图片并可切回，保留播放器和节点', () => {
     const root = document.createElement('div');
     root.innerHTML = '<video></video>' + ['big', 'small'].map(layout =>

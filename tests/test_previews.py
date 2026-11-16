@@ -429,6 +429,23 @@ class EntityThumbnailTests(unittest.TestCase):
         with Image.open(derived) as image:
             self.assertEqual(image.size, (200, 260))
 
+    def test_the_small_tier_uses_its_own_320_edge(self):
+        service = previews.DerivedImageService(self.service.root.parent / "small-thumbs",
+                                               edge=previews.ENTITY_SMALL_THUMB_EDGE)
+        derived = service.thumbnail(self.KEY, self.source)
+        with Image.open(derived) as image:
+            self.assertEqual(max(image.size), previews.ENTITY_SMALL_THUMB_EDGE)
+
+    def test_keep_alpha_preserves_translucent_logo_pixels(self):
+        source = self.service.root.parent / "studio-icon.png"
+        Image.new("RGBA", (400, 400), (200, 120, 90, 128)).save(source, "PNG")
+        service = previews.DerivedImageService(self.service.root.parent / "logo-thumbs",
+                                               edge=previews.LOGO_THUMB_EDGE, keep_alpha=True)
+        derived = service.thumbnail("logo-studio-icon", source)
+        with Image.open(derived) as image:
+            self.assertEqual(image.mode, "RGBA")
+            self.assertLessEqual(max(image.size), previews.LOGO_THUMB_EDGE)
+
     def test_a_second_call_reuses_the_cached_file(self):
         first = self.service.thumbnail(self.KEY, self.source)
         stamp = first.stat().st_mtime_ns

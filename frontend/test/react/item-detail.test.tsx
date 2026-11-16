@@ -537,7 +537,7 @@ describe('侧栏怎么读', () => {
     const bare = [...host.querySelectorAll('[data-id-cell]')].find((cell) => cell.textContent?.includes('桜井まい'));
     expect(bare?.tagName).toBe('SPAN');
     expect(bare?.hasAttribute('data-entity-kind')).toBe(false);
-    expect(host.querySelector('[data-id-cell="studio"] img')?.getAttribute('src')).toBe('/logo?studio=Peach%20Studio&variant=icon');
+    expect(host.querySelector('[data-id-cell="studio"] img')?.getAttribute('src')).toBe('/logo?studio=Peach%20Studio&variant=icon&thumb=1');
     const series = host.querySelector('[data-series-link]');
     expect(glyph(series)).toBe('#i-tags');
     await click(series);
@@ -554,7 +554,7 @@ describe('侧栏怎么读', () => {
     } as Partial<DetailItem>));
     expect(host.querySelector('[data-id-group="performer"] [data-id-label]')?.textContent).toBe('艺人');
     const framed = host.querySelector<HTMLImageElement>('[data-entity-name="甲"] img');
-    expect([framed?.getAttribute('src'), framed?.style.objectPosition]).toEqual(['/entity-image?kind=performer&id=3&thumb=1&v=9', '30% 50%']);
+    expect([framed?.getAttribute('src'), framed?.style.objectPosition]).toEqual(['/entity-image?kind=performer&id=3&thumb=2&v=9', '30% 50%']);
     expect(framed?.parentElement).toBe(host.querySelector('[data-entity-name="甲"] [data-id-face]'));
     expect(host.querySelector('[data-entity-name="乙"] img')).toBeNull();
     expect(host.querySelector('[data-entity-name="乙"]')?.textContent).toContain('乙');

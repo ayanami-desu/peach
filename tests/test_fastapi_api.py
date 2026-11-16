@@ -563,6 +563,21 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
         missing = await self.client.get("/logo", params={"studio": "Nobody", "t": "secret"})
         self.assertEqual(missing.status_code, 404)
 
+    async def test_the_logo_route_serves_the_small_icon_tier(self) -> None:
+        (self.logo_root / "Studio_A.img").write_bytes(PNG_BYTES)
+        (self.logo_root / "Studio_A.img.ct").write_text("image/png", encoding="utf-8")
+        answer = await self.client.get("/logo", params={"studio": "Studio A", "thumb": 1, "t": "secret"})
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertIn("image/webp", answer.headers["content-type"])
+        self.assertEqual(answer.headers["cache-control"], "public, no-cache")
+
+    async def test_the_entity_image_route_serves_the_small_tier(self) -> None:
+        (self.avatar_root / "performer-7.img").write_bytes(PNG_BYTES)
+        answer = await self.client.get("/entity-image",
+                                       params={"kind": "performer", "id": 7, "thumb": 2, "t": "secret"})
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertIn("image/webp", answer.headers["content-type"])
+
     async def test_the_entity_image_route_serves_cached_files(self) -> None:
         (self.avatar_root / "performer-7.img").write_bytes(PNG_BYTES)
         answer = await self.client.get("/entity-image",

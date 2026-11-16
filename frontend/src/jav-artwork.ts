@@ -16,10 +16,12 @@ export function normalizeJavImage(value: unknown): JavImagePreference {
   return value === 'thumbnail' ? 'thumbnail' : 'cover';
 }
 
-export function javImageKind(item: { is_jav?: boolean; code?: string; has_cover?: boolean; has_thumb?: boolean }, preference: unknown): 'cover' | 'thumbnail' | '' {
+export function javImageKind(item: { is_jav?: boolean; code?: string; has_cover?: boolean; has_thumb?: boolean;
+  has_local_poster?: boolean }, preference: unknown): 'cover' | 'thumbnail' | '' {
+  const fallback = Boolean(item.has_thumb || item.has_local_poster);
   const cover = Boolean(item.is_jav && item.code && item.has_cover);
-  if (cover && (normalizeJavImage(preference) === 'cover' || !item.has_thumb)) return 'cover';
-  return item.has_thumb ? 'thumbnail' : '';
+  if (cover && (normalizeJavImage(preference) === 'cover' || !fallback)) return 'cover';
+  return fallback ? 'thumbnail' : '';
 }
 
 /** 正封宽高比与 `jav_poster_crop.PANEL_ASPECT` 一致。封面框选按它锁比例；没有边车的双页封套按它从右缘量回正封

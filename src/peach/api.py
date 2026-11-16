@@ -47,6 +47,9 @@ from .previews import (
     COVER_SMALL_THUMB_QUALITY,
     COVER_THUMB_EDGE,
     COVER_THUMB_QUALITY,
+    ENTITY_SMALL_THUMB_EDGE,
+    LOGO_THUMB_EDGE,
+    LOGO_THUMB_QUALITY,
     DerivedImageService,
     PhotoThumbnailService,
     PreviewService,
@@ -280,11 +283,16 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     photo_service = PhotoThumbnailService(settings.photo_root)
     sample_cache = SampleCache(sample_cache_root(settings.photo_root))
     entity_thumb_service = DerivedImageService(entity_thumb_root(settings.avatar_root))
+    entity_small_thumb_service = DerivedImageService(entity_thumb_root(settings.avatar_root),
+                                                     edge=ENTITY_SMALL_THUMB_EDGE)
     cover_thumb_service = DerivedImageService(cover_thumb_root(settings.cover_root),
                                               edge=COVER_THUMB_EDGE, quality=COVER_THUMB_QUALITY)
     cover_small_thumb_service = DerivedImageService(cover_thumb_root(settings.cover_root),
                                                     edge=COVER_SMALL_THUMB_EDGE,
                                                     quality=COVER_SMALL_THUMB_QUALITY)
+    logo_thumb_service = DerivedImageService(cover_thumb_root(settings.cover_root),
+                                             edge=LOGO_THUMB_EDGE, quality=LOGO_THUMB_QUALITY,
+                                             keep_alpha=True)
     from .web_job_recovery import RecoveryService
     recovery_service = RecoveryService(contract, available=True)
     contract.task_runs.enabled = contract.task_runs.available()
@@ -337,8 +345,10 @@ def create_app(settings: PeachSettings | None = None) -> FastAPI:
     app.state.photo_service = photo_service
     app.state.sample_cache = sample_cache
     app.state.entity_thumb_service = entity_thumb_service
+    app.state.entity_small_thumb_service = entity_small_thumb_service
     app.state.cover_thumb_service = cover_thumb_service
     app.state.cover_small_thumb_service = cover_small_thumb_service
+    app.state.logo_thumb_service = logo_thumb_service
     app.state.http_transport = http_transport
     from .background_issues import IssueLog
     app.state.background_issues = IssueLog()

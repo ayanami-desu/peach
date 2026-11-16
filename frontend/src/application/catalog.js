@@ -259,7 +259,7 @@ export function tierPerformer(x){
 
 export function tierStudio(x){
   return {name:x.k,fallback:leadingGraphemes(x.k,2),
-    logo:x.has_logo?logoUrl(x.k,'icon',x.logo_version):''};
+    logo:x.has_logo?logoUrl(x.k,'icon',x.logo_version,true):''};
 }
 
 export function renderBarsLoading(filterState,requestSeq){
@@ -396,9 +396,26 @@ export async function loadCatalog(){
   return painting;
 }
 
-export function settleCatalog(revision) { catalogState.controller.settle(revision) }
+let deferredBarsLoaded = false;
+
+/** 离开目录或重新进入时复位：下一次首屏落定仍要把横条取回来。 */
+export function resetDeferredBars(){ deferredBarsLoaded=false }
+
+export function settleCatalog(revision) {
+  catalogState.controller.settle(revision);
+  /* 目录首屏一落定再取顶部两排与筛选栏的聚合：它们和作品列表查的是同一批表，
+     提前发只会让卡片多等一次查询。筛选变化后的计数由 `refreshFacetCounts` 单独更新，
+     这里只在本次页面加载还没有取过横条时补一次，免得把已经画好的标签条按新口径重排。
+     失败只记日志并把标记放回，横条自己的骨架留着可重试。 */
+  const path=decodeURIComponent(location.pathname);
+  if((isCatalogPath(path)||path==='/trash')&&!deferredBarsLoaded){
+    deferredBarsLoaded=true;
+    buildBars().catch(error=>{deferredBarsLoaded=false;console.error('首页横条装载失败',error)});
+  }
+}
 
 export function clearCatalogGrid() {
+    resetDeferredBars();
     const grid=$('#grid');releaseHoverPreviews(grid);releaseManagedRoute(grid);
     catalogState.controller.clear();grid.innerHTML='';
   }

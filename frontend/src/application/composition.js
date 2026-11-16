@@ -4,7 +4,7 @@ import { entityShapesState, installEntityShapeBootstrap, loadEntityShapes } from
 import { buildManageBar, closeStats, enterManagementSurface, loadSyncedSettings, mountManageHeader, mountSidebar, openManage, openSettings, paintCatalogPageTitle, paintListTitle, scheduleStickySurfaces, showHomeSurfaces, showManagementBody, syncHeaderActions } from './layout.js';
 import { disposeStage, mediaState, openItem, openJavMovie, openPlaylist, openQueue, openTok } from './media.js';
 import { currentBarsContext, entityState, openEntity, revealForIsland, routeEntityPage, showEntityMissing } from './entity.js';
-import { applyFilterStateInPlace, buildBars, catalogState, clearCatalogGrid, gridTaken, loadCatalog, paintCatalogGrid, refreshFacetCounts, syncCatalogFilterScreen, toggleTag } from './catalog.js';
+import { applyFilterStateInPlace, buildBars, catalogState, clearCatalogGrid, gridTaken, loadCatalog, paintCatalogGrid, refreshFacetCounts, resetDeferredBars, syncCatalogFilterScreen, toggleTag } from './catalog.js';
 import { openTasteSignal, routeReview } from './playlists.js';
 import { navigationState, requestOverlay, syncNavigation, syncRouteChrome } from './navigation.js';
 import { receiptsState } from './receipts.js';
@@ -14,7 +14,7 @@ import { censorOn, loadSourceStatus, preferencesState, wireAllDrag } from './pre
 import { mountBatchDock, setSelectMode } from './selection.js';
 import { releaseHoverPreviews } from './../card-art/hover';
 import { bootEntry, peachHistory } from './../history/index';
-import { $ } from '../core';
+import { $, isCatalogPath } from '../core';
 import { dropBars } from './../catalog-bars';
 import { isOverlayPath, overlayTarget } from './../history/overlay';
 import { navigationLinkPath } from './../history/links';
@@ -119,7 +119,14 @@ compositionState.shellActions = {
 
   // 索引页与资料页的元素用。
   /* 整页画上之后：索引页重读侧栏按下态、重排吸顶；资料页重拉侧栏与顶部横条，按取到的名字重写标题（按 ID 直达时导航那一刻还不知道名字）。 */
-  surfaceShown:kind=>{if(kind==='index'){syncNavigation();scheduleStickySurfaces()}else{buildBars();loadingState.syncPageTitle(location.href)}},
+  surfaceShown:kind=>{
+    if(kind==='index'){syncNavigation();scheduleStickySurfaces()}
+    else{
+      /* 目录的横条等首屏卡片落定再取（`settleCatalog`），不在这里和作品列表抢同一批查询。 */
+      if(kind!=='catalog')buildBars();
+      loadingState.syncPageTitle(location.href);
+    }
+  },
   entity:{
     missing:kind=>{compositionState.shellActions.surfaceChanged('entity',location.pathname);showEntityMissing(kind)},
     /* 名单启动时就在取；深链直接落在资料页时它可能还在路上，稍等一下再画骨架，画出来就是最终的形状。等不到
@@ -148,10 +155,10 @@ compositionState.shellActions = {
        回收站清掉搜索框，别的页把地址上的搜索词摆回框里。 */
     open:(path,{entering=false,retitle=false}={})=>{
       if(retitle){syncRouteChrome();syncHeaderActions();paintListTitle()}
-      if(entering)dropBars();
+      if(entering){dropBars();resetDeferredBars()}
       if(path==='/trash'){catalogState.clearSearchField()}
       else{$('#q').value=state.q;catalogState.rememberSearchValue()}
-      syncNavigation();buildBars();return preferencesState.handOff(loadCatalog());
+      syncNavigation();return preferencesState.handOff(loadCatalog());
     },
     /* 壳认领写了地址、筛选已在 `state` 里：只重取。 */
     load:()=>preferencesState.handOff(loadCatalog()),
@@ -187,8 +194,13 @@ buildManageBar();
 Promise.all([loadSourceStatus(),loadSyncedSettings()])
   .then(()=>{
     if(!effects.isActive)return;
-    /* 顶部两排与筛选栏的两个聚合自带骨架、取回后自己落位，页面打开不等它们：作品列表与它们同时去取。 */
-    if(loadingState.discoveryBarsVisible())buildBars().catch(error=>console.error('首页横条装载失败',error));
+    /* 顶部两排与筛选栏自带骨架、取回后自己落位，但目录页要等首屏卡片先落定：
+       它们的两个聚合和作品列表查的是同一批表，先发只会让卡片多等一次查询。
+       资料页与索引页没有这条争用，仍与页面同时去取。 */
+    const path=decodeURIComponent(location.pathname);
+    if(loadingState.discoveryBarsVisible()&&!isCatalogPath(path)&&path!=='/trash'){
+      buildBars().catch(error=>console.error('首页横条装载失败',error));
+    }
     syncNavigation();wireAllDrag();
     // 路由树里按匹配打开的页面等这一下才开始打开：壳的状态到这时才齐。
     compositionState.routing=true;writeShell({pageOpens:1});syncRouteChrome();

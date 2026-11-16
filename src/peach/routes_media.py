@@ -445,12 +445,20 @@ def jav_image(request: Request, code: str, image: str = "cover", args: dict[str,
 
 
 @router.api_route("/logo", methods=["GET", "HEAD"])
-def logo(request: Request, studio: str = "", variant: str = "",
+def logo(request: Request, studio: str = "", variant: str = "", thumb: int = 0,
          args: dict[str, str] = Depends(require_auth)):
+    """厂牌标识。`thumb=1` 要长边 128 的方形图标派生件；不带就是原件。
+
+    派生件只给卡片和身份格的图标位，大位字标仍取原件；SVG 或缩不出来时退回原件。
+    """
     try:
         path, content_type = request.app.state.preview_service.logo(studio, variant)
     except PreviewUnavailable:
         return JSONResponse({"error": "unavailable"}, status_code=404)
+    if thumb:
+        derived = request.app.state.logo_thumb_service.thumbnail(f"logo-{path.stem}", path)
+        if derived is not None:
+            path, content_type = derived, ENTITY_THUMB_TYPE
     response = FileResponse(path, media_type=content_type)
     # Logo 可以缓存，但文件会在人工批准或重新归一后原地替换。固定 URL 若缓存
     # 一整天，浏览器会继续显示旧图；no-cache 会复用本地副本并用 ETag 重验。
@@ -565,9 +573,10 @@ def site_mark(request: Request, source: str = "",
 @router.api_route("/entity-image", methods=["GET", "HEAD"])
 def entity_image(request: Request, kind: str, id: int, thumb: int = 0,
                  args: dict[str, str] = Depends(require_auth)):
-    """实体图。`thumb=1` 要的是索引页那一档派生件，不带就是资料页用的原件。
+    """实体图。`thumb=1` 要索引页那一档、长边 640；`thumb=2` 要卡片署名与身份格
+    那一档、长边 320；不带就是资料页用的原件。
 
-    开关是布尔而不是像素数：尺寸由服务端一处定死，页面递多少像素进来就等于让每个
+    开关是档次而不是像素数：尺寸由服务端一处定死，页面递多少像素进来就等于让每个
     调用点各存一份尺寸，改一次得追七处，而缓存目录里会长出一堆只差几十像素的派生件。
     """
     state = request.app.state
@@ -583,7 +592,8 @@ def entity_image(request: Request, kind: str, id: int, thumb: int = 0,
             return RedirectResponse(f"{moved.path}?{moved.query}", status_code=307)
         return JSONResponse({"error": "unavailable"}, status_code=404)
     if thumb:
-        derived = state.entity_thumb_service.thumbnail(entity_image_key(kind, id), path)
+        service = state.entity_small_thumb_service if thumb == 2 else state.entity_thumb_service
+        derived = service.thumbnail(entity_image_key(kind, id), path)
         if derived is not None:
             path, content_type = derived, ENTITY_THUMB_TYPE
     return _image_response(request, path, media_type=content_type)

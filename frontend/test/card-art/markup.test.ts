@@ -1,5 +1,5 @@
 /* 卡片、头像与封面那几段 HTML：取哪张图、回落到哪张、取景数据贴在哪一环。 */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   avatarInner, cardArtwork, cardIdentity, coverImage, coverUrl, detailPosterUrl, entityAvatar, entityFaceImg,
@@ -88,7 +88,7 @@ describe('entityFaceImg：实体图优先，取不到退代表作头像', () => 
 
   it('厂牌走自己的标识，实体图和代表作排在它后面，都不取景', () => {
     const img = parse(entityFaceImg({ kind: 'studio', id: 3, hasImage: true, rep: 41, logo: 'S1 NO.1', logoVariant: 'icon', focus: FOCUS }))!;
-    expect(img.getAttribute('src')).toBe('/logo?studio=S1%20NO.1&variant=icon');
+    expect(img.getAttribute('src')).toBe('/logo?studio=S1%20NO.1&variant=icon&thumb=1');
     expect(img.dataset.fallbacks).toBe('/entity-image?kind=studio&id=3&thumb=1|/avatar?id=41');
     expect(img.hasAttribute('style')).toBe(false);
     expect(img.dataset.facebox).toBeUndefined();
@@ -99,8 +99,9 @@ describe('entityFaceImg：实体图优先，取不到退代表作头像', () => 
     expect(parse(entityFaceImg({ kind: 'studio', logo: 'S1', logoVersion: '18f3a' }))!.getAttribute('src'))
       .toBe('/logo?studio=S1&variant=logo&v=18f3a');
     expect(parse(avatarInner('S1', { logo_version: '18f3b' }, null, 'studio', null, 'S1'))!.getAttribute('src'))
-      .toBe('/logo?studio=S1&variant=icon&v=18f3b');
+      .toBe('/logo?studio=S1&variant=icon&thumb=1&v=18f3b');
     expect(logoUrl('S1', 'icon')).toBe('/logo?studio=S1&variant=icon');
+    expect(logoUrl('S1', 'icon', null, true)).toBe('/logo?studio=S1&variant=icon&thumb=1');
   });
 
   it('不指定变体就是资料页大位要的字标', () => {
@@ -160,7 +161,7 @@ describe('avatarInner：首字母垫底，再叠真实图', () => {
     expect(avatar.getAttribute('src')).toBe('/avatar?id=18');
     expect(avatar.getAttribute('title')).toBe('代表作画面，非本人');
     const installed = parse(entityAvatar('卖家账号', { ...ref, has_image: true }, 'creator'))!;
-    expect(installed.getAttribute('src')).toBe('/entity-image?kind=creator&id=80&thumb=1');
+    expect(installed.getAttribute('src')).toBe('/entity-image?kind=creator&id=80&thumb=2');
     expect(installed.hasAttribute('title')).toBe(false);
     expect(parse(entityAvatar('卖家账号', { ...ref, has_avatar: false }, 'creator'))).toBeNull();
   });
@@ -258,17 +259,11 @@ describe('coverImage：官方封面', () => {
       .toBe('/cover?code=SSIS-001&thumb=2&v=18f3a');
   });
 
-  it('一倍屏的卡片起步取 800 那一档，更密的屏起步取 1600 那一档；换图属性跟着同一档', () => {
-    const shown = (dpr: number) => {
-      vi.stubGlobal('devicePixelRatio', dpr);
-      try {
-        return [parse(coverImage({ code: 'SSIS-001' }, 'big'))!.getAttribute('src'),
-          parse(javArtwork(JAV, 'big', false, 'cover').html)!.dataset.javCover];
-      } finally { vi.unstubAllGlobals(); }
-    };
-    expect(shown(1)).toEqual(['/cover?code=SSIS-001&thumb=2', '/cover?code=SSIS-001&thumb=2']);
-    expect(shown(1.5)).toEqual(['/cover?code=SSIS-001&thumb=2', '/cover?code=SSIS-001&thumb=2']);
-    expect(shown(2)).toEqual(['/cover?code=SSIS-001&thumb=1', '/cover?code=SSIS-001&thumb=1']);
+  it('卡片封面一律起步取 800 那一档；换图属性跟着同一档', () => {
+    expect(parse(coverImage({ code: 'SSIS-001' }, 'big'))!.getAttribute('src'))
+      .toBe('/cover?code=SSIS-001&thumb=2');
+    expect(parse(javArtwork(JAV, 'big', false, 'cover').html)!.dataset.javCover)
+      .toBe('/cover?code=SSIS-001&thumb=2');
     expect(coverUrl({ code: 'SSIS-001' }, true)).toBe('/cover?code=SSIS-001&thumb=1');
     expect(coverUrl({ code: 'SSIS-001' }, 2)).toBe('/cover?code=SSIS-001&thumb=2');
   });
@@ -313,6 +308,12 @@ describe('javArtwork：番号作品两种来源都挂在元素上', () => {
 
   it('两种都没有就是空的', () => {
     expect(javArtwork({ ...JAV, has_cover: false, has_thumb: false }, 'big', false, 'cover')).toEqual({ kind: '', html: '' });
+  });
+
+  it('只有本地正封时仍出预览格，不让有图的作品显示无图', () => {
+    const art = javArtwork({ ...JAV, has_cover: false, has_thumb: false, has_local_poster: true }, 'big', false, 'cover');
+    expect(art.kind).toBe('thumb');
+    expect(parse(art.html)!.getAttribute('src')).toBe('/poster?id=5&c=4');
   });
 });
 

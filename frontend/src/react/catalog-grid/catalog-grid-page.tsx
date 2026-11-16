@@ -11,7 +11,7 @@ import {
   Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode,
   type RefObject,
 } from 'react';
-import { useInfiniteQuery, useQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
+import { useInfiniteQuery, type InfiniteData, type QueryKey } from '@tanstack/react-query';
 import { isOverlayPath, peachHistory } from '@peach/history';
 import { requestErrorMessage } from '@peach/legacy/core';
 import { LOAD_MORE_STATUS, loadingDotsHtml } from '@peach/legacy/ui';
@@ -22,7 +22,7 @@ import { LOAD_MORE_MARGIN, RetryNote } from '../components/grid-reveal';
 import { SkeletonContent } from '../components/skeleton-content';
 import { MediaCard, type MediaCardVariant } from '../components/media-card';
 import {
-  SHORTS_BATCH, arrangeCards, catalogParams, catalogQuery, catalogSummary, collapseGroups, entityQuery, latestCatalogPages,
+  SHORTS_BATCH, arrangeCards, catalogParams, catalogQuery, collapseGroups, entityQuery, latestCatalogPages,
   replaceCatalogItem, shortsBoundaries, shortsParams, splitSections, type GridPage, type ShortsCut,
 } from './catalog-grid';
 import type { CatalogGridProps, MediaItem, MediaPage } from './types';
@@ -135,13 +135,6 @@ function GridBody(props: CatalogGridProps) {
     subscribed: !covered,
   });
   usePlaybackProgress();
-  const progressive = !entity && !trash && !props.wall;
-  const summaryParams = catalogParams(props.filters || {}, !!props.excludeVertical);
-  const summary = useQuery({
-    queryKey: ['catalog-summary', summaryParams, props.revision || 0],
-    queryFn: ({ signal }) => catalogSummary(summaryParams, signal),
-    enabled: progressive && !!result.data,
-  });
 
   /* 一次取数落定就告诉壳一次，成功、为空、失败都算：壳里 `await` 这次重读的调用方据此放行。 */
   const settledRevision = useRef<number | null>(null);
@@ -155,7 +148,7 @@ function GridBody(props: CatalogGridProps) {
     collapse: props.groupCollapse !== false,
   }), [result.data, props.groupCollapse]);
   const shown = cards.length;
-  const total = Number(result.data?.pages[0]?.total ?? summary.data?.total ?? shown);
+  const total = Number(result.data?.pages[0]?.total ?? shown);
   const finiteWall = entity || finiteWallFilters(props.filters);
   const wallAvailable = !trash && !props.selectMode && !!actions.wallPlayer && !!actions.wallDetails;
   const wallItems = cards.filter(wallHasCover);
@@ -175,12 +168,10 @@ function GridBody(props: CatalogGridProps) {
      提交阶段里它画不出来。微任务在浏览器绘制前跑完；这一代已卸下就不报。 */
   useLayoutEffect(() => {
     if (!result.data || result.isPlaceholderData) return;
-    if (progressive && !summary.data) return;
     let live = true;
     queueMicrotask(() => { if (live) props.onCount?.(total, shown) });
     return () => { live = false };
-  }, [result.data, result.isPlaceholderData, total, shown, progressive, summary.data]);
-  useEffect(() => { if (progressive && summary.isError) props.onCountFailed?.() }, [progressive, summary.isError]);
+  }, [result.data, result.isPlaceholderData, total, shown]);
   const failed = !result.isPending && !result.data;
   useLayoutEffect(() => {
     if (!failed) return;

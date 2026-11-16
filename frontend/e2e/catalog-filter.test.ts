@@ -29,7 +29,6 @@ const TAGS = Array.from({ length: 40 }, (_, at) => ({ k: `演示标签${String(a
 interface Counts {
   /** 目录分页带 offset；竖屏、搜索推荐与库存在性探测各走各的。窄屏首批可以只有一张。 */
   items: URL[];
-  summaries: URL[];
   facets: URL[];
   tops: URL[];
 }
@@ -51,7 +50,7 @@ async function until(done: () => boolean, message: string | (() => string), time
 async function openHome(browser: Browser, path = '/', viewport = DESKTOP): Promise<ItemVisit & { counts: Counts }> {
   const opened = await openItemPage(browser, '/', viewport, { ready: '#grid [data-media-card]' });
   const { page } = opened;
-  const counts: Counts = { items: [], summaries: [], facets: [], tops: [] };
+  const counts: Counts = { items: [], facets: [], tops: [] };
   await page.route((url) => url.pathname === '/api/tops', (route) => {
     const url = new URL(route.request().url());
     counts.tops.push(url);
@@ -67,8 +66,7 @@ async function openHome(browser: Browser, path = '/', viewport = DESKTOP): Promi
   /* 加一条标签筛选，列表就只剩一半：读数跟着换，才看得出这一趟真按新口径取了。 */
   await page.route((url) => url.pathname === '/api/items', (route) => {
     const url = new URL(route.request().url());
-    if (url.searchParams.get('summary_only') === '1') counts.summaries.push(url);
-    else if (!url.searchParams.has('orient') && url.searchParams.has('offset')) counts.items.push(url);
+    if (!url.searchParams.has('orient') && url.searchParams.has('offset')) counts.items.push(url);
     const ids = url.searchParams.get('tag') || url.searchParams.get('owner') === 'none' ? CATALOG.slice(0, 3) : CATALOG;
     return route.fulfill({ json: {
       items: ids.map((id) => ({ id, name: `sample_${id}.mp4`, title: `演示作品 ${id}`, is_jav: false, medium: 'video',
@@ -105,11 +103,14 @@ describe('首页筛选条', () => {
       await page.setViewportSize({ width: 1920, height: 900 });
       await page.reload();
       const frame = page.locator(`${FILTER} [data-catalog-frame]`);
-      await frame.locator('[data-catalog-tag]').first().waitFor();
+      /* 列表先落定，聚合随后才发：列表还卡着时筛选条只有骨架，没有标签成员。 */
+      await frame.locator('[data-catalog-placeholder="tag"]').first().waitFor();
+      assert.equal(await frame.locator('[data-catalog-tag]').count(), 0, '列表未返回就先画了标签');
       assert.equal(await frame.getAttribute('data-single-row'), null);
       assert.equal(await frame.evaluate(node => node.getBoundingClientRect().height), 96);
       release();
       await page.locator(READOUT, { hasText: '个符合' }).waitFor();
+      await frame.locator('[data-catalog-tag]').first().waitFor();
       await page.locator(`${FILTER} [data-catalog-frame][data-single-row]`).waitFor();
       assert.deepEqual(opened.problems, []);
     } finally { release(); await opened.close() }
@@ -202,7 +203,7 @@ describe('首页筛选条', () => {
         const first = document.querySelector(`${filter} [data-tier-performer]`) as HTMLElement & { __kept?: boolean };
         first.__kept = true;
       }, FILTER);
-      const [items, facets, summaries] = [counts.items.length, counts.facets.length, counts.summaries.length];
+      const [items, facets] = [counts.items.length, counts.facets.length];
       const order = () => page.locator(`${FILTER} [data-catalog-tag]`).evaluateAll((pills) =>
         pills.map((pill) => pill.getAttribute('data-catalog-tag')));
       const members = await order();
@@ -223,8 +224,6 @@ describe('首页筛选条', () => {
       assert.equal(new URL(page.url()).searchParams.get('tag'), key);
       assert.deepEqual(counts.items.slice(items).map((url) => url.searchParams.get('tag')), [key],
         '点一枚标签应当只按新口径取一次列表');
-      assert.deepEqual(counts.summaries.slice(summaries).map((url) => url.searchParams.get('tag')), [key],
-        '独立读数应当按新口径取一次统计');
       assert.deepEqual(counts.facets.slice(facets).map((url) => url.searchParams.get('tag')), [key],
         '侧栏计数应当按新口径取一次聚合');
       /* 口径变了两排头像会按新口径再取一次（`getBarsData`），但同一位的那一格原地换数，不拆了重建。 */
@@ -346,8 +345,7 @@ describe('首页筛选条', () => {
       await page.locator('#q').press('Enter');
       await withPageDiagnostics(page, '作品搜索没有按搜索词重取 JAV 馆藏', () => until(
         () => counts.items.slice(beforeSearch).some(url => url.searchParams.get('q') === '演示作品'),
-        () => JSON.stringify({ url: page.url(), list: counts.items.slice(beforeSearch).map(url => url.search),
-          summaries: counts.summaries.map(url => url.search) })));
+        () => JSON.stringify({ url: page.url(), list: counts.items.slice(beforeSearch).map(url => url.search) })));
       assert.equal(counts.items.at(-1)?.searchParams.get('jav'), '1');
       assert.equal(counts.items.at(-1)?.searchParams.get('q'), '演示作品');
       assert.equal(new URL(page.url()).searchParams.get('jav'), '1');
