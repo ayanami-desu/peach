@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react';
 import { RiFolderLine, RiPlayFill, RiSearchLine } from '@remixicon/react';
-import macbook from '../../../../../resources/setup/macbook.png';
-import iphone from '../../../../../resources/setup/iphone.png';
 import { PeachSilhouette } from './peach-silhouette';
 
 type SceneStep = number | 'restore' | 'done';
@@ -30,8 +28,16 @@ export function SetupScene({ step }: { step: SceneStep }) {
       {step === 0 ? <PeachSilhouette variant="welcome" />
         : step === 3 || step === 'done' ? <img data-setup-original-mark="" src="/peach-logo.png" alt="" width={148} height={148} />
         : step === 2 ? <div data-setup-devices="">
-        <div data-setup-macbook=""><img src={macbook} alt="" /><div data-setup-device-screen=""><LibraryPreview /></div></div>
-        <div data-setup-iphone=""><img src={iphone} alt="" /><div data-setup-device-screen=""><LibraryPreview /></div></div>
+        <div data-setup-macbook=""><img
+          src="/setup-assets/1/macbook-640.webp"
+          srcSet="/setup-assets/1/macbook-320.webp 320w, /setup-assets/1/macbook-640.webp 640w"
+          sizes="(max-width: 700px) 130px, 312px"
+          width={640} height={421} alt="" loading="lazy" decoding="async" /><div data-setup-device-screen=""><LibraryPreview /></div></div>
+        <div data-setup-iphone=""><img
+          src="/setup-assets/1/iphone-320.webp"
+          srcSet="/setup-assets/1/iphone-160.webp 160w, /setup-assets/1/iphone-320.webp 320w"
+          sizes="(max-width: 700px) 36px, 81px"
+          width={320} height={654} alt="" loading="lazy" decoding="async" /><div data-setup-device-screen=""><LibraryPreview /></div></div>
       </div> : <div data-setup-library-scene="">
         <LibraryPreview />
         <div data-setup-scene-badge=""><RiFolderLine /><span>你的媒体库</span></div>

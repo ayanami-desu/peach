@@ -63,6 +63,12 @@ _LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
 _SETUP_SYMBOLS = re.compile(r'<symbol id="i-(?:' + '|'.join(sorted({"folder-search", *LIBRARY_ICONS}))
                            + r')"[^>]*>.*?</symbol>')
 
+#: 首启场景的设备 WebP 派生件；名字白名单挡住 `..` 之类的路径拼接。
+_SETUP_ASSET_NAMES = frozenset({
+    "macbook-320.webp", "macbook-640.webp", "iphone-160.webp", "iphone-320.webp",
+})
+_SETUP_ASSET_VERSION = re.compile(r"\d+")
+
 #: 键 -> 页面上的题目与一句说明。顺序、默认值与校验仍然来自 `onboarding.questions()`，
 #: 这里只决定同一道题在浏览器里怎么称呼：命令行那份题面要把可选值写进去，页面用控件表达。
 _SETUP_COPY = {
@@ -578,11 +584,11 @@ def favicon():
 
 @router.api_route("/favicon.ico", methods=["GET", "HEAD"])
 def favicon_ico(request: Request):
-    """页面没有声明图标时浏览器按这个固定路径取，书签与历史记录也从这里拿。
+    """书签与历史记录在没有页面声明时按这个固定路径取图标。
 
-    发 `resources/peach.ico`：它和 `peach-logo.png` 同出一张原图，里面已经装好
-    16 到 256 七档尺寸，浏览器按需要挑一档，不必为一枚 16px 的角标下载
-    1024×1024 的 PNG。声明写在每个页面的 head 里，这条路径是声明之外的兜底。
+    页面 head 声明的是 64px PNG；这条路径是声明之外的兜底，仍发
+    `resources/peach.ico`（与 `peach-logo.png` 同出一张原图，含 16 到 256 七档），
+    浏览器按需要挑一档。
     """
     return asset_response(request, PROJECT_ROOT / "resources" / "peach.ico", "image/x-icon")
 
@@ -602,6 +608,23 @@ def peach_logo_small(request: Request):
     """
     name = request.url.path.rsplit("/", 1)[-1]
     return asset_response(request, PROJECT_ROOT / "resources" / name, "image/png")
+
+
+@router.api_route("/setup-assets/{version}/{name}", methods=["GET", "HEAD"])
+def setup_asset(request: Request, version: str, name: str):
+    """首次设置场景的设备 WebP 派生件。
+
+    素材二进制只进 `resources/`；路径带版本并长期缓存，换图时提升版本目录，
+    URL 跟着变，不会命中旧图。首启页在拿到会话之前就要画，所以不设鉴权。
+    """
+    if not _SETUP_ASSET_VERSION.fullmatch(version) or name not in _SETUP_ASSET_NAMES:
+        raise HTTPException(status_code=404)
+    path = PROJECT_ROOT / "resources" / "setup" / version / name
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    response = asset_response(request, path, "image/webp")
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 
 @router.api_route("/performers/", methods=["GET", "HEAD"])

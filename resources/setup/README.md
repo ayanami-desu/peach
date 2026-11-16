@@ -12,3 +12,5 @@ kind: reference
 | `iphone.png` | iPhone 18 Pro - Black - Portrait | 1350 × 2760 | 72、69、1206、2622 |
 
 屏幕矩形沿用宣传视频工程的 `screens.json`。页面通过 CSS 放入抽象媒体库示意，文件本身不含馆藏、账户或用户截图。欢迎页的单色标识由 `frontend/src/react/pages/setup/peach-silhouette.tsx` 绘制 SVG 外轮廓；确认页和设置完成态使用 `resources/peach-logo.png` 原版标识。
+
+页面不直接加载原图。`resources/setup/1/` 存放按显示宽度缩放的 WebP 派生件（macbook 320/640 宽、iphone 160/320 宽），保留透明通道，由 Pillow LANCZOS 从原图生成；原图只作为后续重新导出的来源。派生件经 `/setup-assets/1/` 以长期缓存交付（见 `routes_pages.setup_asset`）；更换素材时同步更新派生件，并提升版本目录名，避免旧图继续命中缓存。

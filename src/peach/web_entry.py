@@ -20,7 +20,7 @@ _PAGE_HEAD = ('<!doctype html>\n<html lang="zh-CN"><head><meta charset="utf-8">'
               '<meta name="viewport" content="width=device-width,initial-scale=1">'
               '<meta name="color-scheme" content="light dark">'
               '<meta name="robots" content="noindex, nofollow">'
-              '<link rel="icon" href="/favicon.ico" type="image/x-icon">'
+              '<link rel="icon" href="/peach-logo-64.png" type="image/png" sizes="64x64">'
               '<link rel="preload" href="/vendor/inter/5.3.0/files/inter-latin-wght-normal.woff2"'
               ' as="font" type="font/woff2" crossorigin>')
 

@@ -1139,6 +1139,8 @@ PUBLIC_ROUTES = {
     ("GET,HEAD", "/peach-logo.png"),
     ("GET,HEAD", "/peach-logo-64.png"),
     ("GET,HEAD", "/peach-logo-128.png"),
+    # 首启场景的设备图。首启页在拿到会话之前就要画，素材随仓库分发，不读账本。
+    ("GET,HEAD", "/setup-assets/{version}/{name}"),
     # 入口页的页面包（ADR-0094）。登录页在拿到会话之前就要画出来，首启、登录与错误三页都由它画。
     # 只放这两个文件：它们提交进 Git、随仓库分发，不读账本、不含配置与凭据，内容不随登录与否
     # 变化，也不 import 别的产物；其余 `/dist/*` 仍走要会话的 `/dist/{name}`。
