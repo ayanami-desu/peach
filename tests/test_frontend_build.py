@@ -1,19 +1,14 @@
 # -*- coding: utf-8 -*-
 """前端的门槛：固定主包与页面包、清单、契约与 vitest。
 
-ADR-0022 的取舍是「构建产物进 Git」：运行时的 Python 服务、PyInstaller 包和 macOS
-上的检出都没有 Node，`web/dist/peach-app.js` 必须是仓库里现成的文件。代价是产物会和
-源码脱节，所以这里分两类断言：
+前端构建产物（`web/dist/`）不进 Git，在容器镜像、打包与测试流程中由 `npm --prefix frontend run build`
+生成。这里分两类断言：
 
-- **不需要 Node 的**：产物在不在、页面加载路径、独立模块图、清单是否
-  精确钉版本、共享客户端是否唯一。这些在任何机器上都跑。
-- **需要 Node 的**：tsc、lint 与 vitest。npm 或 `frontend/node_modules` 不在时本机显式
-  跳过——本机可能根本没装 Node，让整个测试域红掉只会让人绕过入口，而不是去装 Node。
-  CI 的 Test 工作流由 `web-bundle` 统一执行三个工具；其他任务与本机经正式入口运行。
-  CI 实际执行工具的任务缺前置条件时判失败。
-
-「产物是否由当前源码构建出来」这一条不在这里：不装 Node 就无法重建，无从比较。
-那道门槛在 CI 的 `web-bundle` job 里，`npm run build` 之后 `git diff --exit-code web/dist`。
+- **产物与工具链就绪时执行**：`ensure_dist_built()` 在 `npm` 与 `frontend/node_modules` 就位时
+  重建 `web/dist/` 并校验固定入口、chunk 引用、独立模块图、样式顺序与 vitest；本机缺工具链且
+  还没有现成产物时显式跳过，CI 缺前置条件判失败。
+- **不依赖 Node 的源码与清单断言**：BoardUI token 与上游哈希、依赖钉死、Git 忽略规则、共享客户端
+  唯一性。
 """
 from __future__ import annotations
 
@@ -23,12 +18,14 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
 
 from peach.diagnostic_browser import BUNDLE_CHUNK_NAME
 from scripts import test_history
+from support.conditions import missing_prerequisite
 from test_frontend_preflight import frontend_npm
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,17 +35,47 @@ BUNDLE = DIST / "peach-app.js"
 APP_STYLES = DIST / "peach-app.css"
 PAGES_BUNDLE = DIST / "peach-pages.js"
 PAGES_STYLES = DIST / "peach-pages.css"
-#: 主包按页拆出的 chunk（ADR-0118），形态由服务端放行规则定义。
-CHUNKS = sorted(path for path in DIST.glob("*.js") if BUNDLE_CHUNK_NAME.fullmatch(path.name))
-#: 主界面的全部 JavaScript：入口加 chunk。文案与写法落在哪一份由构建决定，扫产物时要一起扫。
-APP_SCRIPTS = (BUNDLE, *CHUNKS)
 STATIC_IMPORTS = re.compile(r'(?m)^\s*(?:import\b[^;]*?|export\s*\*\s*)from\s*["\']([^"\']+)["\']'
                             r'|^\s*import\s*["\']([^"\']+)["\']')
 DYNAMIC_IMPORTS = re.compile(r'\bimport\s*\(\s*["\']([^"\']+)["\']\s*\)')
+_BUILT = False
+
+
+def ensure_dist_built() -> None:
+    """在构建工具就绪时重建 `web/dist/`；缺工具且还没有产物时按前置条件缺失处理。"""
+    global _BUILT
+    if _BUILT:
+        return
+    npm = shutil.which("npm")
+    if npm is not None and (FRONTEND / "node_modules" / "vite").is_dir():
+        completed = subprocess.run(
+            [npm, "--prefix", str(FRONTEND), "run", "build", "--silent"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=FRONTEND, check=False,
+        )
+        if completed.returncode != 0:
+            raise AssertionError(f"前端构建失败：\n{completed.stdout}\n{completed.stderr}")
+        _BUILT = True
+        return
+    entries = (BUNDLE, APP_STYLES, PAGES_BUNDLE, PAGES_STYLES)
+    if all(path.is_file() for path in entries):
+        _BUILT = True
+        return
+    missing_prerequisite("跳过前端产物检查：缺少 npm 或 frontend/node_modules，且 web/dist/ 尚未构建")
+
+
+def chunk_paths() -> list[Path]:
+    """主包按页拆出的 chunk（ADR-0118），形态由服务端放行规则定义。"""
+    return sorted(path for path in DIST.glob("*.js") if BUNDLE_CHUNK_NAME.fullmatch(path.name))
+
+
+def app_scripts() -> tuple[Path, ...]:
+    """主界面的全部 JavaScript：入口加 chunk。文案与写法落在哪一份由构建决定，扫产物时要一起扫。"""
+    return (BUNDLE, *chunk_paths())
 
 
 def app_text() -> str:
-    return "\n".join(path.read_text(encoding="utf-8") for path in APP_SCRIPTS)
+    return "\n".join(path.read_text(encoding="utf-8") for path in app_scripts())
 
 
 class PageAssets(HTMLParser):
@@ -69,27 +96,28 @@ class PageAssets(HTMLParser):
 
 
 class MainBundleTests(unittest.TestCase):
-    """提交进 Git 的产物必须是浏览器能直接 import 的那一份。"""
+    """构建出的产物必须是浏览器能直接 import 的那一份。"""
 
     @classmethod
     def setUpClass(cls):
+        ensure_dist_built()
         cls.bundle = app_text()
 
     def test_dist_ships_fixed_entries_and_exactly_the_referenced_chunks(self):
         """入口与页面包用固定名字；其余只有主包 chunk，并且正好是产物引用到的那几份。
 
-        chunk 名字带内容哈希，每次构建换一批：多出来的是上一次构建留下、还被 Git 跟踪着的旧文件，
-        缺的是新构建出来却没提交的文件，浏览器打开那一页时取不到。
+        chunk 名字带内容哈希，每次构建换一批：多出来的是残留旧文件，缺的是产物未写全。
         """
         names = sorted(path.name for path in DIST.iterdir() if path.is_file())
         self.assertEqual([name for name in names if not BUNDLE_CHUNK_NAME.fullmatch(name)],
                          ["peach-app.css", "peach-app.js", "peach-pages.css", "peach-pages.js"])
+        chunks = chunk_paths()
         referenced = set()
-        for path in APP_SCRIPTS:
+        for path in app_scripts():
             text = path.read_text(encoding="utf-8")
             imported = [a or b for a, b in STATIC_IMPORTS.findall(text)] + DYNAMIC_IMPORTS.findall(text)
             referenced |= {name[2:] for name in imported if name.startswith("./") and name != "./peach-app.js"}
-        self.assertEqual(sorted(referenced), [path.name for path in CHUNKS])
+        self.assertEqual(sorted(referenced), [path.name for path in chunks])
 
     def test_the_main_document_loads_one_module_entry(self):
         assets = PageAssets((ROOT / "web" / "index.html").read_text(encoding="utf-8"))
@@ -98,7 +126,7 @@ class MainBundleTests(unittest.TestCase):
 
     def test_react_bundle_records_stable_dependency_paths(self):
         """区域注释只能从 `node_modules/` 起，不得把生成它的工作树路径写进产物。"""
-        for bundle in (*APP_SCRIPTS, PAGES_BUNDLE):
+        for bundle in (*app_scripts(), PAGES_BUNDLE):
             with self.subTest(bundle.name):
                 captured = [line for line in bundle.read_text(encoding="utf-8").splitlines()
                             if line.startswith("//#region ") and "node_modules/" in line
@@ -165,6 +193,7 @@ class ReactBundleTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        ensure_dist_built()
         cls.app = app_text()
         cls.css = APP_STYLES.read_text(encoding="utf-8")
         cls.pages = PAGES_BUNDLE.read_text(encoding="utf-8")
@@ -179,7 +208,7 @@ class ReactBundleTests(unittest.TestCase):
         开发标注工具由本机开关单独加载。"""
         def chunk(name):
             return name.startswith("./") and BUNDLE_CHUNK_NAME.fullmatch(name[2:]) is not None
-        for path in (*APP_SCRIPTS, PAGES_BUNDLE):
+        for path in (*app_scripts(), PAGES_BUNDLE):
             with self.subTest(path.name):
                 text = path.read_text(encoding="utf-8")
                 static = [a or b for a, b in STATIC_IMPORTS.findall(text)]
@@ -274,35 +303,16 @@ class FrontendManifestTests(unittest.TestCase):
             self.assertIsNotNone(entry, f"{name} 不在 lockfile 里")
             self.assertEqual(entry["version"], version, name)
 
-    def test_ci_owns_the_only_gate_that_can_catch_a_stale_bundle(self):
-        """本机验不了「产物是否由当前源码构建」，这道门槛只在 CI。
-
-        它一旦被删掉，源码和 `web/dist/` 就能无声地分叉，而所有本地测试照样全绿——
-        那正是这条断言要拦的。`git add --intent-to-add` 不能省：光 `git diff` 只看
-        已跟踪的文件，构建新出的产物是未跟踪的，会被直接放过。
-        """
-        workflow = (ROOT / ".github" / "workflows" / "test.yml")
-        if not workflow.exists():
-            self.skipTest("dev 分叉只保留 docker 工作流，没有继承的 test.yml")
-        workflow = workflow.read_text(encoding="utf-8")
-        for step in ("actions/setup-node", "npm --prefix frontend ci",
-                     "npm --prefix frontend run typecheck", "npm --prefix frontend run lint",
-                     "npm --prefix frontend test",
-                     "npm --prefix frontend run build",
-                     "git add --intent-to-add -- web/dist",
-                     "git diff --exit-code --stat -- web/dist"):
-            self.assertIn(step, workflow, f"CI 缺了 {step}")
-
-    def test_the_bundle_is_committed_and_the_toolchain_is_not(self):
-        tracked = subprocess.run(
-            ["git", "-C", str(ROOT), "check-ignore", "web/dist/peach-app.js"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
-        self.assertEqual(tracked.returncode, 1, "web/dist 被 .gitignore 排除了，产物发不出去")
-        for ignored in ("frontend/node_modules",):
+    def test_build_artifacts_and_toolchain_are_excluded_from_git(self):
+        for ignored in ("web/dist/peach-app.js", "frontend/node_modules"):
             result = subprocess.run(["git", "-C", str(ROOT), "check-ignore", ignored],
                                     capture_output=True, text=True, encoding="utf-8",
                                     errors="replace", check=False)
-            self.assertEqual(result.returncode, 0, f"{ignored} 没有被忽略")
+            self.assertEqual(result.returncode, 0, f"{ignored} 没有被 .gitignore 排除")
+        tracked = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "web/dist"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
+        self.assertEqual(tracked.stdout.strip(), "", "web/dist 构建产物不应被 Git 跟踪")
 
 
 class SharedStateContractTests(unittest.TestCase):
@@ -324,6 +334,7 @@ class VitestTests(unittest.TestCase):
 
     def test_the_island_suite_passes(self):
         npm = frontend_npm("vitest", "vitest")
+        ensure_dist_built()
         # 定向入口（含全量失败后的单独重跑）只跑指定的几个文件，路径相对 frontend/。
         selected = json.loads(os.environ.get("PEACH_VITEST_FILES", "[]"))
         # 另挂一个 JSON 报告器，把逐条结果交给测试结果历史；控制台输出与判据不变。

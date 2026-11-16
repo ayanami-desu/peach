@@ -18,7 +18,6 @@ CONTAINERS = {
 }
 OUTCOMES = frozenset({'pass', 'fail', 'unknown'})
 SETUP_PREFIXES = ('frontend/src/react/pages/setup/', 'resources/setup/')
-PAGE_BUNDLES = frozenset({'web/dist/peach-pages.js', 'web/dist/peach-pages.css'})
 
 
 def external_files(root: Path, module: str) -> set[str]:
@@ -97,7 +96,7 @@ class ImpactPlan:
         if key not in self.paths:
             invalid = self.calculate(path, kind)
             invalid.update(name for name in self.all_units if name.startswith('case:') and owner(name) in invalid)
-            if kind != 'unsafe' and (path.startswith(SETUP_PREFIXES) or path in PAGE_BUNDLES):
+            if kind != 'unsafe' and path.startswith(SETUP_PREFIXES):
                 # 独立页面不加载主应用；Python 契约、打包与组件检查仍执行。
                 invalid.difference_update(name for name in self.all_units
                                           if name.startswith('frontend/e2e/'))

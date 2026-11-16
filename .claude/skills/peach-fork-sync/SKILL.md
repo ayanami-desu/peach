@@ -24,13 +24,13 @@ description: 用户明确要求从 peach-mitao 上游按需摘取改动、发布
 2. **排除范围**：上游针对桌面托盘、本地挂载与 NAS 目录定位、转码与 HLS、云下载（`downloads`）、关注/订阅/想要（`follow`/`wants`）、Mix、自动更新横幅（`client-updates`）、发版公告工作流，以及将中文拆入 `resources/locales` 与 `message_code` 的多语言改造，一律跳过。
 3. **移植与适配**：在隔离工作树中用 `git cherry-pick -n <sha>`（或读取 `git show <sha>` 定向移植）：
    - 剥离已删除模块文件与 `resources/locales/*`；若上游改动把文案改成了语言包键，在移植时还原为本分支直接使用的中文文本。
-   - `web/dist/*` 不直接套用上游产物，源码改完后用 `npm --prefix frontend run build` 重建并逐文件 `git add`。
+   - 不引入上游的 `web/dist/*` 产物；构建产物不进 Git，在构建与测试流程中由 `npm --prefix frontend run build` 生成。
    - 依赖变动先执行 `npm --prefix frontend ci --ignore-scripts` 或 `uv sync --locked --all-extras`。
    - 路由与大函数核对复杂度棘轮（分支数到 30 须拆小或同批记入 `ACCEPTED`）；两边有效测试均保留，新测试文件登记进 `scripts/test_runner.py` 的 `SCOPES`。
 
 ## 验证与推送
 
-- 按影响域运行 `./scripts/test.sh auto`（跨共享设施或依赖升级时跑 `full`），前端改动须通过 `npm --prefix frontend run typecheck`、vitest 与构建产物一致性检查。
+- 按影响域运行 `./scripts/test.sh auto`（跨共享设施或依赖升级时跑 `full`），前端改动须通过 `npm --prefix frontend run typecheck`、vitest 与前端构建检查。
 - 维护者交付在主检出执行 `git merge --ff-only <工作树分支>`，直接 `git push origin master:refs/heads/master` 推进主干，不改写已发布历史。
 - 推送触发 `Docker` 工作流；`gh run watch <id> --exit-status` 后核对 `conclusion=success` 与镜像标签，再动服务器。
 

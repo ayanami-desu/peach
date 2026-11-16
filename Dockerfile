@@ -1,5 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
+FROM node:24-slim AS frontend-build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN npm --prefix frontend ci --ignore-scripts
+COPY frontend ./frontend
+COPY resources/media-sources.json ./resources/media-sources.json
+RUN npm --prefix frontend run build
+
 FROM python:3.15.1-slim-trixie AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
@@ -10,6 +18,7 @@ COPY pyproject.toml uv.lock README.md LICENSE setup.py MANIFEST.in ./
 COPY src ./src
 COPY migrations ./migrations
 COPY web ./web
+COPY --from=frontend-build /app/web/dist ./web/dist
 COPY resources ./resources
 COPY tools/amane-bridge ./tools/amane-bridge
 COPY scripts/build_amane_runtime.py scripts/amane_bridge.spec ./scripts/

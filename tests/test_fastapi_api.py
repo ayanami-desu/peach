@@ -1237,9 +1237,21 @@ class LoginPageWithoutSessionTests(unittest.IsolatedAsyncioTestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name).resolve()
+        web_root = root / "web"
+        (web_root / "dist").mkdir(parents=True)
+        (web_root / "css").mkdir()
+        (web_root / "index.html").write_text(PAGE_HTML, encoding="utf-8")
+        (web_root / "board.css").write_text(".board{margin:0;}", encoding="utf-8")
+        (web_root / "css" / "10-base.css").write_text("body{margin:0;}", encoding="utf-8")
+        for name in ("peach-app.js", "peach-app.css", "peach-pages.js", "peach-pages.css"):
+            (web_root / "dist" / name).write_text(f"/* {name} */", encoding="utf-8")
+        vendor_root = root / "vendor"
+        (vendor_root / "inter" / "5.3.0").mkdir(parents=True)
+        (vendor_root / "inter" / "5.3.0" / "index.css").write_text(".x{}", encoding="utf-8")
         access_path = root / "access.json"
         access.save(access_path, "entry-password")
         app = create_app(PeachSettings(configured=True, token="entry-token", access_path=access_path,
+                                       page_path=web_root / "index.html", vendor_path=vendor_root,
                                        db_path=fresh_ledger(root), state_root=root / "state"))
         self.addCleanup(app.state.http_transport.close)
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")

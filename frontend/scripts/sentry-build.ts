@@ -22,7 +22,7 @@ function assertDebugId(directory: string, name: string): void {
 }
 
 /** 正式 JavaScript 与 map 共用官方注入的 Debug ID；公开目录只接收 JS 和 CSS。
- *  上一次构建留下的 chunk 先删掉：名字带哈希，不删就会一直留在 `web/dist/` 里被 Git 跟踪。 */
+ *  上一次构建留下的 chunk 先删掉：名字带哈希，不删就会堆积在 `web/dist/` 里。 */
 export function browserSymbols(bundleName: 'peach-app' | 'peach-pages', destination = process.env.PEACH_FRONTEND_OUT_DIR || publicDist): PluginOption[] {
   return [
     sentryVitePlugin({

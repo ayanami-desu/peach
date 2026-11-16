@@ -77,6 +77,7 @@ from peach.drive_provider import (  # noqa: E402
     DriveNotFound,
 )
 from scripts import test_history  # noqa: E402
+from support.conditions import missing_prerequisite  # noqa: E402
 from support.ledger import fresh_ledger  # noqa: E402
 
 #: 假网盘的扫描起点 id。
@@ -344,6 +345,13 @@ class WebE2ETests(unittest.TestCase):
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
             raise unittest.SkipTest("本机没有 ffmpeg，造不出能解码的演示短片")
+        npm = shutil.which("npm")
+        if npm is not None and (FRONTEND / "node_modules" / "vite").is_dir():
+            subprocess.run([npm, "--prefix", str(FRONTEND), "run", "build", "--silent"],
+                           cwd=FRONTEND, check=True, capture_output=True)
+        elif not all((ROOT / "web" / "dist" / name).is_file()
+                     for name in ("peach-app.js", "peach-app.css", "peach-pages.js", "peach-pages.css")):
+            missing_prerequisite("缺少前端构建产物 web/dist/，先 npm --prefix frontend ci && npm --prefix frontend run build")
         cls.chrome, cls.ffmpeg = chrome, ffmpeg
         cls.root = DATA_ROOT
         media = cls.root / "demo"

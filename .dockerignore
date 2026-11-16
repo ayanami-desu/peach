@@ -11,6 +11,14 @@
 !migrations/**
 !web/
 !web/**
+web/dist/
+web/dist/**
+!frontend/
+!frontend/**
+frontend/node_modules/
+frontend/node_modules/**
+frontend/.vite/
+frontend/.vite/**
 !resources/
 !resources/**
 !tools/amane-bridge/bridge.py

@@ -3,8 +3,8 @@
 Dependabot 只改 manifest 和 lock。根 `package.json` 的 npm 包还有一层派生产物——
 `web/vendor/**` 的字节、`web/index.html` 里那行版本注释、每个 `ORIGIN.md` 的哈希与
 lock integrity——它算不出来，于是 `npm run check:vendor` 在它的 PR 上必红（实际发生过：
-lucide-static 1.38.0 → 1.40.0 的 PR #4）。`frontend/package.json` 同理，产物是
-`web/dist/` 中的主界面与独立页面包。
+lucide-static 1.38.0 → 1.40.0 的 PR #4）。`frontend/package.json` 的构建产物不进 Git，
+由接管流程执行 `npm --prefix frontend ci` 与构建检查验证兼容性。
 
 修不了那个 PR 本身：Dependabot 触发的 workflow 拿到的 token 是只读的，往
 `dependabot/**` 推回重算的产物得靠 `pull_request_target` 或一个 PAT，两条都是给 CI 加
@@ -63,22 +63,20 @@ RECIPES = {
     "web": {
         "label": "根 package.json（本地固定 web 依赖）",
         "manifests": ("package.json", "package-lock.json"),
-        "derived": ("web/vendor/", "web/index.html", "web/dist/", "docs/REUSE.md",
+        "derived": ("web/vendor/", "web/index.html", "docs/REUSE.md",
                     "frontend/src/player/videojs.ts", "tests/test_web_ui.py",
                     "frontend/src/react/photo-lightbox/photo-lightbox.ts",
                     "frontend/test/react/photo-lightbox.test.tsx"),
-        "commands": (("npm", "ci", "--ignore-scripts"), ("npm", "run", "vendor:web"),
-                     ("npm", "--prefix", "frontend", "ci"),
-                     ("npm", "--prefix", "frontend", "run", "build")),
+        "commands": (("npm", "ci", "--ignore-scripts"), ("npm", "run", "vendor:web")),
         "checks": (),
     },
     "frontend": {
         "label": "frontend/package.json（island 层构建依赖）",
         "manifests": ("frontend/package.json", "frontend/package-lock.json"),
-        "derived": ("web/dist/",),
-        "commands": (("npm", "--prefix", "frontend", "ci"),
-                     ("npm", "--prefix", "frontend", "run", "build")),
-        "checks": (),
+        "derived": (),
+        "commands": (),
+        "checks": (("npm", "--prefix", "frontend", "ci"),
+                   ("npm", "--prefix", "frontend", "run", "build")),
     },
     "uv": {
         "label": "Python 依赖（pyproject.toml 与 uv.lock）",

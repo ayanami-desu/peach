@@ -7,7 +7,7 @@
 
 入口是 `web/index.html` 里的一个 `<script type="module" src="/dist/peach-app.js">`，挂在 `#appRoot`。首启、登录与错误三张独立页由 `web_entry.page_shell()` 画薄壳，脚本是 `/dist/peach-pages.js`。
 
-运行时不需要 Node。`web/dist/` 下的产物提交进 Git，服务端直接发文件；Node 只用于构建、类型检查、lint、文案检查与前端测试。这样运行时服务与源码运行都不必装 Node（决策见 [ADR-0022](adr/0022-frontend-vite-preact-strangler.md)）。
+运行时不需要 Node。构建产物（`web/dist/`）不进 Git，在 Docker 镜像构建、打包与前端测试流程中由 `npm --prefix frontend run build` 生成，服务端直接发文件；Node 只用于构建、类型检查、lint、文案检查与前端测试（决策见 [ADR-0022](adr/0022-frontend-vite-preact-strangler.md) 与 [ADR-0164](adr/0164-frontend-build-artifacts-outside-git.md)）。
 
 ## 目录
 
@@ -26,7 +26,7 @@
 | `frontend/e2e/` | 浏览器用例（`node --test` + playwright-core），`harness.ts` 提供启动、访问与稳定等待 |
 | `frontend/scripts/` | 构建辅助：sourcemap 上传、文案检查、文案统计 |
 | `web/css/` | 传统页面样式分区，服务端拼成一份 `/app.css` |
-| `web/dist/` | 构建产物：主包、页面包与按页拆出的 chunk，全部提交进 Git |
+| `web/dist/` | 构建产物：主包、页面包与按页拆出的 chunk，由 `.gitignore` 排除，在构建与测试流程中生成 |
 | `web/vendor/` | 固定版本的第三方前端资源（字体、图标、Swiper、Video.js）与许可证原文 |
 
 ## 构建
@@ -50,11 +50,11 @@
 - `frontend/vite.pages.config.ts` 打页面包 `peach-pages.js` 与 `peach-pages.css`，供首启、登录与错误三张独立页使用。
 - `frontend/vite.agentation.config.ts` 打标注工具到 `build/agentation/peach-agentation.js`。
 
-产物发布由 `frontend/scripts/sentry-build.ts` 里的 `peach-publish-browser-assets` 插件负责：先把构建写进私有目录 `build/sentry/browser`（保留 JS 与 sourcemap），再删掉 `web/dist` 里旧的哈希 chunk，最后复制本次的 chunk、入口和 CSS 到 `web/dist`。删旧 chunk 这一步必要——名字带哈希，不删就会一直留在被 Git 跟踪的目录里。公开目录与私有 sourcemap 目录必须分开。
+产物发布由 `frontend/scripts/sentry-build.ts` 里的 `peach-publish-browser-assets` 插件负责：先把构建写进私有目录 `build/sentry/browser`（保留 JS 与 sourcemap），再删掉 `web/dist` 里旧的哈希 chunk，最后复制本次的 chunk、入口和 CSS 到 `web/dist`。删旧 chunk 这一步必要——名字带哈希，不删就会堆积在输出目录里。公开目录与私有 sourcemap 目录必须分开。
 
 `typecheck` 跑两份 tsconfig：`frontend/tsconfig.json` 覆盖控制层与测试，`exclude` 掉 `src/react`；`frontend/src/react/tsconfig.json` 继承前者，但放宽 `exactOptionalPropertyTypes`、`noUncheckedIndexedAccess`、`verbatimModuleSyntax` 三项，因为 `src/react/boardui/` 与 `src/react/evilcharts/` 是上游源码的逐字副本。
 
-构建产物进入 Git 也意味着「产物是否由当前源码构建」不能靠本机判断：CI 的 web-bundle 作业跑一次 `npm run build`，再要求 `git diff --exit-code web/dist` 为空。
+Docker 镜像构建会在 `frontend-build` 阶段自动运行 `npm --prefix frontend ci --ignore-scripts && npm --prefix frontend run build`；`setup.py` 打包与 `tests/test_frontend_build.py`、`tests/test_web_e2e.py` 也会在工具链就绪时自动触发构建。
 
 ## 服务端怎么发这些文件
 
@@ -213,7 +213,7 @@ PEACH_E2E=1 python -m unittest tests.test_web_e2e
 
 Python 侧有两条衔接：
 
-- `tests/test_frontend_build.py` 守不需要 Node 的部分：产物在不在、页面怎么加载、模块图是否独立、依赖是否钉版本、共享客户端是否唯一。需要 Node 的断言（tsc、lint、vitest）在本机缺 Node 时显式跳过，CI 由 web-bundle 统一执行。
+- `tests/test_frontend_build.py` 在 `npm` 与 `frontend/node_modules` 就绪时执行构建并核对固定入口、chunk 引用、独立模块图、样式顺序与 vitest（缺工具链且没有产物时显式跳过），同时在任何机器上核对 Git 忽略规则、BoardUI 哈希、依赖钉死与共享客户端唯一性。
 - `tests/test_frontend_preflight.py` 跑 `npm --prefix frontend run typecheck`、`oxlint` 与 `check:copy`；没有 npm 或 `frontend/node_modules` 时按 `tests/support/conditions.py` 的 `missing_prerequisite` 处理。
 
 浏览器用例按决策分类（[ADR-0031](adr/0031-frontend-react-boardui-tailwind.md)）：用户定过的设计决定写在 `frontend/e2e/design-*.test.ts`，读 `getComputedStyle` 断言计算值，不绑定 CSS 写法；行为写 vitest；布局与运行期不变量归 `frontend/e2e/smoke.test.ts`。`frontend/e2e/harness.ts` 提供 `launch`、`visit`、`settle`、`expectBody` 与视口表，`frontend/e2e/design-fixture.ts` 提供设计用例共用的桩数据与入口。

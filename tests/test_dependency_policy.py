@@ -106,6 +106,25 @@ class DockerBuildContextTests(unittest.TestCase):
                         target.write_bytes(b'')
             data_files(app)
 
+    def test_frontend_build_stage_receives_sources_and_excludes_host_dist(self):
+        rules = []
+        for line in (ROOT / '.dockerignore').read_text(encoding='utf-8').splitlines():
+            if line.strip() and not line.startswith('#'):
+                negated, pattern = line.startswith('!'), line.lstrip('!').rstrip('/')
+                regex = re.escape(pattern).replace(r'\*\*', '.*').replace(r'\*', '[^/]*')
+                rules.append((negated, re.compile(regex)))
+        for required in ('frontend/package.json', 'frontend/package-lock.json',
+                         'frontend/src/react/bootstrap.tsx', 'resources/media-sources.json'):
+            self.assertTrue(_docker_context_includes(rules, required), required)
+        for excluded in ('web/dist/peach-app.js', 'frontend/node_modules/vite/package.json'):
+            self.assertFalse(_docker_context_includes(rules, excluded), excluded)
+        dockerfile = (ROOT / 'Dockerfile').read_text(encoding='utf-8')
+        self.assertIsNotNone(re.search(r'(?m)^FROM node:\S+ AS frontend-build$', dockerfile))
+        self.assertIsNotNone(re.search(r'(?m)^RUN npm --prefix frontend run build$', dockerfile))
+        self.assertIsNotNone(re.search(r'(?m)^COPY --from=frontend-build /app/web/dist \./web/dist$', dockerfile))
+        workflow = (ROOT / '.github' / 'workflows' / 'docker.yml').read_text(encoding='utf-8')
+        self.assertIsNotNone(re.search(r'^\s*"frontend/\*\*",\s*$', workflow, re.M))
+
 
 class NpmAuditTests(unittest.TestCase):
     def setUp(self):
@@ -331,9 +350,10 @@ class DependencyPolicyTests(unittest.TestCase):
         key, recipe = adopt.recipe_for(["package-lock.json"])
         self.assertEqual(key, "web")
         for path in ("package.json", "web/index.html", "web/vendor/lucide/1.40.0/ORIGIN.md",
-                     "web/dist/peach-app.js", "frontend/src/player/videojs.ts", "docs/REUSE.md"):
+                     "frontend/src/player/videojs.ts", "docs/REUSE.md"):
             self.assertTrue(adopt.owned_by(recipe, path), path)
-        for path in ("web/index.html.bak", "frontend/src/player/types.ts", "src/peach/api.py"):
+        for path in ("web/index.html.bak", "web/dist/peach-app.js",
+                     "frontend/src/player/types.ts", "src/peach/api.py"):
             self.assertFalse(adopt.owned_by(recipe, path), path)
         self.assertEqual(adopt.recipe_for(["frontend/package.json"])[0], "frontend")
         self.assertEqual(adopt.recipe_for(["pyproject.toml", "uv.lock"])[0], "uv")

@@ -313,6 +313,13 @@ class _SetupHttpCase(_Case):
 
     def setUp(self):
         super().setUp()
+        from peach.config import PROJECT_ROOT
+        self.web_root = self.root / "web"
+        (self.web_root / "dist").mkdir(parents=True)
+        (self.web_root / "index.html").write_text(
+            (PROJECT_ROOT / "web" / "index.html").read_text(encoding="utf-8"), encoding="utf-8")
+        for name in ("peach-pages.js", "peach-pages.css"):
+            (self.web_root / "dist" / name).write_text(f"/* {name} */", encoding="utf-8")
         active = mock.patch.object(settings_file, "active", lambda: self.config)
         active.start()
         self.addCleanup(active.stop)
@@ -326,6 +333,7 @@ class _SetupHttpCase(_Case):
 
         app = create_app(PeachSettings(
             db_path=self.data_root / "database" / "ledger.db",
+            page_path=self.web_root / "index.html",
             configured=configured, token=""))
         return httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, client=client), base_url=base_url)

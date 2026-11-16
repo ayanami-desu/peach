@@ -146,7 +146,7 @@ def asset_response(request: Request, path: Path, media: str, *, immutable: bool 
 
     `no-cache` 每次都回源验证，文件一变立刻生效；没变时只回一个 304，零字节传输。
 
-    ETag 取 mtime_ns 加字节数，不读文件内容：这几个文件都由 Git 检出或 `frontend/`
+    ETag 取 mtime_ns 加字节数，不读文件内容：静态样式由 Git 检出、前端包由 `frontend/`
     构建产生，改一次就换一次 mtime，不需要为了强校验去算全文哈希。
 
     文本类资产在浏览器接受 gzip 时发压缩体，压缩结果按文件版本记住，见 `_gzipped()`。
@@ -522,8 +522,8 @@ def _bundle_response(request: Request, name: str) -> Response:
 def page_bundle(request: Request):
     """入口页的页面包，不要会话（ADR-0094）：登录页要在拿到会话之前出图。
 
-    放行的只有这两个文件。它们提交进 Git、随仓库分发，不读账本、不含配置与凭据，内容不随
-    登录与否变化；页面包也不 import 别的产物。其余 `/dist/*` 仍走下面那条要会话的路由。
+    放行的只有这两个文件。它们在构建阶段由 `frontend/` 产出、随镜像或安装目录分发，不读账本、
+    不含配置与凭据，内容不随登录与否变化；页面包也不 import 别的产物。其余 `/dist/*` 仍走下面那条要会话的路由。
     """
     return _bundle_response(request, request.url.path.rsplit("/", 1)[1])
 
@@ -533,7 +533,7 @@ def app_bundle(request: Request, name: str,
                args: dict[str, str] = Depends(require_asset_auth)):
     """`frontend/` 的主包入口使用固定文件名、会话认证与 ETag 复验，按页拆出的 chunk 带内容哈希、长期缓存。
 
-    产物提交进 Git；只提供主包、主包 chunk 与页面包的 JS/CSS，文件名不接受路径分隔符或附带扩展名。
+    只提供主包、主包 chunk 与页面包的 JS/CSS，文件名不接受路径分隔符或附带扩展名。
     """
     return _bundle_response(request, name)
 

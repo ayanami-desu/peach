@@ -113,7 +113,7 @@ GitHub 的字段与模板机制见 [Issue types](https://docs.github.com/en/issu
 
 `frontend/` 需要 Node 24 或更高版本。
 
-运行 Peach 时不需要 Node，Python 服务和安装包直接读取构建好的 `web/dist/`，所以它要提交进 Git。改了 `frontend/src` 后，在同一个 PR 里运行 `npm --prefix frontend run build` 并提交 `web/dist/`；CI 的 `web-bundle` 任务会检查构建结果和源码是否一致。目录结构与样式约定见 [`docs/FRONTEND.md`](docs/FRONTEND.md)。
+运行 Peach 时不需要 Node，Python 服务和安装包直接读取构建好的 `web/dist/`。`web/dist/` 不提交进 Git，在 Docker 镜像构建、打包与测试流程中通过 `npm --prefix frontend run build` 生成；从源码本地启动时先跑一次 `npm --prefix frontend ci && npm --prefix frontend run build`。目录结构与样式约定见 [`docs/FRONTEND.md`](docs/FRONTEND.md)。
 
 ## 提交说明与变更日志
 

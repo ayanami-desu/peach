@@ -137,7 +137,7 @@ python scripts/record_source_fixtures.py --with-credentials javdb:SSIS-001
 1. 跑一次全量：`./scripts/test.sh full`（Windows 用 `powershell -File scripts\test.ps1 -Scope full`），要求退出码 0。锁忙时等前一轮收尾，不要另起一次。
 2. 发版结论只用这一次跑出来的结果：`full` 默认不复用旧记录，`--resume` 才会沿用已完成的证明。
 3. 跑文档检查 `uv run --locked --extra dev seiso check --output-format=concise`，并核对 [变更日志](../CHANGELOG.md) 里已有本次的条目。
-4. 对比构建产物与源码：`npm --prefix frontend run build` 之后要求 `git diff --exit-code web/dist` 为空。
+4. 核对前端构建：`npm --prefix frontend run build` 通过。
 
 ## 流水线侧选测
 

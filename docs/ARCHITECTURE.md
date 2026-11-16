@@ -16,7 +16,7 @@ Peach 是一个 FastAPI 模块化单体：逻辑上前后端分离，部署时�
 | 应用层 | `src/peach/api.py`、`routes_*.py`、`web_router.py` | `create_app` 装配；HTTP 契约、鉴权、中间件、异常到中文文案 |
 | 领域层 | `drive_*`、`scan.py`、`media.py`、`library_processing.py` 等 | 网盘访问、扫描、取流、探测、刮削、复核、整理 |
 | 数据层 | `repository.py`、`migrations/` | SQLite 账本、一次性迁移（`0000`–`0057`），版本号表 `ledger_revision` |
-| 前端 | `frontend/src/` → `web/dist/` | React 路由树、Tailwind v4 与 BoardUI 源码，构建产物提交进仓库，见[前端](FRONTEND.md) |
+| 前端 | `frontend/src/` → `web/dist/` | React 路由树、Tailwind v4 与 BoardUI 源码，构建产物在镜像与打包流程中生成，见[前端](FRONTEND.md) |
 | 分发 | `Dockerfile`、`compose.yaml`、`.github/workflows/docker.yml` | 镜像构建与 GHCR 推送 |
 
 ## create_app 装配
