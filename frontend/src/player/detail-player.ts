@@ -225,7 +225,7 @@ export async function mountDetailPlayer(
   });
   player.ready(() => {
     enforceDuration();
-    mountPlayerQualityControl(player, video, item.height, null);
+    mountPlayerQualityControl(player, video, item, null);
     mountPlayerSeekPreview(player, item, { thumbnail: true });
     mountPlayerMediaSession(player, item);
     mountPlayerSpinner(player);

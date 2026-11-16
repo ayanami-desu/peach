@@ -123,9 +123,11 @@ export function mountPlayerAmbient(video: HTMLVideoElement): () => void {
  *
  *  `sourceQualities` 是来源自己给的清晰度表（[{height,label}]，从高到低）。rule34video 把每档
  *  写成独立字段，videojs 的 qualityLevels 看不到它们——那套只认 HLS/DASH 的自适应轨道，而这里
- *  是四个各自独立的 mp4。所以由调用方查好再传进来。 */
+ *  是四个各自独立的 mp4。所以由调用方查好再传进来。
+ *
+ *  `fallbackSize` 是账本记的宽高，视频还没读到尺寸时按它的短边写档位：竖屏 1080×1920 是 1080p。 */
 export function mountPlayerQualityControl(
-  player: VjsPlayer, video: HTMLVideoElement, fallbackHeight: unknown = 0, initialSourceQualities: SourceQuality[] | null = null,
+  player: VjsPlayer, video: HTMLVideoElement, fallbackSize: { width?: unknown; height?: unknown } = {}, initialSourceQualities: SourceQuality[] | null = null,
 ): ((next: SourceQuality[] | null) => void) | undefined {
   const controlBar = player.el().querySelector<HTMLElement>('.vjs-control-bar');
   if (!controlBar || controlBar.querySelector('[data-player-quality]')) return undefined;
@@ -164,7 +166,7 @@ export function mountPlayerQualityControl(
     if (sourceQualities?.length) {
       return sourceQualities.map((quality) => ({ key: `h${quality.height}`, label: quality.label || `${quality.height}p`, pixels: quality.height }));
     }
-    const pixels = resolution(video.videoWidth, video.videoHeight) || Number(fallbackHeight) || 0;
+    const pixels = resolution(video.videoWidth, video.videoHeight) || resolution(fallbackSize.width, fallbackSize.height);
     return [{ key: 'original', label: pixels ? `${pixels}p` : '原画', pixels }];
   };
   const qualityRows = () => {
@@ -285,15 +287,23 @@ export function mountPlayerQualityControl(
     });
     syncSpeed();
   };
-  /** 清晰度那一列：打开面板时画一次，轨道增减或自动档换轨时原地重画，焦点留在同一档上。 */
-  const fillQualityOptions = (list: HTMLElement) => {
+  /** 清晰度那一列的各档。打开面板时随面板一起画好：`renderPanel` 当场量新面板的高度做过渡，
+   *  先画空列表再填，量到的只有标题栏，菜单缩成一条、动画结束又弹回原高。 */
+  const qualityOptionsHtml = () => {
     const { options, active } = qualityRows();
-    const focused = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.playerQualityOption : undefined;
-    list.innerHTML = options.map((option) =>
+    return options.map((option) =>
       `<button type="button" class="vjs-peach-menu-option" role="menuitemradio" data-player-quality-option="${esc(option.key)}" aria-checked="${option.key === active.key}"><span class="vjs-peach-option-check">${option.key === active.key ? icon('player-option-check') : ''}</span><span class="vjs-peach-option-label">${esc(option.label)}</span></button>`).join('');
-    const buttons = [...list.querySelectorAll<HTMLElement>('[data-player-quality-option]')];
-    buttons.find((option) => focused !== undefined && option.dataset.playerQualityOption === focused)?.focus();
-    buttons.forEach((option) => {
+  };
+  /** 轨道增减或自动档换轨时原地重画这一列，焦点留在同一档上。 */
+  const fillQualityOptions = (list: HTMLElement) => {
+    const focused = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.playerQualityOption : undefined;
+    list.innerHTML = qualityOptionsHtml();
+    bindQualityOptions(list);
+    [...list.querySelectorAll<HTMLElement>('[data-player-quality-option]')]
+      .find((option) => focused !== undefined && option.dataset.playerQualityOption === focused)?.focus();
+  };
+  const bindQualityOptions = (list: HTMLElement) => {
+    list.querySelectorAll<HTMLElement>('[data-player-quality-option]').forEach((option) => {
       option.onclick = () => {
         selectedQuality = option.dataset.playerQualityOption || 'auto';
         if (levels?.length) {
@@ -318,9 +328,9 @@ export function mountPlayerQualityControl(
   };
   const showQuality = (direction = 1) => {
     view = 'quality';
-    const panel = renderPanel(`<div class="vjs-peach-panel-header"><button type="button" class="vjs-peach-menu-back" data-player-menu-back aria-label="返回上一个菜单">${icon('player-menu-back')}</button><strong>清晰度</strong></div><div class="vjs-peach-panel-menu"></div>`, direction);
+    const panel = renderPanel(`<div class="vjs-peach-panel-header"><button type="button" class="vjs-peach-menu-back" data-player-menu-back aria-label="返回上一个菜单">${icon('player-menu-back')}</button><strong>清晰度</strong></div><div class="vjs-peach-panel-menu">${qualityOptionsHtml()}</div>`, direction);
     button(panel, '[data-player-menu-back]').onclick = () => showMain(-1);
-    fillQualityOptions(button(panel, '.vjs-peach-panel-menu'));
+    bindQualityOptions(button(panel, '.vjs-peach-panel-menu'));
   };
   /* HLS 自动码率起播时轨道陆续登记、码率随网速换档，视频尺寸也跟着变：这些事件只更新角标和
      正在看的那一面。退回主菜单的话，正在清晰度面板里挑档的人会被一次换轨踢出去。 */
