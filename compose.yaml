@@ -5,8 +5,14 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 75s
-    # 检查命令沿用镜像的 HEALTHCHECK，这里只定时间参数，默认值与镜像相同；写入敏感的宿主机见 docs/DOCKER.md。
+    # 直接使用宿主机网络：同机反向代理从回环进来，默认的受信代理就够，不再维护 Docker 网桥地址。
+    # 这只在 Linux 上按宿主机网络工作；Docker Desktop 调试请改回 ports 映射。
+    network_mode: host
+    # host 网络忽略 ports，监听地址与端口直接交给 Peach；默认只开给宿主机。
+    command: ["--host", "${PEACH_BIND:-127.0.0.1}", "--port", "${PEACH_PORT:-8900}"]
+    # 镜像的 HEALTHCHECK 固定探测 8900；host 网络下端口可改，这里跟着 PEACH_PORT 走。
     healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${PEACH_PORT:-8900}/healthz?ready=1', timeout=3).read()"]
       interval: ${PEACH_HEALTHCHECK_INTERVAL:-30s}
       timeout: ${PEACH_HEALTHCHECK_TIMEOUT:-5s}
       start_period: ${PEACH_HEALTHCHECK_START_PERIOD:-60s}
@@ -21,10 +27,6 @@ services:
     # 不再问；已有访问设置时忽略。用法是在 .env 里写这个变量，再取消下面两行的注释。
     # environment:
     #   PEACH_ACCESS_PASSWORD: ${PEACH_ACCESS_PASSWORD}
-    ports:
-      # NAS / 局域网：在 .env 中设置 PEACH_BIND 为宿主机的局域网 IP。
-      # 127.0.0.1 仅供宿主机访问；PEACH_PORT 可修改宿主机端口。
-      - "${PEACH_BIND:-127.0.0.1}:${PEACH_PORT:-8900}:8900"
     volumes:
       - peach-data:/data
 

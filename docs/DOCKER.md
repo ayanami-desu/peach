@@ -24,7 +24,7 @@ docker compose up -d
 docker compose logs -f peach
 ```
 
-容器起来后打开映射的地址。数据目录固定 `/data`、监听固定 `0.0.0.0:8900`，所以页面上只问网盘公网地址与访问密码。提交后服务自己重启成正常模式，不需要再动容器。
+容器起来后打开 `http://127.0.0.1:8900`（改过 `PEACH_PORT` 就换端口）。数据目录固定 `/data`，监听地址与端口由 Compose 变量决定，所以页面上只问网盘公网地址与访问密码。提交后服务自己重启成正常模式，不需要再动容器。
 
 设置文件、账本、令牌都在 `/data`。重建容器不影响它们，删卷才会。
 
@@ -35,8 +35,8 @@ docker compose logs -f peach
 | 变量 | 默认 | 作用 |
 | --- | --- | --- |
 | `PEACH_VERSION` | `edge` | 镜像标签 |
-| `PEACH_BIND` | `127.0.0.1` | 宿主侧绑定地址 |
-| `PEACH_PORT` | `8900` | 宿主侧端口，容器内固定 8900 |
+| `PEACH_BIND` | `127.0.0.1` | Peach 在宿主机上的监听地址 |
+| `PEACH_PORT` | `8900` | Peach 在宿主机上的监听端口 |
 | `PEACH_ACCESS_PASSWORD` | 空 | 首次启动前预置访问密码，8–256 个字符 |
 | `PEACH_HEALTHCHECK_INTERVAL` | `30s` | 健康检查间隔 |
 | `PEACH_HEALTHCHECK_TIMEOUT` | `5s` | 单次健康检查超时 |
@@ -47,6 +47,8 @@ docker compose logs -f peach
 | `PEACH_LOG_MAX_FILE` | `3` | 保留几个日志文件 |
 
 `docker compose config` 可核对展开后的结果。
+
+`compose.yaml` 用 `network_mode: host`，所以没有 `ports`；`PEACH_BIND` 与 `PEACH_PORT` 就是 Peach 在宿主机上的实际监听地址与端口。这只在 Linux 上按宿主机网络工作；Docker Desktop 上调试请改回 `ports` 映射，或直接源码运行。
 
 ## 卷与挂载
 
@@ -70,7 +72,7 @@ docker compose logs -f peach
 - 其余连接一律按 TCP 源地址算，转发头不参与判断。
 - 同一套判定也用在写请求的来源校验上：受信代理可以按它声明的 `X-Forwarded-Proto` 另算一个地址，别的连接声明的协议不算数。
 
-容器部署时反代通常和 Peach 不在同一网络命名空间，容器看到的源地址是 Docker 网关。此时要把网关网段（按你自己的网络填，例如 `192.0.2.0/24`）或反代容器地址写进这个变量，否则登录限速会把全站算成一个来源。
+Compose 用宿主机网络并默认绑定回环，反代跑在同一台机器上时，连接来自 `127.0.0.1`，默认已受信，不需要设置这个变量。只有反代在另一个容器或另一台机器，或 `PEACH_BIND` 开给外部时，才需要把反代的地址或网段写进来，否则登录限速会把全站算成一个来源。
 
 ## 日志
 
@@ -87,7 +89,7 @@ docker compose logs -f peach
 python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8900/healthz?ready=1', timeout=3).read()"
 ```
 
-返回 200 算健康，503 算失败。`compose.yaml` 只覆盖节奏，不换命令；Dockerfile 里的默认值是 30s/5s/60s/3，与 Compose 的默认值一致。
+返回 200 算健康，503 算失败。`compose.yaml` 沿用这个探测命令，只把端口换成 `PEACH_PORT`，并覆盖节奏；Dockerfile 里的默认值是 30s/5s/60s/3，与 Compose 的默认值一致。
 
 `ready=1` 版本会在未完成首次设置时返回 200 与 `"setup": true`，所以设置期间不会一直 unhealthy。判读每个字段见[运行与配置](OPERATIONS.md#healthz-判读)。
 
