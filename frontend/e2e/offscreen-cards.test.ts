@@ -36,8 +36,10 @@ interface CatalogPayload {
 /** `/api/items` 的首页换成 `CLONES` 条：每三条有一条带标签，最后一条带一枚独有的标签给查找用。
  * 带标签的那几条同时归给一位女优：演示库的作品都未归属，头像是不可聚焦的 `<span>`，归属之后
  * 才是按钮，焦点环那条用例要聚焦它。
+ * `cast` 时改成按序号轮流归给 0 到 5 位长名字的出演者：头像叠几个决定文字栏多宽，署名折不折行
+ * 不能跟着它变。
  * 克隆源是去掉 `performer` 筛选之后的目录首页：演示库里没有人物实体，资料页按名字筛出来是空的。 */
-async function serveLongItems(page: Page): Promise<void> {
+async function serveLongItems(page: Page, cast = false): Promise<void> {
   const original = new Map<number, number>();
   let baseline: CatalogPayload | undefined;
   await page.route(/\/api\/items\?/, async (route) => {
@@ -60,7 +62,11 @@ async function serveLongItems(page: Page): Promise<void> {
       original.set(CLONE_BASE + index, Number(item.id));
       item.id = CLONE_BASE + index;
       item.tags = index === CLONES - 1 ? [PROBE_TAG] : index % 3 === 0 ? ['演示'] : [];
-      if (index % 3 === 0) {
+      if (cast) {
+        const names = Array.from({ length: index % 6 }, (_, at) => `${'很长的出演者名字'.repeat(1 + at % 2)}${at}`);
+        Object.assign(item, { creator: '', performers: names, performer_total: names.length + (index % 4) * 3,
+          performer_entities: names.map((name, at) => ({ id: 90_200 + at, name, has_image: false })) });
+      } else if (index % 3 === 0) {
         Object.assign(item, { creator: '', performers: ['演示演员'], performer_total: 1,
           performer_entities: [{ id: 90_100, name: '演示演员', has_image: false }] });
       }
@@ -76,10 +82,10 @@ async function serveLongItems(page: Page): Promise<void> {
   });
 }
 
-async function openLongCatalog(browser: Browser, density = 'big'): Promise<Visit> {
-  const opened = await visit(browser, '/', DESKTOP);
+async function openLongCatalog(browser: Browser, density = 'big', viewport = DESKTOP, cast = false): Promise<Visit> {
+  const opened = await visit(browser, '/', viewport);
   const { page } = opened;
-  await serveLongItems(page);
+  await serveLongItems(page, cast);
   await page.evaluate((value) => localStorage.setItem('density', value), density);
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(([selector, count]) => document.querySelectorAll(selector).length >= count,
@@ -337,6 +343,37 @@ describe('视口外的卡片', () => {
         assert.deepEqual(opened.problems, []);
       } finally {
         await opened.close();
+      }
+    });
+  }
+
+  /* 1024 下卡宽不到 408px，日期折到第二行；1280 下卡宽过了 408px，五个头像的卡文字栏也窄于 360px，
+     署名仍排一行；手机是单列，元信息区不跳过渲染，守的是按实际内容定高这条退路。 */
+  for (const viewport of [{ ...DESKTOP, name: '1024', width: 1024 }, { ...DESKTOP, name: '1280' }, VIEWPORTS.find((item) => item.mobile)!]) {
+    it(`馆藏 ${viewport.name}：宽松与密集两档，每张卡的元信息区进视口前后一样高`, { timeout: 90_000 }, async () => {
+      for (const density of ['big', 'dense']) {
+        const opened = await openLongCatalog(browser, density, viewport, true);
+        try {
+          const { page } = opened;
+          const heights = () => page.locator(CATALOG_CARDS).evaluateAll((cards) => cards.map((card) => {
+            const meta = card.querySelector('[data-media-meta]')!;
+            return { height: Math.round(meta.getBoundingClientRect().height * 10) / 10,
+              skipped: !meta.firstElementChild!.checkVisibility({ contentVisibilityAuto: true }) };
+          }));
+          const before = await heights();
+          assert.equal(before.length, CLONES);
+          await roundTrip(page);
+          const after = await heights();
+          const changed = before.flatMap((card, index) => Math.abs(card.height - after[index]!.height) > .5
+            ? [`第 ${index} 张 ${card.height} → ${after[index]!.height}`] : []);
+          assert.deepEqual(changed, [], `馆藏 ${density}：屏外卡进视口后元信息区高度变了`);
+          if (!viewport.mobile && density === 'dense') {
+            assert.ok(before.filter((card) => card.skipped).length > CLONES / 2, `馆藏 ${density}：屏外卡没有跳过渲染，量不到估计值`);
+          }
+          assert.deepEqual(opened.problems, []);
+        } finally {
+          await opened.close();
+        }
       }
     });
   }
