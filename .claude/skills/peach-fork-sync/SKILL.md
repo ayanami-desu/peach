@@ -32,7 +32,7 @@ description: 用户明确要求从 peach-mitao 上游按需摘取改动、发布
 
 - 按影响域运行 `./scripts/test.sh auto`（跨共享设施或依赖升级时跑 `full`），前端改动须通过 `npm --prefix frontend run typecheck`、vitest 与前端构建检查。
 - 维护者交付在主检出执行 `git merge --ff-only <工作树分支>`，直接 `git push origin master:refs/heads/master` 推进主干，不改写已发布历史。
-- 推送触发 `Docker` 工作流；`gh run watch <id> --exit-status` 后核对 `conclusion=success` 与镜像标签，再动服务器。
+- 推送触发 `Docker` 工作流；`gh run watch -R <owner>/<repo> <id> --exit-status` 后核对 `conclusion=success` 与镜像标签，再动服务器。所有 `gh run` 命令都显式带这个 `-R`，省略会按当前目录解析到上游仓库。
 
 ## 服务器更新
 

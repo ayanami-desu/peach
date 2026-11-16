@@ -94,6 +94,13 @@ docker compose up -d
 
 构建平台只有 `linux/amd64`。`compose.yaml` 默认从 Docker Hub 拉 `longmeidao/peach:${PEACH_VERSION:-edge}`；要跟着本仓库的流水线走，把 `image` 行改成 `ghcr.io/<所有者>/peach:${PEACH_VERSION:-master}`，`PEACH_VERSION` 填 `sha-...`。私有仓库的 GHCR 包需要在服务器上先 `docker login ghcr.io`。
 
+查看构建任务时显式指定仓库；不要省略 `-R`，否则会按当前目录解析到上游：
+
+```sh
+gh run list -R <owner>/<repo> --workflow docker.yml --limit 5
+gh run watch -R <owner>/<repo> <运行编号> --exit-status
+```
+
 每次升级都只改 `PEACH_VERSION`，这一行同时就是回滚开关。
 
 ## 公网访问

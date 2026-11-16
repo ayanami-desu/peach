@@ -13,6 +13,7 @@
 - 维护者自己的代码从隔离工作树快进合入主分支，直接提交即可，不必开 PR；社区贡献仍按 `peach-issue-delivery` 走 PR。
 - 替他人开 issue 按 `CONTRIBUTING.md`「开 Issue」：用 `.github/ISSUE_TEMPLATE/` 的模板章节和 `gh issue create --type`，写通用技术说法；本文件的术语与交付格式只用于改代码。
 - 服务、端口或重启操作先核对监听与进程归属。已提交且测试通过的适用代码按 `docs/DEPLOYMENT.md` 的镜像升级（`pull` 与 `up -d`）重启并核验；手动或 CLI 发起的主任务仍在跑时先问，其余任务均能续跑时直接重启。
+- 查看 GitHub Actions 时一律显式带仓库：`gh run ... -R <owner>/<repo>`；省略时按当前目录解析，会查到上游仓库并报 404。
 - `agent_worktree.py prune --apply` 可回收入口判定安全的工作树；只按 PID 清理本任务创建的进程，保护活动工作树、忽略文件与其他任务。
 
 ## 术语
