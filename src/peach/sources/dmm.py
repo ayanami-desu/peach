@@ -66,11 +66,15 @@ _CID = re.compile(r"^(?:h_\d+|\d+)?([a-z]+)(\d+)([a-z]*)$")
 
 
 def code_from_cid(value: str) -> str:
-    """DMM 商品号的数字头属于发行目录，尾字母保留为作品身份。"""
+    """DMM 商品号的数字头属于发行目录，尾字母保留为作品身份；SOD 特典版的尾字母 `v` 除外。"""
     matched = _CID.fullmatch(str(value or "").lower())
     if not matched:
         return ""
     letters, digits, suffix = matched.groups()
+    # SOD 特典版的商品号以 v 结尾（`1sdjs00304v`，官方番号 SDJS-304-V），内容是通常版正片加特典映像，
+    # 资源与资料都按通常版番号收录，归到通常版（同 JavDB 对 FANZA 限定版取通常版的规则）。
+    if suffix == "v":
+        suffix = ""
     return normalise_code_key(f"{letters}-{digits}{suffix}")
 
 

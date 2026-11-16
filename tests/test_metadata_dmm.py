@@ -71,6 +71,11 @@ class CodeMappingTests(unittest.TestCase):
             self.assertEqual(code_from_cid(product), expected)
         self.assertEqual(code_from_cid("opaque_cid"), "")
 
+    def test_sod_bonus_edition_maps_to_the_regular_release(self):
+        # 特典版（官方番号 SDJS-304-V）是通常版正片加特典映像，番号归到通常版。
+        for product, expected in {"1sdjs00304v": "SDJS-304", "1start00644v": "START-644"}.items():
+            self.assertEqual(code_from_cid(product), expected)
+
     def test_code_parts_keep_the_numeric_prefix_and_the_digits_as_written(self):
         self.assertEqual(code_parts("SSIS-057"), ("", "SSIS", "057"))
         self.assertEqual(code_parts("ssis057"), ("", "SSIS", "057"))
