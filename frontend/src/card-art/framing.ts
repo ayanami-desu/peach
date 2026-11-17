@@ -161,8 +161,12 @@ function wideSleeve(img: HTMLImageElement): boolean {
    取景落定之后量这张图在屏幕上铺开多大：一个源像素要占不止一个设备像素，就是这一档不够
    清楚，往上换一档——800 那档换 1600 那档，1600 那档换原件。换上的那张加载完会再量一次。
    单列、大图这些真用得上像素的地方最后落到原件，多列时屏幕本来就放不下那么多像素。
-   `thumbSrc` 只记第一张派生档：模糊补底复用已经到手的那张小图。 */
-export function upgradeCover(img: HTMLImageElement): void {
+   `thumbSrc` 只记第一张派生档：模糊补底复用已经到手的那张小图。
+
+   换档前先让另一张图加载并解码完，再改这个元素的 `src`。直接改 `src` 会立刻清掉已经画出
+   的那一帧，等到新图下来才重新有画面；在一屏几十张卡上就是滚动时的闪黑。预载期间旧图
+   一直留在元素上，新图进缓存后赋值只换像素，不留空窗。 */
+export async function upgradeCover(img: HTMLImageElement): Promise<void> {
   const tier = /[?&]thumb=([12])(?=&|$)/.exec(img.src)?.[1];
   if (!tier || !img.naturalWidth) return;
   /* 触屏上 1600 档已经覆盖三倍屏的卡片尺寸，换回原件只多解一张 8–10 MB 的大图；
@@ -172,10 +176,37 @@ export function upgradeCover(img: HTMLImageElement): void {
   const pick = getComputedStyle(img).objectFit === 'contain' ? Math.min : Math.max;
   const scale = pick(width / img.naturalWidth, height / img.naturalHeight) * devicePixels();
   if (!(scale > 1.01)) return;
-  img.dataset.thumbSrc ||= img.src;
-  img.src = tier === '2'
-    ? img.src.replace(/([?&])thumb=2(?=&|$)/, '$1thumb=1')
-    : img.src.replace(/[?&]thumb=1(?=&|$)/, '');
+  const source = img.src;
+  const next = tier === '2'
+    ? source.replace(/([?&])thumb=2(?=&|$)/, '$1thumb=1')
+    : source.replace(/[?&]thumb=1(?=&|$)/, '');
+  if (!next || next === source || img.dataset.coverUpgrade === next) return;
+  img.dataset.thumbSrc ||= source;
+  img.dataset.coverUpgrade = next;
+  const loader = new Image();
+  loader.decoding = 'async';
+  const drop = () => { if (img.dataset.coverUpgrade === next) delete img.dataset.coverUpgrade };
+  try {
+    let ready: Promise<void>;
+    if (typeof loader.decode === 'function') {
+      loader.src = next;
+      ready = loader.decode();
+    } else {
+      ready = new Promise<void>((resolve, reject) => {
+        loader.onload = () => resolve();
+        loader.onerror = () => reject(new Error('cover preload failed'));
+        loader.src = next;
+      });
+    }
+    await ready;
+  } catch {
+    drop();
+    return;
+  }
+  // 预载期间元素换了图（回落、切来源或整段重画），以新图为准，不把旧请求盖回去。
+  if (img.dataset.coverUpgrade !== next || img.src !== source) { drop(); return; }
+  drop();
+  img.src = next;
 }
 
 /* 容器比例只有 `.pic` 的 `--card-ratio` 知道：竖屏开关、JAV 大图和普通卡片各写一个

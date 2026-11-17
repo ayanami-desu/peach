@@ -26,6 +26,30 @@ function mount(html: string): HTMLElement {
   return host;
 }
 
+type PendingPreload = { src: string; decoding: string; resolve(): void; reject(error: Error): void };
+type Deferred = { promise: Promise<void>; resolve(): void; reject(error: Error): void };
+
+function deferred(): Deferred {
+  let resolve!: () => void, reject!: (error: Error) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no });
+  return { promise, resolve, reject };
+}
+
+/** `upgradeCover` 换档前会另起一张图预载解码；测试把这张图停在手里，决定它何时成功或失败。 */
+function fakePreloads(): PendingPreload[] {
+  const pending: PendingPreload[] = [];
+  vi.stubGlobal('Image', class {
+    src = '';
+    decoding = '';
+    decode = () => {
+      const gate = deferred();
+      pending.push({ src: this.src, decoding: this.decoding, resolve: gate.resolve, reject: gate.reject });
+      return gate.promise;
+    };
+  });
+  return pending;
+}
+
 afterEach(() => {
   document.body.replaceChildren();
   vi.useRealTimers();
@@ -197,44 +221,86 @@ describe('宽正封框', () => {
 });
 
 describe('upgradeCover：派生档不够清楚就换回原件', () => {
-  it('一个源像素要占不止一个设备像素才换，模糊底仍取派生档', () => {
+  it('一个源像素要占不止一个设备像素才换，先预载解码再改 src，模糊底仍取派生档', async () => {
+    const preloads = fakePreloads();
     const host = mount('<div class="pic"><img class="poster cover" src="/cover?code=A&thumb=1"></div>');
     const img = sized(host.querySelector('img')!, 300, 200);
     boxOf(img, 600, 400);
-    upgradeCover(img);
+    const upgrade = upgradeCover(img);
+    expect(preloads).toHaveLength(1);
+    expect(new URL(preloads[0]!.src, 'https://peach.test').search).toBe('?code=A');
+    expect(preloads[0]!.decoding).toBe('async');
+    // 新档还没到手，元素上仍是已经画出来的那张，不能先清空。
+    expect(img.getAttribute('src')).toBe('/cover?code=A&thumb=1');
+    preloads[0]!.resolve();
+    await upgrade;
     expect(new URL(img.src).search).toBe('?code=A');
     expect(img.dataset.thumbSrc).toContain('/cover?code=A&thumb=1');
     const sharp = sized(mount('<img class="poster cover" src="/cover?code=B&thumb=1">').querySelector('img')!, 1200, 800);
     boxOf(sharp, 600, 400);
-    upgradeCover(sharp);
+    await upgradeCover(sharp);
     expect(sharp.getAttribute('src')).toBe('/cover?code=B&thumb=1');
+    expect(preloads).toHaveLength(1);
   });
 
-  it('800 那一档不够清楚先换 1600 那一档，版本号留着；模糊底记第一张派生档', () => {
+  it('800 那一档不够清楚先换 1600 那一档，版本号留着；模糊底记第一张派生档', async () => {
+    const preloads = fakePreloads();
     const host = mount('<div class="pic"><img class="poster cover" src="/cover?code=A&thumb=2&v=9"></div>');
     const img = sized(host.querySelector('img')!, 800, 538);
-    boxOf(img, 1000, 672);
-    upgradeCover(img);
-    expect(new URL(img.src).search).toBe('?code=A&thumb=1&v=9');
-    sized(img, 1600, 1076);
-    upgradeCover(img);
+    boxOf(img, 2000, 1344);
+    const first = upgradeCover(img);
+    expect(new URL(preloads[0]!.src, 'https://peach.test').search).toBe('?code=A&thumb=1&v=9');
+    expect(img.getAttribute('src')).toBe('/cover?code=A&thumb=2&v=9');
+    preloads[0]!.resolve();
+    await first;
     expect(new URL(img.src).search).toBe('?code=A&thumb=1&v=9');
     expect(img.dataset.thumbSrc).toContain('/cover?code=A&thumb=2&v=9');
+    sized(img, 1600, 1076);
+    const second = upgradeCover(img);
+    expect(new URL(preloads[1]!.src, 'https://peach.test').search).toBe('?code=A&v=9');
+    preloads[1]!.resolve();
+    await second;
+    expect(new URL(img.src).search).toBe('?code=A&v=9');
     const fits = sized(mount('<img class="poster cover" src="/cover?code=B&thumb=2">').querySelector('img')!, 800, 538);
     boxOf(fits, 333, 224);
-    upgradeCover(fits);
+    await upgradeCover(fits);
     expect(fits.getAttribute('src')).toBe('/cover?code=B&thumb=2');
   });
 
-  it('触屏不把 1600 档换回原件，800 档仍升到 1600', () => {
+  it('预载失败或元素已经换图时不覆盖现有封面', async () => {
+    const preloads = fakePreloads();
+    const failed = sized(mount('<img class="poster cover" src="/cover?code=C&thumb=1">').querySelector('img')!, 300, 200);
+    boxOf(failed, 900, 600);
+    const pending = upgradeCover(failed);
+    preloads[0]!.reject(new Error('无法解码'));
+    await pending;
+    expect(failed.getAttribute('src')).toBe('/cover?code=C&thumb=1');
+    expect(failed.dataset.coverUpgrade).toBeUndefined();
+
+    const changed = sized(mount('<img class="poster cover" src="/cover?code=D&thumb=1">').querySelector('img')!, 300, 200);
+    boxOf(changed, 900, 600);
+    const stale = upgradeCover(changed);
+    changed.src = '/poster?id=9&c=4';
+    preloads[1]!.resolve();
+    await stale;
+    expect(changed.getAttribute('src')).toBe('/poster?id=9&c=4');
+    expect(changed.dataset.coverUpgrade).toBeUndefined();
+  });
+
+  it('触屏不把 1600 档换回原件，800 档仍升到 1600', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('pointer: coarse') }));
+    const preloads = fakePreloads();
     const img = sized(mount('<img class="poster cover" src="/cover?code=A&thumb=1&v=3">').querySelector('img')!, 300, 200);
     boxOf(img, 900, 600);
-    upgradeCover(img);
+    await upgradeCover(img);
     expect(new URL(img.src).search).toBe('?code=A&thumb=1&v=3');
+    expect(preloads).toHaveLength(0);
     const small = sized(mount('<img class="poster cover" src="/cover?code=B&thumb=2&v=4">').querySelector('img')!, 800, 538);
     boxOf(small, 1100, 740);
-    upgradeCover(small);
+    const upgrade = upgradeCover(small);
+    expect(new URL(preloads[0]!.src, 'https://peach.test').search).toBe('?code=B&thumb=1&v=4');
+    preloads[0]!.resolve();
+    await upgrade;
     expect(new URL(small.src).search).toBe('?code=B&thumb=1&v=4');
   });
 });

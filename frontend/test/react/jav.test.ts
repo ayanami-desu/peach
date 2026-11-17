@@ -39,8 +39,8 @@ it('发现封面优先本机缓存，远程封面经 Peach 代理并保留原地
   const local = document.createElement('div');
   local.innerHTML = discoveryArtwork(item, 'big', 'cover');
   const cover = local.querySelector('img')!;
-  expect(cover.getAttribute('src')).toBe('/cover?code=ABC-001');
-  expect(cover.dataset.javCover).toBe('/cover?code=ABC-001');
+  expect(cover.getAttribute('src')).toBe('/cover?code=ABC-001&thumb=2');
+  expect(cover.dataset.javCover).toBe('/cover?code=ABC-001&thumb=2');
   local.innerHTML = discoveryArtwork({ ...item, has_cover: false }, 'small', 'cover');
   const image = local.querySelector('img')!;
   expect(image.getAttribute('src')).toBe('/cover-image?code=ABC-001');
