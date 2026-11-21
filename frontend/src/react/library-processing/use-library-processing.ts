@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
 import type { LibraryProcessingProps } from '../bundle';
+import { withBackoff } from '../../polling';
 import {
   announceCompletion, fetchLibraryProcessing, LIBRARY_PROCESSING_KEY, pollInterval,
   processingActive, type LibraryProcessingData,
@@ -27,7 +28,7 @@ export function useLibraryProcessingJob(
   const job = useQuery({
     queryKey: LIBRARY_PROCESSING_KEY,
     queryFn: ({ signal }) => fetchLibraryProcessing(signal),
-    refetchInterval: (query) => pollInterval(query.state.data, watching),
+    refetchInterval: withBackoff<LibraryProcessingData>((data) => pollInterval(data, watching)),
   });
   const [settled, setSettled] = useState<LibraryProcessingData | null>(null);
   const previous = useRef<string | undefined>(undefined);

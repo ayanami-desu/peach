@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, type QueryKey } from '@tanstack/react-query';
 
 import { queryClient } from './query';
+import { withBackoff } from '../polling';
 
 export interface JobState { status?: string }
 
@@ -48,10 +49,8 @@ export function useBackgroundJob<Job extends JobState, Args = void, Data = Job>(
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => hooks.current.queryFn({ signal }),
-    refetchInterval: (current) => {
-      const data = current.state.data;
-      return data !== undefined && jobOf(data)?.status === 'running' ? JOB_RUNNING_POLL_MS : (idlePollMs ?? false);
-    },
+    refetchInterval: withBackoff<Data>((data) =>
+      data !== undefined && jobOf(data)?.status === 'running' ? JOB_RUNNING_POLL_MS : (idlePollMs ?? false)),
   });
   const start = useMutation({
     mutationFn: (args: Args) => hooks.current.start(args),

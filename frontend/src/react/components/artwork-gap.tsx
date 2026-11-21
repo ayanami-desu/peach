@@ -9,10 +9,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/base/buttons/button';
 
 import { apiSend } from '../../api';
+import { withBackoff } from '../../polling';
 import { patchCatalogItems } from '../catalog-grid/catalog-grid';
 import type { MediaItem } from '../catalog-grid/types';
 import {
   fetchLibraryProcessing, LIBRARY_PROCESSING_KEY, pollInterval, processingActive,
+  type LibraryProcessingData,
 } from '../library-processing/library-processing';
 import { startPreviews } from '../library-processing/library-completion';
 import { queryClient } from '../query';
@@ -115,7 +117,7 @@ function PreviewsButton({ id, onDone, onProblem }: {
 }) {
   const [started, setStarted] = useState<string | null>(null);
   const job = useQuery({ queryKey: LIBRARY_PROCESSING_KEY, queryFn: ({ signal }) => fetchLibraryProcessing(signal),
-    staleTime: 15_000, refetchInterval: query => started ? pollInterval(query.state.data, true) : false }, queryClient);
+    staleTime: 15_000, refetchInterval: withBackoff<LibraryProcessingData>(data => started ? pollInterval(data, true) : false) }, queryClient);
   const action = useAction();
   const state = job.data;
   const mine = !!started && state?.job_id === started;

@@ -18,6 +18,7 @@ import { Button } from '@/components/base/buttons/button';
 import { LinkButton } from '@/components/base/buttons/link-button';
 
 import { apiGet, apiSend, errorMessage } from '../../api';
+import { withBackoff } from '../../polling';
 import { Note } from '../components/note';
 import { busyProps } from '../settings/use-action';
 import { momentText } from './tasks';
@@ -39,12 +40,15 @@ export interface BackgroundIssue {
   retry_available: boolean;
 }
 
+/** 没有在跑的任务可跟，固定半分钟读一次；读失败按连续失败次数退避。 */
+export const backgroundIssuesInterval = withBackoff<{ issues: BackgroundIssue[] }>(() => 30_000);
+
 export function BackgroundIssues() {
   const id = useId();
   const query = useQuery({
     queryKey: BACKGROUND_ISSUES_KEY,
     queryFn: ({ signal }) => apiGet<{ issues: BackgroundIssue[] }>(BACKGROUND_ISSUES_URL, signal),
-    refetchInterval: 30_000,
+    refetchInterval: backgroundIssuesInterval,
   });
   const issues = query.data?.issues || [];
   if (!issues.length) return null;

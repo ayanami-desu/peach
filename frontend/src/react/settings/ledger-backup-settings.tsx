@@ -11,6 +11,7 @@ import { Button } from '@/components/base/buttons/button';
 
 import { apiGet, apiSend, errorMessage } from '../../api';
 import { t } from '../../i18n';
+import { withBackoff } from '../../polling';
 import { LoadingDots } from '../components/loading-dots';
 import { Note } from '../components/note';
 import { Progress } from '../components/progress';
@@ -46,8 +47,8 @@ export function LedgerBackupSettings({ receipt }: { receipt(message: string): vo
   const snapshot = useQuery({
     queryKey: LEDGER_KEY, refetchOnMount: 'always',
     queryFn: ({ signal }) => apiGet<LedgerBackupsState>(LEDGER_URL, signal),
-    refetchInterval: query => (jobOf(query.state.data, 'backup')?.status === 'running'
-      || jobOf(query.state.data, 'restore')?.status === 'running' ? POLL_MS : false),
+    refetchInterval: withBackoff<LedgerBackupsState>(data => (jobOf(data, 'backup')?.status === 'running'
+      || jobOf(data, 'restore')?.status === 'running' ? POLL_MS : false)),
   });
   const apply = (next: LedgerBackupsState) => { queries.setQueryData(LEDGER_KEY, next); };
   if (snapshot.error) {

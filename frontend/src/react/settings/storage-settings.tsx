@@ -18,6 +18,7 @@ import { Switch } from '@/components/base/switch/switch';
 
 import { apiGet, apiSend, errorMessage } from '../../api';
 import { t } from '../../i18n';
+import { withBackoff } from '../../polling';
 import type { StorageCategory, StoragePolicy, StorageState } from '../bundle';
 import { LoadingDots } from '../components/loading-dots';
 import { Note } from '../components/note';
@@ -79,7 +80,7 @@ export function StorageSettings({ receipt }: { receipt(message: string): void })
   const snapshot = useQuery({
     queryKey: STORAGE_KEY, refetchOnMount: 'always',
     queryFn: ({ signal }) => apiGet<StorageState>(STORAGE_URL, signal),
-    refetchInterval: query => (running(query.state.data) ? POLL_MS : false),
+    refetchInterval: withBackoff<StorageState>(data => (running(data) ? POLL_MS : false)),
   });
   const apply = (next: StorageState) => { queries.setQueryData(STORAGE_KEY, next); };
   if (snapshot.error) {

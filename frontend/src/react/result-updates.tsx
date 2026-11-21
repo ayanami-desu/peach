@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import type { ShellActions } from './router/shell-actions';
 
 import {
-  fetchResultUpdates, RESULT_UPDATES_KEY, RUNNING_POLL_MS, SETTLED_POLL_MS, type ActivityData, type IngestNotice,
+  fetchResultUpdates, RESULT_UPDATES_KEY, RUNNING_POLL_MS, SETTLED_POLL_MS,
+  type ActivityData, type IngestNotice, type ResultUpdatesData,
 } from './activity/tasks';
 import { queryClient } from './query';
+import { withBackoff } from '../polling';
 import { showToast } from './toaster';
 
 const CATALOG = ['catalog-grid', 'catalog-folders', 'item', 'item-related', 'item-queue',
@@ -75,7 +77,7 @@ export function announceIngests(seen: { epoch: string; last: number } | null,
 
 export function ResultUpdates({ openItem }: Pick<ShellActions, 'openItem'>) {
   const query = useQuery({ queryKey: RESULT_UPDATES_KEY, queryFn: ({ signal }) => fetchResultUpdates(signal),
-    refetchInterval: current => (current.state.data?.busy ? RUNNING_POLL_MS : SETTLED_POLL_MS) });
+    refetchInterval: withBackoff<ResultUpdatesData>(data => (data?.busy ? RUNNING_POLL_MS : SETTLED_POLL_MS)) });
   const previous = useRef<Record<string, string> | undefined>(undefined);
   const announced = useRef<{ epoch: string; last: number } | null>(null);
   const [refresh] = useState(createResultRefresher);

@@ -4,6 +4,7 @@ import { Button, ButtonLink } from '@/components/base/buttons/button';
 import { Input } from '@/components/base/input/input';
 import { ApiError, apiGet, apiSend } from '../../api';
 import { diagnosticHeaders } from '../../browser-diagnostics';
+import { withBackoff } from '../../polling';
 import { Fieldset, FieldsetTitle } from '../components/fieldset';
 import { Note } from '../components/note';
 import { TaskProgress } from '../components/task-progress';
@@ -19,6 +20,10 @@ interface ExportState {
   download_url?: string; error?: string;
 }
 
+/** 导出在跑或在取消时每秒读一次进度，结束就停；读失败按连续失败次数退避。 */
+export const exportInterval = withBackoff<ExportState>((data) =>
+  (['running', 'cancelling'].includes(data?.status || '') ? 1000 : false));
+
 /** 导出按钮与它的进度、回执。刮削记录在卡片底栏里，进度复用卡片；诊断报告摆在页头，进度自己带框，
  *  `children` 是页头同一排的其他按钮。 */
 export function DiagnosticExportAction({ kind, codes = '', children }: {
@@ -26,7 +31,7 @@ export function DiagnosticExportAction({ kind, codes = '', children }: {
 }) {
   const action = useAction();
   const query = useQuery({ queryKey: KEY, queryFn: ({ signal }) => apiGet<ExportState>(URL, signal),
-    refetchInterval: query => ['running', 'cancelling'].includes(query.state.data?.status || '') ? 1000 : false });
+    refetchInterval: exportInterval });
   const state = query.data;
   const mine = state?.kind === kind;
   const active = state?.status === 'running' || state?.status === 'cancelling';

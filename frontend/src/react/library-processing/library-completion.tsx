@@ -7,6 +7,7 @@ import { RiArrowRightLine } from '@remixicon/react';
 import { cx } from '@/utils/cx';
 
 import { apiSend, errorMessage } from '../../api';
+import { withBackoff } from '../../polling';
 import type { MediaItem } from '../catalog-grid/types';
 import { Note } from '../components/note';
 import { queryClient } from '../query';
@@ -52,7 +53,7 @@ function Completion({ assetIds, onComplete, className }: {
 }) {
   const job = useQuery({ queryKey: LIBRARY_PROCESSING_KEY,
     queryFn: ({ signal }) => fetchLibraryProcessing(signal),
-    refetchInterval: query => pollInterval(query.state.data, true) });
+    refetchInterval: withBackoff<LibraryProcessingData>(data => pollInterval(data, true)) });
   const [started, setStarted] = useState<string | null>(null);
   const [outcome, setOutcome] = useState('');
   const completed = useRef<string | null>(null);

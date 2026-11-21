@@ -22,6 +22,7 @@ import { LinkButton } from '@/components/base/buttons/link-button';
 
 import { apiGet, errorMessage } from '../../api';
 import { t } from '../../i18n';
+import { withBackoff } from '../../polling';
 import { cardClass } from '../components/card';
 import { CodeBlock } from '../components/code-block';
 import { EmptyState } from '../components/empty-state';
@@ -140,7 +141,7 @@ function RunCard(
         apiGet<{ followups: TaskRunPayload[] }>(`/api/tasks/${id}`, signal)));
       return snapshots.flatMap((snapshot) => snapshot.followups);
     },
-    refetchInterval: resourceActive ? 2000 : false,
+    refetchInterval: withBackoff<TaskRunPayload[]>(() => (resourceActive ? 2000 : false)),
   });
   const rank = (row: TaskRunPayload) => (row.status === 'running' ? 3 : row.status === 'pending' ? 2
     : row.status === 'failed' || row.status === 'interrupted' ? 1 : 0);
