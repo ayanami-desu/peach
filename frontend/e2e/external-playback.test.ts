@@ -28,11 +28,31 @@ describe('外部播放器', () => {
         await chooser.waitFor();
         assert.equal(await page.getByRole('button', { name: '重新检测播放器', exact: true }).count(), 0);
         assert.equal(await page.getByRole('button', { name: '使用外部播放器打开', exact: true }).count(), 1);
+        const waitForChevron = (expanded: boolean) => page.waitForFunction(expanded => {
+          const icon = document.querySelector('[data-local-playback] [data-select-trigger]:not(:disabled) > svg');
+          return icon && icon.parentElement?.getAttribute('aria-expanded') === String(expanded)
+            && getComputedStyle(icon).rotate === (expanded ? '180deg' : '0deg');
+        }, expanded);
+        await waitForChevron(false);
+        await chooser.click();
+        await waitForChevron(true);
+        await page.keyboard.press('Escape');
+        await waitForChevron(false);
+        assert.equal(await chooser.evaluate(button => button === document.activeElement), true);
+
+        await page.keyboard.press('Enter');
+        await waitForChevron(true);
+        await page.keyboard.press('Tab');
+        await waitForChevron(false);
+        assert.equal(await page.getByRole('button', { name: '使用外部播放器打开', exact: true })
+          .evaluate(button => button === document.activeElement), true);
+
         await chooser.click();
         const options = await page.getByRole('option').allInnerTexts();
         assert.deepEqual(options.slice(-2), ['M3U 播放列表', '播放链接']);
         assert.ok(options.includes('VLC'), `本机播放器没列出来：${options.join('、')}`);
         await page.getByRole('option', { name: 'M3U 播放列表', exact: true }).click();
+        await waitForChevron(false);
         await page.getByRole('button', { name: '使用外部播放器打开', exact: true }).click();
         await page.locator('[data-local-playback] [role="alert"]').waitFor();
         assert.equal(requested, 1);
