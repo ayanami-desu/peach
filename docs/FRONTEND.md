@@ -171,7 +171,7 @@ Docker 镜像构建会在 `frontend-build` 阶段自动运行 `npm --prefix fron
 
 构建与测试工具（`devDependencies`）：`vite` 8.3.8、`typescript` 7.0.2、`oxlint` 1.93.0、`@shadcn/lint` 0.2.5、`vitest` 5.1.0、`happy-dom` 21.0.4、`playwright-core` 1.65.1、`@sentry/cli` 3.8.2、`@sentry/vite-plugin` 11.12.0（sourcemap 上传）、`@tailwindcss/vite` 4.3.5、`tailwindcss` 4.3.5、`oxc-parser` 0.158.0（文案检查扫源码）、`agentation` 3.1.2（界面标注）、`@types/react` 与 `@types/react-dom` 19.3.0、`@types/d3-sankey`。
 
-`web/vendor/` 的第三方资源由根 `package.json` 的 `devDependencies` 钉版本，`npm run vendor:web` 按版本号写成目录并附许可证与来源说明，`npm run check:vendor` 校验字节一致：`@fontsource-variable/inter` 5.3.0（正文字体，落在 `web/vendor/inter/5.3.0/`）、`swiper` 14.4.0（卡片与画廊的滑动）、`@videojs/cdn` 10.4.0（播放器运行时）。`lucide-static` 1.72.0、`@phosphor-icons/core` 2.1.1、`remixicon` 4.9.1 与 `healthicons` 3.1.0 的图标以 symbol 内联进 `web/index.html` 的雪碧图，`web/vendor/` 里只放它们的许可证与来源说明。同一个脚本还会把 `web/` 各文件里引用的版本号改齐。新增依赖时在这两张表里补一行用途，再跑一次 `npm run vendor:web` 更新产物与锁文件。
+`web/vendor/` 的第三方资源由根 `package.json` 的 `devDependencies` 钉版本，`npm run vendor:web` 按版本号写成目录并附许可证与来源说明，`npm run check:vendor` 校验字节一致：`@fontsource-variable/inter` 5.3.0（正文字体，落在 `web/vendor/inter/5.3.0/`）、`swiper` 14.4.0（卡片与画廊的滑动）、`@videojs/cdn` 10.5.0（播放器运行时）。`lucide-static` 1.74.0、`@phosphor-icons/core` 2.1.1、`remixicon` 4.9.1 与 `healthicons` 3.1.0 的图标以 symbol 内联进 `web/index.html` 的雪碧图，`web/vendor/` 里只放它们的许可证与来源说明。同一个脚本还会把 `web/` 各文件里引用的版本号改齐。新增依赖时在这两张表里补一行用途，再跑一次 `npm run vendor:web` 更新产物与锁文件。
 
 ## 站点标识与图标
 
