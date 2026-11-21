@@ -115,7 +115,7 @@ function sidebarHost(order = ['', 'unseen'], current = '', attached: () => void 
   const host: SidebarHost = {
     scroll, store, navCatalog: CATALOG,
     navOn: (key) => key === pressed,
-    navTo: vi.fn(), navToTop: vi.fn(), toggleChip: vi.fn(), setDuration: vi.fn(),
+    navTo: vi.fn(), navToTop: vi.fn(), openDrawer: vi.fn(), toggleChip: vi.fn(), setDuration: vi.fn(),
     attached: vi.fn(attached),
   };
   scroll.innerHTML = sidebarSkeletonHtml(order, CATALOG, host.navOn);

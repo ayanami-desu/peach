@@ -67,6 +67,8 @@ export interface SidebarHost {
   navTo(key: string): void;
   /** 双击导航时平滑回顶，保留该栏目内容和筛选。 */
   navToTop(): void;
+  /** 桌面侧栏折叠或展开（宽度拖到最窄再往左越过后折起）。 */
+  openDrawer(open: boolean): void;
   /** 一枚目录筛选键：`multi` 的组按逗号列表增减，其余组单选、再点一次取消。 */
   toggleChip(key: string, value: string, multi: boolean): void;
   /** 时长两端松手（分钟）：0 与 180 表示这一端不限。 */

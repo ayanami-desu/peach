@@ -9,7 +9,13 @@
     "playlists": "Playlists",
     "following": "Following",
     "immerse": "Immersive",
-    "manage": "Manage"
+    "manage": "Manage",
+    "expand": "Expand sidebar"
+  },
+  "sidebarWidth": {
+    "label": "Resize sidebar, double-click or press Enter to reset",
+    "pixels": "{{count}} px",
+    "resetHint": "Double-click to reset"
   },
   "manage": {
     "stats": "Stats",

@@ -9,7 +9,13 @@
     "playlists": "播放列表",
     "following": "关注",
     "immerse": "沉浸模式",
-    "manage": "管理"
+    "manage": "管理",
+    "expand": "展开侧栏"
+  },
+  "sidebarWidth": {
+    "label": "调整侧栏宽度，双击或按回车重置",
+    "pixels": "{{count}} px",
+    "resetHint": "双击重置"
   },
   "manage": {
     "stats": "统计",
