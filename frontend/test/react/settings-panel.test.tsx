@@ -18,7 +18,7 @@ import type {
 import { createSettingsStore } from '../../src/settings-store';
 import { DEFAULT_SFW_SHORTCUT, parseShortcut, type Shortcut } from '../../src/keyboard-shortcut';
 
-import { click, pending, settle } from './render';
+import { choose, click, pending, settle } from './render';
 
 notifyManager.setScheduler((notify) => notify());
 
@@ -191,9 +191,9 @@ describe('设置面板与壳的接缝', () => {
       }
     };
     const panel = await open(current, 'JAV');
-    const field = panel.querySelector<HTMLElement & { value: string }>('#performerNameLanguageSetting > div')!;
-    expect(field.value).toBe('zh-CN');
-    await act(async () => { field.value = 'ja'; field.dispatchEvent(new Event('change', { bubbles: true })) });
+    const field = () => panel.querySelector<HTMLElement>('#performerNameLanguageSetting button[aria-haspopup="listbox"]')!;
+    expect(field().textContent?.trim()).toBe('中文');
+    await choose(field(), '日文原文');
     expect(writes).toEqual([{ performerNameLanguage: 'ja' }]);
     expect(names.nameLanguage()).toBe('zh-CN');
     expect(current.value.performerNameLanguage).toBe('zh-CN');
@@ -202,7 +202,7 @@ describe('设置面板与壳的接缝', () => {
     await settle();
     expect(names.nameLanguage()).toBe(success ? 'ja' : 'zh-CN');
     expect(current.value.performerNameLanguage).toBe(success ? 'ja' : 'zh-CN');
-    expect(field.value).toBe(success ? 'ja' : 'zh-CN');
+    expect(field().textContent?.trim()).toBe(success ? '日文原文' : '中文');
     expect(failure).toHaveBeenCalledTimes(success ? 0 : 1);
   });
   it.each([true, false])('界面语言存进数据库，保存成功=%s 时才交壳对账', async (success) => {
@@ -218,10 +218,10 @@ describe('设置面板与壳的接缝', () => {
     const failure = vi.fn();
     current.host.failure = failure;
     const panel = await open(current, '外观与导航');
-    const field = panel.querySelector<HTMLElement & { value: string }>('#interfaceLanguageSetting > div')!;
-    expect(field.value).toBe('zh-CN');
+    const field = () => panel.querySelector<HTMLElement>('#interfaceLanguageSetting button[aria-haspopup="listbox"]')!;
+    expect(field().textContent?.trim()).toBe('简体中文');
     synced.length = 0; // 打开面板时的那一次对账不算
-    await act(async () => { field.value = 'en'; field.dispatchEvent(new Event('change', { bubbles: true })) });
+    await choose(field(), 'English');
     expect(writes).toEqual([{ interfaceLanguage: 'en' }]);
     expect(synced).toEqual([]);
     await answer.release({ ok: success, status: success ? 200 : 500,

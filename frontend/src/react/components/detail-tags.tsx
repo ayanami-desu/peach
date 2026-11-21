@@ -1,7 +1,7 @@
 /* 详情页的标签外观、选择器与标签名称编辑。 */
 import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { RiArrowDownSLine, RiArrowUpSLine } from '@remixicon/react';
+import { MenuChevron } from './menu-chevron';
 import { spinnerHtml, wireAnchoredMenu } from '@peach/legacy/ui';
 import { Button } from '@/components/base/buttons/button';
 import { foldName, icon } from '@peach/legacy/core';
@@ -57,7 +57,7 @@ export function DetailTags({ tags, candidates, id, adding, label, onOpen, onAdd,
           {...busyAttrs(tag.k)} onClick={() => onRemove(tag)}><Glyph name="x" /></button>
       </span>)}
       {long ? <Button variant="secondary" size="small" data-tags-more="" aria-expanded={open}
-        trailingIcon={open ? RiArrowUpSLine : RiArrowDownSLine} onClick={() => setOpen(!open)}>
+        trailingIcon={MenuChevron} onClick={() => setOpen(!open)}>
         {open ? '收起' : `还有 ${tags.length - shown.length} 个`}</Button> : null}
       <TagPicker tags={tags} candidates={options} label={label} onAdd={add} adding={adding}
         onOpen={() => setAsked(true)} loading={inventory.isFetching} />

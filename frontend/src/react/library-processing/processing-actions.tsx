@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { RiArrowDownSLine, RiArrowRightLine } from '@remixicon/react';
+import { RiArrowRightLine } from '@remixicon/react';
+import { MenuChevron } from '../components/menu-chevron';
 import { Dialog, Popover } from 'react-aria-components';
 import { Button } from '@/components/base/buttons/button';
 import { LinkButton } from '@/components/base/buttons/link-button';
@@ -119,7 +120,7 @@ export function ProcessingActions({ busy, occupied = false, scan = false, metada
       }}>管理媒体库</LinkButton>, promptView.footer) : null}
     <span data-button-group data-split-button data-variant="primary">
       <Button {...blockedProps} onClick={() => run(primary.command)}>{primary.label}</Button>
-      <Button ref={trigger} iconOnly leadingIcon={RiArrowDownSLine} aria-label="更多同步方式"
+      <Button ref={trigger} iconOnly leadingIcon={MenuChevron} aria-label="更多同步方式"
         aria-haspopup="dialog" aria-expanded={open} {...blockedProps} onClick={() => {
           if (busy) return;
           if (occupied) onOccupied?.(); else setOpen(!open);

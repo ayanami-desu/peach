@@ -8,7 +8,7 @@ import { Button } from '@/components/base/buttons/button';
 import { Input } from '@/components/base/input/input';
 import { apiSend } from '../../api';
 import { appPlayers } from '../../player/external-apps';
-import { SelectField } from '../settings-panel/legacy-controls';
+import { SelectField } from '../components/select-field';
 import { ErrorText, Help } from '../settings/section';
 import { busyProps, useAction } from '../settings/use-action';
 
