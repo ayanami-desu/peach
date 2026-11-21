@@ -96,6 +96,21 @@ class LibraryDiagnosticsTests(unittest.TestCase):
         self.assertEqual(len(result['items']), 500)
         self.assertTrue(result['truncated'])
 
+    def test_column_filters_and_facets_use_rows_beyond_the_display_limit(self):
+        with closing(sqlite3.connect(self.db)) as connection, connection:
+            connection.execute("UPDATE asset SET size=4096 WHERE id=3")
+        with patch.object(diagnostics, "LIMIT", 1):
+            result = diagnostics.library(self.settings, self.config, {
+                "duration": '{"location":["none"],"size":{"range":{"min":4096}}}',
+            })
+        duration = result["groups"]["duration"]
+        self.assertEqual([row["id"] for row in duration["items"]], [3])
+        self.assertEqual(duration["count"], 1)
+        self.assertFalse(duration["truncated"])
+        self.assertEqual(duration["column_facets"], {"location": [{"id": "none", "count": 1}]})
+        with self.assertRaisesRegex(ValueError, "invalid column filters"):
+            diagnostics.library(self.settings, self.config, {"duration": '{"bogus":[]}'})
+
     def test_sources_require_parsed_profile_provenance_and_show_cooldown(self):
         with closing(sqlite3.connect(self.db)) as connection, connection:
             connection.execute("INSERT INTO performer_profile(entity_id,source,source_url,fetched_at) "

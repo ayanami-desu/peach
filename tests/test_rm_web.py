@@ -6,7 +6,7 @@ import threading
 import unittest
 from contextlib import closing, contextmanager
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -63,6 +63,52 @@ class WebDataTests(unittest.TestCase):
         for malformed in ('2024x', '24', '2024,', '2024 OR 1=1'):
             with self.subTest(year=malformed), self.assertRaises(ValueError):
                 q_items(self.contract, {'year':malformed})
+
+    def test_catalog_column_filters_apply_before_summary_and_pagination(self):
+        with self.contract.write_transaction() as connection:
+            connection.execute("UPDATE asset SET rating=80,last_played=1700000000,release_date='2024-02-29' WHERE id=1")
+            connection.execute("UPDATE asset SET rating=100,last_played=1700000001,release_date='2024-03-01' WHERE id=2")
+        args = {"scope_kind": "creator", "scope_name": "Canonical Creator", "sort": "size", "dir": "asc", "limit": "1"}
+        for selected, ids in (
+            ({"people": ["performer:Canonical Alice"], "rating": ["4"]}, [1]),
+            ({"people": {"exclude": ["performer:Canonical Alice"]}, "dur": {"range": {"min": 200}}}, [2]),
+            ({"tags": []}, []),
+            ({"played": {"range": {"min": 1700000000, "max": 1700000001}}}, [1]),
+            ({"release": {"range": {"max": "2024-02-29"}}}, [1]),
+            ({"size": {"range": {"min": 200, "max": 200}}, "resolution": ["1080x1920"]}, [2]),
+        ):
+            with self.subTest(selected=selected):
+                filters = {**args, "column_filters": json.dumps(selected)}
+                self.assertEqual([row["id"] for row in q_items(self.contract, filters)["items"]], ids)
+                self.assertEqual(q_items(self.contract, {**filters, "summary_only": "1"})["total"], len(ids))
+        self.assertEqual(q_items(self.contract, {**args, "loc": "115", "column_filters": '{"rating":["4"]}'})["total"], 0)
+        self.assertEqual(q_items(self.contract, {**args, "performer": "Canonical Alice",
+                                                "column_filters": '{"size":{"range":{"min":200}}}'})["total"], 0)
+
+    def test_column_facets_page_search_and_scope_without_changing_legacy_facets(self):
+        from peach.web_router import _get_facets
+
+        scope = {"scope_kind": "creator", "scope_name": "Canonical Creator"}
+        first = _get_facets(self.contract, {**scope, "column": "people", "column_limit": "1"})
+        second = _get_facets(self.contract, {**scope, "column": "people", "column_offset": "1"})
+        self.assertEqual([(row["kind"], row["k"], row["n"]) for row in first["items"]],
+                         [("creator", "Canonical Creator", 2)])
+        self.assertEqual(first["next_offset"], 1)
+        self.assertTrue(first["has_more"])
+        self.assertEqual([(row["kind"], row["k"], row["n"]) for row in second["items"]],
+                         [("performer", "Canonical Alice", 1)])
+        self.assertFalse(second["has_more"])
+        self.assertEqual(_get_facets(self.contract, {**scope, "column": "people", "column_q": "Alice",
+                                                   "loc": "115"})["items"], [])
+        found = _get_facets(self.contract, {**scope, "column": "people", "column_q": "Alice"})
+        self.assertEqual([row["k"] for row in found["items"]], ["Canonical Alice"])
+        self.assertEqual(_get_facets(self.contract, {**scope, "column": "resolution",
+                                                   "column_filters": '{"dur":{"range":{"max":100}}}'})["items"],
+                         [{"k": "1920x1080", "n": 1}])
+        seen = int(datetime(2026, 8, 13, tzinfo=timezone.utc).timestamp())
+        self.assertEqual(_get_facets(self.contract, {**scope, "column": "new", "loc": "115"})["date_values"],
+                         [seen, seen])
+        self.assertIn("locations", _get_facets(self.contract, scope))
 
     def test_release_year_unknown_is_distinct_from_malformed_dates_and_insertion_date(self):
         for date in (None, '', '0000', '20240-01-01', 'unknown'):
@@ -1791,6 +1837,19 @@ class WebDataTests(unittest.TestCase):
         cleared = rm_web.w_quality_goal(self.contract, {"id": 1, "wanted": False})
         self.assertFalse(cleared["better_version"])
         self.assertFalse(rm_web.q_item(self.contract, 1)["better_version"])
+
+    def test_quality_column_facets_cover_all_matching_rows_before_pagination(self):
+        for aid, reason in ((1, "watermark / resolution"), (2, "resolution")):
+            rm_web.w_quality_goal(self.contract, {"id": aid, "wanted": True, "reason": reason})
+        queue = rm_web.q_quality_goals(self.contract, {
+            "limit": "1", "column_filters": '{"reason":["watermark"],"size":{"range":{"max":100}}}',
+        })
+        self.assertEqual(queue["total"], 1)
+        self.assertEqual([row["id"] for row in queue["items"]], [1])
+        self.assertFalse(queue["has_more"])
+        self.assertEqual(queue["column_facets"]["reason"], [
+            {"id": "resolution", "count": 1}, {"id": "watermark", "count": 1},
+        ])
 
     def test_better_version_targets_have_a_management_read_surface(self):
         rm_web.w_quality_goal(self.contract, {"id": 1, "wanted": True})

@@ -3,6 +3,7 @@
 样本全部来自 2026-08-15 的真实误判与用户手工标记的真广告：命中推广词本身
 不是证据，要看剥掉推广词后还剩不剩内容。
 """
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -168,6 +169,21 @@ class ResourceJunkQueueTests(unittest.TestCase):
             connection.commit()
         finally:
             connection.close()
+
+    def test_junk_column_filters_do_not_truncate_facets_or_mutate_the_cached_rows(self):
+        for aid, size in ((1, 4000), (2, 2000), (3, 1000)):
+            self.add(aid, "gdrive", f"gdrive:/media/{aid}/点击进入.url", "other", size=size)
+        reason = json.dumps({"text": "网址快捷方式"}, ensure_ascii=False, sort_keys=True)
+        filtered = q_ads(self.contract, limit=1, column_filters=json.dumps({
+            "size": {"range": {"max": 2000}}, "why": [reason],
+        }))
+        self.assertEqual(filtered["total"], 2)
+        self.assertEqual(filtered["all_total"], 3)
+        self.assertEqual([row["id"] for row in filtered["items"]], [2])
+        self.assertIn({"text": "网址快捷方式"}, filtered["items"][0]["why_parts"])
+        self.assertNotIn("drive_root", filtered["items"][0])
+        self.assertIn({"id": reason, "count": 2}, filtered["column_facets"]["why"])
+        self.assertEqual(q_ads(self.contract, limit=1)["total"], 3)
 
     def test_automatic_isolation_requires_a_scope_and_observes_source_and_directory_boundaries(self):
         for aid, folder in ((1, 'media'), (2, 'media2'), (3, 'media/sub')):

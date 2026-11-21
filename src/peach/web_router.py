@@ -25,6 +25,7 @@ from .web_performer_delete import q_performer_delete_candidates, q_performer_del
 from .web_tags import q_tag_management, w_tag_management, w_tag_preview
 from .web_catalog import (
     FACETS_TABLES,
+    column_page,
     q_editions,
     q_facets,
     q_item,
@@ -125,6 +126,7 @@ def _get_ads(contract, args):
         max(int(args.get("offset", "0")), 0),
         args.get("kind", ""),
         args.get("status", "pending"),
+        args.get("column_filters"),
     )
 
 
@@ -159,24 +161,32 @@ FACET_ENUM_FILTERS = frozenset({"loc", "len", "orient", "region", "exclude_verti
 
 def _get_facets(contract, args):
     jav = args.get("jav") == "1"
+    column = args.get("column", "")
     scope_kind = str(args.get("scope_kind", ""))
     scope_name = str(args.get("scope_name", ""))
     asset_id = int(args["id"]) if args.get("id") else None
     state = str(args.get("state", ""))
-    scope_key = f"{scope_kind}:{scope_name}:{asset_id or ''}:{state}"
+    scope_key = repr((scope_kind, scope_name, asset_id, state, column))
     filters = {key: args[key] for key in (
         'loc', 'creator', 'performer', 'studio', 'series', 'agency', 'tag', 'tag_match',
         'len', 'dur_min', 'dur_max', 'orient', 'region', 'exclude_vertical', 'q', 'thumb',
-        'library', 'folder', 'folder_recursive', 'year',
+        'library', 'folder', 'folder_recursive', 'year', 'owner', 'column_filters',
     ) if args.get(key)}
     if not filters.get("tag"):
         filters.pop("tag_match", None)
     scope_key += repr(sorted(filters.items()))
+    column_query, column_offset, column_limit = column_page(args) if column else ('', 0, 24)
     compute = lambda: q_facets(  # noqa: E731
         contract,
         jav=jav, scope_kind=scope_kind, scope_name=scope_name, asset_id=asset_id,
-        state=state, filters=filters or None,
+        state=state, filters=filters if column else filters or None, column=column, column_query=column_query,
+        column_offset=column_offset, column_limit=column_limit,
     )
+    if column:
+        return contract.cached_lru(
+            f"column-facets{'-jav' if jav else ''}:{scope_key}:{column_query!r}:{column_offset}:{column_limit}",
+            compute, tables=FACETS_TABLES, inputs=(repr(settings_file.active().drive_roots),
+                                                 repr(settings_file.active().drive_locations)))
     # 首页与侧栏几组枚举筛选（来源、时长、画幅、产地、媒体库）的组合有限，按账本版本缓存；
     # 实体、详情、搜索词、标签与时长区间的键空间不封闭，照旧走 TTL 缓存。
     if (not (scope_kind or scope_name or asset_id is not None) and state in FACET_STATES

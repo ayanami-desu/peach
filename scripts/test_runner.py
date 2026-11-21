@@ -43,6 +43,7 @@ SCOPES: dict[str, tuple[str, ...]] = {
                 "test_entity_merge.py", "test_entity_redirect.py", "test_fastapi_api.py", "test_field_owners.py",
                 "test_migrations.py",
                 "test_rm_web.py",
+                "test_table_filters.py",
                 "test_entity_link_install.py", "test_web_links.py", "test_entry_links.py",
                 "test_link_marks.py", "test_site_icons.py", "test_site_logos.py",
                 "test_avatar_face.py",
@@ -190,6 +191,7 @@ AUTO_SCOPE_FILES: dict[str, tuple[str, ...]] = {
     # 模块名与测试文件名对不上，按名字推不出来，不指明就退化成 full。
     "src/peach/library_processing.py": ("metadata", "web"),
     "src/peach/library_processing_scope.py": ("metadata", "web"),
+    "src/peach/table_filters.py": ("catalog", "tooling", "web"),
     # 卡片接触印相同样从网盘抽帧，和 `test_preview_sheets.py` 一起归 media。
     "src/peach/preview_sheets.py": ("media",),
     # 任务状态根目录由 `task_control`、`task_resources`、`job_recovery` 共用，

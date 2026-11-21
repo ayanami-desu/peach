@@ -155,6 +155,7 @@
 | `POST /api/configuration/storage/clean` | 按类别清理；不在可清理清单里的分组回 400「这一类不能在这里清理」，任务在跑 409 |
 | `GET /api/configuration/ledger-backups`、`POST .../backup`、`POST .../restore` | 账本备份与恢复；界面落点「设置 → 存储与备份」下半格；恢复要求 `confirm: true`，否则 400「恢复会替换当前账本，请先确认」 |
 | `GET /api/diagnostics` | 系统检查 |
+| `GET /api/diagnostics/library?group=` | 馆藏诊断单组读取；可传 `column_filters`，返回筛选后的条目、总数与列选项计数 |
 | `GET`/`POST /api/diagnostics/exports`、`POST .../{identity}/cancel`、`GET .../{identity}/download` | 诊断记录导出 |
 | `POST /api/diagnostics/client-error` | 页面侧异常上报，按来源限频 |
 | `POST /api/pick-folder` | 在服务器这台机器上弹系统文件夹对话框，返回 `{"path": ...}`；已在弹 409，无法弹 501 |

@@ -676,6 +676,18 @@ class FastApiContractTests(unittest.IsolatedAsyncioTestCase):
                          {"database", "schema", "configured", "drives", "security", "ffmpeg",
                           "data_root", "port", "tasks", "version"})
 
+    async def test_diagnostic_library_filters_have_an_authenticated_group_endpoint(self) -> None:
+        params = {"group": "duration", "column_filters": '{"size":{"range":{"min":9007199254740991}}}'}
+        denied = await self.client.get("/api/diagnostics/library", params=params)
+        self.assertEqual(denied.status_code, 401, denied.text)
+        response = await self.client.get("/api/diagnostics/library", params={**params, "t": "secret"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["count"], 0)
+        self.assertEqual(response.json()["column_facets"], {"location": []})
+        for invalid in ({"group": "unknown"}, {"column_filters": '{"unsupported":[]}'}):
+            bad = await self.client.get("/api/diagnostics/library", params={**params, **invalid, "t": "secret"})
+            self.assertEqual(bad.status_code, 400, bad.text)
+
     async def test_background_issues_come_back_as_a_list(self) -> None:
         answer = await self.client.get("/api/background-issues", params={"t": "secret"})
         self.assertEqual(answer.status_code, 200, answer.text)

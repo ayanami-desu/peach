@@ -39,6 +39,7 @@ from .catalog_versions import foldable_versions, partition_versions, version_lab
 from .field_owners import parse_owners
 from .metadata_policy import SOURCE_SPECS
 from .regions import infer_region, normalize_region, region_label
+from .table_filters import column_filters, range_limits
 from .web_activity import DEFAULT_PROFILE_ID
 from .web_state import WebContract
 from .western_artwork import artwork_key
@@ -283,12 +284,87 @@ def release_year_filter(value, *, trash=False):
         '' if year == 'none' else year for year in years]
 
 
+SCALAR_COLUMN_EXPRESSIONS = {
+    "rating": "CAST(CAST(round(min(max(COALESCE(a.rating,0),0),100)/20.0) AS INTEGER) AS TEXT)",
+    "resolution": "CASE WHEN a.width>0 AND a.height>0 THEN a.width||'x'||a.height ELSE 'none' END",
+}
+CATALOG_RANGE_COLUMNS = {
+    "size": ("number", "a.size"),
+    "dur": ("number", "CASE WHEN a.duration>0 THEN a.duration END"),
+    "plays": ("number", "COALESCE(a.play_count,0)"),
+    "o": ("number", "COALESCE(a.o_count,0)"),
+    "new": ("timestamp", "unixepoch(a.first_seen)"),
+    "played": ("timestamp", "NULLIF(CAST(a.last_played AS REAL),0)"),
+    "release": ("date", "date(a.release_date)"),
+}
+CATALOG_RANGE_TYPES = {key: kind for key, (kind, _) in CATALOG_RANGE_COLUMNS.items()}
+CATALOG_DATE_COLUMNS = {key for key, kind in CATALOG_RANGE_TYPES.items() if kind != "number"}
+
+
+def _library_column_predicate(config, value):
+    if value != "none":
+        clause, params = media_libraries.predicate(config, value)
+        return f"COALESCE({clause},0)", params
+    choices, params = [], []
+    for library in media_libraries.libraries(config):
+        clause, values = media_libraries.predicate(config, library["id"])
+        choices.append(f"COALESCE({clause},0)")
+        params.extend(values)
+    return ("NOT (" + " OR ".join(choices) + ")" if choices else "1"), params
+
+
+def _column_filter_predicate(contract, raw):
+    selected = column_filters(raw, {"people", "library", "tags", *SCALAR_COLUMN_EXPRESSIONS}, CATALOG_RANGE_TYPES)
+    if not selected:
+        return [], []
+    conditions, parameters = [], []
+    config = settings_file.active() if "library" in selected else None
+    with contract.read_connection() as connection:
+        for column, selection in selected.items():
+            if column in CATALOG_RANGE_COLUMNS:
+                kind, expression = CATALOG_RANGE_COLUMNS[column]
+                for operator, bound in range_limits(selection["range"], kind):
+                    conditions.append(f"{expression} {operator} ?")
+                    parameters.append(bound)
+                continue
+            exclude = isinstance(selection, dict)
+            values = selection["exclude"] if exclude else selection
+            choices = []
+            for value in values:
+                if column == "library":
+                    clause, params = _library_column_predicate(config, value)
+                elif column in SCALAR_COLUMN_EXPRESSIONS:
+                    clause, params = SCALAR_COLUMN_EXPRESSIONS[column] + "=?", [value]
+                elif column == "people" and value == "owner:none":
+                    clause, params = UNOWNED_ASSET_CLAUSE, []
+                else:
+                    kind, name = value.split(":", 1) if column == "people" else ("tag", value)
+                    clause, params = _entity_asset_filter(connection, kind, name)
+                choices.append(clause)
+                parameters.extend(params)
+            combined = "(" + " OR ".join(choices) + ")" if choices else "0"
+            conditions.append("NOT " + combined if exclude else combined)
+    return conditions, parameters
+
+
+def _catalog_scope(args):
+    kind, name = args.get("scope_kind", ""), args.get("scope_name", "")
+    if not (kind or name):
+        return []
+    if kind not in {"creator", "performer", "studio", "series", "agency", "tag"} or not name:
+        raise ValueError("invalid catalog scope")
+    return [(kind, name)]
+
+
 def catalog_filter(contract: WebContract, args):
     """视频列表与侧栏使用同一组筛选条件。"""
     trash = args.get("state") == "trash"
     # 普通馆藏仍是视频表面；回收站必须展示所有文件类型，否则从垃圾复核移入的
     # 图片、网址快捷方式等会变成不可见、不可恢复，只能被「清空回收站」直接删掉。
     where, par = ([] if trash else [VISIBLE_CATALOG_ASSET]), []
+    conditions, parameters = _column_filter_predicate(contract, args.get("column_filters"))
+    where.extend(conditions)
+    par.extend(parameters)
     from .web_folders import folder_filter
     folder_where, folder_params = folder_filter(contract, args)
     where.extend(folder_where)
@@ -304,6 +380,7 @@ def catalog_filter(contract: WebContract, args):
         where.append("a.location IN (%s)" % ",".join("?" * len(locs))); par += locs
     subjects = [(kind, args[kind]) for kind in ("creator", "performer", "studio", "series", "agency")
                 if args.get(kind)]
+    subjects.extend(_catalog_scope(args))
     if subjects:
         with contract.read_connection() as connection:
             for kind, name in subjects:
@@ -1476,6 +1553,62 @@ def _release_year_facets(contract, connection, scope, values, state, filters, as
                 "WHERE a.medium='video' "+scope+' GROUP BY k ORDER BY k DESC', values)]
 
 
+def column_page(args):
+    """列选项搜索与作品搜索独立，每次只取一页。"""
+    return (str(args.get("column_q") or "").strip(), max(0, int(args.get("column_offset") or 0)),
+            max(1, min(int(args.get("column_limit") or 24), 100)))
+
+
+def _column_facets(contract, connection, scope, params, column, query, offset, limit):
+    if column in CATALOG_DATE_COLUMNS:
+        kind, expression = CATALOG_RANGE_COLUMNS[column]
+        modifier = ",'unixepoch'" if kind == "timestamp" else ""
+        year = f"strftime('%Y',{expression}{modifier})"
+        rows = connection.execute(
+            f"SELECT min({expression}),max({expression}) FROM asset a WHERE a.medium='video' "
+            + scope + f" AND {year} IS NOT NULL GROUP BY {year}", params)
+        return {"column": column, "date_values": [value for row in rows for value in row]}
+    if column in SCALAR_COLUMN_EXPRESSIONS:
+        expression = SCALAR_COLUMN_EXPRESSIONS[column]
+        rows = list(connection.execute(
+            f"SELECT {expression} AS k,count(*) AS n FROM asset a WHERE a.medium='video' " + scope
+            + f" AND {expression} LIKE ? GROUP BY k ORDER BY n DESC,k LIMIT ? OFFSET ?",
+            [*params, "%" + query + "%", limit + 1, offset]))
+    else:
+        from .web_entity import SUGGEST_ENTITY_MATCH, _suggest_patterns
+
+        kinds = "'creator','performer'" if column == "people" else "'tag'"
+        visible = ("AND " + tag_not_hidden("ae.asset_id", "e.normalized_name")
+                   + " AND " + tag_is_not_a_performer_name("e.normalized_name")) if column == "tags" else ""
+        search = "AND " + SUGGEST_ENTITY_MATCH if query else ""
+        # 命名参数与位置参数不能混用；按 SQL 中出现的顺序复用补全的搜索规则。
+        patterns = _suggest_patterns(query) if query else {}
+        search_params = [patterns[name] for name in re.findall(r":(\w+)", search)]
+        search = re.sub(r":\w+", "?", search)
+        rows = list(connection.execute(
+            "SELECT e.id,e.kind,e.canonical_name AS k,count(DISTINCT ae.asset_id) AS n "
+            "FROM asset_entity ae JOIN entity e ON e.id=ae.entity_id "
+            f"WHERE e.kind IN ({kinds}) {visible} AND ae.asset_id IN ("
+            "SELECT a.id FROM asset a WHERE a.medium='video' " + scope + ") " + search + " "
+            "GROUP BY e.id,e.kind,e.canonical_name ORDER BY n DESC,e.canonical_name,e.kind,e.id LIMIT ? OFFSET ?",
+            [*params, *search_params, limit + 1, offset]))
+    items = [dict(row) for row in rows[:limit]]
+    if column == "people" and items:
+        aliases = {}
+        for entity_id, alias in connection.execute(
+                "SELECT DISTINCT entity_id,alias FROM entity_alias WHERE entity_id IN (" +
+                ",".join("?" for _ in items) + ") ORDER BY alias", [item["id"] for item in items]):
+            aliases.setdefault(entity_id, []).append(alias)
+        for item in items:
+            item["aliases"] = [alias for alias in aliases.get(item["id"], ())
+                               if entities.is_identity_alias(item["kind"], alias)]
+            item.update(entity_ref(contract, item["kind"], item["id"], item["k"]))
+        attach_creator_reference_details(contract, [item for item in items if item["kind"] == "creator"])
+    more = len(rows) > limit
+    return {"column": column, "items": items, "has_more": more,
+            "next_offset": offset + len(items) if more else None}
+
+
 def q_facets(
     contract: WebContract,
     jav: bool = False,
@@ -1484,6 +1617,10 @@ def q_facets(
     asset_id: int | None = None,
     state: str = "",
     filters: dict | None = None,
+    column: str = "",
+    column_query: str = "",
+    column_offset: int = 0,
+    column_limit: int = 24,
 ):
     """返回当前浏览集合真正存在的筛选项。
 
@@ -1491,6 +1628,8 @@ def q_facets(
     筛选项必须来自和作品列表相同的规范关系，不能让前端拿全库 facets 猜当前页面。
     回收站里的作品照旧算进筛选项；标「已消失」的不算，它们不在任何列表里（ADR-0087）。
     """
+    if column not in {"", "people", "tags", *SCALAR_COLUMN_EXPRESSIONS, *CATALOG_DATE_COLUMNS}:
+        raise ValueError("invalid facet column")
     with contract.read_connection() as c:
         scope = (PRESENT_ASSET_CLAUSE + (JAV_ASSET_CLAUSE if jav else "")
                  + state_clause(state))
@@ -1509,6 +1648,12 @@ def q_facets(
             clause, values = _entity_asset_filter(c, scope_kind, scope_name)
             scope += "AND " + clause + " "
             scope_params.extend(values)
+        if column:
+            if asset_id is None:
+                conditions, parameters = catalog_filter(contract, {**(filters or {}), "state": state})
+                scope += "AND " + " AND ".join(conditions) + " "
+                scope_params.extend(parameters)
+            return _column_facets(contract, c, scope, scope_params, column, column_query, column_offset, column_limit)
         out = {}
         out["locations"] = [dict(r) for r in c.execute(
             "SELECT a.location AS k, count(*) AS n, "

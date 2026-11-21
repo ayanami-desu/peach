@@ -282,7 +282,7 @@ def _junk_rows(connection, *, asset_ids=None, roots=None):
     scope, parameters = _scope_clause(asset_ids=asset_ids, roots=roots)
     rows = connection.execute(
         "SELECT id,location,name,medium,creator,code,size,duration,width,height,snapshot_path,"
-        "feedback,disposal,play_count,leave_ratio,o_count,studio,ctx_orient,path "
+        "feedback,disposal,play_count,leave_ratio,o_count,studio,ctx_orient,path,drive_root "
         f"FROM asset WHERE location IN ({marks}) AND disposal IS NULL "
         "AND (COALESCE(medium,'other')<>'video' OR (size < ? "
         "AND (duration IS NULL OR duration <= 1200)))" + scope,

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import time
 
@@ -73,7 +74,7 @@ def duplicate_group_key(ids) -> str:
     return ",".join(str(asset_id) for asset_id in sorted(int(asset_id) for asset_id in ids))
 
 
-def q_ads(contract: WebContract, limit=200, offset=0, kind="", status="pending"):
+def q_ads(contract: WebContract, limit=200, offset=0, kind="", status="pending", column_filters=None):
     """疑似垃圾复核队列 —— **不自动删**，只排队让人看证据确认。
 
     没有可靠的单一判据（试过「同番号短版」会误伤 CD2/part1 分卷，
@@ -102,6 +103,9 @@ def q_ads(contract: WebContract, limit=200, offset=0, kind="", status="pending")
 
     词库 `PROMO_NAMES_FILE` 里的固定命名，以及未探测时长视频的目录与体积证据，只够进队列：
     这部分分数单独凑够 `AUTO_TRASH_SCORE` 时压到线下，须有别的证据或人看过内容才进回收站。"""
+    from . import media_libraries, settings_file
+    from .table_filters import MEDIA_RANGE_READERS, filter_rows
+
     kind = str(kind or "").strip().casefold()
     status = str(status or "pending").strip().casefold()
     if kind and kind not in JUNK_KINDS:
@@ -116,9 +120,17 @@ def q_ads(contract: WebContract, limit=200, offset=0, kind="", status="pending")
     counts = {junk_kind: 0 for junk_kind in JUNK_KINDS}
     for item in pool:
         counts[item["junk_kind"]] += 1
-    filtered = [item for item in pool if not kind or item["junk_kind"] == kind]
-    # 缓存里那份是共享的，这一页的条目复制出来再挂演员，不改到下一次请求。
-    items = [dict(item) for item in filtered[offset:offset + limit]]
+    config = settings_file.active()
+    rows = [dict(item) for item in pool if not kind or item["junk_kind"] == kind]
+    for row in rows:
+        row.update(media_libraries.ownership(config, row["location"], row.pop("drive_root", None)))
+        row["why_parts"] = [{"text": part} for part in row["why"].split(" · ") if part]
+    filtered, facets = filter_rows(rows, column_filters, {
+        "library": lambda row: [row.get("library_id") or "none"],
+        "kind": lambda row: [row["junk_kind"]],
+        "why": lambda row: [json.dumps(part, ensure_ascii=False, sort_keys=True) for part in row["why_parts"]],
+    }, ranges={"size": MEDIA_RANGE_READERS["size"]})
+    items = filtered[offset:offset + limit]
     attach_card_performers(
         contract, [item for item in items if item.get("medium") == "video"])
     return {
@@ -130,6 +142,7 @@ def q_ads(contract: WebContract, limit=200, offset=0, kind="", status="pending")
         "kind": kind,
         "status": status,
         "items": items,
+        "column_facets": facets,
     }
 
 

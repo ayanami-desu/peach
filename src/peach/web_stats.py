@@ -265,26 +265,34 @@ def _storage_stats() -> dict:
 
 def q_quality_goals(contract: WebContract, args):
     """List explicit better-version targets for the management surface."""
+    from . import media_libraries, settings_file
+    from .table_filters import MEDIA_RANGE_READERS, filter_rows
+
+    config = settings_file.active()
     limit = min(max(int(args.get("limit", "60")), 1), 200)
     offset = max(int(args.get("offset", "0")), 0)
     with contract.read_connection() as connection:
-        total = connection.execute(
-            "SELECT count(*) FROM asset_quality_goal WHERE profile_id=? AND wanted=1",
-            (DEFAULT_PROFILE_ID,),
-        ).fetchone()[0]
         rows = [dict(row) for row in connection.execute(
-            "SELECT a.id,a.name,a.code,a.location,a.path,a.size,a.duration,a.snapshot_path,"
+            "SELECT a.id,a.name,a.code,a.location,a.drive_root,a.size,a.duration,a.snapshot_path,"
             "g.reason,g.updated_at FROM asset_quality_goal g "
             "JOIN asset a ON a.id=g.asset_id "
             "WHERE g.profile_id=? AND g.wanted=1 "
-            "ORDER BY g.updated_at DESC,a.id DESC LIMIT ? OFFSET ?",
-            (DEFAULT_PROFILE_ID, limit, offset),
+            "ORDER BY g.updated_at DESC,a.id DESC",
+            (DEFAULT_PROFILE_ID,),
         )]
     for row in rows:
-        row.pop('path', None)
+        row.update(media_libraries.ownership(config, row["location"], row.pop("drive_root")))
+    rows, facets = filter_rows(rows, args.get("column_filters"), {
+        "library": lambda row: [row.get("library_id") or "none"],
+        "source": lambda row: [row["location"] or "none"],
+        "reason": lambda row: [part.strip() for part in (row["reason"] or "").split("/") if part.strip()],
+    }, ranges=MEDIA_RANGE_READERS)
+    total = len(rows)
+    rows = rows[offset:offset + limit]
+    for row in rows:
         row["has_thumb"] = contract.has_snapshot(row["snapshot_path"])
         row["has_cover"] = contract.has_cover(row.get("code"))
         row["cover_version"] = contract.cover_version(row.get("code"))
         row.pop("snapshot_path", None)
-    return {"total": total, "items": rows, "offset": offset,
+    return {"total": total, "items": rows, "offset": offset, "column_facets": facets,
             "has_more": offset + len(rows) < total}

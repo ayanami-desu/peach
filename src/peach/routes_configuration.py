@@ -66,6 +66,22 @@ def system_diagnostics(request: Request, args: dict[str, str] = Depends(require_
     return diagnostics.report(request.app.state.settings, _drive_status(request))
 
 
+@router.get("/api/diagnostics/library")
+def library_diagnostic_rows(request: Request, args: dict[str, str] = Depends(require_auth)):
+    from . import library_diagnostics
+
+    same_origin(request)
+    key = args.get("group", "")
+    if key not in library_diagnostics.GROUP_LABELS:
+        raise HTTPException(400, "invalid diagnostic group")
+    try:
+        data = library_diagnostics.library(request.app.state.settings, settings_file.active(),
+                                           {key: args.get("column_filters")})
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return data["groups"][key]
+
+
 def _drive_status(request: Request) -> dict:
     """诊断用的网盘快照：只读账号文件与同步表，不联网。"""
     drive = getattr(request.app.state, "drive", None)
