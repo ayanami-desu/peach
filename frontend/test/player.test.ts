@@ -64,6 +64,25 @@ describe('片源判据', () => {
     expect(JSON.parse(document.documentElement.dataset.peachStreamCancel || 'null')).toEqual({ cancelled: 1 });
   });
 
+  it('关闭详情后，迟到的原生兜底片源不会挂到视频', async () => {
+    configurePlayer(host());
+    vi.spyOn(videojsLoader, 'ensureVideojs').mockRejectedValueOnce(new Error('播放器未加载'));
+    let deliver!: (response: Response) => void;
+    const plan = new Promise<Response>((resolve) => { deliver = resolve });
+    const fetcher = vi.fn((url: string) => { void url; return plan });
+    vi.stubGlobal('fetch', fetcher);
+    const video = document.createElement('video');
+    const release = mountPlayer(video, { kind: 'item', item: { id: 3 }, autoplay: true, chrome: false });
+    await flush(); await flush();
+    expect(fetcher.mock.calls[0]?.[0]).toContain('/api/stream-plan?id=3');
+    release();
+    deliver(new Response(JSON.stringify({ src: '/stream?id=3', protocol: 'range' }), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await flush();
+    expect(video.hasAttribute('src')).toBe(false);
+  });
+
   it('STRM 的文件类型使用服务端播放计划', async () => {
     stubFetch(() => ({ protocol: 'range', src: '/stream?id=6', mime_type: 'video/webm' }));
     expect(await playableStreamSource({ id: 6, name: 'ABC-123.strm' }, 'strm'))
@@ -86,6 +105,22 @@ describe('观看上报', () => {
     const settled = calls.length;
     vi.advanceTimersByTime(60_000);
     expect(calls).toHaveLength(settled);
+  });
+
+  it('上一部作品的观看回执不会覆盖当前详情的读数', async () => {
+    stubFetch(() => ({ real_ratio: .5, play_seconds: 50 }));
+    const trace = document.createElement('div');
+    trace.dataset.itemTrace = '9';
+    trace.innerHTML = '<span id="realTxt">0%</span><u id="realBar"></u>';
+    document.body.append(trace);
+    try {
+      const video = document.createElement('video');
+      wireTelemetry({ id: 9, duration: 100 }, video);
+      video.onended?.(new Event('ended'));
+      trace.dataset.itemTrace = '11';
+      await vi.advanceTimersByTimeAsync(0);
+      expect(trace.querySelector('#realTxt')?.textContent).toBe('0%');
+    } finally { trace.remove() }
   });
 
   it('放完冲一次 ended，再交给调用方接着放下一条；-1 时长不画负比例', () => {

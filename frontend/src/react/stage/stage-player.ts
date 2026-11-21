@@ -68,6 +68,7 @@ let dom: MiniplayerDom | null = null;
    所以它一直留到舞台真正拆掉的那一刻才消费。 */
 let requested = false;
 let token = 0;
+let releaseMiniMount: (() => void) | null = null;
 let requestClose: (() => void) | null = null;
 let stageOpen: () => boolean = () => false;
 
@@ -351,6 +352,8 @@ export function closeMiniplayer(): void {
   if (slot) unbindHeld(slot);
   held = null;
   token++;
+  releaseMiniMount?.();
+  releaseMiniMount = null;
   const player = slot?.player ?? null;
   if (player && detailPlayer() === player) setDetailPlayer(null);
   disposePlayer(player);
@@ -402,6 +405,8 @@ export function miniplayerTakesCard(item: PlayerItem | null | undefined): boolea
 export async function miniplayerPlay(id: number): Promise<void> {
   if (!miniplayerActive() || !held || !dom) return;
   const mine = ++token;
+  releaseMiniMount?.();
+  releaseMiniMount = null;
   const item = await (api(`/api/item?id=${id}`) as Promise<(PlayerItem & { error?: unknown }) | null>).catch(() => null);
   if (mine !== token || !miniplayerActive() || !held || !dom) return;
   if (!item || item.error) return;
@@ -421,7 +426,7 @@ export async function miniplayerPlay(id: number): Promise<void> {
     sub: String((item.performers as string[] | undefined)?.[0] || item.creator || '未归属') };
   /* 换片期间 `held` 仍指着旧的那一格（标成已拆），小窗不因为挂载要等一拍而收起。 */
   paintMeta(nextMeta);
-  mountPlayer(video, {
+  releaseMiniMount = mountPlayer(video, {
     kind: 'item', item, autoplay: true, chrome: false,
     onPlayer: (player) => {
       if (mine !== token) {
@@ -430,6 +435,7 @@ export async function miniplayerPlay(id: number): Promise<void> {
         return;
       }
       if (!player) { closeMiniplayer(); stageHost().openItem(id); return }
+      releaseMiniMount = null;
       player.el().classList.add('vjs-peach-mini');
       const slot: Held = { player, item, key: playerKey(item.id),
         meta: nextMeta, off: [], pending: false };

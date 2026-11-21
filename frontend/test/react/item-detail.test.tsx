@@ -341,9 +341,12 @@ describe('交给壳的', () => {
 
   it('没挂载与在线拦截不挂播放器', async () => {
     serve();
-    const offline = await show(item(1), { helpers: helpers({ sourceOffline: () => true }) });
+    const offline = await show(item(1, { location: 'smb', root_id: 'archive-mount' }),
+      { helpers: helpers({ sourceOffline: () => true }) });
     expect(offline.host.querySelector('[data-item-gate="offline"]')?.textContent).toContain('盘没挂上');
     expect(offline.actions.mountPlayer).not.toHaveBeenCalled();
+    await click(offline.host.querySelector('#offlineRetry'));
+    expect(offline.actions.checkSource).toHaveBeenCalledWith('archive-mount');
     queryClient.clear();
     const online = await show(item(2, { location: 'online' }));
     expect(online.actions.mountPlayer).not.toHaveBeenCalled();

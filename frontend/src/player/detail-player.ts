@@ -32,6 +32,8 @@ import { ensureVideojs } from './videojs';
 export interface PlayerResume { time: number; autoplay: boolean }
 
 export interface DetailPlayerOptions {
+  /** 媒体区已经拆掉：之后到来的片源与实例都不再挂上去。 */
+  released?: () => boolean;
   playbackKey?: string;
   poster?: string | undefined;
   resume?: PlayerResume | null;
@@ -77,6 +79,7 @@ export async function mountDetailPlayer(
   /* 拉不到就退回原生 video，和「页面里没有 videojs」是同一个兜底出口。 */
   let videojs;
   try { videojs = await ensureVideojs() } catch {
+    if (options.released?.()) return null;
     video.controls = true;
     video.preload = 'none';
     let fallbackStarted = false;
@@ -84,6 +87,7 @@ export async function mountDetailPlayer(
       if (fallbackStarted) return;
       fallbackStarted = true;
       detailStreamSource(item).then((next) => {
+        if (options.released?.()) return;
         video.addEventListener('loadedmetadata', () => {
           if (resume && resume.time > 0) video.currentTime = Math.min(resume.time, realDuration(video.duration) || resume.time);
         }, { once: true });
@@ -98,6 +102,7 @@ export async function mountDetailPlayer(
     }
     return null;
   }
+  if (options.released?.()) return null;
   const player = videojs(video, {
     controls: true, preload: autoplay ? 'metadata' : 'none', language: 'zh-CN', responsive: true,
     /* 海报与作品当前封面偏好一致，交给原生视频显示。 */
@@ -377,11 +382,20 @@ export function mountPlayer(video: HTMLVideoElement, options: MountPlayerOptions
     detachChrome();
     if (player && handedOff?.(player)) return;
     stopPlaybackPosition(trackedVideo);
-    if (!player) { stopTelemetry(trackedVideo); return }
+    if (!player) {
+      stopTelemetry(trackedVideo);
+      if (trackedVideo.hasAttribute('src')) {
+        trackedVideo.pause();
+        trackedVideo.removeAttribute('src');
+        trackedVideo.load();
+      }
+      return;
+    }
     if (detailPlayer() === player) { setDetailPlayer(null); stopPlayerPanels() }
     disposePlayer(player);
   };
-  void mountDetailPlayer(item, video, options.autoplay ?? host.settings().detailAutoplay, detail).then((mounted) => {
+  void mountDetailPlayer(item, video, options.autoplay ?? host.settings().detailAutoplay,
+    { ...detail, released: () => released }).then((mounted) => {
     player = mounted;
     // 挂载还没回来媒体区就换了：这一个一出来就拆掉。
     if (released) { release(); return }

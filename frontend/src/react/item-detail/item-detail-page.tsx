@@ -228,9 +228,10 @@ function OfflineGate({ item, badge, helpers, actions }: {
 }) {
   const [checking, setChecking] = useState(false);
   const [still, setStill] = useState(false);
+  const source = String(item.root_id || item.location || '');
   const retry = async () => {
     setChecking(true);
-    const online = await actions.checkSource(item.location || '').catch(() => false);
+    const online = await actions.checkSource(source).catch(() => false);
     setChecking(false);
     if (online) actions.reopen();
     else setStill(true);
@@ -239,7 +240,7 @@ function OfflineGate({ item, badge, helpers, actions }: {
     <div id="offlineGate" role="status" data-item-gate="offline">
       <Html html={badge} />
       <b>媒体目录无法访问</b>
-      <span>{helpers.offlineReason(String(item.root_id || item.location || ''))}</span>
+      <span>{helpers.offlineReason(source)}</span>
       <button className="chip" id="offlineRetry" type="button" disabled={checking} onClick={() => void retry()}>
         {still ? '仍无法读取 · 刷新' : '刷新状态'}
       </button>
@@ -591,7 +592,7 @@ function Tags({ item, write, helpers, actions }: {
 function Trace({ item }: { item: DetailItem }) {
   const real = realWatched(item);
   return (
-    <div data-item-trace="">
+    <div data-item-trace={item.id}>
       <div data-trace-metric="">
         <div data-trace-label=""><span>离开位置</span><span id="ratioTxt">0%</span></div>
         <div data-trace-bar=""><u id="watched" /><b id="mark" /></div>
