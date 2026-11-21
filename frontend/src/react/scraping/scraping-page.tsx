@@ -28,6 +28,7 @@ import { StatusLabel, type StatusTone } from '../components/status-label';
 import { ConnectionStatus } from '../components/connection-status';
 import { Page } from '../components/page';
 import { SiteMark } from '../components/site-mark';
+import { SectionToc } from '../components/section-toc';
 import { SEGMENT, SEGMENTED_TRACK, SegmentedRadioGroup as RadioGroup } from '../components/segmented';
 import { queryClient } from '../query';
 import {
@@ -156,7 +157,7 @@ function SourceCard({ source, toast }: { source: Source } & ScrapingProps) {
   const detailed = source.accepts_cookie || !!problem || results.length > 0;
 
   return (
-    <Section title={source.label} onSubmit={submit} aside={
+    <Section id={`source-${source.source}`} title={source.label} onSubmit={submit} aside={
       <span className="flex min-w-0 items-center gap-1">
         <SiteMark source={source.source} />
         {source.login ? <ExternalLink href={source.login}>{linkHost(source.login)}</ExternalLink> : null}
@@ -351,7 +352,7 @@ function CoverCard({ toast }: ScrapingProps) {
     : taskQuery.error ? errorMessage(taskQuery.error)
     : outcome?.status === 'failed' ? (outcome.error || '采集未取得') : '';
   return (
-    <Section title="高清封面" onSubmit={submit}>
+    <Section id="hd-cover" title="高清封面" onSubmit={submit}>
       <Stack>
         {taskQuery.isPending ? <div role="status" aria-label="正在读取封面任务状态" data-skeleton="" className="skeleton-sheen h-6 rounded-md" /> : null}
         <div className="flex flex-wrap items-end gap-2">
@@ -456,12 +457,21 @@ export function ScrapingPage({ toast }: ScrapingProps) {
   return (
     <Page>
       <p className="text-body-2-regular text-text-secondary">高清图片可能要经代理才能下载，先检查连接。</p>
-      <CheckAllCard toast={toast} />
-      <CoverCard toast={toast} />
-      <CustomSources receipt={toast} />
-      {(data.sources || []).map(
-        (source) => <SourceCard key={source.source} source={source} toast={toast} />)}
-      <AmaneBridgeCard toast={toast} />
+      <SectionToc label="本页目录" entries={[
+        { id: 'check-all', label: '连接检查' },
+        { id: 'hd-cover', label: '高清封面' },
+        { id: 'custom-sources', label: '自定义元数据来源' },
+        ...(data.sources || []).map(source => ({ id: `source-${source.source}`, label: source.label,
+          icon: source.source === 'makers' ? undefined : <SiteMark source={source.source} /> })),
+        { id: 'source-amane', label: 'amane' },
+      ]}>
+        <CheckAllCard toast={toast} />
+        <CoverCard toast={toast} />
+        <CustomSources receipt={toast} />
+        {(data.sources || []).map(
+          (source) => <SourceCard key={source.source} source={source} toast={toast} />)}
+        <div id="source-amane"><AmaneBridgeCard toast={toast} /></div>
+      </SectionToc>
     </Page>
   );
 }

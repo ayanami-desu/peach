@@ -29,7 +29,7 @@ export function CustomSources({ receipt }: { receipt(message: string): void }) {
   const changed = (result: { items: Source[] }) => queryClient.setQueryData(KEY, result);
   const hasContent = Boolean(query.isPending || query.error || query.data?.items.length || action.error);
   const add = <Button variant="secondary" onClick={() => setEditing(blank())}>添加来源</Button>;
-  return <Section title="自定义元数据来源">
+  return <Section id="custom-sources" title="自定义元数据来源">
     {hasContent ? <Stack>
       {query.isPending ? <div aria-busy="true" data-skeleton="" aria-label="读取自定义来源" /> : null}
       {query.error ? <ErrorText>{errorMessage(query.error)}</ErrorText> : null}
