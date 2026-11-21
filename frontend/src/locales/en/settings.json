@@ -4,6 +4,14 @@
     "loadFailedTitle": "Could not read the settings",
     "dataTitle": "Storage and backups"
   },
+  "scraping": {
+    "toc": {
+      "label": "On this page",
+      "connections": "Connection check",
+      "hdCover": "HD covers",
+      "customSources": "Custom metadata sources"
+    }
+  },
   "drive": {
     "account": {
       "add": "Add account",

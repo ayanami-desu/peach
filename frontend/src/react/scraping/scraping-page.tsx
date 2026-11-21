@@ -17,6 +17,7 @@ import { Input } from '@/components/base/input/input';
 import { Select, SelectItem } from '@/components/base/select/select';
 
 import { apiSend, errorMessage } from '../../api';
+import { t } from '../../i18n';
 import { momentText } from '../activity/tasks';
 import { useBackgroundJob } from '../background-job';
 import type { ScrapingProps } from '../bundle';
@@ -457,10 +458,10 @@ export function ScrapingPage({ toast }: ScrapingProps) {
   return (
     <Page>
       <p className="text-body-2-regular text-text-secondary">高清图片可能要经代理才能下载，先检查连接。</p>
-      <SectionToc label="本页目录" entries={[
-        { id: 'check-all', label: '连接检查' },
-        { id: 'hd-cover', label: '高清封面' },
-        { id: 'custom-sources', label: '自定义元数据来源' },
+      <SectionToc label={t('settings:scraping.toc.label')} entries={[
+        { id: 'check-all', label: t('settings:scraping.toc.connections') },
+        { id: 'hd-cover', label: t('settings:scraping.toc.hdCover') },
+        { id: 'custom-sources', label: t('settings:scraping.toc.customSources') },
         ...(data.sources || []).map(source => ({ id: `source-${source.source}`, label: source.label,
           icon: source.source === 'makers' ? undefined : <SiteMark source={source.source} /> })),
         { id: 'source-amane', label: 'amane' },

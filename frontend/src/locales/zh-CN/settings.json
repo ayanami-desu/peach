@@ -4,6 +4,14 @@
     "loadFailedTitle": "配置读取失败",
     "dataTitle": "存储与备份"
   },
+  "scraping": {
+    "toc": {
+      "label": "本页目录",
+      "connections": "连接检查",
+      "hdCover": "高清封面",
+      "customSources": "自定义元数据来源"
+    }
+  },
   "drive": {
     "account": {
       "add": "添加账号",
