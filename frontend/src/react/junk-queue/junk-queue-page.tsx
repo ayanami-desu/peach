@@ -18,11 +18,15 @@ import { requestErrorMessage } from '@peach/legacy/core';
 import { LOAD_MORE_STATUS, loadingDotsHtml, popBadges } from '@peach/legacy/ui';
 import { ButtonLink } from '@/components/base/buttons/button';
 
+import { useCatalogView } from '../catalog-grid/catalog-view';
+import { CatalogViewToggle } from '../catalog-grid/catalog-view-toggle';
 import { EmptyState } from '../components/empty-state';
 import { LOAD_MORE_MARGIN, RetryNote, useSkeletonReveal } from '../components/grid-reveal';
 import { spriteGlyph } from '../components/sprite-glyph';
+import type { RemoteTableFilters, TableFilters } from '../components/use-table-filters';
 import { JunkCard } from './junk-card';
 import { JunkCount } from './junk-count';
+import { JunkList } from './junk-list';
 import { fetchJunkPage, junkQueryKey, type JunkPage, type JunkQueueProps, type JunkRoute } from './junk-queue';
 import { t } from '../../i18n';
 
@@ -32,9 +36,13 @@ const sameRoute = (key: readonly unknown[], route: JunkRoute) => key[1] === rout
 
 export function JunkQueuePage(props: JunkQueueProps) {
   const route: JunkRoute = { kind: props.kind, view: props.view };
+  const [filters, setFilters] = useState<TableFilters>({});
+  const encoded = JSON.stringify(filters);
+  const filtering = encoded !== '{}';
+  const key = junkQueryKey(route, props.revision);
   const query = useQuery<JunkPage, Error>({
-    queryKey: junkQueryKey(route, props.revision),
-    queryFn: ({ signal }) => fetchJunkPage(route, signal),
+    queryKey: filtering ? [...key, encoded] : key,
+    queryFn: ({ signal }) => fetchJunkPage(route, signal, filtering ? filters : undefined),
     placeholderData: (previous, previousQuery) =>
       (previousQuery && sameRoute(previousQuery.queryKey, route) ? previous : undefined),
   });
@@ -66,7 +74,8 @@ export function JunkQueuePage(props: JunkQueueProps) {
     <>
       {count}
       <JunkBody key={`${route.view}:${route.kind}`} props={props} data={query.data} pending={waiting}
-        error={query.data ? null : query.error} retry={() => void query.refetch()} />
+        error={query.error} retry={() => void query.refetch()} busy={query.isFetching}
+        filters={{ values: filters, facets: query.data?.column_facets ?? {}, onChange: setFilters }} />
     </>
   );
 }
@@ -86,9 +95,12 @@ function useCountHost(row: HTMLElement | null): HTMLElement | null {
 }
 
 /** 一个分类、一个视图的网格：骨架、卡片、往下露的下一段与空态。 */
-function JunkBody({ props, data, pending, error, retry }: {
+function JunkBody({ props, data, pending, error, retry, busy, filters }: {
   props: JunkQueueProps; data: JunkPage | undefined; pending: boolean; error: Error | null; retry(): void;
+  busy: boolean; filters: RemoteTableFilters;
 }) {
+  const list = useCatalogView() === 'list';
+  const filtered = Object.values(filters.values).some(value => value !== undefined);
   const reveal = useSkeletonReveal(pending, props.skeletonHtml);
   const batch = Math.max(1, props.batchSize || 60);
   const [segments, setSegments] = useState(1);
@@ -103,7 +115,17 @@ function JunkBody({ props, data, pending, error, retry }: {
   const content = () => {
     if (pending) return null;
     if (!data) return <RetryNote message={requestErrorMessage(error)} onRetry={retry} />;
+    if (list) {
+      return Number(data.total || 0) > items.length && !busy
+        ? <p data-junk-truncated="" className="py-6 text-center text-caption-1-regular text-text-secondary">
+            {t('cleanup:junk.truncated', { shown: items.length.toLocaleString(), count: Number(data.total) })}
+          </p>
+        : null;
+    }
     if (!items.length) {
+      if (filtered) return <EmptyState icon={CheckGlyph} title={t('cleanup:shared.noMatches')}>
+        {t('cleanup:shared.clearFiltersHint')}
+      </EmptyState>;
       const dismissed = props.view === 'dismissed';
       return (
         <EmptyState icon={CheckGlyph} title={dismissed ? t('cleanup:junk.emptyExcluded') : t('cleanup:junk.emptyUndecided')}
@@ -132,7 +154,10 @@ function JunkBody({ props, data, pending, error, retry }: {
   };
   return (
     <div data-junk-body="" data-grid-reveal={reveal.fading ? '' : undefined}>
+      <div className="mb-4 flex justify-end"><CatalogViewToggle /></div>
       {reveal.layer}
+      <JunkList items={items} props={props} list={list && !pending && (!!data || filtered)} busy={busy} filters={filters} />
+      {data && error ? <RetryNote message={requestErrorMessage(error)} onRetry={retry} /> : null}
       {content()}
     </div>
   );

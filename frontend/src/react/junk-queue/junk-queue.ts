@@ -6,6 +6,7 @@
 import { apiGet } from '../../api';
 import type { JunkKind, JunkRoute, JunkView } from '../../junk-queue';
 import { t } from '../../i18n';
+import type { TableFacets, TableFilters } from '../components/use-table-filters';
 
 export type { JunkKind, JunkRoute, JunkView };
 
@@ -18,8 +19,10 @@ export interface JunkItem {
   name?: string;
   junk_kind?: string;
   why?: string;
+  why_parts?: { text: string }[];
   size?: number | null;
   location?: string;
+  library_id?: string | null;
   [field: string]: unknown;
 }
 
@@ -32,6 +35,7 @@ export interface JunkPage {
   pending_total?: number;
   dismissed_total?: number;
   counts?: Partial<Record<string, number>>;
+  column_facets?: TableFacets;
 }
 
 export type JunkOperation = 'dismiss-junk' | 'reconsider-junk' | 'dispose';
@@ -63,8 +67,10 @@ export function junkQueryString({ kind, view }: JunkRoute): string {
   return params.toString();
 }
 
-export async function fetchJunkPage(route: JunkRoute, signal: AbortSignal): Promise<JunkPage> {
-  const page = await apiGet<JunkPage>(`/api/ads?${junkQueryString(route)}`, signal);
+export async function fetchJunkPage(route: JunkRoute, signal: AbortSignal, filters?: TableFilters): Promise<JunkPage> {
+  const params = new URLSearchParams(junkQueryString(route));
+  if (filters) params.set('column_filters', JSON.stringify(filters));
+  const page = await apiGet<JunkPage>(`/api/ads?${params}`, signal);
   return { ...page, items: page.items || [] };
 }
 

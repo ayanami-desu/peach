@@ -21,11 +21,18 @@ import { queryClient } from '../query';
 import { busyProps } from '../settings/use-action';
 import {
   attachOrphan, candidateText, fetchOrphanRecords, ORPHAN_RECORDS_KEY, purgeOrphan, recordsText,
-  type OrphanRecord,
+  RECORD_LABELS, type RecordKey, type OrphanRecord,
 } from './orphan-records';
 import { t } from '../../i18n';
 
 const PLAY = spriteGlyph('play');
+const activityLabels = new Map<RecordKey, string>([
+  ...RECORD_LABELS,
+  ['rating', t('cleanup:orphans.filterRating')],
+  ['play_count', t('cleanup:orphans.filterPlays')],
+  ['last_played', t('cleanup:orphans.recordPlayed')],
+  ['o_count', t('cleanup:orphans.filterOCount')],
+]);
 
 const refresh = () => queryClient.invalidateQueries({ queryKey: ORPHAN_RECORDS_KEY, exact: true });
 
@@ -127,6 +134,8 @@ export function OrphanRecordsCard({ toast }: { toast(message: string): void }) {
   const columns: DataColumn<OrphanRecord>[] = [
     { id: 'item', label: t('cleanup:shared.video'), width: 480, min: 320, value: (item) => item.name, render: (item) => <OrphanIdentity item={item} /> },
     { id: 'records', label: t('cleanup:orphans.columnActivity'), width: 176, min: 144, value: (item) => recordsText(item.records),
+      filter: { values: (item) => (Object.keys(item.records) as RecordKey[]).filter((key) => item.records[key]),
+        option: (key) => ({ label: activityLabels.get(key as RecordKey) || key || t('cleanup:shared.none') }) },
       render: (item) => <span className="block min-w-0 whitespace-normal wrap-anywhere">{recordsText(item.records) || t('cleanup:shared.none')}</span> },
     { id: 'target', label: t('cleanup:shared.actions'), width: items.some(item => item.candidates.length) ? 360 : 128, min: 128, value: (item) => item.candidates.length,
       render: (item) => <OrphanActions item={item} toast={toast} /> },

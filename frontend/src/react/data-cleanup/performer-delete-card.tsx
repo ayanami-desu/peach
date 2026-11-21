@@ -9,6 +9,7 @@ import { cx } from '@/utils/cx';
 import { errorMessage } from '../../api';
 import { BATCH_DELETE_TEXT } from '../../cleanup-tool-skeletons';
 import { entityDisplayName } from '../../core/entity-names';
+import { ColumnFilterAvatar } from '../components/column-filter-avatar';
 import { DataTable, type DataColumn } from '../components/data-table';
 import { Fieldset, FieldsetTitle } from '../components/fieldset';
 import { LEGACY_AVATAR_IMG } from '../components/legacy-avatar';
@@ -63,12 +64,19 @@ export function PerformerDeleteCard({ toast }: { toast(message: string): void })
 
   const columns = useMemo<DataColumn<DeletePerformer>[]>(() => [
     { id: 'name', label: t('cleanup:shared.actress'), width: 280, min: 160, value: person => person.k,
+      filter: { values: person => person.k, option: (name, person) => ({
+        label: entityDisplayName('performer', name, person?.entity_id), searchTerms: person?.aliases,
+        leading: person && <ColumnFilterAvatar person={{ ...person, id: person.entity_id, name }} />,
+      }) },
       render: person => <PerformerName person={person} /> },
     { id: 'works', label: t('cleanup:shared.videos'), width: 104, min: 80, value: person => person.n,
+      filter: { range: 'count', value: person => person.n },
       render: person => t('cleanup:performerDelete.videoCount', { count: person.n }) },
     { id: 'files', label: t('cleanup:shared.files'), width: 104, min: 80, value: person => person.file_count,
+      filter: { range: 'count', value: person => person.file_count },
       render: person => t('cleanup:performerDelete.fileCount', { count: person.file_count }) },
     { id: 'bytes', label: t('cleanup:performerDelete.columnSize'), width: 136, min: 104, value: person => person.bytes,
+      filter: { range: 'size', value: person => person.bytes },
       render: person => fmtSize(person.bytes) },
   ], []);
   const needle = search.toLocaleLowerCase();

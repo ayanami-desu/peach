@@ -1,5 +1,6 @@
 import { apiGet } from '../../api';
 import { queryClient } from '../query';
+import type { TableFacets } from '../components/use-table-filters';
 
 export interface DiagnosticCheck {
   label: string; status: string; reason: string; action: string; target: string | null;
@@ -8,10 +9,12 @@ export interface DiagnosticCheck {
 export interface LibraryItem {
   id: number; code: string | null; name: string; title: string; location: string; path: string;
   duration: number | null; size: number | null;
+  library_id?: string | null;
 }
 export interface LibraryGroup {
   label: string; status: string; count: number | null; items: LibraryItem[];
   truncated: boolean;
+  column_facets?: TableFacets;
 }
 export interface DiagnosticReport {
   version: string; status: string; checks: Record<string, DiagnosticCheck>;
@@ -22,6 +25,8 @@ export interface DiagnosticReport {
 }
 export const DIAGNOSTICS_KEY = ['diagnostics'] as const;
 export const fetchDiagnostics = (signal?: AbortSignal) => apiGet<DiagnosticReport>('/api/diagnostics', signal);
+export const fetchDiagnosticLibraryGroup = (group: string, columnFilters: string, signal: AbortSignal) =>
+  apiGet<LibraryGroup>(`/api/diagnostics/library?${new URLSearchParams({ group, column_filters: columnFilters })}`, signal);
 export async function prefetchDiagnostics(signal: AbortSignal): Promise<void> {
   await queryClient.fetchQuery({ queryKey: DIAGNOSTICS_KEY, queryFn: () => fetchDiagnostics(signal), staleTime: 10_000 });
 }

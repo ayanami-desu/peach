@@ -20,7 +20,7 @@ import { suppressShiftTextSelection } from '../components/row-click';
 import { t } from '../../i18n';
 
 /** 雪碧图里的一枚字形，写法同遗留层 `icon()`：尺寸与描边由样式表按位置给。 */
-function Icon({ name }: { name: string }) {
+export function JunkGlyph({ name }: { name: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><use href={`#i-${name}`} /></svg>;
 }
 
@@ -35,35 +35,15 @@ export interface JunkCardProps {
 
 type Busy = '' | 'reveal' | JunkOperation;
 
-const picking = (selectMode: boolean, event: MouseEvent) => selectMode || event.shiftKey || event.ctrlKey || event.metaKey;
+export const junkPicking = (selectMode: boolean, event: MouseEvent) =>
+  selectMode || event.shiftKey || event.ctrlKey || event.metaKey;
 
-function JunkCardView({ item, view, selected, selectMode, helpers, actions }: JunkCardProps) {
-  const card = useRef<HTMLElement | null>(null);
+export function JunkItemActions({ item, view, actions, disabled, compact }: {
+  item: JunkItem; view: JunkView; actions: JunkQueueActions; disabled?: boolean; compact?: boolean;
+}) {
   const [busy, setBusy] = useState<Busy>('');
   const [status, setStatus] = useState('');
-  const kind = item.junk_kind || 'other';
-  const [label, glyph] = junkKindMeta(item);
-  const name = String(item.name || '');
   const decision = junkDecision(view);
-  const preview = kind === 'video' ? `/thumb?id=${item.id}&c=4` : kind === 'image' ? `/photo-thumb?id=${item.id}` : '';
-  const openable = kind === 'video' || kind === 'image';
-
-  /* 多选与修饰键优先：点在卡上任何地方（键行除外）都是切换选中。 */
-  const clickCard = (event: MouseEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest('[data-junk-actions]')) return;
-    if (!picking(selectMode, event)) return;
-    event.preventDefault();
-    actions.toggleSelection(item.id, event.shiftKey);
-  };
-  const clickTitle = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    if (picking(selectMode, event)) {
-      event.preventDefault();
-      actions.toggleSelection(item.id, event.shiftKey);
-      return;
-    }
-    if (card.current) actions.open(item, card.current);
-  };
   const reveal = (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -83,7 +63,50 @@ function JunkCardView({ item, view, selected, selectMode, helpers, actions }: Ju
   };
   const busyAttrs = (key: Busy) => (busy === key ? { 'aria-busy': true, 'aria-disabled': true } as const : {});
 
-  const title = openable
+  const Frame = compact ? 'div' : 'footer';
+  return <Frame data-junk-actions="">
+    <button type="button" data-junk-action="reveal" title={t('cleanup:junk.revealTitle')} aria-label={t('cleanup:junk.revealTitle')}
+      disabled={disabled} {...busyAttrs('reveal')} onClick={reveal}>
+      {busy === 'reveal' ? <span data-junk-spinner="" dangerouslySetInnerHTML={{ __html: spinnerHtml(t('cleanup:junk.locating')) }} /> : <JunkGlyph name="folder-open" />}
+      <span data-junk-label="">{t('cleanup:junk.reveal')}</span>
+    </button>
+    <button type="button" data-junk-action={decision.operation} title={decision.label} aria-label={decision.label}
+      disabled={disabled} {...busyAttrs(decision.operation)} onClick={operate(decision.operation)}>
+      <JunkGlyph name={decision.glyph} /><span data-junk-label="">{decision.label}</span>
+    </button>
+    <button type="button" data-junk-action="dispose" title={t('cleanup:duplicates.moveToTrash')} aria-label={t('cleanup:duplicates.moveToTrash')}
+      disabled={disabled} {...busyAttrs('dispose')} onClick={operate('dispose')}>
+      <JunkGlyph name="trash" /><span data-junk-label="">{t('cleanup:duplicates.moveToTrash')}</span>
+    </button>
+    <span data-junk-state="" aria-live="polite">{status}</span>
+  </Frame>;
+}
+
+function JunkCardView({ item, view, selected, selectMode, helpers, actions }: JunkCardProps) {
+  const card = useRef<HTMLElement | null>(null);
+  const kind = item.junk_kind || 'other';
+  const [label, glyph] = junkKindMeta(item);
+  const name = String(item.name || '');
+  const preview = kind === 'video' ? `/thumb?id=${item.id}&c=4` : kind === 'image' ? `/photo-thumb?id=${item.id}` : '';
+
+  /* 多选与修饰键优先：点在卡上任何地方（键行除外）都是切换选中。 */
+  const clickCard = (event: MouseEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('[data-junk-actions]')) return;
+    if (!junkPicking(selectMode, event)) return;
+    event.preventDefault();
+    actions.toggleSelection(item.id, event.shiftKey);
+  };
+  const clickTitle = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (junkPicking(selectMode, event)) {
+      event.preventDefault();
+      actions.toggleSelection(item.id, event.shiftKey);
+      return;
+    }
+    if (card.current) actions.open(item, card.current);
+  };
+
+  const title = preview
     ? <button type="button" data-junk-title="" data-junk-open="" data-middle-truncate="" title={name}
       onClick={clickTitle} dangerouslySetInnerHTML={{ __html: esc(name || t('cleanup:junk.untitled')) }} />
     : <span data-junk-title="" data-middle-truncate="" title={name}
@@ -93,14 +116,14 @@ function JunkCardView({ item, view, selected, selectMode, helpers, actions }: Ju
     <article ref={card} data-media-card="" data-variant="junk" data-junk-card="" data-id={item.id} data-junk-kind={kind}
       data-selected={selected ? '' : undefined} onClick={clickCard} onMouseDown={suppressShiftTextSelection}>
       <div data-media-pic="" style={{ '--card-ratio': String(16 / 9) } as CSSProperties}>
-        <span data-media-glyph=""><Icon name={glyph} /><b>{label}</b></span>
+        <span data-media-glyph=""><JunkGlyph name={glyph} /><b>{label}</b></span>
         {preview
           ? <span data-media-art="thumb" dangerouslySetInnerHTML={{
             __html: `<img class="poster" src="${preview}" width="640" height="360" alt="" loading="lazy" data-drop="self">`,
           }} />
           : null}
         <div data-media-badge="" dangerouslySetInnerHTML={{ __html: helpers.badgeHtml(item.location || '') }} />
-        <span data-media-check=""><Icon name="check" /></span>
+        <span data-media-check=""><JunkGlyph name="check" /></span>
       </div>
       <div data-junk-meta="">
         {title}
@@ -110,22 +133,7 @@ function JunkCardView({ item, view, selected, selectMode, helpers, actions }: Ju
           <span data-junk-size="">{Number(item.size) > 0 ? fmtSize(Number(item.size)) : t('cleanup:junk.unknownSize')}</span>
         </div>
       </div>
-      <footer data-junk-actions="">
-        <button type="button" data-junk-action="reveal" title={t('cleanup:junk.revealTitle')} aria-label={t('cleanup:junk.revealTitle')}
-          {...busyAttrs('reveal')} onClick={reveal}>
-          {busy === 'reveal' ? <span data-junk-spinner="" dangerouslySetInnerHTML={{ __html: spinnerHtml(t('cleanup:junk.locating')) }} /> : <Icon name="folder-open" />}
-          <span data-junk-label="">{t('cleanup:junk.reveal')}</span>
-        </button>
-        <button type="button" data-junk-action={decision.operation} title={decision.label} aria-label={decision.label}
-          {...busyAttrs(decision.operation)} onClick={operate(decision.operation)}>
-          <Icon name={decision.glyph} /><span data-junk-label="">{decision.label}</span>
-        </button>
-        <button type="button" data-junk-action="dispose" title={t('cleanup:duplicates.moveToTrash')} aria-label={t('cleanup:duplicates.moveToTrash')}
-          {...busyAttrs('dispose')} onClick={operate('dispose')}>
-          <Icon name="trash" /><span data-junk-label="">{t('cleanup:duplicates.moveToTrash')}</span>
-        </button>
-        <span data-junk-state="" aria-live="polite">{status}</span>
-      </footer>
+      <JunkItemActions item={item} view={view} actions={actions} />
     </article>
   );
 }

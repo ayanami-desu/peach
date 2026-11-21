@@ -205,6 +205,13 @@
 .peach-react [data-junk-actions] button[data-junk-action="dispose"]:active { background: var(--board-red-active); }
 .peach-react [data-junk-state] { grid-column: 1 / -1; color: var(--drop); font-size: var(--fs-xs); }
 .peach-react [data-junk-state]:empty { display: none; }
+.peach-react [data-junk-list] [data-junk-actions] {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 /* 多选时整张卡都是切换选中，键行不接指针。 */
 .peach-react [data-select-mode] [data-junk-actions] { pointer-events: none; opacity: .52; }
 /* 紧凑密度下只剩图标。 */
