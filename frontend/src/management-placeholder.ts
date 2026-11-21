@@ -55,10 +55,11 @@ const PLACEHOLDERS: Record<string, () => string> = {
   /* 每个维护工具都有自己那一页的骨架，新加的工具不会落到下面那张通用面板上。 */
   ...Object.fromEntries(CLEANUP_TOOLS.map(tool => [tool.path, () => cleanupToolSkeletonHtml(tool.key)])),
   '/review': () => reviewSkeletonHtml(),
-  /* 采集来源是 812px 窄列里一叠同宽的 Fieldset：连接检查、高清封面，再接各个来源。骨架画四块，
-     那是首屏装得下的张数；说明那一句是静态文案，与数据无关，立刻显示。 */
+  /* 来源目录与正文保持同一分栏，来源名称等数据到齐后替换占位。 */
   '/sources': () => `<div class="scraping-page"><p>高清图片可能要经代理才能下载，先检查连接。</p>
-    ${pageSkeletonHtml('正在读取采集来源', { cards: true, count: 4, fill: false, className: 'cleanup-skeleton' })}</div>`,
+    <div data-section-page><div data-section-toc aria-hidden="true">
+      ${Array.from({ length: 12 }, () => '<div class="skeleton" style="height:36px;margin-bottom:4px;border-radius:8px"></div>').join('')}
+    </div><div>${pageSkeletonHtml('正在读取采集来源', { cards: true, count: 4, fill: false, className: 'cleanup-skeleton' })}</div></div></div>`,
 };
 
 /** 这一页的加载态 HTML。 */
