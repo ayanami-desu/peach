@@ -69,7 +69,8 @@ export function SidebarOrder({ host }: { host: SettingsPanelHost }) {
       </div>
       <VisuallyHidden role="status" aria-live="polite">{reorder.announcement}</VisuallyHidden>
       <div data-sidebar-add-row="">
-        <Select aria-label="选择要添加的页面" className="peach-react min-w-0" triggerClassName="h-[var(--control-h)]"
+        <div className="peach-react min-w-0">
+        <Select aria-label="选择要添加的页面" triggerClassName="h-(--control-h)"
           selectedKey={chosen ? optionKey(chosen[0]) : null} isDisabled={!chosen}
           renderValue={chosen ? undefined : '全部页面都已显示'}
           onSelectionChange={(key) => setPicked(key === null ? null : String(key))}>
@@ -79,6 +80,7 @@ export function SidebarOrder({ host }: { host: SettingsPanelHost }) {
             </SelectItem>
           ))}
         </Select>
+        </div>
         <button type="button" className="geist-button primary" data-sidebar-add="" disabled={!chosen}
           onClick={() => { if (chosen && !order.includes(chosen[0])) commit([...order, chosen[0]]) }}>添加</button>
       </div>
