@@ -1,4 +1,5 @@
 /* 作品列表的列定义与本机列偏好的存放位置。不依赖 React：壳的首屏骨架与列表岛读同一份。 */
+import { t } from '../../i18n';
 
 export const CATALOG_COLUMN_WIDTHS_KEY = 'peach.catalog-column-widths.v1';
 export const CATALOG_COLUMN_VISIBILITY_KEY = 'peach.catalog-column-visibility.v1';
@@ -25,11 +26,10 @@ export const columnSizes: Record<string, { width: number; min: number; max: numb
  * 发行时间、观看时间、高潮计数、分辨率、体积、番号（标题里已有）默认收起，在「显示列」里打开。
  * 列的先后也按这个顺序，表格与骨架都照 `catalogColumns` 排。 */
 export const defaultColumnVisibility: Record<string, boolean> = { release: false, played: false, o: false, resolution: false, size: false, code: false };
-const labels: Record<string, string> = { select: '选择', name: '作品', dur: '时长', size: '体积', resolution: '分辨率',
-  rating: '评分', o: '高潮计数', plays: '观看次数', new: '入库时间', played: '观看时间', release: '发行时间', code: '番号', tags: '标签',
-  library: '媒体库', people: '艺人' };
+const labels: Record<string, string> = { select: '选择', name: '作品', code: '番号' };
 export const catalogColumns = ['select', 'name', 'people', 'library', 'tags', 'dur', 'rating', 'plays', 'new', 'release', 'played', 'o', 'resolution', 'size', 'code']
-  .map(id => ({ id, label: labels[id]!, ...columnSizes[id]!, flex: id === 'name', required: id === 'select' || id === 'name', visible: defaultColumnVisibility[id] !== false }));
+  .map(id => ({ id, label: labels[id] ?? t(`catalog:columnFilter.columns.${id}`), ...columnSizes[id]!,
+    flex: id === 'name', required: id === 'select' || id === 'name', visible: defaultColumnVisibility[id] !== false }));
 
 function stored(key: string): Record<string, unknown> {
   try {

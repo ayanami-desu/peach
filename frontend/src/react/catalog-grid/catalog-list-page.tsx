@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties, type Dispatch, type SetStateAction, type MouseEvent } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
   createColumnHelper, flexRender, rowPaginationFeature, rowSelectionFeature, rowSortingFeature,
-  columnVisibilityFeature, tableFeatures, useTable, type RowSelectionState, type SortingState,
+  columnVisibilityFeature, tableFeatures, useTable, type RowSelectionState,
 } from '@tanstack/react-table';
 import { cardArtwork, relayoutCovers } from '@peach/card-art';
 import { fmtDur, fmtSize, requestErrorMessage } from '@peach/legacy/core';
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 import { ChevronSortDown } from '@/components/foundations/icons/chevrons';
 import { apiGet } from '../../api';
 import { ArtSlot } from '../components/art-slot';
+import { CatalogColumnFilterChips } from '../components/column-filter-chips';
 import { useLibraryTints } from '../components/library-tint';
 import { catalogListSkeletonCellHtml } from '../../catalog-content-skeleton';
 import { identityParts } from '../components/media-card';
@@ -30,6 +31,9 @@ import { catalogColumns } from './catalog-table-columns';
 import { CatalogRating, catalogTableDate } from './catalog-table-controls';
 import { TableColumnControls, TableColumnResizer } from '../components/table-column-controls';
 import { TableSelectionHeader } from '../components/table-selection-header';
+import { CatalogColumnFilter, CatalogColumnRangeFilter } from './catalog-column-filter';
+import type { CatalogListPosition } from './catalog-list-position';
+import { isColumnRangeKey } from '../../column-filters';
 import './catalog-list.css';
 
 const features = tableFeatures({ rowSortingFeature, rowSelectionFeature, rowPaginationFeature, columnVisibilityFeature });
@@ -40,32 +44,29 @@ const sortOptions = [
   { id: 'rating', label: '评分' }, { id: 'o', label: '高潮计数' },
   { id: 'plays', label: '观看次数' }, { id: 'played', label: '观看时间' },
 ];
-interface ListState { sorting: SortingState; pagination: { pageIndex: number; pageSize: number } }
-// 详情返回保留同一筛选范围内的页码与列排序。
-const positions = new Map<string, ListState>();
+function isChoiceColumn(id: string): id is 'people' | 'library' | 'tags' | 'rating' | 'resolution' {
+  return id === 'people' || id === 'library' || id === 'tags' || id === 'rating' || id === 'resolution';
+}
 
 /** 服务端对完整筛选结果排序、分页；选择集及批量栏归现有馆藏控制器。 */
-export function CatalogListPage(props: CatalogGridProps) {
+export function CatalogListPage({ position, setPosition: setState, ...props }: CatalogGridProps & {
+  position: CatalogListPosition;
+  setPosition: Dispatch<SetStateAction<CatalogListPosition>>;
+}) {
   const preferences = useCatalogTablePreferences();
   const tints = useLibraryTints();
   const params = catalogParams(props.filters || {}, false);
-  const [scope] = useState(() => {
-    const position = new URLSearchParams(params);
-    if (!new URLSearchParams(location.search).has('seed')) position.delete('seed');
-    return `${props.mode}:${props.listScope || props.entityKey || ''}:${position}`;
-  });
-  const [state, setState] = useState<ListState>(() => positions.get(scope) || {
-    sorting: [], pagination: { pageIndex: 0, pageSize: 20 },
-  });
-  const { sorting, pagination } = state;
-  useEffect(() => { positions.set(scope, state) }, [scope, state]);
+  const { sorting, pagination, filters } = position;
+  const filterScope = { ...props.filters, ...props.facetScope };
+  const changeFilters = (next: CatalogListPosition['filters']) =>
+    setState(now => ({ ...now, filters: next, pagination: { ...now.pagination, pageIndex: 0 } }));
   const offset = pagination.pageIndex * pagination.pageSize;
   const sort = sorting[0];
   const result = useQuery({
-    queryKey: ['catalog-grid', 'table', scope, params, props.revision, pagination, sorting],
+    queryKey: ['catalog-grid', 'table', props.listScope || props.entityKey, params, props.revision, pagination, sorting, filters],
     placeholderData: keepPreviousData,
     queryFn: async ({ signal }): Promise<MediaPage & { libraryEmpty?: boolean }> => {
-      const options = { limit: pagination.pageSize, sort: sort?.id, dir: sort ? sort.desc ? 'desc' : 'asc' : undefined };
+      const options = { limit: pagination.pageSize, sort: sort?.id, dir: sort ? sort.desc ? 'desc' : 'asc' : undefined, filters };
       if (props.mode === 'entity') return props.fetchPage?.(offset, signal, options) || { items: [], total: 0 };
       const query = new URLSearchParams(params);
       query.set('offset', String(offset));
@@ -73,9 +74,10 @@ export function CatalogListPage(props: CatalogGridProps) {
       query.delete('count');
       if (options.sort) query.set('sort', options.sort);
       if (options.dir) query.set('dir', options.dir);
+      for (const [key, value] of Object.entries(filters)) query.set(key, value);
       const page = await apiGet<MediaPage>(`/api/items?${query}`, signal);
       /* 与卡片网格同一判据（`fetchCatalogPage`）：第一页为空、又不是回收站，再问整个馆藏有没有东西，空态据此分「还没有作品」与「没有符合的」。 */
-      if (offset || page.items?.length || props.filters?.state === 'trash') return page;
+      if (offset || page.items?.length || filters.column_filters || props.filters?.state === 'trash') return page;
       return { ...page, libraryEmpty: (await apiGet<MediaPage>('/api/items?limit=1&thumb=0', signal)).total === 0 };
     },
   });
@@ -155,6 +157,7 @@ export function CatalogListPage(props: CatalogGridProps) {
     state: { sorting, pagination, rowSelection, columnVisibility: { ...preferences.visibility, select: props.selectMode } },
     onColumnVisibilityChange: preferences.change,
     onSortingChange: updater => setState(now => ({
+      ...now,
       sorting: typeof updater === 'function' ? updater(now.sorting) : updater,
       pagination: { ...now.pagination, pageIndex: 0 },
     })),
@@ -170,7 +173,7 @@ export function CatalogListPage(props: CatalogGridProps) {
   });
   /* 一部都没有时与卡片网格同一份空态（壳给的 `emptyHtml`：回收站、馆藏全空、筛选无结果各一种），
      不画空表格与列设置；资料页不给空态，它自己在作品区外说「还没有视频」。 */
-  if (result.data && !result.isPlaceholderData && !result.isError && total === 0) {
+  if (result.data && !result.isPlaceholderData && !result.isError && total === 0 && !filters.column_filters) {
     const html = props.emptyHtml?.({ trash: props.mode !== 'entity' && props.filters?.state === 'trash',
       libraryEmpty: !!(result.data as { libraryEmpty?: boolean }).libraryEmpty }) || '';
     return <div data-catalog-view-mode="list" data-media-empty="" dangerouslySetInnerHTML={{ __html: html }} />;
@@ -183,6 +186,8 @@ export function CatalogListPage(props: CatalogGridProps) {
         onChange={next => table.setSorting(next)} />
       </div>
     </div>
+    {filters.column_filters ? <CatalogColumnFilterChips encoded={filters.column_filters} columns={catalogColumns}
+      tagLabel={props.helpers.tagLabel} onChange={next => changeFilters(next ? { column_filters: next } : {})} /> : null}
     {result.isPending
       ? completionReserved ? <i data-completion-skeleton="" aria-hidden="true" className="skeleton-sheen" /> : null
       : <LibraryCompletionPrompt className="" assetIds={missing} />}
@@ -196,7 +201,13 @@ export function CatalogListPage(props: CatalogGridProps) {
             {...preferences.columnProps(header.id)}>
             {({ sortDirection }) => <>
             <span className="flex items-center gap-0.5">
-              {flexRender(header.column.columnDef.header, header.getContext())}
+              {isColumnRangeKey(header.id)
+                ? <CatalogColumnRangeFilter column={header.id} label={catalogColumns.find(column => column.id === header.id)!.label}
+                  filters={filters} scope={filterScope} revision={props.revision} onChange={changeFilters} />
+                : isChoiceColumn(header.id)
+                  ? <CatalogColumnFilter column={header.id} label={catalogColumns.find(column => column.id === header.id)!.label}
+                    filters={filters} scope={filterScope} revision={props.revision} tagLabel={props.helpers.tagLabel} onChange={changeFilters} />
+                  : flexRender(header.column.columnDef.header, header.getContext())}
               {header.column.getCanSort() ? <span data-sort-indicator data-direction={sortDirection || undefined}><ChevronSortDown /></span> : null}
             </span>
             <TableColumnResizer preferences={preferences} id={header.id} />

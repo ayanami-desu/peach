@@ -30,7 +30,7 @@ import { EntityHeroPage } from '../entity-hero/entity-hero-page';
 import { queryClient } from '../query';
 import { pageNavigationReady, rememberPageState } from '../../history/page-navigation';
 import {
-  EMPTY_MEDIA, codeSetsOf, entityKey, entityOptions, entityPhotosKey, fetchItems, itemsOptions,
+  EMPTY_MEDIA, codeSetsOf, entityKey, entityOptions, entityPhotosKey, fetchItems, itemsOptions, itemsParams,
   photosOptions, tagList, tagPressed, type EntityPageData, type EntityPageProps, type PhotoPage,
 } from './entity-page';
 import { PENDING_REFETCH_MS } from '../components/pending-work';
@@ -360,6 +360,7 @@ function EntityLoaded(props: EntityPageProps & { entity: EntityPageData }) {
           : (
             <EntityBodyPage kind={kind} name={name} view={view} roster={rosterProps} items={items.data ?? null}
               revision={itemsRevision} fetchPage={fetchPage}
+              facetScope={{ ...Object.fromEntries(itemsParams(kind, name, filters, opts)), scope_kind: kind, scope_name: name }}
               listScope={JSON.stringify([kind, name, filters, props.jav, filters.sort === 'seed' ? props.seed : ''])}
               restoreNavigation={props.restoreNavigation}
               photos={photos} photoSize={props.photoSize}

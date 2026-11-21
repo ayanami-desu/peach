@@ -170,6 +170,16 @@ describe('首屏', () => {
       jav: '1', offset: '20', limit: '20', sort: 'name', dir: 'asc' });
     expect(params.has('count')).toBe(false);
   });
+
+  it('资料页的卡片续页传递列筛选，只保留原有的分页提取规则', async () => {
+    const served = serve();
+    const columnFilters = '{"dur":{"range":{"min":600}}}';
+    await fetchItems('performer', NAME, { tag: '演示标签' }, { jav: true, seed: '' },
+      48, new AbortController().signal, { filters: { column_filters: columnFilters } });
+    expect(Object.fromEntries(served.calls('/api/items')[0]!.searchParams)).toMatchObject({
+      performer: NAME, tag: '演示标签', jav: '1', limit: '48', offset: '48', count: '0', column_filters: columnFilters,
+    });
+  });
   it('FC2 合集读数按作品展示，文件总数留给分页', async () => {
     const page=await open({ entity:entity({asset_count:1}),items:()=>({...items([1,2,3]),total:19,work_total:1}) });
     expect(readout(page.props)).toBe('视频 · 1');

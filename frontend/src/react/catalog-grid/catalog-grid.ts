@@ -11,6 +11,7 @@ import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 import { apiGet } from '../../api';
 import type { CatalogGridProps, MediaItem, MediaPage } from './types';
 import { queryClient } from '../query';
+import { getCatalogListPosition } from './catalog-list-position';
 
 /** 竖屏带一条放几张。 */
 export const SHORTS_BATCH = 18;
@@ -29,6 +30,19 @@ export function catalogParams(filters: Readonly<Record<string, string>>, exclude
   const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
   if (excludeVertical) params.set('exclude_vertical', '1');
   return params.toString();
+}
+
+export function catalogListScope(props: CatalogGridProps): string {
+  const params = new URLSearchParams(catalogParams(props.filters || {}, false));
+  if (!new URLSearchParams(globalThis.location?.search).has('seed')) params.delete('seed');
+  return `${props.mode}:${props.listScope || props.entityKey || ''}:${params}`;
+}
+
+/** 列筛选生效时，竖屏作品也在主网格按相同条件显示。 */
+export function catalogCardProps(props: CatalogGridProps, columnFilters: string | undefined): CatalogGridProps {
+  if (!columnFilters || props.wall) return props;
+  return { ...props, filters: { ...props.filters, column_filters: columnFilters },
+    initial: null, excludeVertical: false, shorts: false };
 }
 
 export const catalogKey = (params: string, revision: number): QueryKey => ['catalog-grid', 'catalog', params, revision];
@@ -100,7 +114,8 @@ export function catalogQuery(props: CatalogGridProps) {
  *  与 `GridBody` 的初值一致。列表视图与资料页各有自己的取数。 */
 export async function prefetchCatalogGrid(props: CatalogGridProps, view: string, signal: AbortSignal): Promise<void> {
   if (props.mode === 'items' || props.mode === 'entity' || (view === 'list' && !props.wall)) return;
-  const query = catalogQuery(props);
+  const position = getCatalogListPosition(catalogListScope(props));
+  const query = catalogQuery(catalogCardProps(props, position.filters.column_filters));
   if (queryClient.getQueryData(query.queryKey) !== undefined) return;
   if ((props.restoreNavigation || props.wall) && latestCatalogPages(query.queryKey)) return;
   await queryClient.fetchInfiniteQuery({
@@ -112,11 +127,14 @@ export async function prefetchCatalogGrid(props: CatalogGridProps, view: string,
 }
 
 export function entityQuery(props: CatalogGridProps) {
+  const columnFilters = props.filters?.column_filters;
+  const key = props.entityKey || '';
   return {
-    queryKey: entityKey(props.entityKey || '', props.revision || 0),
+    queryKey: entityKey(columnFilters ? JSON.stringify([key, columnFilters]) : key, props.revision || 0),
     queryFn: async ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) => {
       if (!props.fetchPage) return { items: [], total: 0, offset: pageParam } as GridPage;
-      const page = await props.fetchPage(pageParam, signal);
+      const page = await props.fetchPage(pageParam, signal,
+        columnFilters ? { filters: { column_filters: columnFilters } } : undefined);
       return { ...page, items: page.items || [], offset: pageParam } as GridPage;
     },
     initialPageParam: 0,

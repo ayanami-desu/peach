@@ -10,7 +10,7 @@
  * 首屏由壳铺骨架，身份资料就绪后挂载页面；作品、照片各自替换对应区域的骨架。 */
 import { api } from '@peach/legacy/core';
 
-import type { CatalogGridProps, MediaPage } from '../catalog-grid/types';
+import type { CatalogGridProps, MediaPage, MediaPageOptions } from '../catalog-grid/types';
 import type { EntityBodyActions, EntityBodyHelpers, EntityCodeSet, EntityLocalPhoto, PhotoLayout, PhotoSize } from '../entity-body/entity-body';
 import type { EntityComboItem, EntitySortKey, EntityView, SegmentOption } from '../entity-filter/entity-filter';
 import type { EntityHeroData, HeroCostar } from '../entity-hero/entity-hero';
@@ -180,13 +180,16 @@ export function itemsParams(kind: string, name: string, filters: EntityFilters, 
 }
 
 export async function fetchItems(kind: string, name: string, filters: EntityFilters, opts: { jav: boolean; seed: string },
-  offset: number, signal?: AbortSignal, options?: { limit: number; sort?: string; dir?: string }): Promise<MediaPage> {
+  offset: number, signal?: AbortSignal, options?: MediaPageOptions): Promise<MediaPage> {
   const params = itemsParams(kind, name, filters, opts, offset);
   if (options) {
-    params.set('limit', String(options.limit));
-    params.delete('count');
+    if (options.limit !== undefined) {
+      params.set('limit', String(options.limit));
+      params.delete('count');
+    }
     if (options.sort) params.set('sort', options.sort);
     if (options.dir) params.set('dir', options.dir);
+    for (const [key, value] of Object.entries(options.filters ?? {})) params.set(key, value);
   }
   return await api(`/api/items?${params}`, signal ? { signal } : {}) as MediaPage;
 }

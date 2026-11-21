@@ -10,6 +10,12 @@
 
 存储与播放的形态定案见 [ADR-0157](adr/0157-remote-drive-api-storage-and-playback.md)，分层与装配见[总体架构](ARCHITECTURE.md)。
 
+## 表格列筛选
+
+React 表格共用 `TableColumnFilter`、`TableColumnRange` 和 `useTableFilters`。完整结果在服务端分页时，通过 `column_filters` 传递条件，并在截断前用 `src/peach/table_filters.py` 的规则筛选；选项计数忽略本列条件，保留其他列条件。
+
+日期和范围分别使用 BoardUI 的 `date-picker` 与 `slider`。日期组件使用 `@internationalized/date` 处理日历日期；副本和上游版本见 [BoardUI 来源清单](../frontend/src/react/boardui/ORIGIN.md)。
+
 ## 网盘驱动
 
 | 现成实现 | 位置 |

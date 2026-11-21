@@ -16,6 +16,8 @@
 
 | 条目 | 注册表 JSON 的 SHA-256 | 复制的文件 |
 | --- | --- | --- |
+| `date-picker`（2026-11-18） | `36e77d0293daaead84fd939a1104e456904f4be49122185f41a738203cead3bf` | `components/base/date-picker/shared.tsx` |
+| `slider`（2026-11-18） | `43e3cff77c2471a6f544f297702151f4ae571e058716584f627a574ce4c09d39` | `components/base/slider/slider.tsx` |
 | `kbd`（2026-11-04） | `6a9e105249ff7e1e4abb38625b23d0195546158226b6a071a9965003651b188f` | `components/base/kbd/kbd.tsx` |
 | `radio`（2026-10-27） | `e2b75fb0560c2dcceb66ca323680af83ff36f8b2238515712d22af176f48ddbb` | `components/base/radio/radio.tsx` |
 | `radio-card`（2026-10-27） | `7ac63768bce4d854890cb3138bf605764436e0f7361cadf82fc9198f309d3d5a` | `components/base/radio/radio-card.tsx` |
@@ -43,7 +45,7 @@
 
 ## 没有逐字复制的部分
 
-目录浏览保留首页筛选、排序、卡片和详情结构。树采用 `small` 档和受控展开、选中状态，子目录按需从账本读取。面包屑按钮由 Peach 导航；上游 `next/link` 导入通过构建别名连接 `../components/board-navigation-link.tsx`，只承担原生链接槽，不引入 Next.js。上游目录树需要的 `menu-styles.ts` 继续使用已登记副本。全部依赖已由当前 React、React Aria、Motion 和 Remix Icon 清单覆盖。
+目录浏览保留首页筛选、排序、卡片和详情结构。树采用 `small` 档和受控展开、选中状态，子目录按需从账本读取。面包屑按钮由 Peach 导航；上游 `next/link` 导入通过构建别名连接 `../components/board-navigation-link.tsx`，只承担原生链接槽，不引入 Next.js。上游目录树需要的 `menu-styles.ts` 继续使用已登记副本。日期选择器另依赖 `@internationalized/date` 处理日历日期。
 
 | 上游 | 处理 | 原因 |
 | --- | --- | --- |

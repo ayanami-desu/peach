@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MediaCard, cardRatio, type MediaCardVariant } from '../../src/react/components/media-card';
 import { CatalogGridPage, LoadMore } from '../../src/react/catalog-grid/catalog-grid-page';
 import type { CatalogGridProps } from '../../src/react/catalog-grid/types';
+import { setCatalogView } from '../../src/react/catalog-grid/catalog-view';
 import {
   SHORTS_BATCH, arrangeCards, catalogParams, collapseGroups, fetchCatalogPage, latestCatalogPages, nextOffset, visibleCatalogBatch,
   shortsBoundaries, shortsParams, replaceCatalogItem, type GridPage,
@@ -163,6 +164,42 @@ describe('续页', () => {
     }
     throw new Error(`一直没等到：${what}`);
   }
+
+  it('从列表切到卡片保留列筛选，清除卡片上的条件后列表也恢复', async () => {
+    const requests: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: string) => {
+      const url = new URL(String(input), 'http://peach.test');
+      requests.push(url);
+      if (url.pathname === '/api/libraries') return Promise.resolve(reply({ libraries: [] }));
+      if (url.pathname === '/api/facets') return Promise.resolve(reply({ items: [{ k: '4', n: 1 }], next_offset: null }));
+      const encoded = url.searchParams.get('column_filters');
+      return Promise.resolve(reply({ items: encoded ? [item(2)] : [item(1), item(2)], total: encoded ? 1 : 2 }));
+    }));
+    setCatalogView('list');
+    try {
+      const host = await mount(<QueryClientProvider client={queryClient}>
+        <CatalogGridPage {...props({ q: '列筛选切换' })} />
+      </QueryClientProvider>);
+      const rows = () => host.querySelectorAll('[data-catalog-row]').length;
+      await until(() => rows() === 2, '列表返回两部作品');
+      await click(host.querySelector('[data-table-column-filter="rating"]'));
+      await until(() => !!document.querySelector('input[aria-label="1 星"]'), '评分筛选选项');
+      await click(document.querySelector('input[aria-label="1 星"]'));
+      await until(() => rows() === 1, '列表按列筛选');
+      expect(requests.some(url => url.searchParams.get('column_filters') === '{"rating":{"exclude":["1"]}}')).toBe(true);
+      await act(async () => setCatalogView('cards'));
+      await until(() => cards(host) === 1, '卡片保留列筛选');
+      const chip = host.querySelector('[aria-label^="清除筛选"]');
+      expect(chip?.textContent).toContain('评分');
+      await click(chip);
+      await until(() => cards(host) === 2, '移除列筛选后显示全部卡片');
+      await act(async () => setCatalogView('list'));
+      await until(() => rows() === 2, '切回列表也不再使用已清除的条件');
+    } finally {
+      await act(async () => setCatalogView('cards'));
+      queryClient.removeQueries({ queryKey: ['catalog-grid'] });
+    }
+  });
 
   it('结果版本变化引起的整列重读还在路上时滚到底：续页先停掉重读、当场取下一页', async () => {
     vi.stubGlobal('IntersectionObserver', FakeObserver);
